@@ -73,6 +73,39 @@ export function loadCatalog(): Catalog | null {
   return cache?.catalog ?? null;
 }
 
+const DEFAULT_CATALOG_URL =
+  "https://raw.githubusercontent.com/darrenCWJ/china-itinerary-planner/main/data/catalog.json";
+
+let remoteLoad: Promise<void> | null = null;
+
+/**
+ * Serverless deployments may ship only a stub catalog (the full file is too
+ * large to inline in the deploy payload). Fetch the real catalog from the
+ * GitHub repo once per instance and cache it in memory. No-op when a full
+ * catalog is already available from disk or the bundle. Call this before the
+ * synchronous catalog helpers in any API route that needs catalog data.
+ */
+export async function ensureCatalogLoaded(): Promise<void> {
+  const current = loadCatalog();
+  if (current && current.cities.length > 0) return;
+  if (!remoteLoad) {
+    remoteLoad = (async () => {
+      const url = process.env.CATALOG_URL ?? DEFAULT_CATALOG_URL;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`);
+      setCache((await res.json()) as Catalog, -2);
+    })().catch((err) => {
+      remoteLoad = null; // allow the next request to retry
+      throw err;
+    });
+  }
+  try {
+    await remoteLoad;
+  } catch {
+    // Catalog stays unavailable; endpoints degrade gracefully.
+  }
+}
+
 export function catalogStatus(): { available: boolean; generatedAt?: string; cities?: number; attractions?: number } {
   const catalog = loadCatalog();
   if (!catalog) return { available: false };

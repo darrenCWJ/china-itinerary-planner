@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
 import { createTrip, DB_UNAVAILABLE, storeMode } from "@/lib/server/store";
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { tripName, creatorName, startDate, input } = parsed.data;
+  await ensureCatalogLoaded();
   const data = buildTripData({ tripName, startDate: startDate ?? null, input });
   if (data.plan.days.length === 0) {
     return NextResponse.json(

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveDestinations } from "@/lib/server/catalog";
+import { ensureCatalogLoaded, resolveDestinations } from "@/lib/server/catalog";
 
 const MAX_IDS = 12;
 
 export async function GET(req: NextRequest) {
+  await ensureCatalogLoaded();
   const idsParam = req.nextUrl.searchParams.get("ids") ?? "";
   const ids = idsParam
     .split(",")

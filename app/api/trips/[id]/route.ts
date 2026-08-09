@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { UpdateTripSchema } from "@/lib/server/schemas";
 import {
@@ -52,6 +53,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Only trip members can edit" }, { status: 403 });
   }
 
+  await ensureCatalogLoaded();
   const data = buildTripData({
     tripName: parsed.data.tripName ?? existing.data.tripName,
     startDate:
