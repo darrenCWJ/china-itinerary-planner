@@ -1,5 +1,7 @@
 # China Itinerary Planner 游
 
+**Live**: <https://china-itinerary-planner.vercel.app> · **Source**: <https://github.com/darrenCWJ/china-itinerary-planner>
+
 Plan a trip to China in three steps — then take everyone along: shared trips
 with join codes, a live-syncing itinerary you can tick off mid-trip, and a
 searchable catalog of **every city in China**, not just the highlights.
@@ -88,8 +90,22 @@ friends-and-family use — see docs/PLAN.md for the auth upgrade path.
 
 ## Deploying
 
-Runs anywhere Node runs. For Vercel, swap SQLite for a hosted database
-(Neon/Turso via the Vercel Marketplace) — the storage layer is isolated in
-`lib/server/tripStore.ts` + `lib/server/db.ts` precisely so this is a
-one-file change. `data/catalog.json` deploys as a static file; the refresh
-endpoint should then be wired to a cron instead of spawning a local process.
+Deployed on Vercel at <https://china-itinerary-planner.vercel.app>. The
+Vercel project's install command pulls the latest `main` tarball from GitHub,
+so **any redeploy ships the newest committed code**.
+
+Storage picks its backend from the environment (`lib/server/store.ts`):
+
+- `DATABASE_URL` set → **Postgres** (e.g. Supabase — use the *transaction
+  pooler* connection string, port 6543)
+- no `DATABASE_URL`, local machine → SQLite in `data/app.db`
+- no `DATABASE_URL` on Vercel → shared-trip endpoints return 503 with
+  instructions (the planner and catalog still work fully)
+
+To enable shared trips in production: Supabase → create a free project →
+copy the pooled connection string → Vercel project → Settings →
+Environment Variables → add `DATABASE_URL` → redeploy. Tables are created
+automatically on first use.
+
+The catalog refresh endpoint is local-only (serverless filesystems are
+read-only): rerun `node scripts/ingest-destinations.mjs`, commit, redeploy.
