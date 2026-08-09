@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #17263b;
+  --color-ink-soft: #4a5b72;
+  --color-rail: #1d5c9e;
+  --color-rail-deep: #164a80;
+  --color-sky: #d9e7f4;
+  --color-mist: #f1f5fa;
+  --color-paper: #ffffff;
+  --color-seal: #c93b2e;
+}
+
+@theme inline {
+  --font-sans: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-brico), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plexmono), ui-monospace, "Cascadia Mono", monospace;
+}
+
+.font-kai {
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", "DFKai-SB", "SimSun", serif;
+}
+
+/* Vermilion chop mark, like a visa stamp in a passport. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.45rem;
+  border: 2px solid var(--color-seal);
+  border-radius: 0.375rem;
+  color: var(--color-seal);
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  transform: rotate(-8deg);
+  opacity: 0.9;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-paper) 82%, transparent);
+}
+
+.seal-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 2.5px solid var(--color-seal);
+  border-radius: 9999px;
+  color: var(--color-seal);
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  transform: rotate(8deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+}

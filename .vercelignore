@@ -1,0 +1,8 @@
+.next
+node_modules
+data/app.db
+data/app.db-shm
+data/app.db-wal
+data/ingest.log
+data/.ingest.lock
+docs
