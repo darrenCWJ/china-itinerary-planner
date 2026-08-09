@@ -107,5 +107,13 @@ copy the pooled connection string → Vercel project → Settings →
 Environment Variables → add `DATABASE_URL` → redeploy. Tables are created
 automatically on first use.
 
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `DATABASE_URL` | Postgres (Supabase) connection string — enables shared trips |
+| `ACCESS_CODE` | Optional: locks the whole site (pages + API) behind an access-code screen; visitors unlock once per browser (90-day cookie). Unset = open |
+| `CATALOG_URL` | Optional: override the remote catalog fallback URL |
+
 The catalog refresh endpoint is local-only (serverless filesystems are
 read-only): rerun `node scripts/ingest-destinations.mjs`, commit, redeploy.
