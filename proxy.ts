@@ -6,7 +6,7 @@ import { ACCESS_COOKIE, accessToken } from "@/lib/access";
  * cookie. Visitors without it are sent to /unlock (pages) or get a 401
  * (API calls). With no ACCESS_CODE configured the site is open.
  */
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) return NextResponse.next();
 
