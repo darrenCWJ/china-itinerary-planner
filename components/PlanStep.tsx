@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { DESTINATIONS } from "@/lib/data";
 import { buildItinerary, type ScheduledItem, type TripInput } from "@/lib/itinerary";
 import { KIND_EMOJI, SEASONS, SLOT_META } from "@/lib/meta";
+import { saveMyTrip } from "@/lib/myTrips";
 import { buildPackingList } from "@/lib/packing";
 import type { Destination } from "@/lib/types";
 
@@ -203,6 +204,14 @@ function ShareTripCard({
       if (!res.ok) throw new Error(`Create failed (${res.status})`);
       const json: { id: string; joinCode: string } = await res.json();
       localStorage.setItem(`cip-member-${json.id}`, myName.trim());
+      saveMyTrip({
+        id: json.id,
+        name: tripName.trim() || "China trip",
+        startDate: startDate || null,
+        days: input.days,
+        destinations: destinationNames,
+        role: "creator",
+      });
       router.push(`/trip/${json.id}?code=${json.joinCode}`);
     } catch {
       setError("Couldn't create the shared trip — is the server running?");

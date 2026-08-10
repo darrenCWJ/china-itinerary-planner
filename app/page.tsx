@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
+import { TripsDashboard } from "@/components/home/TripsDashboard";
 import { DESTINATIONS } from "@/lib/data";
 import { seasonOfMonth } from "@/lib/months";
 import type { TripInput } from "@/lib/itinerary";
@@ -168,6 +169,7 @@ export default function Home() {
       </nav>
 
       <main className="mx-auto max-w-6xl px-4 pt-6">
+        {step === 0 && <TripsDashboard />}
         {step === 0 && (
           <DestinationStep
             selected={selected}
