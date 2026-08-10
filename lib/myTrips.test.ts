@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mergeTripLists,
   parseMyTrips,
   pickNextTrip,
   removeMyTrip,
@@ -92,6 +93,47 @@ describe("pickNextTrip", () => {
 
   it("returns null when nothing is ongoing or upcoming", () => {
     expect(pickNextTrip([trip({ startDate: "2026-01-01", days: 2 })], "2026-09-14")).toBeNull();
+  });
+});
+
+describe("mergeTripLists", () => {
+  it("unions distinct trips from both sides, newest first", () => {
+    const merged = mergeTripLists(
+      [trip({ id: "a", savedAt: 1 })],
+      [trip({ id: "b", savedAt: 2 })]
+    );
+    expect(merged.map((t) => t.id)).toEqual(["b", "a"]);
+  });
+
+  it("resolves conflicts by newer savedAt", () => {
+    const merged = mergeTripLists(
+      [trip({ id: "a", name: "Old", savedAt: 1 })],
+      [trip({ id: "a", name: "New", savedAt: 9 })]
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].name).toBe("New");
+  });
+
+  it("keeps creator role even when the member-side entry is newer", () => {
+    const merged = mergeTripLists(
+      [trip({ id: "a", role: "creator", savedAt: 1 })],
+      [trip({ id: "a", role: "member", savedAt: 9 })]
+    );
+    expect(merged[0].role).toBe("creator");
+  });
+
+  it("fills a missing memberName from the losing side", () => {
+    const merged = mergeTripLists(
+      [trip({ id: "a", memberName: "Darren", savedAt: 1 })],
+      [trip({ id: "a", memberName: undefined, savedAt: 9 })]
+    );
+    expect(merged[0].memberName).toBe("Darren");
+  });
+
+  it("caps the merged list at 20", () => {
+    const many = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => trip({ id: `${prefix}${i}`, savedAt: i }));
+    expect(mergeTripLists(many("a", 15), many("b", 15))).toHaveLength(20);
   });
 });
 

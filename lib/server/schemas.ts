@@ -117,3 +117,25 @@ export const UpdateTicketSchema = z.object({
   memberName: MemberNameSchema,
   ticket: TicketFieldsSchema.partial(),
 });
+
+export const MyTripSchema = z.object({
+  id: z.string().min(1).max(60),
+  name: z.string().trim().min(1).max(60),
+  startDate: IsoDateSchema.nullable(),
+  days: z.number().int().min(1).max(60),
+  destinations: z.array(z.string().min(1).max(80)).max(10),
+  role: z.enum(["creator", "member"]),
+  memberName: MemberNameSchema.optional(),
+  savedAt: z.number(),
+});
+
+const WalletTripsSchema = z.array(MyTripSchema).max(20);
+const WalletCodeSchema = z.string().trim().min(6).max(20);
+
+export const WalletCreateSchema = z.object({ trips: WalletTripsSchema });
+export const WalletFetchSchema = z.object({ code: WalletCodeSchema });
+export const WalletPutSchema = z.object({
+  code: WalletCodeSchema,
+  trips: WalletTripsSchema,
+  baseVersion: z.number().int().min(1),
+});

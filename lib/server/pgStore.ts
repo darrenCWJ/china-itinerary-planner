@@ -1,5 +1,7 @@
 import postgres from "postgres";
+import type { MyTrip } from "../myTrips";
 import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
+import { newWalletCode } from "./ids";
 import { newJoinCode, newTripId } from "./ids";
 import type { JoinResult } from "./tripStore";
 
@@ -63,6 +65,13 @@ function ensureSchema(): Promise<void> {
         data jsonb NOT NULL,
         created_at bigint NOT NULL,
         PRIMARY KEY (trip_id, id)
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS wallets (
+        code text PRIMARY KEY,
+        data jsonb NOT NULL,
+        version integer NOT NULL DEFAULT 1,
+        created_at bigint NOT NULL,
+        updated_at bigint NOT NULL
       )`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
@@ -219,6 +228,52 @@ export async function clearScheduleChecks(tripId: string): Promise<void> {
   await sql()`DELETE FROM checks
     WHERE trip_id = ${tripId} AND (key LIKE 'item:%' OR key LIKE 'day:%')`;
   await touch(tripId);
+}
+
+export type WalletPutResult = "ok" | "conflict" | "not-found";
+
+export async function createWallet(trips: MyTrip[]): Promise<{ code: string }> {
+  await ensureSchema();
+  const s = sql();
+  const now = Date.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = newWalletCode();
+    try {
+      await s`INSERT INTO wallets (code, data, version, created_at, updated_at)
+        VALUES (${code}, ${s.json(JSON.parse(JSON.stringify(trips)))}, 1, ${now}, ${now})`;
+      return { code };
+    } catch (error) {
+      // 23505 = unique_violation; anything else must surface.
+      if ((error as { code?: string }).code !== "23505") throw error;
+    }
+  }
+  throw new Error("Could not allocate a wallet code");
+}
+
+export async function getWallet(
+  code: string
+): Promise<{ trips: MyTrip[]; version: number } | null> {
+  await ensureSchema();
+  const rows = await sql()`SELECT data, version FROM wallets WHERE code = ${code}`;
+  if (rows.length === 0) return null;
+  return { trips: rows[0].data as MyTrip[], version: Number(rows[0].version) };
+}
+
+/** Version-guarded replace: "conflict" means re-fetch, re-merge, retry. */
+export async function putWallet(
+  code: string,
+  trips: MyTrip[],
+  baseVersion: number
+): Promise<WalletPutResult> {
+  await ensureSchema();
+  const s = sql();
+  const exists = await s`SELECT 1 FROM wallets WHERE code = ${code}`;
+  if (exists.length === 0) return "not-found";
+  const result = await s`UPDATE wallets
+    SET data = ${s.json(JSON.parse(JSON.stringify(trips)))},
+        version = version + 1, updated_at = ${Date.now()}
+    WHERE code = ${code} AND version = ${baseVersion}`;
+  return result.count === 0 ? "conflict" : "ok";
 }
 
 export async function setCheck(

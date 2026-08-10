@@ -1,6 +1,7 @@
+import type { MyTrip } from "../myTrips";
 import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
 import { getDb } from "./db";
-import { newJoinCode, newTripId } from "./ids";
+import { newJoinCode, newTripId, newWalletCode } from "./ids";
 
 interface TripRow {
   id: string;
@@ -179,6 +180,58 @@ export function clearScheduleChecks(tripId: string): void {
     .prepare("DELETE FROM checks WHERE trip_id = ? AND (key LIKE 'item:%' OR key LIKE 'day:%')")
     .run(tripId);
   touch(tripId);
+}
+
+export interface WalletData {
+  trips: MyTrip[];
+  version: number;
+}
+
+export type WalletPutResult = "ok" | "conflict" | "not-found";
+
+export function createWallet(trips: MyTrip[]): { code: string } {
+  const db = getDb();
+  const now = Date.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = newWalletCode();
+    try {
+      db.prepare(
+        "INSERT INTO wallets (code, data, version, created_at, updated_at) VALUES (?, ?, 1, ?, ?)"
+      ).run(code, JSON.stringify(trips), now, now);
+      return { code };
+    } catch (error) {
+      // Only a primary-key collision is worth retrying with a fresh code;
+      // anything else (missing table, disk error) must surface.
+      const code2 = (error as { code?: string }).code ?? "";
+      if (!code2.startsWith("SQLITE_CONSTRAINT")) throw error;
+    }
+  }
+  throw new Error("Could not allocate a wallet code");
+}
+
+export function getWallet(code: string): WalletData | null {
+  const row = getDb()
+    .prepare("SELECT data, version FROM wallets WHERE code = ?")
+    .get(code) as { data: string; version: number } | undefined;
+  if (!row) return null;
+  try {
+    return { trips: JSON.parse(row.data) as MyTrip[], version: Number(row.version) };
+  } catch {
+    return null;
+  }
+}
+
+/** Version-guarded replace: "conflict" means re-fetch, re-merge, retry. */
+export function putWallet(code: string, trips: MyTrip[], baseVersion: number): WalletPutResult {
+  const db = getDb();
+  const exists = db.prepare("SELECT 1 FROM wallets WHERE code = ?").get(code);
+  if (!exists) return "not-found";
+  const result = db
+    .prepare(
+      "UPDATE wallets SET data = ?, version = version + 1, updated_at = ? WHERE code = ? AND version = ?"
+    )
+    .run(JSON.stringify(trips), Date.now(), code, baseVersion);
+  return result.changes === 0 ? "conflict" : "ok";
 }
 
 export function setCheck(tripId: string, key: string, memberName: string, checked: boolean): void {

@@ -211,6 +211,7 @@ function ShareTripCard({
         days: input.days,
         destinations: destinationNames,
         role: "creator",
+        memberName: myName.trim(),
       });
       router.push(`/trip/${json.id}?code=${json.joinCode}`);
     } catch {

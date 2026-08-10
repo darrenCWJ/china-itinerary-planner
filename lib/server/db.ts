@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS tickets (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (trip_id, id)
 );
+CREATE TABLE IF NOT EXISTS wallets (
+  code TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export function getDb(): Database.Database {

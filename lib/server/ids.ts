@@ -4,9 +4,19 @@ export function newTripId(): string {
   return randomBytes(5).toString("hex");
 }
 
+// Unambiguous uppercase alphabet (no 0/O/1/I).
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function randomCode(length: number): string {
+  const bytes = randomBytes(length);
+  return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+}
+
 export function newJoinCode(): string {
-  // Unambiguous uppercase alphabet (no 0/O/1/I).
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(6);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+  return randomCode(6);
+}
+
+/** Wallet codes are global bearer secrets, so they get more entropy. */
+export function newWalletCode(): string {
+  return randomCode(10);
 }

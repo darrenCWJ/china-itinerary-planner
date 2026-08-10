@@ -9,6 +9,8 @@ export interface MyTrip {
   days: number;
   destinations: string[];
   role: "creator" | "member";
+  /** Your member name on this trip — lets a synced device edit as you. */
+  memberName?: string;
   savedAt: number;
 }
 
@@ -53,6 +55,7 @@ export function parseMyTrips(raw: string | null): MyTrip[] {
         typeof trip.days === "number" &&
         Array.isArray(trip.destinations) &&
         (trip.role === "creator" || trip.role === "member") &&
+        (trip.memberName === undefined || typeof trip.memberName === "string") &&
         typeof trip.savedAt === "number"
       );
     });
@@ -74,9 +77,34 @@ export function upsertMyTrip(
   const entry: MyTrip = {
     ...trip,
     role: existing?.role === "creator" ? "creator" : trip.role,
+    memberName: trip.memberName ?? existing?.memberName,
     savedAt: now,
   };
   return [entry, ...list.filter((t) => t.id !== trip.id)].slice(0, MAX_TRIPS);
+}
+
+/**
+ * Union two devices' lists by trip id: the newer entry wins a conflict,
+ * "creator" role is sticky, and a missing memberName is filled from the
+ * losing side. Newest-first, capped like the local list.
+ */
+export function mergeTripLists(a: MyTrip[], b: MyTrip[]): MyTrip[] {
+  const byId = new Map<string, MyTrip>();
+  for (const trip of [...a, ...b]) {
+    const existing = byId.get(trip.id);
+    if (!existing) {
+      byId.set(trip.id, trip);
+      continue;
+    }
+    const winner = trip.savedAt >= existing.savedAt ? trip : existing;
+    const loser = winner === trip ? existing : trip;
+    byId.set(trip.id, {
+      ...winner,
+      role: winner.role === "creator" || loser.role === "creator" ? "creator" : winner.role,
+      memberName: winner.memberName ?? loser.memberName,
+    });
+  }
+  return [...byId.values()].sort((x, y) => y.savedAt - x.savedAt).slice(0, MAX_TRIPS);
 }
 
 export function removeMyTrip(list: MyTrip[], id: string): MyTrip[] {
@@ -145,4 +173,9 @@ export function saveMyTrip(trip: Omit<MyTrip, "savedAt">): void {
 
 export function forgetMyTrip(id: string): void {
   persist(removeMyTrip(loadMyTrips(), id));
+}
+
+/** Overwrite the stored list wholesale — used after a wallet merge. */
+export function replaceMyTrips(list: MyTrip[]): void {
+  persist(list);
 }

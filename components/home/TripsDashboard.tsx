@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { SyncDevices } from "@/components/home/SyncDevices";
 import {
   forgetMyTrip,
   loadMyTrips,
@@ -13,6 +14,7 @@ import {
   type MyTrip,
   type TripPhase,
 } from "@/lib/myTrips";
+import { forgetTripEverywhere, loadWalletCode, syncWallet } from "@/lib/walletSync";
 
 function phaseLabel(phase: TripPhase, days: number): string {
   switch (phase.kind) {
@@ -39,27 +41,55 @@ function dateRange(trip: MyTrip): string | null {
  */
 export function TripsDashboard() {
   const [trips, setTrips] = useState<MyTrip[] | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
-    setTrips(loadMyTrips());
+    const local = loadMyTrips();
+    setTrips(local);
+    const code = loadWalletCode();
+    if (!code) return;
+    // Linked device: pull the wallet, merge, and push back any local news.
+    let cancelled = false;
+    void syncWallet(code, local).then((result) => {
+      if (cancelled) return;
+      setTrips(result.trips);
+      setSyncError(result.ok ? null : result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (!trips || trips.length === 0) return null;
+  if (!trips) return null;
 
   const today = localTodayIso();
   const next = pickNextTrip(trips, today);
   const others = trips.filter((t) => t.id !== next?.id);
+  const isLinked = Boolean(loadWalletCode());
 
   const forget = (id: string) => {
     forgetMyTrip(id);
     setTrips((prev) => removeMyTrip(prev ?? [], id));
+    void forgetTripEverywhere(id);
   };
+
+  // A fresh device with no trips still needs the link control to pull them.
+  if (trips.length === 0) {
+    return (
+      <section aria-label="Your trips" className="mb-8">
+        <SyncDevices onSynced={setTrips} />
+        {syncError && <p className="mt-1 text-xs text-seal">{syncError}</p>}
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Your trips" className="mb-8">
       <div className="flex items-baseline justify-between">
         <h2 className="font-display text-lg font-bold">Your trips</h2>
-        <p className="text-xs text-ink-soft">remembered on this device</p>
+        <p className="text-xs text-ink-soft">
+          {isLinked ? "synced across your devices" : "remembered on this device"}
+        </p>
       </div>
 
       {next && (
@@ -123,6 +153,9 @@ export function TripsDashboard() {
           })}
         </ul>
       )}
+
+      <SyncDevices onSynced={setTrips} />
+      {syncError && <p className="mt-1 text-xs text-seal">{syncError}</p>}
     </section>
   );
 }

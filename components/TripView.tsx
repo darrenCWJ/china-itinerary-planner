@@ -101,8 +101,9 @@ export function TripView({ tripId }: { tripId: string }) {
       days: payload.data.plan.days.length,
       destinations: payload.data.destinationNames,
       role: "member",
+      memberName: myName,
     });
-  }, [payload, isMember, tripId]);
+  }, [payload, isMember, tripId, myName]);
 
   useEffect(() => {
     if (loadState === "not-found") forgetMyTrip(tripId);

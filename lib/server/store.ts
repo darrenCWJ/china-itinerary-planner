@@ -1,7 +1,8 @@
+import type { MyTrip } from "../myTrips";
 import type { Ticket, TripData, TripPayload } from "../tripShared";
 import { planIdMigration } from "./migrate";
 import * as sqlite from "./tripStore";
-import type { JoinResult } from "./tripStore";
+import type { JoinResult, WalletPutResult } from "./tripStore";
 
 /**
  * Storage facade: Postgres (Supabase) when DATABASE_URL is set, SQLite for
@@ -121,4 +122,25 @@ export async function deleteTicket(tripId: string, ticketId: string): Promise<bo
 export async function clearScheduleChecks(tripId: string): Promise<void> {
   if (storeMode() === "postgres") return (await pg()).clearScheduleChecks(tripId);
   return sqlite.clearScheduleChecks(tripId);
+}
+
+export async function createWallet(trips: MyTrip[]): Promise<{ code: string }> {
+  if (storeMode() === "postgres") return (await pg()).createWallet(trips);
+  return sqlite.createWallet(trips);
+}
+
+export async function getWallet(
+  code: string
+): Promise<{ trips: MyTrip[]; version: number } | null> {
+  if (storeMode() === "postgres") return (await pg()).getWallet(code);
+  return sqlite.getWallet(code);
+}
+
+export async function putWallet(
+  code: string,
+  trips: MyTrip[],
+  baseVersion: number
+): Promise<WalletPutResult> {
+  if (storeMode() === "postgres") return (await pg()).putWallet(code, trips, baseVersion);
+  return sqlite.putWallet(code, trips, baseVersion);
 }
