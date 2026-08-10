@@ -51,3 +51,69 @@ export const ToggleCheckSchema = z.object({
   key: z.string().min(1).max(200),
   checked: z.boolean(),
 });
+
+const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const TimeSlotSchema = z.enum(["morning", "afternoon", "evening"]);
+const DayNumberSchema = z.number().int().min(1).max(60);
+const ItemIdSchema = z.string().min(1).max(60);
+const ItemTitleSchema = z.string().trim().min(1).max(80);
+const ItemTimeSchema = z.string().trim().max(20);
+const ItemNoteSchema = z.string().trim().max(200);
+
+export const PlanOpSchema = z.discriminatedUnion("op", [
+  z.object({
+    op: z.literal("addItem"),
+    day: DayNumberSchema,
+    title: ItemTitleSchema,
+    slot: TimeSlotSchema,
+    time: ItemTimeSchema.optional(),
+    note: ItemNoteSchema.optional(),
+  }),
+  z.object({
+    op: z.literal("updateItem"),
+    day: DayNumberSchema,
+    itemId: ItemIdSchema,
+    title: ItemTitleSchema.optional(),
+    slot: TimeSlotSchema.optional(),
+    time: ItemTimeSchema.nullable().optional(),
+    note: ItemNoteSchema.nullable().optional(),
+  }),
+  z.object({ op: z.literal("removeItem"), day: DayNumberSchema, itemId: ItemIdSchema }),
+  z.object({
+    op: z.literal("moveItem"),
+    day: DayNumberSchema,
+    itemId: ItemIdSchema,
+    direction: z.enum(["up", "down"]),
+  }),
+  z.object({ op: z.literal("addDay"), destinationId: z.string().min(1).max(60).optional() }),
+]);
+
+export const PlanEditSchema = z.object({
+  memberName: MemberNameSchema,
+  op: PlanOpSchema,
+});
+
+export const TicketKindSchema = z.enum(["flight", "train", "hotel", "attraction", "other"]);
+
+export const TicketFieldsSchema = z.object({
+  kind: TicketKindSchema,
+  title: z.string().trim().min(1).max(80),
+  date: IsoDateSchema.nullable().optional(),
+  endDate: IsoDateSchema.nullable().optional(),
+  time: z.string().trim().max(20).nullable().optional(),
+  from: z.string().trim().max(60).nullable().optional(),
+  to: z.string().trim().max(60).nullable().optional(),
+  confirmation: z.string().trim().max(60).nullable().optional(),
+  price: z.string().trim().max(30).nullable().optional(),
+  notes: z.string().trim().max(300).nullable().optional(),
+});
+
+export const AddTicketSchema = z.object({
+  memberName: MemberNameSchema,
+  ticket: TicketFieldsSchema,
+});
+
+export const UpdateTicketSchema = z.object({
+  memberName: MemberNameSchema,
+  ticket: TicketFieldsSchema.partial(),
+});

@@ -1,4 +1,5 @@
 import type { ItemKind } from "./itinerary";
+import type { TicketKind } from "./tripShared";
 import type { Interest, Season, TimeSlot } from "./types";
 
 export const INTERESTS: { id: Interest; label: string; emoji: string }[] = [
@@ -43,4 +44,17 @@ export const KIND_EMOJI: Partial<Record<ItemKind, string>> = {
   travel: "🚄",
   arrival: "🛬",
   departure: "🛫",
+  custom: "📌",
 };
+
+export const TICKET_KINDS: { id: TicketKind; label: string; emoji: string }[] = [
+  { id: "flight", label: "Flight", emoji: "✈️" },
+  { id: "train", label: "Train", emoji: "🚄" },
+  { id: "hotel", label: "Hotel", emoji: "🏨" },
+  { id: "attraction", label: "Attraction", emoji: "🎟️" },
+  { id: "other", label: "Other", emoji: "📌" },
+];
+
+export function ticketKindMeta(id: TicketKind) {
+  return TICKET_KINDS.find((k) => k.id === id) ?? TICKET_KINDS[TICKET_KINDS.length - 1];
+}

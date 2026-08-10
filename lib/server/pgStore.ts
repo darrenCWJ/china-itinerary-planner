@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import type { TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
+import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
 import { newJoinCode, newTripId } from "./ids";
 import type { JoinResult } from "./tripStore";
 
@@ -57,6 +57,13 @@ function ensureSchema(): Promise<void> {
         checked_at bigint NOT NULL,
         PRIMARY KEY (trip_id, key)
       )`;
+      await s`CREATE TABLE IF NOT EXISTS tickets (
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        id text NOT NULL,
+        data jsonb NOT NULL,
+        created_at bigint NOT NULL,
+        PRIMARY KEY (trip_id, id)
+      )`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
       globalThis.__cipSchemaReady = undefined;
@@ -99,6 +106,7 @@ export async function getTrip(
 
   const memberRows = await s`SELECT name, joined_at FROM members WHERE trip_id = ${id} ORDER BY joined_at`;
   const checkRows = await s`SELECT key, checked_by FROM checks WHERE trip_id = ${id}`;
+  const ticketRows = await s`SELECT data FROM tickets WHERE trip_id = ${id} ORDER BY created_at`;
 
   const members = memberRows.map(
     (m): TripMember => ({ name: m.name as string, joinedAt: Number(m.joined_at) })
@@ -116,6 +124,7 @@ export async function getTrip(
     data: row.data as TripData,
     members,
     checks,
+    tickets: ticketRows.map((t) => t.data as Ticket),
   };
   if (isMember) payload.joinCode = row.join_code as string;
   return payload;
@@ -153,6 +162,63 @@ export async function updateTripData(tripId: string, data: TripData): Promise<bo
   if (result.count === 0) return false;
   await touch(tripId);
   return true;
+}
+
+/**
+ * Optimistic-concurrency write: only lands if nobody else has bumped the
+ * trip version since it was read. False = conflict, re-read and retry.
+ */
+export async function updateTripDataIf(
+  tripId: string,
+  data: TripData,
+  expectedVersion: number
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const result = await s`UPDATE trips
+    SET data = ${s.json(JSON.parse(JSON.stringify(data)))}, name = ${data.tripName}
+    WHERE id = ${tripId} AND version = ${expectedVersion}`;
+  if (result.count === 0) return false;
+  await touch(tripId);
+  return true;
+}
+
+export async function addTicket(tripId: string, ticket: Ticket): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const exists = await s`SELECT 1 FROM trips WHERE id = ${tripId}`;
+  if (exists.length === 0) return false;
+  await s`INSERT INTO tickets (trip_id, id, data, created_at)
+    VALUES (${tripId}, ${ticket.id}, ${s.json(JSON.parse(JSON.stringify(ticket)))}, ${Date.now()})`;
+  await touch(tripId);
+  return true;
+}
+
+export async function updateTicket(tripId: string, ticket: Ticket): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const result = await s`UPDATE tickets
+    SET data = ${s.json(JSON.parse(JSON.stringify(ticket)))}
+    WHERE trip_id = ${tripId} AND id = ${ticket.id}`;
+  if (result.count === 0) return false;
+  await touch(tripId);
+  return true;
+}
+
+export async function deleteTicket(tripId: string, ticketId: string): Promise<boolean> {
+  await ensureSchema();
+  const result = await sql()`DELETE FROM tickets WHERE trip_id = ${tripId} AND id = ${ticketId}`;
+  if (result.count === 0) return false;
+  await touch(tripId);
+  return true;
+}
+
+/** Rebuilding the plan orphans every schedule check (item ids change). */
+export async function clearScheduleChecks(tripId: string): Promise<void> {
+  await ensureSchema();
+  await sql()`DELETE FROM checks
+    WHERE trip_id = ${tripId} AND (key LIKE 'item:%' OR key LIKE 'day:%')`;
+  await touch(tripId);
 }
 
 export async function setCheck(

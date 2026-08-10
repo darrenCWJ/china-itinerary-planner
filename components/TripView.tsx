@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ScheduledItem } from "@/lib/itinerary";
-import { KIND_EMOJI, SEASONS, SLOT_META } from "@/lib/meta";
-import {
-  packingCheckKey,
-  scheduleCheckKey,
-  type TripPayload,
-} from "@/lib/tripShared";
+import { DayCard } from "@/components/trip/DayCard";
+import { TicketsTab, type TicketDraft } from "@/components/trip/TicketsTab";
+import { SEASONS } from "@/lib/meta";
+import type { PlanOp } from "@/lib/planOps";
+import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
+import { packingCheckKey, type TripPayload } from "@/lib/tripShared";
 
 const POLL_MS = 4000;
-const TABS = ["Itinerary", "Packing", "Crew"] as const;
+const TABS = ["Itinerary", "Tickets", "Packing", "Crew"] as const;
 type Tab = (typeof TABS)[number];
 
 type LoadState = "loading" | "ready" | "not-found";
@@ -22,6 +21,11 @@ export function TripView({ tripId }: { tripId: string }) {
   const [myName, setMyName] = useState<string>("");
   const [tab, setTab] = useState<Tab>("Itinerary");
   const [copied, setCopied] = useState(false);
+
+  // Add-day control state
+  const [newDayDest, setNewDayDest] = useState("");
+  const [addingDay, setAddingDay] = useState(false);
+  const [addDayError, setAddDayError] = useState<string | null>(null);
 
   // Join form state
   const [joinName, setJoinName] = useState("");
@@ -140,6 +144,45 @@ export function TripView({ tripId }: { tripId: string }) {
     }
   };
 
+  // Shared mutation path: POST/PATCH/DELETE, apply the fresh payload on
+  // success, reconcile via a forced refetch on failure. Returns an error
+  // message for the calling form, or null when the change stuck.
+  const mutate = useCallback(
+    async (url: string, init: RequestInit): Promise<string | null> => {
+      try {
+        const res = await fetch(url, init);
+        const json: unknown = await res.json();
+        if (!res.ok) {
+          void fetchTrip(myName, true);
+          const message = (json as { error?: unknown }).error;
+          return typeof message === "string" ? message : "Couldn't save that change.";
+        }
+        applyPayload(json as TripPayload);
+        return null;
+      } catch {
+        return "Couldn't reach the server — try again.";
+      }
+    },
+    [fetchTrip, myName, applyPayload]
+  );
+
+  const jsonInit = (method: string, body: unknown): RequestInit => ({
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const planOp = (op: PlanOp) =>
+    mutate(`/api/trips/${tripId}/plan`, jsonInit("POST", { memberName: myName, op }));
+  const addTicket = (ticket: TicketDraft) =>
+    mutate(`/api/trips/${tripId}/tickets`, jsonInit("POST", { memberName: myName, ticket }));
+  const updateTicket = (ticketId: string, ticket: TicketDraft) =>
+    mutate(`/api/trips/${tripId}/tickets/${ticketId}`, jsonInit("PATCH", { memberName: myName, ticket }));
+  const deleteTicket = (ticketId: string) =>
+    mutate(`/api/trips/${tripId}/tickets/${ticketId}?member=${encodeURIComponent(myName)}`, {
+      method: "DELETE",
+    });
+
   const copyShareLink = async () => {
     if (!payload?.joinCode) return;
     const url = `${window.location.origin}/trip/${tripId}?code=${payload.joinCode}`;
@@ -179,7 +222,25 @@ export function TripView({ tripId }: { tripId: string }) {
   const { data } = payload;
   const seasonMeta = SEASONS.find((s) => s.id === data.input.season);
   const checkedBy = new Map(payload.checks.map((c) => [c.key, c.by]));
-  const todayIndex = currentDayIndex(data.startDate, data.input.days);
+  const todayIndex = currentDayIndex(data.startDate, data.plan.days.length);
+
+  const destinationOptions = (() => {
+    const seen = new Map<string, string>();
+    data.plan.days.forEach((d) => seen.set(d.destinationId, d.destinationName));
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  })();
+
+  const addDay = async () => {
+    if (addingDay) return;
+    setAddingDay(true);
+    setAddDayError(null);
+    const err = await planOp({
+      op: "addDay",
+      destinationId: newDayDest || undefined,
+    });
+    setAddingDay(false);
+    if (err) setAddDayError(err);
+  };
 
   return (
     <Shell>
@@ -278,43 +339,68 @@ export function TripView({ tripId }: { tripId: string }) {
 
       {tab === "Itinerary" && (
         <div className="mt-5 space-y-5">
-          {data.plan.days.map((day) => (
-            <article
-              key={day.day}
-              className={`rounded-xl border bg-paper shadow-sm ${
-                todayIndex === day.day ? "border-seal" : "border-sky"
-              }`}
-            >
-              <header className="flex items-baseline justify-between px-5 pt-4">
-                <p className="font-mono text-sm font-semibold uppercase tracking-widest text-rail">
-                  Day {String(day.day).padStart(2, "0")}
-                  {todayIndex === day.day && (
-                    <span className="ml-2 rounded bg-seal px-1.5 py-0.5 text-[10px] text-white">
-                      TODAY
-                    </span>
-                  )}
-                </p>
-                <p className="text-sm font-medium text-ink-soft">{day.destinationName}</p>
-              </header>
-              <div className="relative mx-5 mt-3 border-t-2 border-dashed border-sky">
-                <span aria-hidden className="absolute -left-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
-                <span aria-hidden className="absolute -right-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
-              </div>
-              <ul className="space-y-3 px-5 py-4">
-                {day.items.map((item, idx) => (
-                  <TripItem
-                    key={`${day.day}-${idx}`}
-                    item={item}
-                    checkKey={scheduleCheckKey(day.day, idx)}
-                    checkedBy={checkedBy}
-                    canCheck={isMember}
-                    onToggle={toggleCheck}
-                  />
+          {!data.startDate && payload.tickets.some((t) => t.date) && (
+            <p className="rounded-lg border border-dashed border-rail/40 bg-paper px-4 py-2 text-xs text-ink-soft">
+              💡 Set a trip start date to see tickets pinned to their days.
+            </p>
+          )}
+          {data.plan.days.map((day) => {
+            const date = dayDate(data.startDate, day.day);
+            const dayTickets = date
+              ? sortTickets(payload.tickets.filter((t) => ticketOnDate(t, date)))
+              : [];
+            return (
+              <DayCard
+                key={day.day}
+                day={day}
+                isToday={todayIndex === day.day}
+                tickets={dayTickets}
+                checkedBy={checkedBy}
+                isMember={isMember}
+                onToggle={(key, checked) => void toggleCheck(key, checked)}
+                onOp={planOp}
+              />
+            );
+          })}
+          {isMember && (
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <button
+                type="button"
+                onClick={() => void addDay()}
+                disabled={addingDay}
+                className="rounded-lg border border-dashed border-rail/50 px-4 py-2 text-sm font-semibold text-rail transition-colors hover:bg-sky disabled:opacity-40"
+              >
+                {addingDay ? "Adding…" : "+ Add day"}
+              </button>
+              <span className="text-xs text-ink-soft">in</span>
+              <select
+                value={newDayDest}
+                onChange={(e) => setNewDayDest(e.target.value)}
+                aria-label="Destination for the new day"
+                className="rounded-lg border border-sky bg-paper px-2 py-1.5 text-sm text-ink"
+              >
+                <option value="">Same as last day</option>
+                {destinationOptions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
                 ))}
-              </ul>
-            </article>
-          ))}
+              </select>
+              {addDayError && <span className="text-xs text-seal">{addDayError}</span>}
+            </div>
+          )}
         </div>
+      )}
+
+      {tab === "Tickets" && (
+        <TicketsTab
+          tickets={payload.tickets}
+          isMember={isMember}
+          hasStartDate={Boolean(data.startDate)}
+          onAdd={addTicket}
+          onUpdate={updateTicket}
+          onDelete={deleteTicket}
+        />
       )}
 
       {tab === "Packing" && (
@@ -427,60 +513,6 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="mx-auto max-w-4xl px-4 pt-6">{children}</main>
     </div>
-  );
-}
-
-function TripItem({
-  item,
-  checkKey,
-  checkedBy,
-  canCheck,
-  onToggle,
-}: {
-  item: ScheduledItem;
-  checkKey: string;
-  checkedBy: Map<string, string>;
-  canCheck: boolean;
-  onToggle: (key: string, checked: boolean) => void;
-}) {
-  const slot = SLOT_META[item.slot];
-  const by = checkedBy.get(checkKey);
-  const isCheckable = item.kind === "activity";
-  const transitEmoji = KIND_EMOJI[item.kind];
-  return (
-    <li className="flex gap-3">
-      <span className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-        {slot.emoji} {item.fullDay ? "All day" : slot.label}
-      </span>
-      <div className="flex min-w-0 flex-1 items-start gap-2">
-        {isCheckable && (
-          <input
-            type="checkbox"
-            checked={by !== undefined}
-            disabled={!canCheck}
-            onChange={(e) => onToggle(checkKey, e.target.checked)}
-            aria-label={`Mark "${item.title}" as done`}
-            className="mt-0.5 h-4 w-4 accent-rail"
-          />
-        )}
-        <div className="min-w-0">
-          <p
-            className={
-              item.kind === "free"
-                ? "text-sm italic text-ink-soft"
-                : by
-                  ? "text-sm font-medium text-ink-soft line-through"
-                  : "text-sm font-medium"
-            }
-          >
-            {transitEmoji && <span aria-hidden>{transitEmoji} </span>}
-            {item.title}
-            {by && <span className="ml-1 text-[11px] text-rail"> · done by {by}</span>}
-          </p>
-          {item.note && <p className="mt-0.5 text-xs text-ink-soft">{item.note}</p>}
-        </div>
-      </div>
-    </li>
   );
 }
 

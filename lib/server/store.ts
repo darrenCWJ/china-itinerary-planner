@@ -1,4 +1,5 @@
-import type { TripData, TripPayload } from "../tripShared";
+import type { Ticket, TripData, TripPayload } from "../tripShared";
+import { planIdMigration } from "./migrate";
 import * as sqlite from "./tripStore";
 import type { JoinResult } from "./tripStore";
 
@@ -35,7 +36,30 @@ export async function getTrip(
   id: string,
   requestingMember?: string
 ): Promise<TripPayload | null> {
-  if (storeMode() === "postgres") return (await pg()).getTrip(id, requestingMember);
+  const usePg = storeMode() === "postgres";
+  const payload = usePg
+    ? await (await pg()).getTrip(id, requestingMember)
+    : sqlite.getTrip(id, requestingMember);
+  if (!payload) return null;
+
+  // One-time upgrade of pre-editing trips: stamp item ids into the plan and
+  // move their schedule checks from index-based to id-based keys.
+  const migration = planIdMigration(payload);
+  if (!migration) return payload;
+  if (usePg) {
+    const p = await pg();
+    await p.updateTripData(id, migration.data);
+    for (const r of migration.remaps) {
+      await p.setCheck(id, r.newKey, r.by, true);
+      await p.setCheck(id, r.oldKey, "", false);
+    }
+    return p.getTrip(id, requestingMember);
+  }
+  sqlite.updateTripData(id, migration.data);
+  for (const r of migration.remaps) {
+    sqlite.setCheck(id, r.newKey, r.by, true);
+    sqlite.setCheck(id, r.oldKey, "", false);
+  }
   return sqlite.getTrip(id, requestingMember);
 }
 
@@ -58,6 +82,17 @@ export async function updateTripData(tripId: string, data: TripData): Promise<bo
   return sqlite.updateTripData(tripId, data);
 }
 
+export async function updateTripDataIf(
+  tripId: string,
+  data: TripData,
+  expectedVersion: number
+): Promise<boolean> {
+  if (storeMode() === "postgres") {
+    return (await pg()).updateTripDataIf(tripId, data, expectedVersion);
+  }
+  return sqlite.updateTripDataIf(tripId, data, expectedVersion);
+}
+
 export async function setCheck(
   tripId: string,
   key: string,
@@ -66,4 +101,24 @@ export async function setCheck(
 ): Promise<void> {
   if (storeMode() === "postgres") return (await pg()).setCheck(tripId, key, memberName, checked);
   return sqlite.setCheck(tripId, key, memberName, checked);
+}
+
+export async function addTicket(tripId: string, ticket: Ticket): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).addTicket(tripId, ticket);
+  return sqlite.addTicket(tripId, ticket);
+}
+
+export async function updateTicket(tripId: string, ticket: Ticket): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).updateTicket(tripId, ticket);
+  return sqlite.updateTicket(tripId, ticket);
+}
+
+export async function deleteTicket(tripId: string, ticketId: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).deleteTicket(tripId, ticketId);
+  return sqlite.deleteTicket(tripId, ticketId);
+}
+
+export async function clearScheduleChecks(tripId: string): Promise<void> {
+  if (storeMode() === "postgres") return (await pg()).clearScheduleChecks(tripId);
+  return sqlite.clearScheduleChecks(tripId);
 }

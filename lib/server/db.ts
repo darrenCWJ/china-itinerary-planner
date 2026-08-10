@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS checks (
   checked_at INTEGER NOT NULL,
   PRIMARY KEY (trip_id, key)
 );
+CREATE TABLE IF NOT EXISTS tickets (
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, id)
+);
 `;
 
 export function getDb(): Database.Database {

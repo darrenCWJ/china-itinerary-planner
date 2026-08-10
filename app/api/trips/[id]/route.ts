@@ -3,6 +3,7 @@ import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { UpdateTripSchema } from "@/lib/server/schemas";
 import {
+  clearScheduleChecks,
   DB_UNAVAILABLE,
   getTrip,
   isMember,
@@ -67,5 +68,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
   }
   await updateTripData(id, data);
+  // The rebuilt plan has fresh item ids, so old schedule ticks are orphans.
+  await clearScheduleChecks(id);
   return NextResponse.json(await getTrip(id, parsed.data.memberName));
 }

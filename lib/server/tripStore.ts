@@ -1,4 +1,4 @@
-import type { TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
+import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
 import { getDb } from "./db";
 import { newJoinCode, newTripId } from "./ids";
 
@@ -48,6 +48,9 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
   const checks = db
     .prepare("SELECT key, checked_by FROM checks WHERE trip_id = ?")
     .all(id) as { key: string; checked_by: string }[];
+  const ticketRows = db
+    .prepare("SELECT data FROM tickets WHERE trip_id = ? ORDER BY created_at")
+    .all(id) as { data: string }[];
 
   const isMember =
     requestingMember !== undefined && members.some((m) => m.name === requestingMember);
@@ -61,6 +64,15 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
     return null;
   }
 
+  const tickets: Ticket[] = [];
+  for (const t of ticketRows) {
+    try {
+      tickets.push(JSON.parse(t.data) as Ticket);
+    } catch {
+      // Skip a corrupted row rather than failing the whole trip.
+    }
+  }
+
   const payload: TripPayload = {
     id: row.id,
     version: row.version,
@@ -68,6 +80,7 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
     data,
     members: members.map((m): TripMember => ({ name: m.name, joinedAt: m.joined_at })),
     checks: checks.map((c): TripCheck => ({ key: c.key, by: c.checked_by })),
+    tickets,
   };
   if (isMember) payload.joinCode = row.join_code;
   return payload;
@@ -108,6 +121,64 @@ export function updateTripData(tripId: string, data: TripData): boolean {
   if (result.changes === 0) return false;
   touch(tripId);
   return true;
+}
+
+/**
+ * Optimistic-concurrency write: only lands if nobody else has bumped the
+ * trip version since it was read. False = conflict, re-read and retry.
+ */
+export function updateTripDataIf(
+  tripId: string,
+  data: TripData,
+  expectedVersion: number
+): boolean {
+  const db = getDb();
+  const result = db
+    .prepare("UPDATE trips SET data = ?, name = ? WHERE id = ? AND version = ?")
+    .run(JSON.stringify(data), data.tripName, tripId, expectedVersion);
+  if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+export function addTicket(tripId: string, ticket: Ticket): boolean {
+  const db = getDb();
+  const exists = db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId);
+  if (!exists) return false;
+  db.prepare("INSERT INTO tickets (trip_id, id, data, created_at) VALUES (?, ?, ?, ?)").run(
+    tripId,
+    ticket.id,
+    JSON.stringify(ticket),
+    Date.now()
+  );
+  touch(tripId);
+  return true;
+}
+
+export function updateTicket(tripId: string, ticket: Ticket): boolean {
+  const result = getDb()
+    .prepare("UPDATE tickets SET data = ? WHERE trip_id = ? AND id = ?")
+    .run(JSON.stringify(ticket), tripId, ticket.id);
+  if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+export function deleteTicket(tripId: string, ticketId: string): boolean {
+  const result = getDb()
+    .prepare("DELETE FROM tickets WHERE trip_id = ? AND id = ?")
+    .run(tripId, ticketId);
+  if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+/** Rebuilding the plan orphans every schedule check (item ids change). */
+export function clearScheduleChecks(tripId: string): void {
+  getDb()
+    .prepare("DELETE FROM checks WHERE trip_id = ? AND (key LIKE 'item:%' OR key LIKE 'day:%')")
+    .run(tripId);
+  touch(tripId);
 }
 
 export function setCheck(tripId: string, key: string, memberName: string, checked: boolean): void {

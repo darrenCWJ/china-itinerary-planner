@@ -1,3 +1,4 @@
+import { newId } from "./id";
 import type { Activity, Destination, Interest, Season, TimeSlot } from "./types";
 
 export interface TripInput {
@@ -9,17 +10,24 @@ export interface TripInput {
   interests: Interest[];
 }
 
-export type ItemKind = "activity" | "travel" | "arrival" | "departure" | "free";
+export type ItemKind = "activity" | "travel" | "arrival" | "departure" | "free" | "custom";
 
 export interface ScheduledItem {
+  /** Stable identity — survives edits and reorders; check keys hang off it. */
+  id: string;
   slot: TimeSlot;
   /** True when the item fills both morning and afternoon. */
   fullDay?: boolean;
   kind: ItemKind;
   title: string;
+  /** Free-text time, e.g. "19:00" — only on member-added items. */
+  time?: string;
   note?: string;
   interests?: Interest[];
 }
+
+/** Item under construction — the id is stamped on when the day is finalised. */
+type DraftItem = Omit<ScheduledItem, "id">;
 
 export interface DayPlan {
   day: number;
@@ -102,7 +110,7 @@ interface Ranked {
   s: number;
 }
 
-function activityItem(a: Activity, slot: TimeSlot, fullDay: boolean): ScheduledItem {
+function activityItem(a: Activity, slot: TimeSlot, fullDay: boolean): DraftItem {
   return {
     slot,
     fullDay: fullDay || undefined,
@@ -113,7 +121,7 @@ function activityItem(a: Activity, slot: TimeSlot, fullDay: boolean): ScheduledI
   };
 }
 
-function pickEvening(ranked: Ranked[], used: Set<string>): ScheduledItem | null {
+function pickEvening(ranked: Ranked[], used: Set<string>): DraftItem | null {
   const evening = ranked.find((x) => !used.has(x.a.name) && x.a.timeOfDay === "evening");
   const pick =
     evening ??
@@ -149,7 +157,7 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
       const isFirstOfTrip = dayNum === 1;
       const isNewCity = d === 0 && di > 0;
       const isLastOfTrip = dayNum === input.days;
-      const items: ScheduledItem[] = [];
+      const items: DraftItem[] = [];
       let free: TimeSlot[] = ["morning", "afternoon"];
 
       if (isFirstOfTrip) {
@@ -174,7 +182,7 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
       // activity and leave in the evening instead, so a city that only gets a
       // single day still gets something to do.
       const morningIsTransit = isFirstOfTrip || isNewCity;
-      let departure: ScheduledItem | null = null;
+      let departure: DraftItem | null = null;
       if (isLastOfTrip) {
         if (morningIsTransit) {
           departure = {
@@ -221,7 +229,7 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
             slot: "evening",
             kind: "free",
             title: `Dinner at a local spot — try ${dish.toLowerCase()}`,
-          } satisfies ScheduledItem);
+          } satisfies DraftItem);
         items.push(evening);
       }
 
@@ -229,7 +237,7 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
         day: dayNum,
         destinationId: dest.id,
         destinationName: dest.name,
-        items,
+        items: items.map((it): ScheduledItem => ({ ...it, id: newId() })),
       });
       dayNum += 1;
     }
