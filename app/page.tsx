@@ -5,6 +5,7 @@ import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
 import { DESTINATIONS } from "@/lib/data";
+import { seasonOfMonth } from "@/lib/months";
 import type { TripInput } from "@/lib/itinerary";
 import type { CatalogHit } from "@/lib/tripShared";
 import type { Destination, Interest, Season } from "@/lib/types";
@@ -135,7 +136,7 @@ export default function Home() {
       </header>
 
       <nav aria-label="Progress" className="mx-auto max-w-6xl px-4 pt-6 print:hidden">
-        <ol className="flex items-center gap-2">
+        <ol className="flex items-center gap-1 sm:gap-2">
           {STEPS.map((label, i) => {
             const isDone = i < step;
             const isCurrent = i === step;
@@ -146,7 +147,7 @@ export default function Home() {
                   onClick={() => isDone && setStep(i)}
                   disabled={!isDone && !isCurrent}
                   aria-current={isCurrent ? "step" : undefined}
-                  className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail ${
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail sm:gap-2 sm:px-3.5 ${
                     isCurrent
                       ? "bg-rail text-white"
                       : isDone
@@ -176,6 +177,8 @@ export default function Home() {
             onToggleVisited={toggleVisited}
             onAddCatalog={addCatalog}
             onRemoveCatalog={removeCatalog}
+            onReorder={setSelected}
+            onMonthPicked={(m) => setSeason(seasonOfMonth(m))}
           />
         )}
         {step === 1 && (

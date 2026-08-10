@@ -4,6 +4,8 @@ import type { Destination } from "../types";
 export const WEST_DESTINATIONS: Destination[] = [
   {
     id: "chengdu",
+    lat: 30.657,
+    lon: 104.066,
     name: "Chengdu",
     chineseName: "成都",
     region: "Southwest",
@@ -77,6 +79,8 @@ export const WEST_DESTINATIONS: Destination[] = [
   },
   {
     id: "chongqing",
+    lat: 29.563,
+    lon: 106.551,
     name: "Chongqing",
     chineseName: "重庆",
     region: "Southwest",
@@ -149,6 +153,8 @@ export const WEST_DESTINATIONS: Destination[] = [
   },
   {
     id: "guilin",
+    lat: 25.274,
+    lon: 110.29,
     name: "Guilin & Yangshuo",
     chineseName: "桂林·阳朔",
     region: "South",
@@ -222,6 +228,8 @@ export const WEST_DESTINATIONS: Destination[] = [
   },
   {
     id: "zhangjiajie",
+    lat: 29.117,
+    lon: 110.479,
     name: "Zhangjiajie",
     chineseName: "张家界",
     region: "Central",
@@ -284,6 +292,8 @@ export const WEST_DESTINATIONS: Destination[] = [
   },
   {
     id: "yunnan",
+    lat: 25.038,
+    lon: 102.718,
     name: "Yunnan (Kunming · Dali · Lijiang)",
     chineseName: "云南",
     region: "Southwest",

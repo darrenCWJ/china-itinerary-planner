@@ -45,6 +45,9 @@ export interface Destination {
   name: string;
   chineseName: string;
   region: Region;
+  /** City-centre coordinates for the map view. */
+  lat: number;
+  lon: number;
   emoji: string;
   tagline: string;
   /** What this place is famous for — shown on selection cards. */

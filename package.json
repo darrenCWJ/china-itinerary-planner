@@ -12,17 +12,21 @@
   "dependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^13.0.3",
+    "d3-geo": "^3.1.1",
     "next": "^15.4.6",
     "postgres": "^3.4.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "topojson-client": "^3.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",
+    "@types/d3-geo": "^3.1.1",
     "@types/node": "^24.2.0",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "@types/topojson-client": "^3.1.5",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.9.2",

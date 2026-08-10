@@ -34,6 +34,20 @@ export interface TripPayload {
   joinCode?: string;
 }
 
+/** Compact catalog city served to the map view. */
+export interface MapCity {
+  qid: string;
+  name: string;
+  chineseName: string | null;
+  province: string | null;
+  lat: number;
+  lon: number;
+  population: number | null;
+  level: "municipality" | "prefecture" | "county";
+  attractionCount: number;
+  blurb: string | null;
+}
+
 /** Compact catalog search hit shown in the destination search UI. */
 export interface CatalogHit {
   qid: string;

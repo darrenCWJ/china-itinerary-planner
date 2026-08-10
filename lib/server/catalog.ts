@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import bundledCatalogJson from "../../data/catalog.json";
 import { DESTINATIONS } from "../data";
-import type { CatalogHit } from "../tripShared";
+import { regionForProvinceText } from "../provinces";
+import type { CatalogHit, MapCity } from "../tripShared";
 import type { Activity, Destination, Interest, Region } from "../types";
 
 export interface CatalogCity {
@@ -168,47 +169,8 @@ export function searchCities(query: string, limit = 25): CatalogHit[] {
   });
 }
 
-const REGION_BY_PROVINCE: [string, Region][] = [
-  ["beijing", "North"],
-  ["tianjin", "North"],
-  ["hebei", "North"],
-  ["shanxi", "North"],
-  ["inner mongolia", "North"],
-  ["liaoning", "Northeast"],
-  ["jilin", "Northeast"],
-  ["heilongjiang", "Northeast"],
-  ["shanghai", "East"],
-  ["jiangsu", "East"],
-  ["zhejiang", "East"],
-  ["anhui", "East"],
-  ["shandong", "East"],
-  ["jiangxi", "East"],
-  ["fujian", "South"],
-  ["guangdong", "South"],
-  ["guangxi", "South"],
-  ["hainan", "South"],
-  ["henan", "Central"],
-  ["hubei", "Central"],
-  ["hunan", "Central"],
-  ["chongqing", "Southwest"],
-  ["sichuan", "Southwest"],
-  ["guizhou", "Southwest"],
-  ["yunnan", "Southwest"],
-  ["tibet", "Southwest"],
-  ["xizang", "Southwest"],
-  ["shaanxi", "Northwest"],
-  ["gansu", "Northwest"],
-  ["qinghai", "Northwest"],
-  ["ningxia", "Northwest"],
-  ["xinjiang", "Northwest"],
-];
-
 function regionFor(province: string | null, cityName: string): Region {
-  const haystack = `${province ?? ""} ${cityName}`.toLowerCase();
-  for (const [key, region] of REGION_BY_PROVINCE) {
-    if (haystack.includes(key)) return region;
-  }
-  return "Central";
+  return regionForProvinceText(`${province ?? ""} ${cityName}`) ?? "Central";
 }
 
 function firstSentence(text: string | null): string | null {
@@ -239,6 +201,29 @@ const GENERIC_ACTIVITIES = (cityName: string): Activity[] => [
     timeOfDay: "day",
   },
 ];
+
+/**
+ * Every catalog city in map-marker form. Curated destinations are filtered
+ * out — the map renders those from the richer curated data instead.
+ */
+export function mapCities(): MapCity[] {
+  const catalog = loadCatalog();
+  if (!catalog) return [];
+  return catalog.cities
+    .filter((c) => !CURATED_NAMES.has(c.name.toLowerCase()))
+    .map((c): MapCity => ({
+      qid: c.qid,
+      name: c.name,
+      chineseName: c.chineseName,
+      province: c.province,
+      lat: c.lat,
+      lon: c.lon,
+      population: c.population,
+      level: c.level,
+      attractionCount: cache?.byCity.get(c.qid)?.length ?? 0,
+      blurb: firstSentence(c.description),
+    }));
+}
 
 /** Build a plannable Destination from a catalog city and its attractions. */
 export function catalogCityToDestination(city: CatalogCity): Destination {
@@ -273,6 +258,8 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
     name: city.name,
     chineseName: city.chineseName ?? "",
     region: regionFor(city.province, city.name),
+    lat: city.lat,
+    lon: city.lon,
     emoji: "📍",
     tagline:
       firstSentence(city.description) ??

@@ -4,6 +4,8 @@ import type { Destination } from "../types";
 export const NORTH_DESTINATIONS: Destination[] = [
   {
     id: "beijing",
+    lat: 39.904,
+    lon: 116.407,
     name: "Beijing",
     chineseName: "北京",
     region: "North",
@@ -93,6 +95,8 @@ export const NORTH_DESTINATIONS: Destination[] = [
   },
   {
     id: "xian",
+    lat: 34.342,
+    lon: 108.94,
     name: "Xi'an",
     chineseName: "西安",
     region: "Northwest",
@@ -168,6 +172,8 @@ export const NORTH_DESTINATIONS: Destination[] = [
   },
   {
     id: "qingdao",
+    lat: 36.067,
+    lon: 120.383,
     name: "Qingdao",
     chineseName: "青岛",
     region: "East",
@@ -240,6 +246,8 @@ export const NORTH_DESTINATIONS: Destination[] = [
   },
   {
     id: "harbin",
+    lat: 45.803,
+    lon: 126.535,
     name: "Harbin",
     chineseName: "哈尔滨",
     region: "Northeast",

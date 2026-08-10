@@ -1,0 +1,143 @@
+"use client";
+
+import { useCallback, useRef } from "react";
+import {
+  bandsForMonth,
+  crowdForMonth,
+  HOLIDAY_BANDS,
+  MONTHS,
+} from "@/lib/months";
+import { SEASON_EMOJI } from "@/lib/meta";
+
+interface Props {
+  month: number;
+  onMonth: (month: number) => void;
+}
+
+/** Draggable Jan–Dec scrubber with holiday/crowd bands. */
+export function MonthTimeline({ month, onMonth }: Props) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  const monthFromClientX = useCallback((clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return 1;
+    const frac = Math.min(0.9999, Math.max(0, (clientX - rect.left) / rect.width));
+    return 1 + Math.floor(frac * 12);
+  }, []);
+
+  const handlePointer = useCallback(
+    (e: React.PointerEvent) => {
+      onMonth(monthFromClientX(e.clientX));
+    },
+    [monthFromClientX, onMonth]
+  );
+
+  const info = MONTHS[month - 1];
+  const crowd = crowdForMonth(month);
+  const activeBands = bandsForMonth(month);
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <p className="text-sm font-semibold">
+          {SEASON_EMOJI[info.season]} {info.label}
+          <span className="ml-2 font-normal capitalize text-ink-soft">{info.season}</span>
+        </p>
+        <p
+          className="text-xs text-ink-soft"
+          title="Typical national crowd pressure this month"
+        >
+          Crowds{" "}
+          <span aria-label={`${crowd} out of 5`} className="tracking-tighter">
+            {"●".repeat(crowd)}
+            {"○".repeat(5 - crowd)}
+          </span>
+        </p>
+      </div>
+
+      <div
+        ref={trackRef}
+        className="relative mt-2 cursor-pointer touch-none select-none"
+        role="slider"
+        tabIndex={0}
+        aria-label="Month of travel"
+        aria-valuemin={1}
+        aria-valuemax={12}
+        aria-valuenow={month}
+        aria-valuetext={info.label}
+        onPointerDown={(e) => {
+          draggingRef.current = true;
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // Synthetic or already-released pointers can't be captured — dragging
+            // still works, it just won't track outside the element.
+          }
+          handlePointer(e);
+        }}
+        onPointerMove={(e) => {
+          if (draggingRef.current) handlePointer(e);
+        }}
+        onPointerUp={() => {
+          draggingRef.current = false;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+            e.preventDefault();
+            onMonth(month === 1 ? 12 : month - 1);
+          } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+            e.preventDefault();
+            onMonth(month === 12 ? 1 : month + 1);
+          }
+        }}
+      >
+        {/* Holiday bands */}
+        <div className="relative h-2.5">
+          {HOLIDAY_BANDS.map((b) => (
+            <span
+              key={b.name}
+              title={`${b.emoji} ${b.name}: ${b.note}`}
+              className="absolute top-0 h-2 rounded-full bg-seal"
+              style={{
+                left: `${(b.from / 12) * 100}%`,
+                width: `${((b.to - b.from) / 12) * 100}%`,
+                opacity: b.crowd >= 5 ? 0.75 : 0.4,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Month segments */}
+        <div className="flex overflow-hidden rounded-lg border border-sky bg-mist">
+          {MONTHS.map((m) => {
+            const isActive = m.id === month;
+            return (
+              <span
+                key={m.id}
+                className={`flex-1 border-r border-sky/60 py-1.5 text-center font-mono text-[11px] uppercase last:border-r-0 ${
+                  isActive
+                    ? "bg-rail font-bold text-white"
+                    : "text-ink-soft hover:bg-sky/50"
+                }`}
+              >
+                {m.short}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      {activeBands.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {activeBands.map((b) => (
+            <li key={b.name} className="text-xs text-ink-soft">
+              <span className="mr-1">{b.emoji}</span>
+              <span className="font-semibold text-ink">{b.name}:</span> {b.note}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

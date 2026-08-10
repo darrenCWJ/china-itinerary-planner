@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CatalogSearch } from "@/components/CatalogSearch";
+import { MapExplorer } from "@/components/map/MapExplorer";
 import { DESTINATIONS } from "@/lib/data";
 import { SEASON_EMOJI } from "@/lib/meta";
 import type { CatalogHit } from "@/lib/tripShared";
@@ -15,6 +16,8 @@ interface Props {
   onToggleVisited: (id: string) => void;
   onAddCatalog: (hit: CatalogHit) => void;
   onRemoveCatalog: (qid: string) => void;
+  onReorder: (ids: string[]) => void;
+  onMonthPicked: (month: number) => void;
 }
 
 export function DestinationStep({
@@ -25,7 +28,10 @@ export function DestinationStep({
   onToggleVisited,
   onAddCatalog,
   onRemoveCatalog,
+  onReorder,
+  onMonthPicked,
 }: Props) {
+  const [view, setView] = useState<"map" | "cards">("map");
   const [region, setRegion] = useState("All");
   const [announcement, setAnnouncement] = useState("");
   const regions = useMemo(
@@ -59,53 +65,93 @@ export function DestinationStep({
         <div>
           <h2 className="font-display text-2xl font-bold">Where to this time?</h2>
           <p className="mt-1 text-sm text-ink-soft">
-            Pick one or more destinations. Mark places you&apos;ve already been and
-            they&apos;ll drop out of the running.
+            {view === "map"
+              ? "Zoom the map, drag the timeline to your month, and tap places to add them."
+              : "Pick one or more destinations. Mark places you've already been and they'll drop out of the running."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by region">
-          {regions.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRegion(r)}
-              aria-pressed={region === r}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                region === r
-                  ? "bg-rail text-white"
-                  : "bg-paper text-ink-soft hover:bg-sky"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            className="flex overflow-hidden rounded-full border border-sky"
+            role="group"
+            aria-label="Switch between map and card view"
+          >
+            {(["map", "cards"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={`px-3.5 py-1 text-xs font-medium transition-colors ${
+                  view === v ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+                }`}
+              >
+                {v === "map" ? "🗺️ Map" : "🎴 Cards"}
+              </button>
+            ))}
+          </div>
+          {view === "cards" && (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by region">
+              {regions.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRegion(r)}
+                  aria-pressed={region === r}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    region === r
+                      ? "bg-rail text-white"
+                      : "bg-paper text-ink-soft hover:bg-sky"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {available.map((dest) => (
-          <DestinationCard
-            key={dest.id}
-            dest={dest}
-            isSelected={selected.includes(dest.id)}
-            onSelect={() => onToggleSelect(dest.id)}
-            onVisited={() => handleToggleVisited(dest)}
-          />
-        ))}
-      </div>
-      {available.length === 0 && (
-        <p className="mt-6 rounded-xl border border-sky bg-paper p-6 text-sm text-ink-soft">
-          Nothing left in this region — you&apos;ve been everywhere here! Switch region
-          or restore a visited place below.
-        </p>
+      {view === "map" && (
+        <MapExplorer
+          selected={selected}
+          visited={visited}
+          onToggleSelect={onToggleSelect}
+          onAddCatalog={onAddCatalog}
+          onRemoveCatalog={onRemoveCatalog}
+          onReorder={onReorder}
+          onMonthPicked={onMonthPicked}
+        />
       )}
 
-      <CatalogSearch
-        selectedIds={selected}
-        extras={extras}
-        onAdd={onAddCatalog}
-        onRemove={onRemoveCatalog}
-      />
+      {view === "cards" && (
+        <>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {available.map((dest) => (
+              <DestinationCard
+                key={dest.id}
+                dest={dest}
+                isSelected={selected.includes(dest.id)}
+                onSelect={() => onToggleSelect(dest.id)}
+                onVisited={() => handleToggleVisited(dest)}
+              />
+            ))}
+          </div>
+          {available.length === 0 && (
+            <p className="mt-6 rounded-xl border border-sky bg-paper p-6 text-sm text-ink-soft">
+              Nothing left in this region — you&apos;ve been everywhere here! Switch region
+              or restore a visited place below.
+            </p>
+          )}
+
+          <CatalogSearch
+            selectedIds={selected}
+            extras={extras}
+            onAdd={onAddCatalog}
+            onRemove={onRemoveCatalog}
+          />
+        </>
+      )}
 
       {visitedDests.length > 0 && (
         <div className="mt-10">
