@@ -1,8 +1,8 @@
 import { DESTINATIONS } from "./data";
 import type { ItemKind } from "./itinerary";
-import { dayDate } from "./tickets";
+import { dayDate, sortTickets } from "./tickets";
 import { interestMeta } from "./meta";
-import type { TicketKind, TripPayload } from "./tripShared";
+import type { Ticket, TicketKind, TripPayload } from "./tripShared";
 import type { Interest, TimeSlot } from "./types";
 
 export interface BriefingCity {
@@ -135,6 +135,26 @@ function interestMixOf(payload: TripPayload): ChartSlice[] {
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 
+/**
+ * `showSecrets` gates confirmation refs, prices and free-text notes. Route,
+ * time and title always survive — they are what make the document useful,
+ * while the reference number is what makes it sensitive.
+ */
+function toBooking(t: Ticket, showSecrets: boolean): BriefingBooking {
+  return {
+    kind: t.kind,
+    title: t.title,
+    date: t.date,
+    endDate: t.endDate,
+    time: t.time,
+    from: t.from,
+    to: t.to,
+    confirmation: showSecrets ? t.confirmation : null,
+    price: showSecrets ? t.price : null,
+    notes: showSecrets ? t.notes : null,
+  };
+}
+
 export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Briefing {
   const { data } = payload;
   const cities = citiesOf(payload);
@@ -157,8 +177,15 @@ export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Brie
       interestMix: interestMixOf(payload),
       pace: days.map((d) => ({ day: d.day, items: d.items.length })),
     },
-    logistics: { tips: [], bookings: [] },
-    crew: null,
+    logistics: {
+      tips: [...data.plan.tips],
+      bookings: sortTickets(payload.tickets).map((t) =>
+        toBooking(t, !opts.redacted || opts.includeBookings)
+      ),
+    },
+    crew: opts.redacted
+      ? null
+      : { members: payload.members.map((m) => m.name), checkedCount: payload.checks.length },
     redacted: opts.redacted,
   };
 }
