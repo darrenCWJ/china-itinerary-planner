@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS wallets (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS briefings (
+  code TEXT PRIMARY KEY,
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  include_bookings INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS briefings_trip ON briefings(trip_id);
 `;
 
 export function getDb(): Database.Database {

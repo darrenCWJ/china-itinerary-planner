@@ -1,7 +1,7 @@
 import type { MyTrip } from "../myTrips";
 import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
 import { getDb } from "./db";
-import { newJoinCode, newTripId, newWalletCode } from "./ids";
+import { newBriefingCode, newJoinCode, newTripId, newWalletCode } from "./ids";
 
 interface TripRow {
   id: string;
@@ -245,4 +245,70 @@ export function setCheck(tripId: string, key: string, memberName: string, checke
     db.prepare("DELETE FROM checks WHERE trip_id = ? AND key = ?").run(tripId, key);
   }
   touch(tripId);
+}
+
+export interface BriefingRecord {
+  code: string;
+  includeBookings: boolean;
+}
+
+/**
+ * Idempotent: an existing link keeps its code so already-shared URLs survive a
+ * bookings toggle. Only a revoke retires a code.
+ */
+export function enableBriefing(
+  tripId: string,
+  includeBookings: boolean
+): { code: string } | null {
+  const db = getDb();
+  if (db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId) === undefined) return null;
+
+  const existing = db.prepare("SELECT code FROM briefings WHERE trip_id = ?").get(tripId) as
+    | { code: string }
+    | undefined;
+  if (existing) {
+    db.prepare("UPDATE briefings SET include_bookings = ? WHERE trip_id = ?").run(
+      includeBookings ? 1 : 0,
+      tripId
+    );
+    return { code: existing.code };
+  }
+
+  const now = Date.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = newBriefingCode();
+    try {
+      db.prepare(
+        "INSERT INTO briefings (code, trip_id, include_bookings, created_at) VALUES (?, ?, ?, ?)"
+      ).run(code, tripId, includeBookings ? 1 : 0, now);
+      return { code };
+    } catch (error) {
+      // Only a primary-key collision is worth retrying with a fresh code.
+      const sqliteCode = (error as { code?: string }).code ?? "";
+      if (!sqliteCode.startsWith("SQLITE_CONSTRAINT")) throw error;
+    }
+  }
+  throw new Error("Could not allocate a briefing code");
+}
+
+export function revokeBriefing(tripId: string): boolean {
+  return getDb().prepare("DELETE FROM briefings WHERE trip_id = ?").run(tripId).changes > 0;
+}
+
+export function getBriefingByCode(
+  code: string
+): { tripId: string; includeBookings: boolean } | null {
+  const row = getDb()
+    .prepare("SELECT trip_id, include_bookings FROM briefings WHERE code = ?")
+    .get(code) as { trip_id: string; include_bookings: number } | undefined;
+  if (!row) return null;
+  return { tripId: row.trip_id, includeBookings: row.include_bookings === 1 };
+}
+
+export function getBriefingForTrip(tripId: string): BriefingRecord | null {
+  const row = getDb()
+    .prepare("SELECT code, include_bookings FROM briefings WHERE trip_id = ?")
+    .get(tripId) as { code: string; include_bookings: number } | undefined;
+  if (!row) return null;
+  return { code: row.code, includeBookings: row.include_bookings === 1 };
 }
