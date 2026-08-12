@@ -148,3 +148,40 @@ describe("buildBriefing — overview", () => {
     expect(JSON.stringify(p)).toBe(snapshot);
   });
 });
+
+describe("buildBriefing — charts", () => {
+  test("counts days per city in visit order", () => {
+    expect(buildBriefing(payload(), FULL).charts.daysPerCity).toEqual([
+      { label: "Beijing", value: 2 },
+      { label: "Chengdu", value: 1 },
+    ]);
+  });
+
+  test("counts every interest tag on every item, busiest first", () => {
+    expect(buildBriefing(payload(), FULL).charts.interestMix).toEqual([
+      { label: "History & Culture", value: 2 },
+      { label: "Food & Street Eats", value: 1 },
+    ]);
+  });
+
+  test("omits interests that no scheduled item carries", () => {
+    const labels = buildBriefing(payload(), FULL).charts.interestMix.map((s) => s.label);
+    expect(labels).not.toContain("Beach & Islands");
+  });
+
+  test("reports pace as items per day, counting travel and arrival blocks", () => {
+    expect(buildBriefing(payload(), FULL).charts.pace).toEqual([
+      { day: 1, items: 2 },
+      { day: 2, items: 1 },
+      { day: 3, items: 1 },
+    ]);
+  });
+
+  test("survives a plan with no days", () => {
+    const p = payload();
+    p.data.plan.days = [];
+    const b = buildBriefing(p, FULL);
+    expect(b.charts).toEqual({ daysPerCity: [], interestMix: [], pace: [] });
+    expect(b.subtitle).toBe("0 days · 0 cities · winter");
+  });
+});

@@ -1,8 +1,9 @@
 import { DESTINATIONS } from "./data";
 import type { ItemKind } from "./itinerary";
 import { dayDate } from "./tickets";
+import { interestMeta } from "./meta";
 import type { TicketKind, TripPayload } from "./tripShared";
-import type { TimeSlot } from "./types";
+import type { Interest, TimeSlot } from "./types";
 
 export interface BriefingCity {
   id: string;
@@ -120,6 +121,20 @@ function daysOf(payload: TripPayload): BriefingDay[] {
   }));
 }
 
+function interestMixOf(payload: TripPayload): ChartSlice[] {
+  const counts = new Map<Interest, number>();
+  for (const day of payload.data.plan.days) {
+    for (const item of day.items) {
+      for (const tag of item.interests ?? []) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .map(([id, value]) => ({ label: interestMeta(id)?.label ?? id, value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+}
+
 export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Briefing {
   const { data } = payload;
   const cities = citiesOf(payload);
@@ -137,7 +152,11 @@ export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Brie
     party: { adults: data.input.adults, kids: data.input.kids },
     cities,
     days,
-    charts: { daysPerCity: [], interestMix: [], pace: [] },
+    charts: {
+      daysPerCity: cities.map((c) => ({ label: c.name, value: c.days.length })),
+      interestMix: interestMixOf(payload),
+      pace: days.map((d) => ({ day: d.day, items: d.items.length })),
+    },
     logistics: { tips: [], bookings: [] },
     crew: null,
     redacted: opts.redacted,
