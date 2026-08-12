@@ -29,5 +29,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|unlock|api/unlock).*)"],
+  // `b/` is exempt: a briefing code is itself a 60-bit bearer secret, and the
+  // recipient of a shared link will not have the site's access code.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|unlock|api/unlock|b/).*)"],
 };
