@@ -122,6 +122,12 @@ describe("buildBriefing — overview", () => {
     expect(buildBriefing(p, FULL).subtitle).toBe("3 days · 2 cities · winter");
   });
 
+  test("pluralizes correctly for a single-day trip", () => {
+    const p = payload();
+    p.data.plan.days = [p.data.plan.days[0]];
+    expect(buildBriefing(p, FULL).subtitle).toBe("1 day · 1 city · winter");
+  });
+
   test("derives a date range from the start date", () => {
     expect(buildBriefing(payload(), FULL).dateRange).toEqual({
       start: "2026-12-24",
@@ -269,8 +275,20 @@ describe("buildBriefing — redaction", () => {
   });
 
   test("public view keeps the shape of the journey", () => {
-    const b = buildBriefing(withTickets(), PUBLIC_PLAIN).logistics.bookings[0];
-    expect(b).toMatchObject({ kind: "flight", title: "SQ 806", time: "11:45", from: "SIN", to: "PEK" });
+    const bookings = buildBriefing(withTickets(), PUBLIC_PLAIN).logistics.bookings;
+    expect(bookings[0]).toMatchObject({
+      kind: "flight",
+      title: "SQ 806",
+      time: "11:45",
+      from: "SIN",
+      to: "PEK",
+    });
+  });
+
+  test("endDate survives redaction", () => {
+    const bookings = buildBriefing(withTickets(), PUBLIC_PLAIN).logistics.bookings;
+    const hotel = bookings.find((b) => b.kind === "hotel");
+    expect(hotel?.endDate).toBe("2026-12-26");
   });
 
   test("the bookings toggle restores confirmation, price and notes", () => {

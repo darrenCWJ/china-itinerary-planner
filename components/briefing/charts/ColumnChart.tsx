@@ -24,7 +24,7 @@ export function ColumnChart({ title, points }: Props) {
         preserveAspectRatio="none"
         className="mt-3 h-20 w-full"
         role="img"
-        aria-label={`Items per day: ${points.map((p) => `day ${p.day}, ${p.items}`).join("; ")}`}
+        aria-label={`${title}: ${points.map((p) => `day ${p.day}, ${p.items}`).join("; ")}`}
       >
         {points.map((p, i) => {
           const h = (p.items / max) * VIEW_H;

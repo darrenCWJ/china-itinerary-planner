@@ -43,7 +43,10 @@ function DayPanel({ day }: { day: BriefingDay }) {
 }
 
 export function BriefingView({ briefing }: { briefing: Briefing }) {
-  const [selected, setSelected] = useState(briefing.days[0]?.day ?? 1);
+  const [picked, setPicked] = useState<number | null>(null);
+  const selected = briefing.days.some((d) => d.day === picked)
+    ? picked
+    : briefing.days[0]?.day ?? null;
 
   return (
     <div className="space-y-10">
@@ -69,7 +72,13 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
           <div className="rounded-xl bg-paper p-4">
             <dt className="text-xs uppercase tracking-wide text-ink-soft">Route</dt>
             <dd className="mt-1 font-medium text-ink">
-              {briefing.cities.map((c) => c.name).join(" → ")}
+              {briefing.cities.map((c, i) => (
+                <span key={c.id}>
+                  {i > 0 && " → "}
+                  {c.name}
+                  {c.chineseName && <span className="ml-1 font-kai text-seal">{c.chineseName}</span>}
+                </span>
+              ))}
             </dd>
           </div>
         </dl>
@@ -88,7 +97,7 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
               <button
                 key={d.day}
                 type="button"
-                onClick={() => setSelected(d.day)}
+                onClick={() => setPicked(d.day)}
                 aria-pressed={selected === d.day}
                 className={`shrink-0 rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
                   selected === d.day
@@ -114,14 +123,18 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
         </div>
       </section>
 
-      <section>
-        <h3 className="font-display text-2xl text-ink">At a glance</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <BarChart title="Days per city" slices={briefing.charts.daysPerCity} unit="days" />
-          <BarChart title="Interest mix" slices={briefing.charts.interestMix} unit="tagged items" />
-          <ColumnChart title="Daily pace" points={briefing.charts.pace} />
-        </div>
-      </section>
+      {(briefing.charts.daysPerCity.length > 0 ||
+        briefing.charts.interestMix.length > 0 ||
+        briefing.charts.pace.length > 0) && (
+        <section>
+          <h3 className="font-display text-2xl text-ink">At a glance</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <BarChart title="Days per city" slices={briefing.charts.daysPerCity} unit="days" />
+            <BarChart title="Interest mix" slices={briefing.charts.interestMix} unit="tagged items" />
+            <ColumnChart title="Daily pace" points={briefing.charts.pace} />
+          </div>
+        </section>
+      )}
 
       {(briefing.logistics.bookings.length > 0 || briefing.logistics.tips.length > 0) && (
         <section>
@@ -138,7 +151,13 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
                   </div>
                   <div className="mt-1 font-medium text-ink">{b.title}</div>
                   <div className="text-sm text-ink-soft">
-                    {[b.date, b.time, b.from && b.to ? `${b.from} → ${b.to}` : null]
+                    {[
+                      b.date && b.endDate && b.endDate !== b.date
+                        ? `${b.date} → ${b.endDate}`
+                        : b.date,
+                      b.time,
+                      b.from && b.to ? `${b.from} → ${b.to}` : null,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
