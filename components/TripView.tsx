@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BriefingShare } from "@/components/trip/BriefingShare";
+import { BriefingView } from "@/components/trip/BriefingView";
 import { DayCard } from "@/components/trip/DayCard";
 import { TicketsTab, type TicketDraft } from "@/components/trip/TicketsTab";
+import { buildBriefing } from "@/lib/briefing";
 import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip, saveMyTrip } from "@/lib/myTrips";
 import type { PlanOp } from "@/lib/planOps";
@@ -11,7 +14,7 @@ import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import { packingCheckKey, type TripPayload } from "@/lib/tripShared";
 
 const POLL_MS = 4000;
-const TABS = ["Itinerary", "Tickets", "Packing", "Crew"] as const;
+const TABS = ["Itinerary", "Tickets", "Packing", "Crew", "Briefing"] as const;
 type Tab = (typeof TABS)[number];
 
 type LoadState = "loading" | "ready" | "not-found";
@@ -506,6 +509,15 @@ export function TripView({ tripId }: { tripId: string }) {
               ))}
             </ul>
           </div>
+        </div>
+      )}
+
+      {tab === "Briefing" && (
+        <div className="mt-5 space-y-6">
+          <BriefingShare tripId={tripId} memberName={myName} />
+          <BriefingView
+            briefing={buildBriefing(payload, { redacted: false, includeBookings: true })}
+          />
         </div>
       )}
     </Shell>
