@@ -311,21 +311,21 @@ export async function enableBriefing(
   const trip = await s`SELECT 1 FROM trips WHERE id = ${tripId}`;
   if (trip.length === 0) return null;
 
-  const existing = await s`SELECT code FROM briefings WHERE trip_id = ${tripId}`;
-  if (existing.length > 0) {
-    await s`UPDATE briefings SET include_bookings = ${includeBookings} WHERE trip_id = ${tripId}`;
-    return { code: existing[0].code as string };
-  }
-
   const now = Date.now();
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const code = newBriefingCode();
     try {
-      await s`INSERT INTO briefings (code, trip_id, include_bookings, created_at)
-        VALUES (${code}, ${tripId}, ${includeBookings}, ${now})`;
-      return { code };
+      // Atomic upsert: a concurrent enable for the same trip returns the code
+      // the winner inserted instead of racing on a second INSERT. DO UPDATE
+      // returns the existing row, so an already-shared link keeps its code.
+      const rows = await s`INSERT INTO briefings (code, trip_id, include_bookings, created_at)
+        VALUES (${code}, ${tripId}, ${includeBookings}, ${now})
+        ON CONFLICT (trip_id) DO UPDATE SET include_bookings = EXCLUDED.include_bookings
+        RETURNING code`;
+      return { code: rows[0].code as string };
     } catch (error) {
-      // 23505 = unique_violation; anything else must surface.
+      // 23505 can now only be the `code` primary key — trip_id conflicts are
+      // absorbed by ON CONFLICT above. Anything else must surface.
       if ((error as { code?: string }).code !== "23505") throw error;
     }
   }
