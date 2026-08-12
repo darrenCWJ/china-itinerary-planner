@@ -139,3 +139,9 @@ export const WalletPutSchema = z.object({
   trips: WalletTripsSchema,
   baseVersion: z.number().int().min(1),
 });
+
+export const BriefingShareSchema = z.object({
+  memberName: MemberNameSchema,
+  enabled: z.boolean(),
+  includeBookings: z.boolean(),
+});
