@@ -71,6 +71,43 @@ function payload(overrides: Partial<TripPayload> = {}): TripPayload {
 }
 
 const FULL = { redacted: false, includeBookings: true } as const;
+const PUBLIC_PLAIN = { redacted: true, includeBookings: false } as const;
+const PUBLIC_BOOKINGS = { redacted: true, includeBookings: true } as const;
+
+function withTickets(): TripPayload {
+  return payload({
+    tickets: [
+      {
+        id: "t2",
+        kind: "hotel",
+        title: "Ritz Beijing",
+        date: "2026-12-25",
+        endDate: "2026-12-26",
+        time: null,
+        from: null,
+        to: null,
+        confirmation: "HTL-SECRET-99",
+        price: "¥1400",
+        notes: "Ask for a high floor",
+        addedBy: "Ada",
+      },
+      {
+        id: "t1",
+        kind: "flight",
+        title: "SQ 806",
+        date: "2026-12-24",
+        endDate: null,
+        time: "11:45",
+        from: "SIN",
+        to: "PEK",
+        confirmation: "PNR-SECRET-42",
+        price: "$310",
+        notes: "Window seats",
+        addedBy: "Ada",
+      },
+    ],
+  });
+}
 
 describe("buildBriefing — overview", () => {
   test("titles the briefing and summarises days, cities and season", () => {
@@ -183,5 +220,89 @@ describe("buildBriefing — charts", () => {
     const b = buildBriefing(p, FULL);
     expect(b.charts).toEqual({ daysPerCity: [], interestMix: [], pace: [] });
     expect(b.subtitle).toBe("0 days · 0 cities · winter");
+  });
+});
+
+describe("buildBriefing — logistics", () => {
+  test("carries plan tips through", () => {
+    expect(buildBriefing(payload(), FULL).logistics.tips).toEqual([
+      "Set up Alipay before flying.",
+    ]);
+  });
+
+  test("sorts bookings by date and keeps the travel details", () => {
+    const bookings = buildBriefing(withTickets(), FULL).logistics.bookings;
+    expect(bookings.map((b) => b.title)).toEqual(["SQ 806", "Ritz Beijing"]);
+    expect(bookings[0]).toEqual({
+      kind: "flight",
+      title: "SQ 806",
+      date: "2026-12-24",
+      endDate: null,
+      time: "11:45",
+      from: "SIN",
+      to: "PEK",
+      confirmation: "PNR-SECRET-42",
+      price: "$310",
+      notes: "Window seats",
+    });
+  });
+});
+
+describe("buildBriefing — redaction", () => {
+  test("members' view keeps crew and progress", () => {
+    expect(buildBriefing(payload(), FULL).crew).toEqual({
+      members: ["Ada"],
+      checkedCount: 1,
+    });
+  });
+
+  test("public view has no crew at all", () => {
+    expect(buildBriefing(payload(), PUBLIC_PLAIN).crew).toBeNull();
+    expect(buildBriefing(payload(), PUBLIC_BOOKINGS).crew).toBeNull();
+  });
+
+  test("public view drops confirmation, price and notes by default", () => {
+    const b = buildBriefing(withTickets(), PUBLIC_PLAIN).logistics.bookings[0];
+    expect(b.confirmation).toBeNull();
+    expect(b.price).toBeNull();
+    expect(b.notes).toBeNull();
+  });
+
+  test("public view keeps the shape of the journey", () => {
+    const b = buildBriefing(withTickets(), PUBLIC_PLAIN).logistics.bookings[0];
+    expect(b).toMatchObject({ kind: "flight", title: "SQ 806", time: "11:45", from: "SIN", to: "PEK" });
+  });
+
+  test("the bookings toggle restores confirmation, price and notes", () => {
+    const b = buildBriefing(withTickets(), PUBLIC_BOOKINGS).logistics.bookings[0];
+    expect(b.confirmation).toBe("PNR-SECRET-42");
+    expect(b.price).toBe("$310");
+    expect(b.notes).toBe("Window seats");
+  });
+
+  test("the bookings toggle never restores member identity", () => {
+    const serialized = JSON.stringify(buildBriefing(withTickets(), PUBLIC_BOOKINGS));
+    expect(serialized).not.toContain("Ada");
+  });
+
+  test("no sensitive value survives anywhere in a redacted briefing", () => {
+    const serialized = JSON.stringify(buildBriefing(withTickets(), PUBLIC_PLAIN));
+    for (const secret of [
+      "PNR-SECRET-42",
+      "HTL-SECRET-99",
+      "$310",
+      "¥1400",
+      "Window seats",
+      "Ask for a high floor",
+      "Ada",
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(serialized).toContain("SQ 806");
+  });
+
+  test("records which mode produced it", () => {
+    expect(buildBriefing(payload(), FULL).redacted).toBe(false);
+    expect(buildBriefing(payload(), PUBLIC_PLAIN).redacted).toBe(true);
   });
 });
