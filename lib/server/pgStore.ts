@@ -1,9 +1,9 @@
 import postgres from "postgres";
 import type { MyTrip } from "../myTrips";
 import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
-import { newWalletCode } from "./ids";
+import { newBriefingCode, newWalletCode } from "./ids";
 import { newJoinCode, newTripId } from "./ids";
-import type { JoinResult } from "./tripStore";
+import type { BriefingRecord, JoinResult } from "./tripStore";
 
 /**
  * Postgres (Supabase) implementation of the trip store. Used when
@@ -73,6 +73,13 @@ function ensureSchema(): Promise<void> {
         created_at bigint NOT NULL,
         updated_at bigint NOT NULL
       )`;
+      await s`CREATE TABLE IF NOT EXISTS briefings (
+        code text PRIMARY KEY,
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        include_bookings boolean NOT NULL DEFAULT false,
+        created_at bigint NOT NULL
+      )`;
+      await s`CREATE UNIQUE INDEX IF NOT EXISTS briefings_trip ON briefings(trip_id)`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
       globalThis.__cipSchemaReady = undefined;
@@ -293,4 +300,56 @@ export async function setCheck(
     await s`DELETE FROM checks WHERE trip_id = ${tripId} AND key = ${key}`;
   }
   await touch(tripId);
+}
+
+export async function enableBriefing(
+  tripId: string,
+  includeBookings: boolean
+): Promise<{ code: string } | null> {
+  await ensureSchema();
+  const s = sql();
+  const trip = await s`SELECT 1 FROM trips WHERE id = ${tripId}`;
+  if (trip.length === 0) return null;
+
+  const existing = await s`SELECT code FROM briefings WHERE trip_id = ${tripId}`;
+  if (existing.length > 0) {
+    await s`UPDATE briefings SET include_bookings = ${includeBookings} WHERE trip_id = ${tripId}`;
+    return { code: existing[0].code as string };
+  }
+
+  const now = Date.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = newBriefingCode();
+    try {
+      await s`INSERT INTO briefings (code, trip_id, include_bookings, created_at)
+        VALUES (${code}, ${tripId}, ${includeBookings}, ${now})`;
+      return { code };
+    } catch (error) {
+      // 23505 = unique_violation; anything else must surface.
+      if ((error as { code?: string }).code !== "23505") throw error;
+    }
+  }
+  throw new Error("Could not allocate a briefing code");
+}
+
+export async function revokeBriefing(tripId: string): Promise<boolean> {
+  await ensureSchema();
+  const result = await sql()`DELETE FROM briefings WHERE trip_id = ${tripId}`;
+  return result.count > 0;
+}
+
+export async function getBriefingByCode(
+  code: string
+): Promise<{ tripId: string; includeBookings: boolean } | null> {
+  await ensureSchema();
+  const rows = await sql()`SELECT trip_id, include_bookings FROM briefings WHERE code = ${code}`;
+  if (rows.length === 0) return null;
+  return { tripId: rows[0].trip_id as string, includeBookings: rows[0].include_bookings === true };
+}
+
+export async function getBriefingForTrip(tripId: string): Promise<BriefingRecord | null> {
+  await ensureSchema();
+  const rows = await sql()`SELECT code, include_bookings FROM briefings WHERE trip_id = ${tripId}`;
+  if (rows.length === 0) return null;
+  return { code: rows[0].code as string, includeBookings: rows[0].include_bookings === true };
 }
