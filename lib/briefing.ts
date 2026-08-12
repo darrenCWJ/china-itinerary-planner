@@ -165,7 +165,7 @@ export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Brie
 
   return {
     title: data.tripName,
-    subtitle: `${dayCount} days · ${cities.length} ${
+    subtitle: `${dayCount} ${dayCount === 1 ? "day" : "days"} · ${cities.length} ${
       cities.length === 1 ? "city" : "cities"
     } · ${data.input.season}`,
     dateRange: start && range ? { start, end: range } : null,

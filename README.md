@@ -43,6 +43,8 @@ searchable catalog of **every city in China**, not just the highlights.
 | `/api/destinations/resolve` | GET | Full plannable data for catalog ids (`?ids=`) |
 | `/api/destinations/refresh` | POST | **Self-update**: re-run the Wikidata/Wikipedia ingestion |
 | `/api/destinations/refresh` | GET | Catalog status (age, counts, refresh running?) |
+| `/api/trips/:id/briefing` | GET | Read the current share-link state (members only) |
+| `/api/trips/:id/briefing` | POST | Create, toggle or revoke the share link (members only) |
 
 All inputs are validated with Zod; trip state lives in SQLite (`data/app.db`).
 
@@ -112,7 +114,7 @@ automatically on first use.
 | Variable | Effect |
 |---|---|
 | `DATABASE_URL` | Postgres (Supabase) connection string — enables shared trips |
-| `ACCESS_CODE` | Optional: locks the whole site (pages + API) behind an access-code screen; visitors unlock once per browser (90-day cookie). Unset = open |
+| `ACCESS_CODE` | Optional: locks the whole site (pages + API) behind an access-code screen; visitors unlock once per browser (90-day cookie). Unset = open. **Exception**: `/b/*` (public briefing links) is always exempt — a briefing code is itself a 12-character bearer secret, and the recipient of a shared link won't have the site's access code |
 | `CATALOG_URL` | Optional: override the remote catalog fallback URL |
 
 The catalog refresh endpoint is local-only (serverless filesystems are
