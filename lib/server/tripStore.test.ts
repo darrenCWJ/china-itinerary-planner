@@ -9,7 +9,18 @@ process.env.CIP_DB_PATH = path.join(dbDir, "test.db");
 
 // Imported after the env override so the store opens the temp database.
 import { closeDb } from "./db";
-import { createTrip, getTrip, isMember, joinTrip, setCheck, updateTripData } from "./tripStore";
+import {
+  createTrip,
+  enableBriefing,
+  getBriefingByCode,
+  getBriefingForTrip,
+  getTrip,
+  isMember,
+  joinTrip,
+  revokeBriefing,
+  setCheck,
+  updateTripData,
+} from "./tripStore";
 
 function tripData(overrides: Partial<TripData> = {}): TripData {
   return {
@@ -99,5 +110,57 @@ describe("tripStore", () => {
     expect(trip!.data.tripName).toBe("Renamed");
     expect(trip!.version).toBe(2);
     expect(updateTripData("nope", tripData())).toBe(false);
+  });
+});
+
+describe("briefing links", () => {
+  test("mints a 12-character code resolvable back to the trip", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const enabled = enableBriefing(id, false);
+    expect(enabled).not.toBeNull();
+    expect(enabled!.code).toHaveLength(12);
+    expect(getBriefingByCode(enabled!.code)).toEqual({ tripId: id, includeBookings: false });
+  });
+
+  test("returns null for a trip that does not exist", () => {
+    expect(enableBriefing("nope", false)).toBeNull();
+  });
+
+  test("toggling bookings keeps the same code so shared links stay alive", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const first = enableBriefing(id, false)!;
+    const second = enableBriefing(id, true)!;
+    expect(second.code).toBe(first.code);
+    expect(getBriefingByCode(first.code)).toEqual({ tripId: id, includeBookings: true });
+  });
+
+  test("reads back the live link for a trip", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    expect(getBriefingForTrip(id)).toBeNull();
+    const { code } = enableBriefing(id, true)!;
+    expect(getBriefingForTrip(id)).toEqual({ code, includeBookings: true });
+  });
+
+  test("revoking kills the shared link", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const { code } = enableBriefing(id, false)!;
+    expect(revokeBriefing(id)).toBe(true);
+    expect(getBriefingByCode(code)).toBeNull();
+    expect(getBriefingForTrip(id)).toBeNull();
+    expect(revokeBriefing(id)).toBe(false);
+  });
+
+  test("re-enabling after a revoke mints a different code", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const first = enableBriefing(id, false)!;
+    revokeBriefing(id);
+    const second = enableBriefing(id, false)!;
+    expect(second.code).not.toBe(first.code);
+    expect(getBriefingByCode(first.code)).toBeNull();
+  });
+
+  test("codes use the unambiguous alphabet", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    expect(enableBriefing(id, false)!.code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/);
   });
 });

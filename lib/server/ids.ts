@@ -20,3 +20,11 @@ export function newJoinCode(): string {
 export function newWalletCode(): string {
   return randomCode(10);
 }
+
+/**
+ * Briefing codes are the sole secret guarding a public URL, so they get more
+ * entropy than a wallet code: 12 chars over a 32-symbol alphabet (~60 bits).
+ */
+export function newBriefingCode(): string {
+  return randomCode(12);
+}
