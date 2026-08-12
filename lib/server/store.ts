@@ -2,7 +2,7 @@ import type { MyTrip } from "../myTrips";
 import type { Ticket, TripData, TripPayload } from "../tripShared";
 import { planIdMigration } from "./migrate";
 import * as sqlite from "./tripStore";
-import type { JoinResult, WalletPutResult } from "./tripStore";
+import type { BriefingRecord, JoinResult, WalletPutResult } from "./tripStore";
 
 /**
  * Storage facade: Postgres (Supabase) when DATABASE_URL is set, SQLite for
@@ -143,4 +143,29 @@ export async function putWallet(
 ): Promise<WalletPutResult> {
   if (storeMode() === "postgres") return (await pg()).putWallet(code, trips, baseVersion);
   return sqlite.putWallet(code, trips, baseVersion);
+}
+
+export async function enableBriefing(
+  tripId: string,
+  includeBookings: boolean
+): Promise<{ code: string } | null> {
+  if (storeMode() === "postgres") return (await pg()).enableBriefing(tripId, includeBookings);
+  return sqlite.enableBriefing(tripId, includeBookings);
+}
+
+export async function revokeBriefing(tripId: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).revokeBriefing(tripId);
+  return sqlite.revokeBriefing(tripId);
+}
+
+export async function getBriefingByCode(
+  code: string
+): Promise<{ tripId: string; includeBookings: boolean } | null> {
+  if (storeMode() === "postgres") return (await pg()).getBriefingByCode(code);
+  return sqlite.getBriefingByCode(code);
+}
+
+export async function getBriefingForTrip(tripId: string): Promise<BriefingRecord | null> {
+  if (storeMode() === "postgres") return (await pg()).getBriefingForTrip(tripId);
+  return sqlite.getBriefingForTrip(tripId);
 }
