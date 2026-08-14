@@ -2,13 +2,13 @@ import { describe, expect, test } from "vitest";
 import type { Expense, Settlement } from "./tripShared";
 import {
   // Task 3 restores these
-  // balancesByCurrency,
+  balancesByCurrency,
   convertedTotals,
   expensesOnDate,
   formatMinor,
   majorToMinor,
-  // settleUp,
-  // splitMinorUnits,
+  settleUp,
+  splitMinorUnits,
   totalsByCurrency,
 } from "./money";
 
@@ -145,23 +145,139 @@ describe("majorToMinor", () => {
   });
 });
 
-// Task 3 restores these
-// describe("balancesByCurrency", () => {
-//   test("calculated balances", () => {
-//     // Test implementation in Task 3
-//   });
-// });
+describe("splitMinorUnits", () => {
+  test("splits evenly", () => {
+    expect(splitMinorUnits(1000, 2)).toEqual([500, 500]);
+  });
 
-// Task 3 restores these
-// describe("settleUp", () => {
-//   test("settlement generation", () => {
-//     // Test implementation in Task 3
-//   });
-// });
+  test("distributes the remainder to the first entries", () => {
+    expect(splitMinorUnits(1000, 3)).toEqual([334, 333, 333]);
+    expect(splitMinorUnits(101, 2)).toEqual([51, 50]);
+  });
 
-// Task 3 restores these
-// describe("splitMinorUnits", () => {
-//   test("splits amounts", () => {
-//     // Test implementation in Task 3
-//   });
-// });
+  test("total always equals the input", () => {
+    for (const [amount, parts] of [[997, 3], [1, 4], [12345, 7]] as const) {
+      const shares = splitMinorUnits(amount, parts);
+      expect(shares.reduce((a, b) => a + b, 0)).toBe(amount);
+      expect(shares).toHaveLength(parts);
+    }
+  });
+});
+
+describe("balancesByCurrency", () => {
+  const members = ["Ada", "Bob", "Cyn"];
+
+  test("payer is owed, participants owe their share", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 1000, paidBy: "Ada", splitAmong: ["Ada", "Bob"] })],
+      [],
+      members
+    );
+    expect(out).toEqual([
+      {
+        currency: "CNY",
+        balances: [
+          { member: "Ada", net: 500 },
+          { member: "Bob", net: -500 },
+        ],
+      },
+    ]);
+  });
+
+  test("empty splitAmong means all current members", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 900, paidBy: "Ada", splitAmong: [] })],
+      [],
+      members
+    );
+    const cny = out[0].balances;
+    expect(cny).toContainEqual({ member: "Ada", net: 600 });
+    expect(cny).toContainEqual({ member: "Bob", net: -300 });
+    expect(cny).toContainEqual({ member: "Cyn", net: -300 });
+  });
+
+  test("currencies are tracked independently", () => {
+    const out = balancesByCurrency(
+      [
+        expense({ amount: 1000, currency: "CNY", paidBy: "Ada", splitAmong: ["Ada", "Bob"] }),
+        expense({ amount: 400, currency: "SGD", paidBy: "Bob", splitAmong: ["Ada", "Bob"] }),
+      ],
+      [],
+      members
+    );
+    expect(out.map((c) => c.currency)).toEqual(["CNY", "SGD"]);
+  });
+
+  test("a full settlement clears both nets", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 1000, paidBy: "Ada", splitAmong: ["Ada", "Bob"] })],
+      [settlement({ from: "Bob", to: "Ada", amount: 500 })],
+      members
+    );
+    expect(out).toEqual([]);
+  });
+
+  test("a partial settlement shrinks the debt", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 1000, paidBy: "Ada", splitAmong: ["Ada", "Bob"] })],
+      [settlement({ from: "Bob", to: "Ada", amount: 200 })],
+      members
+    );
+    expect(out[0].balances).toEqual([
+      { member: "Ada", net: 300 },
+      { member: "Bob", net: -300 },
+    ]);
+  });
+
+  test("an over-payment flips the direction", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 1000, paidBy: "Ada", splitAmong: ["Ada", "Bob"] })],
+      [settlement({ from: "Bob", to: "Ada", amount: 800 })],
+      members
+    );
+    expect(out[0].balances).toEqual([
+      { member: "Ada", net: -300 },
+      { member: "Bob", net: 300 },
+    ]);
+  });
+
+  test("unknown member names in old expenses do not crash", () => {
+    const out = balancesByCurrency(
+      [expense({ amount: 600, paidBy: "Ghost", splitAmong: ["Ghost", "Ada"] })],
+      [],
+      members
+    );
+    expect(out[0].balances).toContainEqual({ member: "Ghost", net: 300 });
+    expect(out[0].balances).toContainEqual({ member: "Ada", net: -300 });
+  });
+});
+
+describe("settleUp", () => {
+  test("single debt yields one transfer", () => {
+    expect(
+      settleUp([
+        { member: "Ada", net: 500 },
+        { member: "Bob", net: -500 },
+      ])
+    ).toEqual([{ from: "Bob", to: "Ada", amount: 500 }]);
+  });
+
+  test("chain nets to minimal transfers", () => {
+    const transfers = settleUp([
+      { member: "Ada", net: 700 },
+      { member: "Bob", net: -300 },
+      { member: "Cyn", net: -400 },
+    ]);
+    expect(transfers).toEqual([
+      { from: "Cyn", to: "Ada", amount: 400 },
+      { from: "Bob", to: "Ada", amount: 300 },
+    ]);
+    const paid = transfers.reduce((a, t) => a + t.amount, 0);
+    expect(paid).toBe(700);
+  });
+
+  test("balanced books need no transfers", () => {
+    expect(settleUp([])).toEqual([]);
+    expect(settleUp([{ member: "Ada", net: 0 }])).toEqual([]);
+  });
+});
