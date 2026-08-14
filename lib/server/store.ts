@@ -9,6 +9,7 @@ import type {
   TripPayload,
 } from "../tripShared";
 import { planIdMigration } from "./migrate";
+import { photoUploadsSupported } from "./photoStore";
 import * as sqlite from "./tripStore";
 import type { BriefingRecord, JoinResult, WalletPutResult } from "./tripStore";
 
@@ -41,6 +42,10 @@ export async function createTrip(
   return sqlite.createTrip(data, creatorName);
 }
 
+function withFeatures(payload: TripPayload): TripPayload {
+  return { ...payload, features: { photoUploads: photoUploadsSupported() } };
+}
+
 export async function getTrip(
   id: string,
   requestingMember?: string
@@ -54,7 +59,7 @@ export async function getTrip(
   // One-time upgrade of pre-editing trips: stamp item ids into the plan and
   // move their schedule checks from index-based to id-based keys.
   const migration = planIdMigration(payload);
-  if (!migration) return payload;
+  if (!migration) return withFeatures(payload);
   if (usePg) {
     const p = await pg();
     await p.updateTripData(id, migration.data);
@@ -62,14 +67,16 @@ export async function getTrip(
       await p.setCheck(id, r.newKey, r.by, true);
       await p.setCheck(id, r.oldKey, "", false);
     }
-    return p.getTrip(id, requestingMember);
+    const fresh = await p.getTrip(id, requestingMember);
+    return fresh ? withFeatures(fresh) : fresh;
   }
   sqlite.updateTripData(id, migration.data);
   for (const r of migration.remaps) {
     sqlite.setCheck(id, r.newKey, r.by, true);
     sqlite.setCheck(id, r.oldKey, "", false);
   }
-  return sqlite.getTrip(id, requestingMember);
+  const fresh = sqlite.getTrip(id, requestingMember);
+  return fresh ? withFeatures(fresh) : fresh;
 }
 
 export async function isMember(tripId: string, name: string): Promise<boolean> {
