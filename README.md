@@ -31,6 +31,17 @@ searchable catalog of **every city in China**, not just the highlights.
 - **Trip-app mode** — set a start date and the current day is badged **TODAY**;
   keep the page open on your phone during the trip.
 
+### During the trip
+- **Tracker tab** — countdown before departure; during the trip a live
+  dashboard: day X of Y, now/next by time of day, tick-off synced with the
+  itinerary, spend snapshot and stats (cities reached, rail km); a recap
+  once you're home.
+- **Trip journal** — day-by-day entries from any member, with photo uploads
+  on self-hosted installs (writable disk) and photo links everywhere.
+- **Money tab** — multi-currency group expenses with equal splits,
+  per-currency totals, optional converted totals via manual rates,
+  who-owes-whom balances, settle-up suggestions and repayment tracking.
+
 ### API-first
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -45,6 +56,11 @@ searchable catalog of **every city in China**, not just the highlights.
 | `/api/destinations/refresh` | GET | Catalog status (age, counts, refresh running?) |
 | `/api/trips/:id/briefing` | GET | Read the current share-link state (members only) |
 | `/api/trips/:id/briefing` | POST | Create, toggle or revoke the share link (members only) |
+| `/api/trips/:id/expenses` (+`/:expenseId`) | POST · PATCH/DELETE | Group expenses (members only) |
+| `/api/trips/:id/settlements` (+`/:settlementId`) | POST · DELETE | Repayments (members only) |
+| `/api/trips/:id/journal` (+`/:entryId`) | POST · PATCH/DELETE | Journal (edits author-only) |
+| `/api/trips/:id/currency` | PUT | Home currency + conversion rates |
+| `/api/trips/:id/photos` (+`/:photoId`) | POST · GET | Photo upload/serve (writable hosts) |
 
 All inputs are validated with Zod; trip state lives in SQLite (`data/app.db`).
 
