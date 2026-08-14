@@ -6,6 +6,11 @@ import { BriefingShare } from "@/components/trip/BriefingShare";
 import { BriefingView } from "@/components/trip/BriefingView";
 import { DayCard } from "@/components/trip/DayCard";
 import { TicketsTab, type TicketDraft } from "@/components/trip/TicketsTab";
+import { MoneyTab } from "@/components/trip/MoneyTab";
+import type { ExpenseDraft } from "@/components/trip/ExpenseForm";
+import type { SettlementDraft } from "@/components/trip/BalancesCard";
+import { TrackerTab } from "@/components/trip/TrackerTab";
+import type { JournalDraft } from "@/components/trip/JournalSection";
 import { buildBriefing } from "@/lib/briefing";
 import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip, saveMyTrip } from "@/lib/myTrips";
@@ -14,7 +19,7 @@ import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import { packingCheckKey, type TripPayload } from "@/lib/tripShared";
 
 const POLL_MS = 4000;
-const TABS = ["Itinerary", "Tickets", "Packing", "Crew", "Briefing"] as const;
+const TABS = ["Itinerary", "Tracker", "Money", "Tickets", "Packing", "Crew", "Briefing"] as const;
 type Tab = (typeof TABS)[number];
 
 type LoadState = "loading" | "ready" | "not-found";
@@ -206,6 +211,38 @@ export function TripView({ tripId }: { tripId: string }) {
       method: "DELETE",
     });
 
+  const addExpense = (expense: ExpenseDraft) =>
+    mutate(`/api/trips/${tripId}/expenses`, jsonInit("POST", { memberName: myName, expense }));
+  const updateExpense = (expenseId: string, expense: ExpenseDraft) =>
+    mutate(
+      `/api/trips/${tripId}/expenses/${expenseId}`,
+      jsonInit("PATCH", { memberName: myName, expense })
+    );
+  const deleteExpense = (expenseId: string) =>
+    mutate(`/api/trips/${tripId}/expenses/${expenseId}?member=${encodeURIComponent(myName)}`, {
+      method: "DELETE",
+    });
+  const addSettlement = (settlement: SettlementDraft) =>
+    mutate(`/api/trips/${tripId}/settlements`, jsonInit("POST", { memberName: myName, settlement }));
+  const deleteSettlement = (settlementId: string) =>
+    mutate(
+      `/api/trips/${tripId}/settlements/${settlementId}?member=${encodeURIComponent(myName)}`,
+      { method: "DELETE" }
+    );
+  const saveCurrency = (home: string | null, rates: Record<string, number>) =>
+    mutate(`/api/trips/${tripId}/currency`, jsonInit("PUT", { memberName: myName, home, rates }));
+  const addJournal = (entry: JournalDraft) =>
+    mutate(`/api/trips/${tripId}/journal`, jsonInit("POST", { memberName: myName, entry }));
+  const updateJournal = (entryId: string, entry: Partial<JournalDraft>) =>
+    mutate(
+      `/api/trips/${tripId}/journal/${entryId}`,
+      jsonInit("PATCH", { memberName: myName, entry })
+    );
+  const deleteJournal = (entryId: string) =>
+    mutate(`/api/trips/${tripId}/journal/${entryId}?member=${encodeURIComponent(myName)}`, {
+      method: "DELETE",
+    });
+
   const copyShareLink = async () => {
     if (!payload?.joinCode) return;
     const url = `${window.location.origin}/trip/${tripId}?code=${payload.joinCode}`;
@@ -344,7 +381,7 @@ export function TripView({ tripId }: { tripId: string }) {
         </div>
       )}
 
-      <nav className="mt-6 flex gap-2 print:hidden" aria-label="Trip sections">
+      <nav className="mt-6 flex flex-wrap gap-2 print:hidden" aria-label="Trip sections">
         {TABS.map((t) => (
           <button
             key={t}
@@ -413,6 +450,36 @@ export function TripView({ tripId }: { tripId: string }) {
             </div>
           )}
         </div>
+      )}
+
+      {tab === "Tracker" && (
+        <TrackerTab
+          payload={payload}
+          myName={myName}
+          isMember={isMember}
+          onToggle={(key, checked) => void toggleCheck(key, checked)}
+          onAddJournal={addJournal}
+          onUpdateJournal={updateJournal}
+          onDeleteJournal={deleteJournal}
+          onOpenMoney={() => setTab("Money")}
+        />
+      )}
+
+      {tab === "Money" && (
+        <MoneyTab
+          expenses={payload.expenses}
+          settlements={payload.settlements}
+          currencySettings={payload.currencySettings}
+          members={payload.members.map((m) => m.name)}
+          myName={myName}
+          isMember={isMember}
+          onAddExpense={addExpense}
+          onUpdateExpense={updateExpense}
+          onDeleteExpense={deleteExpense}
+          onAddSettlement={addSettlement}
+          onDeleteSettlement={deleteSettlement}
+          onSaveCurrency={saveCurrency}
+        />
       )}
 
       {tab === "Tickets" && (
