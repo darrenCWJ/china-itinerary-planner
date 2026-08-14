@@ -56,6 +56,31 @@ CREATE TABLE IF NOT EXISTS briefings (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS briefings_trip ON briefings(trip_id);
+CREATE TABLE IF NOT EXISTS expenses (
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, id)
+);
+CREATE TABLE IF NOT EXISTS settlements (
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, id)
+);
+CREATE TABLE IF NOT EXISTS journal_entries (
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, id)
+);
+CREATE TABLE IF NOT EXISTS trip_settings (
+  trip_id TEXT PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+  currency_settings TEXT
+);
 `;
 
 export function getDb(): Database.Database {
