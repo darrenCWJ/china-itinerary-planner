@@ -66,6 +66,10 @@ function payload(overrides: Partial<TripPayload> = {}): TripPayload {
     members: [{ name: "Ada", joinedAt: 1 }],
     checks: [{ key: "item:i1", by: "Ada" }],
     tickets: [],
+    expenses: [],
+    settlements: [],
+    journal: [],
+    currencySettings: { home: null, rates: {} },
     ...overrides,
   };
 }
