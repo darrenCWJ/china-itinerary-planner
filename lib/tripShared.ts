@@ -43,6 +43,69 @@ export interface Ticket {
   addedBy: string;
 }
 
+export type ExpenseCategory =
+  | "food"
+  | "transport"
+  | "lodging"
+  | "tickets"
+  | "shopping"
+  | "other";
+
+/** A group expense. Amount is in minor units (fen/cents) — always integer. */
+export interface Expense {
+  id: string;
+  /** ISO yyyy-mm-dd. */
+  date: string;
+  title: string;
+  category: ExpenseCategory;
+  amount: number;
+  /** 3-letter uppercase code, e.g. "CNY". */
+  currency: string;
+  paidBy: string;
+  /** Member names to split among (equal split). [] = all members at computation time. */
+  splitAmong: string[];
+  notes: string | null;
+  addedBy: string;
+  createdAt: number;
+}
+
+/** A recorded repayment: `from` paid `to` back. Nets against expense debts. */
+export interface Settlement {
+  id: string;
+  date: string;
+  from: string;
+  to: string;
+  amount: number;
+  currency: string;
+  recordedBy: string;
+  createdAt: number;
+}
+
+export interface JournalPhoto {
+  /** "upload" ref = stored filename, "link" ref = https URL. */
+  kind: "upload" | "link";
+  ref: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  /** ISO yyyy-mm-dd — the trip day this entry belongs to. */
+  date: string;
+  text: string;
+  photos: JournalPhoto[];
+  by: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Optional per-trip conversion: rates are CNY per 1 unit of the currency. */
+export interface CurrencySettings {
+  home: string | null;
+  rates: Record<string, number>;
+}
+
+export const DEFAULT_CURRENCY_SETTINGS: CurrencySettings = { home: null, rates: {} };
+
 /** GET /api/trips/:id response. */
 export interface TripPayload {
   id: string;
@@ -52,6 +115,12 @@ export interface TripPayload {
   members: TripMember[];
   checks: TripCheck[];
   tickets: Ticket[];
+  expenses: Expense[];
+  settlements: Settlement[];
+  journal: JournalEntry[];
+  currencySettings: CurrencySettings;
+  /** Injected by the store facade — whether this host accepts photo uploads. */
+  features?: { photoUploads: boolean };
   /** Only present when the requesting member is part of the trip. */
   joinCode?: string;
 }
