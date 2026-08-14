@@ -276,9 +276,18 @@ function CurrencySettingsEditor({
     setOpen(false);
   };
 
+  const startOpen = () => {
+    setHome(currencySettings.home ?? "");
+    setRateInputs(Object.fromEntries(
+      Object.entries(currencySettings.rates).map(([c, r]) => [c, String(r)])
+    ));
+    setError(null);
+    setOpen(true);
+  };
+
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)}
+      <button type="button" onClick={() => startOpen()}
         className="mt-3 text-xs font-medium text-rail hover:underline">
         {currencySettings.home ? "Edit conversion rates" : "Set up converted totals"}
       </button>

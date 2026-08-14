@@ -55,6 +55,14 @@ export function BalancesCard({
     setConfirming(null);
   };
 
+  const removeSettlement = async (id: string) => {
+    setError(null);
+    setBusy(true);
+    const err = await onDeleteSettlement(id);
+    setBusy(false);
+    if (err) setError(err);
+  };
+
   if (currencies.length === 0 && settlements.length === 0) {
     return (
       <div className="rounded-xl border border-sky bg-paper p-5 text-sm text-ink-soft">
@@ -139,9 +147,10 @@ export function BalancesCard({
                   {s.from} → {s.to}: {formatMinor(s.amount, s.currency)}
                 </span>
                 {isMember && (
-                  <button type="button" onClick={() => void onDeleteSettlement(s.id)}
+                  <button type="button" onClick={() => void removeSettlement(s.id)}
+                    disabled={busy}
                     aria-label={`Delete repayment ${s.from} to ${s.to}`}
-                    className="ml-auto text-xs text-ink-soft hover:text-seal">
+                    className="ml-auto text-xs text-ink-soft hover:text-seal disabled:opacity-50">
                     ✕
                   </button>
                 )}
