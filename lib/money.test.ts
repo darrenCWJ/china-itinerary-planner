@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Expense, Settlement } from "./tripShared";
 import {
-  // Task 3 restores these
   balancesByCurrency,
   convertedTotals,
   expensesOnDate,
