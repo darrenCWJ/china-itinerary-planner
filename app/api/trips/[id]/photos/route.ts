@@ -17,6 +17,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!photoUploadsSupported()) {
     return NextResponse.json({ error: PHOTOS_UNSUPPORTED }, { status: 503 });
   }
+  const declaredBytes = Number(req.headers.get("content-length") ?? 0);
+  if (declaredBytes > MAX_PHOTO_BYTES + 64 * 1024) {
+    return NextResponse.json({ error: "Photo is larger than 8 MB" }, { status: 413 });
+  }
   const { id } = await params;
 
   let form: FormData;

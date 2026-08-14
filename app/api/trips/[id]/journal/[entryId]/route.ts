@@ -12,10 +12,17 @@ import {
 
 type Params = { params: Promise<{ id: string; entryId: string }> };
 
-/** Best-effort removal of uploaded files no longer referenced by the entry. */
-function cleanupUploads(tripId: string, before: JournalEntry, after: JournalEntry | null): void {
+/** Best-effort removal of uploaded files no longer referenced by any entry. */
+function cleanupUploads(
+  tripId: string,
+  before: JournalEntry,
+  after: JournalEntry | null,
+  otherEntries: JournalEntry[]
+): void {
   const kept = new Set(
-    (after?.photos ?? []).filter((p) => p.kind === "upload").map((p) => p.ref)
+    [...(after?.photos ?? []), ...otherEntries.flatMap((e) => e.photos)]
+      .filter((p) => p.kind === "upload")
+      .map((p) => p.ref)
   );
   for (const photo of before.photos) {
     if (photo.kind === "upload" && !kept.has(photo.ref)) deletePhoto(tripId, photo.ref);
@@ -63,7 +70,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     updatedAt: Date.now(),
   };
   await updateJournalEntry(id, merged);
-  cleanupUploads(id, existing, merged);
+  cleanupUploads(
+    id,
+    existing,
+    merged,
+    trip.journal.filter((e) => e.id !== entryId)
+  );
   return NextResponse.json(await getTrip(id, parsed.data.memberName));
 }
 
@@ -87,6 +99,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   }
 
   await deleteJournalEntry(id, entryId);
-  cleanupUploads(id, existing, null);
+  cleanupUploads(
+    id,
+    existing,
+    null,
+    trip.journal.filter((e) => e.id !== entryId)
+  );
   return NextResponse.json(await getTrip(id, member));
 }
