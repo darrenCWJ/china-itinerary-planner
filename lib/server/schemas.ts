@@ -145,3 +145,88 @@ export const BriefingShareSchema = z.object({
   enabled: z.boolean(),
   includeBookings: z.boolean(),
 });
+
+const CurrencyCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, "3-letter currency code");
+const MinorAmountSchema = z.number().int().min(1).max(100_000_000);
+
+export const ExpenseCategorySchema = z.enum([
+  "food",
+  "transport",
+  "lodging",
+  "tickets",
+  "shopping",
+  "other",
+]);
+
+export const ExpenseFieldsSchema = z.object({
+  date: IsoDateSchema,
+  title: z.string().trim().min(1).max(80),
+  category: ExpenseCategorySchema,
+  amount: MinorAmountSchema,
+  currency: CurrencyCodeSchema,
+  paidBy: MemberNameSchema,
+  splitAmong: z.array(MemberNameSchema).max(20),
+  notes: z.string().trim().max(300).nullable().optional(),
+});
+
+export const AddExpenseSchema = z.object({
+  memberName: MemberNameSchema,
+  expense: ExpenseFieldsSchema,
+});
+
+export const UpdateExpenseSchema = z.object({
+  memberName: MemberNameSchema,
+  expense: ExpenseFieldsSchema.partial(),
+});
+
+export const SettlementFieldsSchema = z.object({
+  date: IsoDateSchema,
+  from: MemberNameSchema,
+  to: MemberNameSchema,
+  amount: MinorAmountSchema,
+  currency: CurrencyCodeSchema,
+});
+
+export const AddSettlementSchema = z.object({
+  memberName: MemberNameSchema,
+  settlement: SettlementFieldsSchema,
+});
+
+/** Upload refs are exact stored filenames — no dots or slashes beyond one extension. */
+export const PHOTO_REF_RE = /^[a-z0-9-]{8,60}\.(jpg|png|webp)$/;
+
+export const JournalPhotoSchema = z.union([
+  z.object({ kind: z.literal("upload"), ref: z.string().regex(PHOTO_REF_RE) }),
+  z.object({
+    kind: z.literal("link"),
+    ref: z.string().max(500).regex(/^https:\/\/\S+$/, "https URL"),
+  }),
+]);
+
+export const JournalFieldsSchema = z.object({
+  date: IsoDateSchema,
+  text: z.string().trim().min(1).max(5000),
+  photos: z.array(JournalPhotoSchema).max(12),
+});
+
+export const AddJournalSchema = z.object({
+  memberName: MemberNameSchema,
+  entry: JournalFieldsSchema,
+});
+
+export const UpdateJournalSchema = z.object({
+  memberName: MemberNameSchema,
+  entry: JournalFieldsSchema.partial(),
+});
+
+export const CurrencySettingsSchema = z.object({
+  memberName: MemberNameSchema,
+  home: CurrencyCodeSchema.nullable(),
+  // Key schema is deliberately transform-free: record keys must stay plain
+  // strings, so validate the shape and let the client send uppercase.
+  rates: z.record(z.string().regex(/^[A-Z]{3}$/), z.number().positive().finite()),
+});
