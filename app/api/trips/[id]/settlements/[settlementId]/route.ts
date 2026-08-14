@@ -1,0 +1,29 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  DB_UNAVAILABLE,
+  deleteSettlement,
+  getTrip,
+  isMember,
+  storeMode,
+} from "@/lib/server/store";
+
+type Params = { params: Promise<{ id: string; settlementId: string }> };
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  if (storeMode() === "unavailable") {
+    return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
+  }
+  const { id, settlementId } = await params;
+  const member = req.nextUrl.searchParams.get("member") ?? "";
+  if (!member || !(await isMember(id, member))) {
+    return NextResponse.json(
+      { error: "Only trip members can delete repayments" },
+      { status: 403 }
+    );
+  }
+  const deleted = await deleteSettlement(id, settlementId);
+  if (!deleted) {
+    return NextResponse.json({ error: "Repayment not found" }, { status: 404 });
+  }
+  return NextResponse.json(await getTrip(id, member));
+}
