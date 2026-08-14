@@ -15,6 +15,10 @@ function legacyPayload(): TripPayload {
       { key: "day:9:0", by: "Bob" },
     ],
     tickets: [],
+    expenses: [],
+    settlements: [],
+    journal: [],
+    currencySettings: { home: null, rates: {} },
     data: {
       tripName: "Legacy",
       startDate: null,

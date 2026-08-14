@@ -1,6 +1,17 @@
 import postgres from "postgres";
 import type { MyTrip } from "../myTrips";
-import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
+import type {
+  CurrencySettings,
+  Expense,
+  JournalEntry,
+  Settlement,
+  Ticket,
+  TripCheck,
+  TripData,
+  TripMember,
+  TripPayload,
+} from "../tripShared";
+import { DEFAULT_CURRENCY_SETTINGS } from "../tripShared";
 import { newBriefingCode, newWalletCode } from "./ids";
 import { newJoinCode, newTripId } from "./ids";
 import type { BriefingRecord, JoinResult } from "./tripStore";
@@ -80,6 +91,31 @@ function ensureSchema(): Promise<void> {
         created_at bigint NOT NULL
       )`;
       await s`CREATE UNIQUE INDEX IF NOT EXISTS briefings_trip ON briefings(trip_id)`;
+      await s`CREATE TABLE IF NOT EXISTS expenses (
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        id text NOT NULL,
+        data jsonb NOT NULL,
+        created_at bigint NOT NULL,
+        PRIMARY KEY (trip_id, id)
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS settlements (
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        id text NOT NULL,
+        data jsonb NOT NULL,
+        created_at bigint NOT NULL,
+        PRIMARY KEY (trip_id, id)
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS journal_entries (
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        id text NOT NULL,
+        data jsonb NOT NULL,
+        created_at bigint NOT NULL,
+        PRIMARY KEY (trip_id, id)
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS trip_settings (
+        trip_id text PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+        currency_settings jsonb
+      )`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
       globalThis.__cipSchemaReady = undefined;
@@ -123,6 +159,10 @@ export async function getTrip(
   const memberRows = await s`SELECT name, joined_at FROM members WHERE trip_id = ${id} ORDER BY joined_at`;
   const checkRows = await s`SELECT key, checked_by FROM checks WHERE trip_id = ${id}`;
   const ticketRows = await s`SELECT data FROM tickets WHERE trip_id = ${id} ORDER BY created_at`;
+  const expenseRows = await s`SELECT data FROM expenses WHERE trip_id = ${id} ORDER BY created_at`;
+  const settlementRows = await s`SELECT data FROM settlements WHERE trip_id = ${id} ORDER BY created_at`;
+  const journalRows = await s`SELECT data FROM journal_entries WHERE trip_id = ${id} ORDER BY created_at`;
+  const settingsRows = await s`SELECT currency_settings FROM trip_settings WHERE trip_id = ${id}`;
 
   const members = memberRows.map(
     (m): TripMember => ({ name: m.name as string, joinedAt: Number(m.joined_at) })
@@ -141,6 +181,12 @@ export async function getTrip(
     members,
     checks,
     tickets: ticketRows.map((t) => t.data as Ticket),
+    expenses: expenseRows.map((r) => r.data as Expense),
+    settlements: settlementRows.map((r) => r.data as Settlement),
+    journal: journalRows.map((r) => r.data as JournalEntry),
+    currencySettings:
+      (settingsRows[0]?.currency_settings as CurrencySettings | null | undefined) ??
+      DEFAULT_CURRENCY_SETTINGS,
   };
   if (isMember) payload.joinCode = row.join_code as string;
   return payload;
@@ -352,4 +398,96 @@ export async function getBriefingForTrip(tripId: string): Promise<BriefingRecord
   const rows = await sql()`SELECT code, include_bookings FROM briefings WHERE trip_id = ${tripId}`;
   if (rows.length === 0) return null;
   return { code: rows[0].code as string, includeBookings: rows[0].include_bookings === true };
+}
+
+async function insertJsonRow(
+  table: "expenses" | "settlements" | "journal_entries",
+  tripId: string,
+  id: string,
+  data: unknown
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const exists = await s`SELECT 1 FROM trips WHERE id = ${tripId}`;
+  if (exists.length === 0) return false;
+  await s`INSERT INTO ${s(table)} (trip_id, id, data, created_at)
+    VALUES (${tripId}, ${id}, ${s.json(JSON.parse(JSON.stringify(data)))}, ${Date.now()})`;
+  await touch(tripId);
+  return true;
+}
+
+async function updateJsonRow(
+  table: "expenses" | "settlements" | "journal_entries",
+  tripId: string,
+  id: string,
+  data: unknown
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const result = await s`UPDATE ${s(table)} SET data = ${s.json(JSON.parse(JSON.stringify(data)))}
+    WHERE trip_id = ${tripId} AND id = ${id}`;
+  if (result.count === 0) return false;
+  await touch(tripId);
+  return true;
+}
+
+async function deleteJsonRow(
+  table: "expenses" | "settlements" | "journal_entries",
+  tripId: string,
+  id: string
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const result = await s`DELETE FROM ${s(table)}
+    WHERE trip_id = ${tripId} AND id = ${id}`;
+  if (result.count === 0) return false;
+  await touch(tripId);
+  return true;
+}
+
+export async function addExpense(tripId: string, expense: Expense): Promise<boolean> {
+  return insertJsonRow("expenses", tripId, expense.id, expense);
+}
+
+export async function updateExpense(tripId: string, expense: Expense): Promise<boolean> {
+  return updateJsonRow("expenses", tripId, expense.id, expense);
+}
+
+export async function deleteExpense(tripId: string, expenseId: string): Promise<boolean> {
+  return deleteJsonRow("expenses", tripId, expenseId);
+}
+
+export async function addSettlement(tripId: string, settlement: Settlement): Promise<boolean> {
+  return insertJsonRow("settlements", tripId, settlement.id, settlement);
+}
+
+export async function deleteSettlement(tripId: string, settlementId: string): Promise<boolean> {
+  return deleteJsonRow("settlements", tripId, settlementId);
+}
+
+export async function addJournalEntry(tripId: string, entry: JournalEntry): Promise<boolean> {
+  return insertJsonRow("journal_entries", tripId, entry.id, entry);
+}
+
+export async function updateJournalEntry(tripId: string, entry: JournalEntry): Promise<boolean> {
+  return updateJsonRow("journal_entries", tripId, entry.id, entry);
+}
+
+export async function deleteJournalEntry(tripId: string, entryId: string): Promise<boolean> {
+  return deleteJsonRow("journal_entries", tripId, entryId);
+}
+
+export async function setCurrencySettings(
+  tripId: string,
+  settings: CurrencySettings
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const exists = await s`SELECT 1 FROM trips WHERE id = ${tripId}`;
+  if (exists.length === 0) return false;
+  await s`INSERT INTO trip_settings (trip_id, currency_settings)
+    VALUES (${tripId}, ${s.json(JSON.parse(JSON.stringify(settings)))})
+    ON CONFLICT (trip_id) DO UPDATE SET currency_settings = EXCLUDED.currency_settings`;
+  await touch(tripId);
+  return true;
 }

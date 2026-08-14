@@ -1,5 +1,13 @@
 import type { MyTrip } from "../myTrips";
-import type { Ticket, TripData, TripPayload } from "../tripShared";
+import type {
+  CurrencySettings,
+  Expense,
+  JournalEntry,
+  Settlement,
+  Ticket,
+  TripData,
+  TripPayload,
+} from "../tripShared";
 import { planIdMigration } from "./migrate";
 import * as sqlite from "./tripStore";
 import type { BriefingRecord, JoinResult, WalletPutResult } from "./tripStore";
@@ -168,4 +176,52 @@ export async function getBriefingByCode(
 export async function getBriefingForTrip(tripId: string): Promise<BriefingRecord | null> {
   if (storeMode() === "postgres") return (await pg()).getBriefingForTrip(tripId);
   return sqlite.getBriefingForTrip(tripId);
+}
+
+export async function addExpense(tripId: string, expense: Expense): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).addExpense(tripId, expense);
+  return sqlite.addExpense(tripId, expense);
+}
+
+export async function updateExpense(tripId: string, expense: Expense): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).updateExpense(tripId, expense);
+  return sqlite.updateExpense(tripId, expense);
+}
+
+export async function deleteExpense(tripId: string, expenseId: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).deleteExpense(tripId, expenseId);
+  return sqlite.deleteExpense(tripId, expenseId);
+}
+
+export async function addSettlement(tripId: string, settlement: Settlement): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).addSettlement(tripId, settlement);
+  return sqlite.addSettlement(tripId, settlement);
+}
+
+export async function deleteSettlement(tripId: string, settlementId: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).deleteSettlement(tripId, settlementId);
+  return sqlite.deleteSettlement(tripId, settlementId);
+}
+
+export async function addJournalEntry(tripId: string, entry: JournalEntry): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).addJournalEntry(tripId, entry);
+  return sqlite.addJournalEntry(tripId, entry);
+}
+
+export async function updateJournalEntry(tripId: string, entry: JournalEntry): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).updateJournalEntry(tripId, entry);
+  return sqlite.updateJournalEntry(tripId, entry);
+}
+
+export async function deleteJournalEntry(tripId: string, entryId: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).deleteJournalEntry(tripId, entryId);
+  return sqlite.deleteJournalEntry(tripId, entryId);
+}
+
+export async function setCurrencySettings(
+  tripId: string,
+  settings: CurrencySettings
+): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).setCurrencySettings(tripId, settings);
+  return sqlite.setCurrencySettings(tripId, settings);
 }
