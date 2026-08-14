@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { TripData } from "../tripShared";
+import type { CurrencySettings, Expense, JournalEntry, Settlement, TripData } from "../tripShared";
 
 const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "cip-test-"));
 process.env.CIP_DB_PATH = path.join(dbDir, "test.db");
@@ -10,7 +10,13 @@ process.env.CIP_DB_PATH = path.join(dbDir, "test.db");
 // Imported after the env override so the store opens the temp database.
 import { closeDb } from "./db";
 import {
+  addExpense,
+  addJournalEntry,
+  addSettlement,
   createTrip,
+  deleteExpense,
+  deleteJournalEntry,
+  deleteSettlement,
   enableBriefing,
   getBriefingByCode,
   getBriefingForTrip,
@@ -19,6 +25,9 @@ import {
   joinTrip,
   revokeBriefing,
   setCheck,
+  setCurrencySettings,
+  updateExpense,
+  updateJournalEntry,
   updateTripData,
 } from "./tripStore";
 
@@ -162,5 +171,105 @@ describe("briefing links", () => {
   test("codes use the unambiguous alphabet", () => {
     const { id } = createTrip(tripData(), "Ada");
     expect(enableBriefing(id, false)!.code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/);
+  });
+});
+
+function expenseFixture(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: "exp-1",
+    date: "2026-11-02",
+    title: "Hotpot",
+    category: "food",
+    amount: 12450,
+    currency: "CNY",
+    paidBy: "Ada",
+    splitAmong: ["Ada"],
+    notes: null,
+    addedBy: "Ada",
+    createdAt: Date.now(),
+    ...overrides,
+  };
+}
+
+describe("money & journal storage", () => {
+  test("expense CRUD round-trips and bumps the version", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const before = getTrip(id)!.version;
+
+    expect(addExpense(id, expenseFixture())).toBe(true);
+    let trip = getTrip(id)!;
+    expect(trip.expenses).toHaveLength(1);
+    expect(trip.expenses[0].title).toBe("Hotpot");
+    expect(trip.version).toBe(before + 1);
+
+    expect(updateExpense(id, expenseFixture({ title: "Hotpot deluxe" }))).toBe(true);
+    trip = getTrip(id)!;
+    expect(trip.expenses[0].title).toBe("Hotpot deluxe");
+    expect(trip.version).toBe(before + 2);
+
+    expect(deleteExpense(id, "exp-1")).toBe(true);
+    trip = getTrip(id)!;
+    expect(trip.expenses).toHaveLength(0);
+    expect(trip.version).toBe(before + 3);
+  });
+
+  test("mutations against a missing trip or record return false", () => {
+    expect(addExpense("nope", expenseFixture())).toBe(false);
+    const { id } = createTrip(tripData(), "Ada");
+    expect(updateExpense(id, expenseFixture({ id: "ghost" }))).toBe(false);
+    expect(deleteExpense(id, "ghost")).toBe(false);
+    expect(deleteSettlement(id, "ghost")).toBe(false);
+    expect(deleteJournalEntry(id, "ghost")).toBe(false);
+  });
+
+  test("settlements round-trip", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const s: Settlement = {
+      id: "set-1",
+      date: "2026-11-03",
+      from: "Bob",
+      to: "Ada",
+      amount: 6225,
+      currency: "CNY",
+      recordedBy: "Bob",
+      createdAt: Date.now(),
+    };
+    expect(addSettlement(id, s)).toBe(true);
+    expect(getTrip(id)!.settlements).toEqual([s]);
+    expect(deleteSettlement(id, "set-1")).toBe(true);
+    expect(getTrip(id)!.settlements).toEqual([]);
+  });
+
+  test("journal entries round-trip with photos", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const entry: JournalEntry = {
+      id: "j-1",
+      date: "2026-11-02",
+      text: "Great Wall!",
+      photos: [{ kind: "link", ref: "https://photos.example.com/a" }],
+      by: "Ada",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    expect(addJournalEntry(id, entry)).toBe(true);
+    expect(getTrip(id)!.journal).toEqual([entry]);
+
+    const edited = { ...entry, text: "Great Wall — 10/10", updatedAt: Date.now() + 1 };
+    expect(updateJournalEntry(id, edited)).toBe(true);
+    expect(getTrip(id)!.journal[0].text).toBe("Great Wall — 10/10");
+
+    expect(deleteJournalEntry(id, "j-1")).toBe(true);
+    expect(getTrip(id)!.journal).toEqual([]);
+  });
+
+  test("currency settings default and persist", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    expect(getTrip(id)!.currencySettings).toEqual({ home: null, rates: {} });
+
+    const settings: CurrencySettings = { home: "SGD", rates: { SGD: 5.2 } };
+    expect(setCurrencySettings(id, settings)).toBe(true);
+    const trip = getTrip(id)!;
+    expect(trip.currencySettings).toEqual(settings);
+    expect(setCurrencySettings("nope", settings)).toBe(false);
   });
 });

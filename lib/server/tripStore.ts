@@ -1,5 +1,16 @@
 import type { MyTrip } from "../myTrips";
-import type { Ticket, TripCheck, TripData, TripMember, TripPayload } from "../tripShared";
+import type {
+  CurrencySettings,
+  Expense,
+  JournalEntry,
+  Settlement,
+  Ticket,
+  TripCheck,
+  TripData,
+  TripMember,
+  TripPayload,
+} from "../tripShared";
+import { DEFAULT_CURRENCY_SETTINGS } from "../tripShared";
 import { getDb } from "./db";
 import { newBriefingCode, newJoinCode, newTripId, newWalletCode } from "./ids";
 
@@ -17,6 +28,51 @@ function touch(tripId: string): void {
   getDb()
     .prepare("UPDATE trips SET version = version + 1, updated_at = ? WHERE id = ?")
     .run(Date.now(), tripId);
+}
+
+type JsonRowTable = "expenses" | "settlements" | "journal_entries";
+
+function insertJsonRow(table: JsonRowTable, tripId: string, id: string, data: unknown): boolean {
+  const db = getDb();
+  if (db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId) === undefined) return false;
+  db.prepare(
+    `INSERT INTO ${table} (trip_id, id, data, created_at) VALUES (?, ?, ?, ?)`
+  ).run(tripId, id, JSON.stringify(data), Date.now());
+  touch(tripId);
+  return true;
+}
+
+function updateJsonRow(table: JsonRowTable, tripId: string, id: string, data: unknown): boolean {
+  const result = getDb()
+    .prepare(`UPDATE ${table} SET data = ? WHERE trip_id = ? AND id = ?`)
+    .run(JSON.stringify(data), tripId, id);
+  if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+function deleteJsonRow(table: JsonRowTable, tripId: string, id: string): boolean {
+  const result = getDb()
+    .prepare(`DELETE FROM ${table} WHERE trip_id = ? AND id = ?`)
+    .run(tripId, id);
+  if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+function readJsonRows<T>(table: JsonRowTable, tripId: string): T[] {
+  const rows = getDb()
+    .prepare(`SELECT data FROM ${table} WHERE trip_id = ? ORDER BY created_at`)
+    .all(tripId) as { data: string }[];
+  const out: T[] = [];
+  for (const r of rows) {
+    try {
+      out.push(JSON.parse(r.data) as T);
+    } catch {
+      // Skip a corrupted row rather than failing the whole trip.
+    }
+  }
+  return out;
 }
 
 export function createTrip(data: TripData, creatorName: string): { id: string; joinCode: string } {
@@ -74,6 +130,22 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
     }
   }
 
+  const expenses = readJsonRows<Expense>("expenses", id);
+  const settlements = readJsonRows<Settlement>("settlements", id);
+  const journal = readJsonRows<JournalEntry>("journal_entries", id);
+
+  let currencySettings: CurrencySettings = DEFAULT_CURRENCY_SETTINGS;
+  const settingsRow = db
+    .prepare("SELECT currency_settings FROM trip_settings WHERE trip_id = ?")
+    .get(id) as { currency_settings: string | null } | undefined;
+  if (settingsRow?.currency_settings) {
+    try {
+      currencySettings = JSON.parse(settingsRow.currency_settings) as CurrencySettings;
+    } catch {
+      // Corrupted settings degrade to the default rather than 500ing.
+    }
+  }
+
   const payload: TripPayload = {
     id: row.id,
     version: row.version,
@@ -82,6 +154,10 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
     members: members.map((m): TripMember => ({ name: m.name, joinedAt: m.joined_at })),
     checks: checks.map((c): TripCheck => ({ key: c.key, by: c.checked_by })),
     tickets,
+    expenses,
+    settlements,
+    journal,
+    currencySettings,
   };
   if (isMember) payload.joinCode = row.join_code;
   return payload;
@@ -170,6 +246,49 @@ export function deleteTicket(tripId: string, ticketId: string): boolean {
     .prepare("DELETE FROM tickets WHERE trip_id = ? AND id = ?")
     .run(tripId, ticketId);
   if (result.changes === 0) return false;
+  touch(tripId);
+  return true;
+}
+
+export function addExpense(tripId: string, expense: Expense): boolean {
+  return insertJsonRow("expenses", tripId, expense.id, expense);
+}
+
+export function updateExpense(tripId: string, expense: Expense): boolean {
+  return updateJsonRow("expenses", tripId, expense.id, expense);
+}
+
+export function deleteExpense(tripId: string, expenseId: string): boolean {
+  return deleteJsonRow("expenses", tripId, expenseId);
+}
+
+export function addSettlement(tripId: string, settlement: Settlement): boolean {
+  return insertJsonRow("settlements", tripId, settlement.id, settlement);
+}
+
+export function deleteSettlement(tripId: string, settlementId: string): boolean {
+  return deleteJsonRow("settlements", tripId, settlementId);
+}
+
+export function addJournalEntry(tripId: string, entry: JournalEntry): boolean {
+  return insertJsonRow("journal_entries", tripId, entry.id, entry);
+}
+
+export function updateJournalEntry(tripId: string, entry: JournalEntry): boolean {
+  return updateJsonRow("journal_entries", tripId, entry.id, entry);
+}
+
+export function deleteJournalEntry(tripId: string, entryId: string): boolean {
+  return deleteJsonRow("journal_entries", tripId, entryId);
+}
+
+export function setCurrencySettings(tripId: string, settings: CurrencySettings): boolean {
+  const db = getDb();
+  if (db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId) === undefined) return false;
+  db.prepare(
+    "INSERT INTO trip_settings (trip_id, currency_settings) VALUES (?, ?) " +
+      "ON CONFLICT(trip_id) DO UPDATE SET currency_settings = excluded.currency_settings"
+  ).run(tripId, JSON.stringify(settings));
   touch(tripId);
   return true;
 }
