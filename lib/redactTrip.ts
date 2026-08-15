@@ -41,5 +41,6 @@ const FIELD_CLASSIFICATION: Record<keyof TripPayload, "guest-visible" | "members
   currencySettings: "members-only",
   features: "members-only",
   joinCode: "members-only",
+  myMemberName: "members-only",
 };
 void FIELD_CLASSIFICATION;

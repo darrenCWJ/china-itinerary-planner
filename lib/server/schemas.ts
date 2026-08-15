@@ -36,7 +36,7 @@ export const CreateTripSchema = z.object({
 
 export const JoinTripSchema = z.object({
   code: z.string().trim().min(1).max(12),
-  name: MemberNameSchema,
+  claimName: z.string().trim().min(1).max(30).optional(),
 });
 
 export const UpdateTripSchema = z.object({

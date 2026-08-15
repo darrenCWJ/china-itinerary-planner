@@ -1,12 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { JoinTripSchema } from "@/lib/server/schemas";
-import { DB_UNAVAILABLE, getTrip, joinTrip, storeMode } from "@/lib/server/store";
+import { getSessionUser } from "@/lib/server/session";
+import { accountsEnabled, ACCOUNTS_UNAVAILABLE } from "@/lib/server/auth";
+import {
+  DB_UNAVAILABLE,
+  getTrip,
+  joinCodeMatches,
+  joinTrip,
+  linkMemberAccount,
+  storeMode,
+} from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, { params }: Params) {
   if (storeMode() === "unavailable") {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
+  }
+  if (!accountsEnabled()) {
+    return NextResponse.json({ error: ACCOUNTS_UNAVAILABLE }, { status: 503 });
+  }
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to join a trip" }, { status: 401 });
   }
   const { id } = await params;
   let body: unknown;
@@ -15,21 +31,60 @@ export async function POST(req: NextRequest, { params }: Params) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-
   const parsed = JoinTripSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Enter your name and the join code", details: parsed.error.flatten() },
+      { error: "Invalid join request", details: parsed.error.flatten() },
       { status: 400 }
     );
   }
+  if (!(await joinCodeMatches(id, parsed.data.code))) {
+    return NextResponse.json({ error: "Wrong join code" }, { status: 403 });
+  }
 
-  const result = await joinTrip(id, parsed.data.code, parsed.data.name);
-  if (result === "not-found") {
+  // Claiming an existing (legacy) member name inherits its history.
+  if (parsed.data.claimName) {
+    const result = await linkMemberAccount(id, parsed.data.claimName, user.id);
+    if (result === "name-claimed") {
+      return NextResponse.json(
+        { error: `"${parsed.data.claimName}" is already claimed by another account` },
+        { status: 409 }
+      );
+    }
+    if (result === "not-found") {
+      return NextResponse.json({ error: "No such member name on this trip" }, { status: 404 });
+    }
+    // "linked" and "user-already-member" both land on the member payload.
+    const payload = await getTrip(id, parsed.data.claimName);
+    return NextResponse.json({ ...payload, myMemberName: parsed.data.claimName });
+  }
+
+  // New membership under the account's display name (deduplicated).
+  const trip = await getTrip(id);
+  if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  let name = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
+  // A name is unavailable only when it exists AND is claimed by another
+  // account; an unclaimed legacy name of the same spelling is also skipped
+  // (joining under it would silently merge histories — claiming is explicit).
+  const taken = async (n: string): Promise<boolean> => {
+    if (!trip.members.some((m) => m.name === n)) return false;
+    return true; // existing name, claimed or not — pick a fresh one
+  };
+  let suffix = 2;
+  while (await taken(name)) {
+    name = `${name.slice(0, 27)} ${suffix}`;
+    suffix += 1;
+  }
+  const joined = await joinTrip(id, parsed.data.code, name);
+  if (joined === "not-found") {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
-  if (result === "bad-code") {
-    return NextResponse.json({ error: "That join code doesn't match this trip" }, { status: 403 });
+  const linked = await linkMemberAccount(id, name, user.id);
+  if (linked === "user-already-member") {
+    // Already a member under some name — resolve and return it.
+    const payload = await getTrip(id);
+    return NextResponse.json(payload);
   }
-  return NextResponse.json(await getTrip(id, parsed.data.name));
+  const payload = await getTrip(id, name);
+  return NextResponse.json({ ...payload, myMemberName: name });
 }
