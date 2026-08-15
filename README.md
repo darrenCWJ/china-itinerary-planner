@@ -49,7 +49,7 @@ searchable catalog of **every city in China**, not just the highlights.
 | `/api/trips/:id` | GET | Fetch trip state (member session = full; `?code=` = guest view; else 403) |
 | `/api/trips/:id` | PATCH | Update trip input — plan regenerates server-side |
 | `/api/trips/:id/join` | POST · GET | Join/claim with account + code · list claimable names |
-| `/api/trips/:id/checks` | POST | Tick/untick an item `{ memberName, key, checked }` |
+| `/api/trips/:id/checks` | POST | Tick/untick an item `{ key, checked }` (attributed to the signed-in member) |
 | `/api/me/trips` | GET | Signed-in user's trips |
 | `/api/auth/*` | * | Better Auth (signup, login, sessions, admin) |
 | `/api/destinations` | GET | Search the all-China catalog (`?q=`) |
