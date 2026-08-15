@@ -68,14 +68,16 @@ export function AuthForm({ mode }: Props) {
       {mode === "signup" && (
         <label className="mt-4 block text-xs font-medium text-ink-soft">
           Your name (shown to trip members)
-          <input type="text" value={name} maxLength={30} className={inputCls}
-            onChange={(e) => setName(e.target.value)} />
+          <input type="text" value={name} maxLength={30} autoComplete="name" className={inputCls}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
         </label>
       )}
       <label className="mt-3 block text-xs font-medium text-ink-soft">
         Email
         <input type="email" value={email} autoComplete="email" className={inputCls}
-          onChange={(e) => setEmail(e.target.value)} />
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
       </label>
       <label className="mt-3 block text-xs font-medium text-ink-soft">
         Password
@@ -88,7 +90,7 @@ export function AuthForm({ mode }: Props) {
         className="mt-5 w-full rounded-lg bg-rail px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-50">
         {busy ? "…" : mode === "signup" ? "Create account" : "Sign in"}
       </button>
-      {error && <p className="mt-2 text-xs text-seal">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-xs text-seal">{error}</p>}
       <p className="mt-4 text-center text-xs text-ink-soft">
         {mode === "signup" ? (
           <>Already have an account? <Link href={`/login${querySuffix}`} className="text-rail hover:underline">Sign in</Link></>
