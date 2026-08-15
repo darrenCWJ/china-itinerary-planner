@@ -80,7 +80,7 @@ export function AuthForm({ mode }: Props) {
       <p className="font-mono text-xs uppercase tracking-[0.3em] text-rail">
         {mode === "signup" ? "New traveller" : "Welcome back"}
       </p>
-      <h1 className="mt-1 font-display text-2xl font-bold">
+      <h1 className="mt-1 font-display text-2xl font-bold [text-wrap:balance]">
         {mode === "signup" ? "Create your account" : "Sign in"}
       </h1>
       {mode === "signup" && (
