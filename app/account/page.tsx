@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/lib/authClient";
 
 export default function AccountPage() {
@@ -10,6 +10,15 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "" on both server and first client render (no window access during
+  // render, so no hydration mismatch); hydrates to `?next=<path>` right
+  // after mount so the signed-out "Sign in" link returns here post-login.
+  const [nextSuffix, setNextSuffix] = useState("");
+  useEffect(() => {
+    setNextSuffix(
+      `?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+    );
+  }, []);
 
   // Admin reset state
   const [users, setUsers] = useState<{ id: string; email: string; name: string }[] | null>(null);
@@ -21,7 +30,7 @@ export default function AccountPage() {
   if (!session) {
     return (
       <main className="p-8">
-        <Link href="/login" className="text-rail hover:underline">Sign in</Link> to manage your account.
+        <Link href={`/login${nextSuffix}`} className="text-rail hover:underline">Sign in</Link> to manage your account.
       </main>
     );
   }
