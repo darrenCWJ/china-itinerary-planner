@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { newId } from "@/lib/id";
 import type { JournalEntry } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { AddJournalSchema } from "@/lib/server/schemas";
-import { addJournalEntry, DB_UNAVAILABLE, getTrip, isMember, storeMode } from "@/lib/server/store";
+import { addJournalEntry, DB_UNAVAILABLE, getTrip, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,17 +19,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = AddJournalSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid journal entry", details: parsed.error.flatten() },
       { status: 400 }
-    );
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    return NextResponse.json(
-      { error: "Only trip members can write journal entries" },
-      { status: 403 }
     );
   }
 
@@ -38,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     date: parsed.data.entry.date,
     text: parsed.data.entry.text,
     photos: parsed.data.entry.photos,
-    by: parsed.data.memberName,
+    by: gate.memberName,
     createdAt: now,
     updatedAt: now,
   };
@@ -46,5 +44,6 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!added) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
-  return NextResponse.json(await getTrip(id, parsed.data.memberName), { status: 201 });
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName }, { status: 201 });
 }

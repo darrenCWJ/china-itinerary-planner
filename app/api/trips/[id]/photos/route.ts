@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireMember } from "@/lib/server/authz";
 import {
   MAX_PHOTO_BYTES,
   PHOTO_CONTENT_TYPES,
@@ -6,7 +7,7 @@ import {
   photoUploadsSupported,
   savePhoto,
 } from "@/lib/server/photoStore";
-import { DB_UNAVAILABLE, isMember, storeMode } from "@/lib/server/store";
+import { DB_UNAVAILABLE, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -23,17 +24,16 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   const { id } = await params;
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   let form: FormData;
   try {
     form = await req.formData();
   } catch {
     return NextResponse.json({ error: "Expected multipart form data" }, { status: 400 });
   }
-  const memberName = String(form.get("memberName") ?? "");
   const file = form.get("photo");
-  if (!memberName || !(await isMember(id, memberName))) {
-    return NextResponse.json({ error: "Only trip members can upload photos" }, { status: 403 });
-  }
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Missing photo file" }, { status: 400 });
   }

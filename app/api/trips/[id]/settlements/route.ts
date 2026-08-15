@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { newId } from "@/lib/id";
 import type { Settlement } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { AddSettlementSchema } from "@/lib/server/schemas";
 import { addSettlement, DB_UNAVAILABLE, getTrip, storeMode } from "@/lib/server/store";
 
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = AddSettlementSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -31,12 +35,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
   const memberNames = trip.members.map((m) => m.name);
-  if (!memberNames.includes(parsed.data.memberName)) {
-    return NextResponse.json(
-      { error: "Only trip members can record repayments" },
-      { status: 403 }
-    );
-  }
   const f = parsed.data.settlement;
   if (f.from === f.to) {
     return NextResponse.json({ error: "Payer and receiver must differ" }, { status: 400 });
@@ -53,9 +51,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     to: f.to,
     amount: f.amount,
     currency: f.currency,
-    recordedBy: parsed.data.memberName,
+    recordedBy: gate.memberName,
     createdAt: Date.now(),
   };
   await addSettlement(id, settlement);
-  return NextResponse.json(await getTrip(id, parsed.data.memberName), { status: 201 });
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName }, { status: 201 });
 }

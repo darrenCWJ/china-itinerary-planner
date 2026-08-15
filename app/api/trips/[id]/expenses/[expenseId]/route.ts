@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Expense } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { UpdateExpenseSchema } from "@/lib/server/schemas";
 import {
   DB_UNAVAILABLE,
   deleteExpense,
   getTrip,
-  isMember,
   storeMode,
   updateExpense,
 } from "@/lib/server/store";
@@ -24,6 +24,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = UpdateExpenseSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -38,9 +41,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Expense not found" }, { status: 404 });
   }
   const memberNames = trip.members.map((m) => m.name);
-  if (!memberNames.includes(parsed.data.memberName)) {
-    return NextResponse.json({ error: "Only trip members can edit expenses" }, { status: 403 });
-  }
 
   const f = parsed.data.expense;
   const merged: Expense = {
@@ -61,7 +61,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   await updateExpense(id, merged);
-  return NextResponse.json(await getTrip(id, parsed.data.memberName));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }
 
 export async function DELETE(req: NextRequest, { params }: Params) {
@@ -69,13 +70,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
   }
   const { id, expenseId } = await params;
-  const member = req.nextUrl.searchParams.get("member") ?? "";
-  if (!member || !(await isMember(id, member))) {
-    return NextResponse.json({ error: "Only trip members can delete expenses" }, { status: 403 });
-  }
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const deleted = await deleteExpense(id, expenseId);
   if (!deleted) {
     return NextResponse.json({ error: "Expense not found" }, { status: 404 });
   }
-  return NextResponse.json(await getTrip(id, member));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }
