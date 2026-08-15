@@ -1,35 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ACCESS_COOKIE, accessToken } from "@/lib/access";
+import { getSessionCookie } from "better-auth/cookies";
+import { wallDecision } from "@/lib/wall";
 
 /**
- * When ACCESS_CODE is set, every page and API route requires the unlock
- * cookie. Visitors without it are sent to /unlock (pages) or get a 401
- * (API calls). With no ACCESS_CODE configured the site is open.
+ * Compulsory-login wall. Optimistic: checks only that a Better Auth session
+ * cookie exists — validity is enforced by the per-route session gates. With
+ * no BETTER_AUTH_SECRET configured the site is open (local planning mode).
  */
 export async function proxy(req: NextRequest) {
-  const accessCode = process.env.ACCESS_CODE;
-  if (!accessCode) return NextResponse.next();
-
-  const cookie = req.cookies.get(ACCESS_COOKIE)?.value;
-  if (cookie && cookie === (await accessToken(accessCode))) {
-    return NextResponse.next();
-  }
-
-  if (req.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.json(
-      { error: "Access code required — unlock the site first" },
-      { status: 401 }
-    );
-  }
+  const decision = wallDecision({
+    pathname: req.nextUrl.pathname,
+    hasCode: Boolean(req.nextUrl.searchParams.get("code")),
+    hasSessionCookie: getSessionCookie(req) !== null,
+    accountsConfigured: Boolean(process.env.BETTER_AUTH_SECRET),
+  });
+  if (decision === "pass") return NextResponse.next();
 
   const url = req.nextUrl.clone();
-  url.pathname = "/unlock";
+  url.pathname = "/login";
   url.search = `?next=${encodeURIComponent(req.nextUrl.pathname + req.nextUrl.search)}`;
   return NextResponse.redirect(url);
 }
 
 export const config = {
-  // `b/` is exempt: a briefing code is itself a 60-bit bearer secret, and the
-  // recipient of a shared link will not have the site's access code.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|unlock|api/unlock|b/).*)"],
+  // b/ stays exempt (briefing links are their own bearer secret); api/ routes
+  // self-enforce auth; login/signup are the wall's own destination.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/|b/|login|signup).*)"],
 };
