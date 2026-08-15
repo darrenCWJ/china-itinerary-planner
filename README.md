@@ -103,8 +103,10 @@ docs/
 
 ## How "many people can join" works
 
-Accounts (email + password) own editing: members sign in once and their
-trips follow them to any device. A trip's join code is now a **view key** —
+The app is login-first: every member signs in before doing anything, and
+creating an account requires the family invite code. Accounts (email +
+password) own editing: members sign in once and their trips follow them
+to any device. A trip's join code is now a **view key** —
 anyone holding it can see the itinerary and packing lists (read-only,
 nothing personal), while joining as an editing member requires an account
 plus the code. Pre-account members are preserved: sign up and claim your

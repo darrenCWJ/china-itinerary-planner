@@ -71,7 +71,7 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
       {next && (
         <Link
           href={`/trip/${next.id}`}
-          className="group mt-3 block overflow-hidden rounded-xl border-2 border-seal bg-paper shadow-sm transition-shadow hover:shadow-md"
+          className="group mt-3 block overflow-hidden rounded-2xl border-2 border-seal bg-paper shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="flex items-stretch">
             <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-seal py-5 text-white">
@@ -80,17 +80,17 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
             </div>
             <div className="min-w-0 flex-1 border-l-2 border-dashed border-sky px-4 py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className="font-display text-lg font-bold group-hover:text-rail-deep">
+                <p className="font-display text-lg font-bold [text-wrap:balance] group-hover:text-rail-deep">
                   {next.name}
                 </p>
-                <p className="font-mono text-xs font-semibold text-seal">
+                <p className="font-mono text-xs font-semibold tabular-nums text-seal">
                   {phaseLabel(tripPhase(next, today), next.days)}
                 </p>
               </div>
               <p className="mt-0.5 truncate font-mono text-sm uppercase tracking-wide text-ink-soft">
                 {next.destinations.join(" → ")}
               </p>
-              <p className="mt-1.5 text-xs text-ink-soft">
+              <p className="mt-1.5 text-xs tabular-nums text-ink-soft">
                 {dateRange(next) ?? `${next.days} days — set a start date on the trip page`}
                 <span className="ml-2 font-semibold text-rail">Open trip →</span>
               </p>
@@ -110,7 +110,7 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
               >
                 <Link href={`/trip/${t.id}`} className="min-w-0 flex-1 hover:text-rail-deep">
                   <p className="truncate text-sm font-semibold">{t.name}</p>
-                  <p className="truncate text-[11px] text-ink-soft">
+                  <p className="truncate text-[11px] tabular-nums text-ink-soft">
                     {phaseLabel(phase, t.days)}
                     {dateRange(t) ? ` · ${dateRange(t)}` : ""}
                   </p>
@@ -128,8 +128,8 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
 function EmptyTripsCard({ heading, body }: { heading: string; body: string }) {
   return (
     <div className="mt-8 rounded-2xl border-2 border-dashed border-sky bg-paper px-6 py-10 text-center">
-      <p className="font-display text-xl font-bold">{heading}</p>
-      <p className="mt-1 text-sm text-ink-soft">{body}</p>
+      <p className="font-display text-xl font-bold [text-wrap:balance]">{heading}</p>
+      <p className="mt-1 text-sm [text-wrap:pretty] text-ink-soft">{body}</p>
       <Link href="/plan"
         className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-rail px-5 text-sm font-semibold text-white transition-colors hover:bg-rail-deep">
         Plan a trip →

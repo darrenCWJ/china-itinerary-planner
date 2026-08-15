@@ -25,6 +25,10 @@ Update 2026-08: done — Better Auth email+password accounts with per-member
 sessions; join codes demoted to view-only keys (spec:
 docs/superpowers/specs/2026-08-15-accounts-auth-design.md).
 
+Update 2026-08 (2): login-first shell — signed-out visitors land on /login;
+ACCESS_CODE now gates signup instead of the whole site (spec:
+docs/superpowers/specs/2026-08-16-app-shell-login-design.md).
+
 ## How the planner core works (Phase 1 — shipped)
 
 ```
