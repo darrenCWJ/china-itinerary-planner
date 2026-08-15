@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountChip } from "@/components/auth/AccountChip";
 import { BriefingShare } from "@/components/trip/BriefingShare";
 import { BriefingView } from "@/components/trip/BriefingView";
@@ -48,6 +48,10 @@ export function TripView({ tripId }: { tripId: string }) {
   );
   const [tab, setTab] = useState<Tab>("Itinerary");
   const [copied, setCopied] = useState(false);
+  // Guards against out-of-order responses: a poll issued before a join
+  // resolves, or a fetch with a stale guestCode, can land after a newer
+  // request. Only the most recently issued fetchTrip call may update state.
+  const fetchSeq = useRef(0);
 
   // Add-day control state
   const [newDayDest, setNewDayDest] = useState("");
@@ -62,8 +66,10 @@ export function TripView({ tripId }: { tripId: string }) {
 
   const fetchTrip = useCallback(
     async (force = false) => {
+      const seq = ++fetchSeq.current;
       const query = guestCode ? `?code=${encodeURIComponent(guestCode)}` : "";
       const res = await fetch(`/api/trips/${tripId}${query}`, { cache: "no-store" });
+      if (seq !== fetchSeq.current) return;
       if (res.status === 404) return setLoadState("not-found");
       if (res.status === 403) {
         setLoadState("private");
@@ -71,6 +77,7 @@ export function TripView({ tripId }: { tripId: string }) {
       }
       if (!res.ok) return;
       const json = await res.json();
+      if (seq !== fetchSeq.current) return;
       if (json.guest === true) {
         setGuestView(json as GuestTripPayload);
         setLoadState("guest");
@@ -256,8 +263,14 @@ export function TripView({ tripId }: { tripId: string }) {
       <Shell>
         <PrivateGate
           onSubmitCode={async (code) => {
+            const res = await fetch(`/api/trips/${tripId}?code=${encodeURIComponent(code)}`, {
+              cache: "no-store",
+            });
+            if (res.status === 403) return "Wrong join code — check it and try again.";
+            if (!res.ok && res.status !== 404) return "Couldn't check that code — try again.";
+            if (res.status === 404) return "Trip not found.";
             setGuestCode(code);
-            return null; // fetch effect re-runs on guestCode change; errors surface as staying private
+            return null; // fetch effect re-runs on guestCode change and renders the guest view
           }}
         />
       </Shell>
