@@ -81,6 +81,59 @@ CREATE TABLE IF NOT EXISTS trip_settings (
   trip_id TEXT PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
   currency_settings TEXT
 );
+
+-- better-auth v1.6.29 schema (generated 2026-08-15 via @better-auth/cli).
+-- Regenerate when bumping the pinned better-auth version.
+CREATE TABLE IF NOT EXISTS user (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  emailVerified INTEGER NOT NULL,
+  image TEXT,
+  createdAt DATE NOT NULL,
+  updatedAt DATE NOT NULL,
+  role TEXT,
+  banned INTEGER,
+  banReason TEXT,
+  banExpires DATE
+);
+CREATE TABLE IF NOT EXISTS session (
+  id TEXT NOT NULL PRIMARY KEY,
+  expiresAt DATE NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  createdAt DATE NOT NULL,
+  updatedAt DATE NOT NULL,
+  ipAddress TEXT,
+  userAgent TEXT,
+  userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  impersonatedBy TEXT
+);
+CREATE TABLE IF NOT EXISTS account (
+  id TEXT NOT NULL PRIMARY KEY,
+  accountId TEXT NOT NULL,
+  providerId TEXT NOT NULL,
+  userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  accessToken TEXT,
+  refreshToken TEXT,
+  idToken TEXT,
+  accessTokenExpiresAt DATE,
+  refreshTokenExpiresAt DATE,
+  scope TEXT,
+  password TEXT,
+  createdAt DATE NOT NULL,
+  updatedAt DATE NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verification (
+  id TEXT NOT NULL PRIMARY KEY,
+  identifier TEXT NOT NULL,
+  value TEXT NOT NULL,
+  expiresAt DATE NOT NULL,
+  createdAt DATE NOT NULL,
+  updatedAt DATE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_userId_idx ON session(userId);
+CREATE INDEX IF NOT EXISTS account_userId_idx ON account(userId);
+CREATE INDEX IF NOT EXISTS verification_identifier_idx ON verification(identifier);
 `;
 
 export function getDb(): Database.Database {
