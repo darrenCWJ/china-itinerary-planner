@@ -280,6 +280,13 @@ export async function joinTrip(
   return "joined";
 }
 
+export async function joinCodeMatches(tripId: string, code: string): Promise<boolean> {
+  await ensureSchema();
+  const rows = await sql()`SELECT join_code FROM trips WHERE id = ${tripId}`;
+  if (rows.length === 0) return false;
+  return (rows[0].join_code as string).toUpperCase() === code.trim().toUpperCase();
+}
+
 export async function updateTripData(tripId: string, data: TripData): Promise<boolean> {
   await ensureSchema();
   const s = sql();

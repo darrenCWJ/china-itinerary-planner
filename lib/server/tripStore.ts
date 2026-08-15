@@ -190,6 +190,13 @@ export function joinTrip(tripId: string, code: string, name: string): JoinResult
   return "joined";
 }
 
+export function joinCodeMatches(tripId: string, code: string): boolean {
+  const row = getDb()
+    .prepare("SELECT join_code FROM trips WHERE id = ?")
+    .get(tripId) as { join_code: string } | undefined;
+  return row !== undefined && row.join_code.toUpperCase() === code.trim().toUpperCase();
+}
+
 export function updateTripData(tripId: string, data: TripData): boolean {
   const db = getDb();
   const result = db
