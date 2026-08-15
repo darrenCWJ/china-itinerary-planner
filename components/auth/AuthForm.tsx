@@ -7,6 +7,9 @@ import { authClient } from "@/lib/authClient";
 
 type Props = { mode: "login" | "signup" };
 
+const safeNext = (value: string | null): string =>
+  value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/";
+
 export function AuthForm({ mode }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -33,7 +36,7 @@ export function AuthForm({ mode }: Props) {
       return;
     }
     const next = new URLSearchParams(window.location.search).get("next");
-    router.push(next && next.startsWith("/") ? next : "/");
+    router.push(safeNext(next));
     router.refresh();
   };
 
