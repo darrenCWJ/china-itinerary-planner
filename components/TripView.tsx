@@ -586,27 +586,20 @@ export function TripView({ tripId }: { tripId: string }) {
   );
 }
 
+/**
+ * Trip-specific chrome only — the brand row (logo, product name) lives in
+ * the global `AppHeader` already rendered above this in the layout, so
+ * repeating it here doubled up on every trip page. The one piece worth
+ * keeping is the "shared trip" state, trimmed to a slim eyebrow strip.
+ */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen pb-16">
-      <header className="border-b border-sky bg-paper print:hidden">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-seal font-kai text-xl text-white">
-              游
-            </span>
-            <div>
-              <p className="font-display text-xl font-bold leading-tight">
-                China Itinerary Planner
-              </p>
-              <p className="text-xs text-ink-soft">Shared trip mode — live for every member</p>
-            </div>
-          </Link>
-          <div className="flex items-center gap-4">
-            <span className="hidden font-kai text-lg text-seal sm:block">一路平安</span>
-          </div>
-        </div>
-      </header>
+      <div className="border-b border-sky bg-paper px-4 py-2 print:hidden">
+        <p className="mx-auto max-w-4xl font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+          Shared trip mode — live for every member
+        </p>
+      </div>
       <main className="mx-auto max-w-4xl px-4 pt-6">{children}</main>
     </div>
   );

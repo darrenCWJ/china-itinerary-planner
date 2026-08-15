@@ -145,5 +145,12 @@ automatically on first use.
 | `TRUSTED_ORIGINS` | Comma-separated extra origins allowed to call the auth API |
 | `ADMIN_USER_IDS` | Comma-separated account ids that may reset other members' passwords |
 
+> Upgrading note: ACCESS_CODE alone no longer locks the site. If you
+> previously relied on it without accounts, set BETTER_AUTH_SECRET before
+> upgrading — otherwise the site is open.
+>
+> Old `/unlock` bookmarks now 404 — harmless, that page was retired along
+> with the unlock gate.
+
 The catalog refresh endpoint is local-only (serverless filesystems are
 read-only): rerun `node scripts/ingest-destinations.mjs`, commit, redeploy.
