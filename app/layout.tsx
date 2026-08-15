@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { AppHeader } from "@/components/shell/AppHeader";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({
@@ -29,7 +30,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
-      <body className="bg-mist font-sans text-ink antialiased">{children}</body>
+      <body className="bg-mist font-sans text-ink antialiased">
+        <AppHeader />
+        {children}
+      </body>
     </html>
   );
 }
