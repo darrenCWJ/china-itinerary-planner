@@ -136,7 +136,7 @@ automatically on first use.
 | Variable | Effect |
 |---|---|
 | `DATABASE_URL` | Postgres (Supabase) connection string — enables shared trips |
-| `ACCESS_CODE` | Optional: locks the whole site (pages + API) behind an access-code screen; visitors unlock once per browser (90-day cookie). Unset = open. **Exception**: `/b/*` (public briefing links) is always exempt — a briefing code is itself a 12-character bearer secret, and the recipient of a shared link won't have the site's access code |
+| `ACCESS_CODE` | Family invite code required to create an account. Unset = open signups. (No longer a site-wide gate — signed-out visitors land on /login instead.) |
 | `CATALOG_URL` | Optional: override the remote catalog fallback URL |
 | `BETTER_AUTH_SECRET` | Enables accounts (any long random string). Unset = account features 503 |
 | `BETTER_AUTH_URL` | Base URL of this deployment (e.g. `http://192.168.1.20:3000` on a Pi) |
