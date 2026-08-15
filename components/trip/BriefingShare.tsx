@@ -18,7 +18,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
   useEffect(() => {
     if (!memberName) return;
     let live = true;
-    fetch(`/api/trips/${tripId}/briefing?member=${encodeURIComponent(memberName)}`, {
+    fetch(`/api/trips/${tripId}/briefing`, {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -41,7 +41,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
         const res = await fetch(`/api/trips/${tripId}/briefing`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ memberName, enabled, includeBookings }),
+          body: JSON.stringify({ enabled, includeBookings }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -55,7 +55,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
         setBusy(false);
       }
     },
-    [tripId, memberName]
+    [tripId]
   );
 
   if (!memberName) {

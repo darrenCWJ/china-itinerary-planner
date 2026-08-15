@@ -203,7 +203,16 @@ function ShareTripCard({
         setCreating(false);
         return;
       }
-      if (!res.ok) throw new Error(`Create failed (${res.status})`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(
+          typeof body?.error === "string"
+            ? body.error
+            : "Couldn't create the shared trip — is the server running?"
+        );
+        setCreating(false);
+        return;
+      }
       const json: { id: string; joinCode: string } = await res.json();
       saveMyTrip({
         id: json.id,
