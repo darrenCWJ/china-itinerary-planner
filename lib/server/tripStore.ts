@@ -30,20 +30,6 @@ function touch(tripId: string): void {
     .run(Date.now(), tripId);
 }
 
-/**
- * Date.now() can return the same millisecond across back-to-back calls (the
- * system clock's resolution can be much coarser than 1ms, notably on
- * Windows). tripsForUser sorts by linked_at DESC, so ties would make "most
- * recently linked" nondeterministic; this keeps timestamps strictly
- * increasing without changing the schema or the ORDER BY clause.
- */
-let lastLinkedAt = 0;
-function nextLinkedAt(): number {
-  const now = Date.now();
-  lastLinkedAt = now > lastLinkedAt ? now : lastLinkedAt + 1;
-  return lastLinkedAt;
-}
-
 type JsonRowTable = "expenses" | "settlements" | "journal_entries";
 
 function insertJsonRow(table: JsonRowTable, tripId: string, id: string, data: unknown): boolean {
@@ -468,7 +454,7 @@ export function linkMemberAccount(
   if (userLinked) return "user-already-member";
   db.prepare(
     "INSERT INTO member_accounts (trip_id, member_name, user_id, linked_at) VALUES (?, ?, ?, ?)"
-  ).run(tripId, memberName, userId, nextLinkedAt());
+  ).run(tripId, memberName, userId, Date.now());
   touch(tripId);
   return "linked";
 }
@@ -501,7 +487,8 @@ export function tripsForUser(userId: string): UserTrip[] {
   const rows = getDb()
     .prepare(
       "SELECT t.id, t.data, ma.member_name, ma.linked_at FROM member_accounts ma " +
-        "JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ? ORDER BY ma.linked_at DESC"
+        "JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ? " +
+        "ORDER BY ma.linked_at DESC, ma.rowid DESC"
     )
     .all(userId) as { id: string; data: string; member_name: string }[];
   const out: UserTrip[] = [];

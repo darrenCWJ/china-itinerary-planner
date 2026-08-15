@@ -194,21 +194,6 @@ async function touch(tripId: string): Promise<void> {
   await sql()`UPDATE trips SET version = version + 1, updated_at = ${Date.now()} WHERE id = ${tripId}`;
 }
 
-/**
- * Date.now() can return the same millisecond across back-to-back calls (the
- * system clock's resolution can be much coarser than 1ms, notably on
- * Windows). tripsForUser sorts by linked_at DESC, so ties would make "most
- * recently linked" nondeterministic; this keeps timestamps strictly
- * increasing without changing the schema or the ORDER BY clause. Mirrors
- * tripStore.ts's nextLinkedAt.
- */
-let lastLinkedAt = 0;
-function nextLinkedAt(): number {
-  const now = Date.now();
-  lastLinkedAt = now > lastLinkedAt ? now : lastLinkedAt + 1;
-  return lastLinkedAt;
-}
-
 export async function createTrip(
   data: TripData,
   creatorName: string
@@ -589,8 +574,25 @@ export async function linkMemberAccount(
   const userLinked = await s`SELECT 1 FROM member_accounts
     WHERE trip_id = ${tripId} AND user_id = ${userId}`;
   if (userLinked.length > 0) return "user-already-member";
-  await s`INSERT INTO member_accounts (trip_id, member_name, user_id, linked_at)
-    VALUES (${tripId}, ${memberName}, ${userId}, ${nextLinkedAt()})`;
+  try {
+    await s`INSERT INTO member_accounts (trip_id, member_name, user_id, linked_at)
+      VALUES (${tripId}, ${memberName}, ${userId}, ${Date.now()})`;
+  } catch (error) {
+    // 23505 = unique_violation: someone else's INSERT won the race between our
+    // checks above and this insert (either PRIMARY KEY (trip_id, member_name)
+    // or UNIQUE (trip_id, user_id)). Re-query to classify what won instead of
+    // surfacing a raw constraint error.
+    if ((error as { code?: string }).code !== "23505") throw error;
+    const nameTakenAfter = await s`SELECT user_id FROM member_accounts
+      WHERE trip_id = ${tripId} AND member_name = ${memberName}`;
+    if (nameTakenAfter.length > 0) {
+      return (nameTakenAfter[0].user_id as string) === userId ? "linked" : "name-claimed";
+    }
+    const userLinkedAfter = await s`SELECT 1 FROM member_accounts
+      WHERE trip_id = ${tripId} AND user_id = ${userId}`;
+    if (userLinkedAfter.length > 0) return "user-already-member";
+    throw error;
+  }
   await touch(tripId);
   return "linked";
 }
@@ -611,8 +613,12 @@ export async function isNameClaimed(tripId: string, memberName: string): Promise
 
 export async function tripsForUser(userId: string): Promise<UserTrip[]> {
   await ensureSchema();
+  // Postgres has no rowid tiebreaker; trip_id is stable-but-arbitrary and only
+  // decides the rare case of the same user linking two trips in the same
+  // millisecond across processes.
   const rows = await sql()`SELECT t.id, t.data, ma.member_name, ma.linked_at FROM member_accounts ma
-    JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ${userId} ORDER BY ma.linked_at DESC`;
+    JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ${userId}
+    ORDER BY ma.linked_at DESC, ma.trip_id DESC`;
   return rows.map((r): UserTrip => {
     const data = r.data as TripData;
     return {
