@@ -7,8 +7,15 @@ import { authClient } from "@/lib/authClient";
 
 type Props = { mode: "login" | "signup" };
 
-const safeNext = (value: string | null): string =>
-  value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/";
+const safeNext = (value: string | null): string => {
+  if (!value) return "/";
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : "/";
+  } catch {
+    return "/";
+  }
+};
 
 export function AuthForm({ mode }: Props) {
   const router = useRouter();
