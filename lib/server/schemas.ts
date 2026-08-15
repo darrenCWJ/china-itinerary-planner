@@ -136,7 +136,6 @@ export const WalletPutSchema = z.object({
 });
 
 export const BriefingShareSchema = z.object({
-  memberName: MemberNameSchema,
   enabled: z.boolean(),
   includeBookings: z.boolean(),
 });
@@ -169,12 +168,10 @@ export const ExpenseFieldsSchema = z.object({
 });
 
 export const AddExpenseSchema = z.object({
-  memberName: MemberNameSchema,
   expense: ExpenseFieldsSchema,
 });
 
 export const UpdateExpenseSchema = z.object({
-  memberName: MemberNameSchema,
   expense: ExpenseFieldsSchema.partial(),
 });
 
@@ -187,7 +184,6 @@ export const SettlementFieldsSchema = z.object({
 });
 
 export const AddSettlementSchema = z.object({
-  memberName: MemberNameSchema,
   settlement: SettlementFieldsSchema,
 });
 
@@ -209,17 +205,14 @@ export const JournalFieldsSchema = z.object({
 });
 
 export const AddJournalSchema = z.object({
-  memberName: MemberNameSchema,
   entry: JournalFieldsSchema,
 });
 
 export const UpdateJournalSchema = z.object({
-  memberName: MemberNameSchema,
   entry: JournalFieldsSchema.partial(),
 });
 
 export const CurrencySettingsSchema = z.object({
-  memberName: MemberNameSchema,
   home: CurrencyCodeSchema.nullable(),
   // Key schema is deliberately transform-free: record keys must stay plain
   // strings, so validate the shape and let the client send uppercase.

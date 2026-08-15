@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireMember } from "@/lib/server/authz";
 import { CurrencySettingsSchema } from "@/lib/server/schemas";
-import {
-  DB_UNAVAILABLE,
-  getTrip,
-  isMember,
-  setCurrencySettings,
-  storeMode,
-} from "@/lib/server/store";
+import { DB_UNAVAILABLE, getTrip, setCurrencySettings, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -22,17 +17,14 @@ export async function PUT(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = CurrencySettingsSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid currency settings", details: parsed.error.flatten() },
       { status: 400 }
-    );
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    return NextResponse.json(
-      { error: "Only trip members can change currency settings" },
-      { status: 403 }
     );
   }
 
@@ -43,5 +35,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
   if (!saved) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
-  return NextResponse.json(await getTrip(id, parsed.data.memberName));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }

@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  DB_UNAVAILABLE,
-  deleteSettlement,
-  getTrip,
-  isMember,
-  storeMode,
-} from "@/lib/server/store";
+import { requireMember } from "@/lib/server/authz";
+import { DB_UNAVAILABLE, deleteSettlement, getTrip, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string; settlementId: string }> };
 
@@ -14,16 +9,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
   }
   const { id, settlementId } = await params;
-  const member = req.nextUrl.searchParams.get("member") ?? "";
-  if (!member || !(await isMember(id, member))) {
-    return NextResponse.json(
-      { error: "Only trip members can delete repayments" },
-      { status: 403 }
-    );
-  }
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const deleted = await deleteSettlement(id, settlementId);
   if (!deleted) {
     return NextResponse.json({ error: "Repayment not found" }, { status: 404 });
   }
-  return NextResponse.json(await getTrip(id, member));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }

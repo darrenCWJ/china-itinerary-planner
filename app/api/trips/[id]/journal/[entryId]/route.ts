@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { JournalEntry } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { UpdateJournalSchema } from "@/lib/server/schemas";
 import { deletePhoto } from "@/lib/server/photoStore";
 import {
@@ -41,6 +42,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = UpdateJournalSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -54,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!trip || !existing) {
     return NextResponse.json({ error: "Journal entry not found" }, { status: 404 });
   }
-  if (existing.by !== parsed.data.memberName) {
+  if (existing.by !== gate.memberName) {
     return NextResponse.json(
       { error: "Only the author can edit a journal entry" },
       { status: 403 }
@@ -76,7 +80,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     merged,
     trip.journal.filter((e) => e.id !== entryId)
   );
-  return NextResponse.json(await getTrip(id, parsed.data.memberName));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }
 
 export async function DELETE(req: NextRequest, { params }: Params) {
@@ -84,14 +89,15 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
   }
   const { id, entryId } = await params;
-  const member = req.nextUrl.searchParams.get("member") ?? "";
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
 
   const trip = await getTrip(id);
   const existing = trip?.journal.find((e) => e.id === entryId);
   if (!trip || !existing) {
     return NextResponse.json({ error: "Journal entry not found" }, { status: 404 });
   }
-  if (!member || existing.by !== member) {
+  if (existing.by !== gate.memberName) {
     return NextResponse.json(
       { error: "Only the author can delete a journal entry" },
       { status: 403 }
@@ -105,5 +111,6 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     null,
     trip.journal.filter((e) => e.id !== entryId)
   );
-  return NextResponse.json(await getTrip(id, member));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }

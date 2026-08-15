@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { newId } from "@/lib/id";
 import type { Expense } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { AddExpenseSchema } from "@/lib/server/schemas";
 import { addExpense, DB_UNAVAILABLE, getTrip, storeMode } from "@/lib/server/store";
 
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = AddExpenseSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -31,9 +35,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
   const memberNames = trip.members.map((m) => m.name);
-  if (!memberNames.includes(parsed.data.memberName)) {
-    return NextResponse.json({ error: "Only trip members can add expenses" }, { status: 403 });
-  }
   const f = parsed.data.expense;
   const named = [f.paidBy, ...f.splitAmong];
   const unknown = named.find((n) => !memberNames.includes(n));
@@ -51,9 +52,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     paidBy: f.paidBy,
     splitAmong: f.splitAmong,
     notes: f.notes ? f.notes : null,
-    addedBy: parsed.data.memberName,
+    addedBy: gate.memberName,
     createdAt: Date.now(),
   };
   await addExpense(id, expense);
-  return NextResponse.json(await getTrip(id, parsed.data.memberName), { status: 201 });
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName }, { status: 201 });
 }
