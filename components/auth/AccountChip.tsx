@@ -10,6 +10,7 @@ export function AccountChip() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   if (isPending) return null;
   if (!session) {
@@ -40,9 +41,10 @@ export function AccountChip() {
             onClick={() => setOpen(false)}>
             Account
           </Link>
-          <button type="button"
-            className="block w-full rounded-lg px-2.5 py-1.5 text-left text-seal hover:bg-mist"
+          <button type="button" disabled={signingOut}
+            className="block w-full rounded-lg px-2.5 py-1.5 text-left text-seal hover:bg-mist disabled:opacity-50"
             onClick={() => {
+              setSigningOut(true);
               void authClient.signOut().then(() => {
                 setOpen(false);
                 router.push("/");

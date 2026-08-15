@@ -15,6 +15,7 @@ export default function AccountPage() {
   const [users, setUsers] = useState<{ id: string; email: string; name: string }[] | null>(null);
   const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
+  const [adminBusy, setAdminBusy] = useState(false);
 
   if (isPending) return <main className="p-8 text-sm text-ink-soft">Loading…</main>;
   if (!session) {
@@ -42,19 +43,29 @@ export default function AccountPage() {
   };
 
   const loadUsers = async () => {
-    const result = await authClient.admin.listUsers({ query: { limit: 100 } });
-    if (result.error) {
-      setAdminMessage("You're not an admin on this deployment.");
-      return;
+    setAdminBusy(true);
+    try {
+      const result = await authClient.admin.listUsers({ query: { limit: 100 } });
+      if (result.error) {
+        setAdminMessage("You're not an admin on this deployment.");
+        return;
+      }
+      setUsers(result.data.users.map((u) => ({ id: u.id, email: u.email, name: u.name })));
+    } finally {
+      setAdminBusy(false);
     }
-    setUsers(result.data.users.map((u) => ({ id: u.id, email: u.email, name: u.name })));
   };
 
   const resetFor = async (userId: string) => {
     const pw = resetPasswords[userId] ?? "";
     if (pw.length < 8) return setAdminMessage("Reset password needs at least 8 characters.");
-    const result = await authClient.admin.setUserPassword({ userId, newPassword: pw });
-    setAdminMessage(result.error ? result.error.message ?? "Reset failed." : "Password reset ✓");
+    setAdminBusy(true);
+    try {
+      const result = await authClient.admin.setUserPassword({ userId, newPassword: pw });
+      setAdminMessage(result.error ? result.error.message ?? "Reset failed." : "Password reset ✓");
+    } finally {
+      setAdminBusy(false);
+    }
   };
 
   const inputCls =
@@ -95,8 +106,8 @@ export default function AccountPage() {
           Only works when your account id is listed in ADMIN_USER_IDS.
         </p>
         {users === null ? (
-          <button type="button" onClick={() => void loadUsers()}
-            className="mt-3 rounded-lg border border-sky px-3 py-1.5 text-sm text-rail hover:bg-sky">
+          <button type="button" onClick={() => void loadUsers()} disabled={adminBusy}
+            className="mt-3 rounded-lg border border-sky px-3 py-1.5 text-sm text-rail hover:bg-sky disabled:opacity-50">
             Load members
           </button>
         ) : (
@@ -110,8 +121,8 @@ export default function AccountPage() {
                   onChange={(e) =>
                     setResetPasswords((prev) => ({ ...prev, [u.id]: e.target.value }))
                   } />
-                <button type="button" onClick={() => void resetFor(u.id)}
-                  className="rounded-lg bg-rail px-2.5 py-1 text-xs font-semibold text-white">
+                <button type="button" onClick={() => void resetFor(u.id)} disabled={adminBusy}
+                  className="rounded-lg bg-rail px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50">
                   Reset
                 </button>
               </li>
