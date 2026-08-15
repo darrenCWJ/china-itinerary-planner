@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccountChip } from "@/components/auth/AccountChip";
 import { BriefingShare } from "@/components/trip/BriefingShare";
 import { BriefingView } from "@/components/trip/BriefingView";
 import { DayCard } from "@/components/trip/DayCard";
@@ -620,7 +619,6 @@ function Shell({ children }: { children: React.ReactNode }) {
           </Link>
           <div className="flex items-center gap-4">
             <span className="hidden font-kai text-lg text-seal sm:block">一路平安</span>
-            <AccountChip />
           </div>
         </div>
       </header>
