@@ -618,6 +618,16 @@ export async function isNameClaimed(tripId: string, memberName: string): Promise
   return rows.length > 0;
 }
 
+/**
+ * Awaitable hook for callers outside this module (the Better Auth route
+ * handler) that need the auth tables to exist before Better Auth touches
+ * them, without triggering a second concurrent schema run. Reuses the same
+ * memoized promise every other function in this file already awaits.
+ */
+export function schemaReady(): Promise<void> {
+  return ensureSchema();
+}
+
 export async function tripsForUser(userId: string): Promise<UserTrip[]> {
   await ensureSchema();
   // Postgres has no rowid tiebreaker; trip_id is stable-but-arbitrary and only

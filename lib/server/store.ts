@@ -36,6 +36,18 @@ function pg() {
   return import("./pgStore");
 }
 
+/**
+ * Awaited by the Better Auth route handler before it touches the "user" /
+ * "session" / "account" / "verification" tables, so a fresh Postgres
+ * deployment's first signup doesn't 500 with "relation does not exist".
+ * No-op in sqlite/unavailable modes — better-sqlite3 creates its schema
+ * synchronously at module load (see lib/server/db.ts), so there's nothing
+ * to await there.
+ */
+export async function schemaReady(): Promise<void> {
+  if (storeMode() === "postgres") await (await pg()).schemaReady();
+}
+
 export async function createTrip(
   data: TripData,
   creatorName: string
