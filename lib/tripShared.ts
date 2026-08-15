@@ -1,5 +1,6 @@
 import type { TripInput, TripPlan } from "./itinerary";
 import type { PackingGroup } from "./packing";
+import type { Season } from "./types";
 
 /** Snapshot stored per trip and served to every member. */
 export interface TripData {
@@ -123,6 +124,21 @@ export interface TripPayload {
   features?: { photoUploads: boolean };
   /** Only present when the requesting member is part of the trip. */
   joinCode?: string;
+}
+
+/** What a join-code guest may see: the plan basics, nothing personal. */
+export interface GuestTripPayload {
+  id: string;
+  version: number;
+  guest: true;
+  tripName: string;
+  startDate: string | null;
+  days: number;
+  season: Season;
+  destinationNames: string[];
+  planDays: TripPlan["days"];
+  packing: PackingGroup[];
+  memberCount: number;
 }
 
 /** Compact catalog city served to the map view. */
