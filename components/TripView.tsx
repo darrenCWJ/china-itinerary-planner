@@ -17,7 +17,7 @@ import type { JournalDraft } from "@/components/trip/JournalSection";
 import { authClient } from "@/lib/authClient";
 import { buildBriefing } from "@/lib/briefing";
 import { SEASONS } from "@/lib/meta";
-import { forgetMyTrip, saveMyTrip } from "@/lib/myTrips";
+import { forgetMyTrip } from "@/lib/myTrips";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import { packingCheckKey, type GuestTripPayload, type TripPayload } from "@/lib/tripShared";
@@ -116,21 +116,6 @@ export function TripView({ tripId }: { tripId: string }) {
     () => Boolean(payload?.members.some((m) => m.name === myName)),
     [payload, myName]
   );
-
-  // Keep the homepage dashboard fresh: remember trips this device is part
-  // of (name/date/cities update on every visit), forget deleted ones.
-  useEffect(() => {
-    if (!payload || !isMember) return;
-    saveMyTrip({
-      id: tripId,
-      name: payload.data.tripName,
-      startDate: payload.data.startDate,
-      days: payload.data.plan.days.length,
-      destinations: payload.data.destinationNames,
-      role: "member",
-      memberName: myName,
-    });
-  }, [payload, isMember, tripId, myName]);
 
   useEffect(() => {
     if (loadState === "not-found") forgetMyTrip(tripId);
