@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCatalogLoaded } from "@/lib/server/catalog";
+import { guestTripView } from "@/lib/redactTrip";
 import { buildTripData } from "@/lib/server/planService";
+import { tripAccessFromRequest } from "@/lib/server/authz";
 import { UpdateTripSchema } from "@/lib/server/schemas";
 import {
   clearScheduleChecks,
@@ -18,12 +20,21 @@ export async function GET(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
   }
   const { id } = await params;
-  const member = req.nextUrl.searchParams.get("member") ?? undefined;
-  const trip = await getTrip(id, member);
-  if (!trip) {
+  const access = await tripAccessFromRequest(req, id);
+  if (access.kind === "none") {
+    return NextResponse.json(
+      { error: "This trip is private — enter its join code to view it.", private: true },
+      { status: 403 }
+    );
+  }
+  const payload = await getTrip(id, access.kind === "member" ? access.memberName : undefined);
+  if (!payload) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
-  return NextResponse.json(trip);
+  if (access.kind === "guest") {
+    return NextResponse.json(guestTripView(payload));
+  }
+  return NextResponse.json({ ...payload, myMemberName: access.memberName });
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {

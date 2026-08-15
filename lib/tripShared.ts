@@ -124,6 +124,8 @@ export interface TripPayload {
   features?: { photoUploads: boolean };
   /** Only present when the requesting member is part of the trip. */
   joinCode?: string;
+  /** Injected by the route — the requesting member's own name. */
+  myMemberName?: string;
 }
 
 /** What a join-code guest may see: the plan basics, nothing personal. */
