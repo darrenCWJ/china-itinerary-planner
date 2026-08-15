@@ -49,7 +49,7 @@ export function AccountChip() {
                 setOpen(false);
                 router.push("/");
                 router.refresh();
-              });
+              }).catch(() => setSigningOut(false));
             }}>
             Sign out
           </button>
