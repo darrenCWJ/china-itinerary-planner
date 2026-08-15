@@ -8,6 +8,7 @@ import {
   joinCodeMatches,
   joinTrip,
   linkMemberAccount,
+  memberNameForUser,
   storeMode,
 } from "@/lib/server/store";
 
@@ -54,15 +55,31 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result === "not-found") {
       return NextResponse.json({ error: "No such member name on this trip" }, { status: 404 });
     }
-    // "linked" and "user-already-member" both land on the member payload.
+    if (result === "user-already-member") {
+      // Caller is already linked under a different name — no link was
+      // created here, so report their real name, not the claimed one.
+      const actualName = await memberNameForUser(id, user.id);
+      const payload = await getTrip(id, actualName ?? undefined);
+      return NextResponse.json({ ...payload, myMemberName: actualName ?? undefined });
+    }
+    // "linked" — this IS their name now, including the idempotent
+    // reclaim-own-name case.
     const payload = await getTrip(id, parsed.data.claimName);
     return NextResponse.json({ ...payload, myMemberName: parsed.data.claimName });
   }
 
   // New membership under the account's display name (deduplicated).
+  // The common case: caller is already linked to a member on this trip —
+  // resolve and return that, never touching joinTrip/member rows.
+  const existing = await memberNameForUser(id, user.id);
+  if (existing) {
+    const payload = await getTrip(id, existing);
+    return NextResponse.json({ ...payload, myMemberName: existing });
+  }
+
   const trip = await getTrip(id);
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
-  let name = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
+  const base = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   // A name is unavailable only when it exists AND is claimed by another
   // account; an unclaimed legacy name of the same spelling is also skipped
   // (joining under it would silently merge histories — claiming is explicit).
@@ -70,9 +87,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!trip.members.some((m) => m.name === n)) return false;
     return true; // existing name, claimed or not — pick a fresh one
   };
+  let name = base;
   let suffix = 2;
   while (await taken(name)) {
-    name = `${name.slice(0, 27)} ${suffix}`;
+    name = `${base.slice(0, 30 - String(suffix).length - 1)} ${suffix}`;
     suffix += 1;
   }
   const joined = await joinTrip(id, parsed.data.code, name);
@@ -81,9 +99,20 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   const linked = await linkMemberAccount(id, name, user.id);
   if (linked === "user-already-member") {
-    // Already a member under some name — resolve and return it.
-    const payload = await getTrip(id);
-    return NextResponse.json(payload);
+    // Genuine same-user concurrent-join race: another request already
+    // linked this account (possibly under a different name) between our
+    // dedup check and this join. Report the real linked name.
+    const actualName = await memberNameForUser(id, user.id);
+    const payload = await getTrip(id, actualName ?? undefined);
+    return NextResponse.json({ ...payload, myMemberName: actualName ?? undefined });
+  }
+  if (linked === "name-claimed") {
+    // Lost a race for this display name to a concurrent joiner — never
+    // silently succeed under a name the caller isn't actually linked to.
+    return NextResponse.json(
+      { error: "That name was just claimed — try joining again" },
+      { status: 409 }
+    );
   }
   const payload = await getTrip(id, name);
   return NextResponse.json({ ...payload, myMemberName: name });
