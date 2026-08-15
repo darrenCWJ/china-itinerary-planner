@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { catalogStatus } from "@/lib/server/catalog";
+import { accountsEnabled } from "@/lib/server/auth";
+import { getSessionUser } from "@/lib/server/session";
 
 const LOCK_PATH = path.join(process.cwd(), "data", ".ingest.lock");
 const LOG_PATH = path.join(process.cwd(), "data", "ingest.log");
@@ -27,7 +29,7 @@ export async function GET() {
 }
 
 /** Re-runs the Wikidata/Wikipedia ingestion so the catalog updates itself. */
-export async function POST() {
+export async function POST(req: NextRequest) {
   if (process.env.VERCEL) {
     return NextResponse.json(
       {
@@ -36,6 +38,12 @@ export async function POST() {
       },
       { status: 501 }
     );
+  }
+  if (accountsEnabled()) {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
   }
   if (!fs.existsSync(SCRIPT_PATH)) {
     return NextResponse.json({ error: "Ingestion script not found" }, { status: 500 });
