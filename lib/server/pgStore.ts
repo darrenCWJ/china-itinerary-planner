@@ -116,6 +116,63 @@ function ensureSchema(): Promise<void> {
         trip_id text PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
         currency_settings jsonb
       )`;
+      // better-auth v1.6.29 schema (generated 2026-08-15 via @better-auth/cli).
+      // Regenerate when bumping the pinned better-auth version.
+      // Columns are double-quoted throughout: better-auth's Kysely query
+      // builder always quotes identifiers, so an unquoted CREATE TABLE would
+      // have Postgres fold camelCase column names (e.g. emailVerified) to
+      // lowercase and every query would then fail with "column does not
+      // exist". "user" is additionally a reserved word in Postgres.
+      await s`CREATE TABLE IF NOT EXISTS "user" (
+        "id" text NOT NULL PRIMARY KEY,
+        "name" text NOT NULL,
+        "email" text NOT NULL UNIQUE,
+        "emailVerified" boolean NOT NULL,
+        "image" text,
+        "createdAt" timestamp NOT NULL,
+        "updatedAt" timestamp NOT NULL,
+        "role" text,
+        "banned" boolean,
+        "banReason" text,
+        "banExpires" timestamp
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS "session" (
+        "id" text NOT NULL PRIMARY KEY,
+        "expiresAt" timestamp NOT NULL,
+        "token" text NOT NULL UNIQUE,
+        "createdAt" timestamp NOT NULL,
+        "updatedAt" timestamp NOT NULL,
+        "ipAddress" text,
+        "userAgent" text,
+        "userId" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "impersonatedBy" text
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS "account" (
+        "id" text NOT NULL PRIMARY KEY,
+        "accountId" text NOT NULL,
+        "providerId" text NOT NULL,
+        "userId" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "accessToken" text,
+        "refreshToken" text,
+        "idToken" text,
+        "accessTokenExpiresAt" timestamp,
+        "refreshTokenExpiresAt" timestamp,
+        "scope" text,
+        "password" text,
+        "createdAt" timestamp NOT NULL,
+        "updatedAt" timestamp NOT NULL
+      )`;
+      await s`CREATE TABLE IF NOT EXISTS "verification" (
+        "id" text NOT NULL PRIMARY KEY,
+        "identifier" text NOT NULL,
+        "value" text NOT NULL,
+        "expiresAt" timestamp NOT NULL,
+        "createdAt" timestamp NOT NULL,
+        "updatedAt" timestamp NOT NULL
+      )`;
+      await s`CREATE INDEX IF NOT EXISTS session_userId_idx ON "session" ("userId")`;
+      await s`CREATE INDEX IF NOT EXISTS account_userId_idx ON "account" ("userId")`;
+      await s`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
       globalThis.__cipSchemaReady = undefined;
