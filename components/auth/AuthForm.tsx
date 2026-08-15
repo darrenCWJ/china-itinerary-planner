@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/authClient";
@@ -24,6 +24,13 @@ export function AuthForm({ mode }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "" on both server and first client render (no window access during
+  // render, so no hydration mismatch); hydrates to the real search string
+  // right after mount so the login/signup cross-link keeps ?next= intact.
+  const [querySuffix, setQuerySuffix] = useState("");
+  useEffect(() => {
+    setQuerySuffix(window.location.search);
+  }, []);
 
   const submit = async () => {
     setError(null);
@@ -84,9 +91,9 @@ export function AuthForm({ mode }: Props) {
       {error && <p className="mt-2 text-xs text-seal">{error}</p>}
       <p className="mt-4 text-center text-xs text-ink-soft">
         {mode === "signup" ? (
-          <>Already have an account? <Link href="/login" className="text-rail hover:underline">Sign in</Link></>
+          <>Already have an account? <Link href={`/login${querySuffix}`} className="text-rail hover:underline">Sign in</Link></>
         ) : (
-          <>New here? <Link href="/signup" className="text-rail hover:underline">Create an account</Link></>
+          <>New here? <Link href={`/signup${querySuffix}`} className="text-rail hover:underline">Create an account</Link></>
         )}
       </p>
       {mode === "login" && (
