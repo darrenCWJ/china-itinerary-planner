@@ -129,19 +129,19 @@ function ensureSchema(): Promise<void> {
         "email" text NOT NULL UNIQUE,
         "emailVerified" boolean NOT NULL,
         "image" text,
-        "createdAt" timestamp NOT NULL,
-        "updatedAt" timestamp NOT NULL,
+        "createdAt" timestamptz NOT NULL,
+        "updatedAt" timestamptz NOT NULL,
         "role" text,
         "banned" boolean,
         "banReason" text,
-        "banExpires" timestamp
+        "banExpires" timestamptz
       )`;
       await s`CREATE TABLE IF NOT EXISTS "session" (
         "id" text NOT NULL PRIMARY KEY,
-        "expiresAt" timestamp NOT NULL,
+        "expiresAt" timestamptz NOT NULL,
         "token" text NOT NULL UNIQUE,
-        "createdAt" timestamp NOT NULL,
-        "updatedAt" timestamp NOT NULL,
+        "createdAt" timestamptz NOT NULL,
+        "updatedAt" timestamptz NOT NULL,
         "ipAddress" text,
         "userAgent" text,
         "userId" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
@@ -155,20 +155,20 @@ function ensureSchema(): Promise<void> {
         "accessToken" text,
         "refreshToken" text,
         "idToken" text,
-        "accessTokenExpiresAt" timestamp,
-        "refreshTokenExpiresAt" timestamp,
+        "accessTokenExpiresAt" timestamptz,
+        "refreshTokenExpiresAt" timestamptz,
         "scope" text,
         "password" text,
-        "createdAt" timestamp NOT NULL,
-        "updatedAt" timestamp NOT NULL
+        "createdAt" timestamptz NOT NULL,
+        "updatedAt" timestamptz NOT NULL
       )`;
       await s`CREATE TABLE IF NOT EXISTS "verification" (
         "id" text NOT NULL PRIMARY KEY,
         "identifier" text NOT NULL,
         "value" text NOT NULL,
-        "expiresAt" timestamp NOT NULL,
-        "createdAt" timestamp NOT NULL,
-        "updatedAt" timestamp NOT NULL
+        "expiresAt" timestamptz NOT NULL,
+        "createdAt" timestamptz NOT NULL,
+        "updatedAt" timestamptz NOT NULL
       )`;
       await s`CREATE INDEX IF NOT EXISTS session_userId_idx ON "session" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS account_userId_idx ON "account" ("userId")`;
