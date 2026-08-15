@@ -29,7 +29,6 @@ const MemberNameSchema = z.string().trim().min(1).max(30);
 
 export const CreateTripSchema = z.object({
   tripName: z.string().trim().min(1).max(60),
-  creatorName: MemberNameSchema,
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   input: TripInputSchema,
 });

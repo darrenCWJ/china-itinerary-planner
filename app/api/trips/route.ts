@@ -2,11 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
-import { createTrip, DB_UNAVAILABLE, storeMode } from "@/lib/server/store";
+import { getSessionUser } from "@/lib/server/session";
+import { createTrip, DB_UNAVAILABLE, linkMemberAccount, storeMode } from "@/lib/server/store";
 
 export async function POST(req: NextRequest) {
   if (storeMode() === "unavailable") {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
+  }
+
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to share a trip" }, { status: 401 });
   }
 
   let body: unknown;
@@ -24,7 +30,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { tripName, creatorName, startDate, input } = parsed.data;
+  const { tripName, startDate, input } = parsed.data;
   await ensureCatalogLoaded();
   const data = buildTripData({ tripName, startDate: startDate ?? null, input });
   if (data.plan.days.length === 0) {
@@ -34,6 +40,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const creatorName = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   const { id, joinCode } = await createTrip(data, creatorName);
+  await linkMemberAccount(id, creatorName, user.id);
   return NextResponse.json({ id, joinCode }, { status: 201 });
 }

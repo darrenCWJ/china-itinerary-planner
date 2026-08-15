@@ -5,6 +5,7 @@ import { accountsEnabled, ACCOUNTS_UNAVAILABLE } from "@/lib/server/auth";
 import {
   DB_UNAVAILABLE,
   getTrip,
+  isNameClaimed,
   joinCodeMatches,
   joinTrip,
   linkMemberAccount,
@@ -116,4 +117,26 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   const payload = await getTrip(id, name);
   return NextResponse.json({ ...payload, myMemberName: name });
+}
+
+export async function GET(req: NextRequest, { params }: Params) {
+  if (storeMode() === "unavailable") {
+    return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
+  }
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to join a trip" }, { status: 401 });
+  }
+  const { id } = await params;
+  const code = req.nextUrl.searchParams.get("code") ?? "";
+  if (!(await joinCodeMatches(id, code))) {
+    return NextResponse.json({ error: "Wrong join code" }, { status: 403 });
+  }
+  const trip = await getTrip(id);
+  if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  const claimable: string[] = [];
+  for (const m of trip.members) {
+    if (!(await isNameClaimed(id, m.name))) claimable.push(m.name);
+  }
+  return NextResponse.json({ claimable });
 }

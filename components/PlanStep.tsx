@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DESTINATIONS } from "@/lib/data";
@@ -178,32 +179,32 @@ function ShareTripCard({
 }) {
   const router = useRouter();
   const [tripName, setTripName] = useState(`${destinationNames[0] ?? "China"} trip`);
-  const [myName, setMyName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unauthenticated, setUnauthenticated] = useState(false);
 
   const create = async () => {
-    if (!myName.trim()) {
-      setError("Add your name so the crew knows who's who.");
-      return;
-    }
     setCreating(true);
     setError(null);
+    setUnauthenticated(false);
     try {
       const res = await fetch("/api/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tripName: tripName.trim() || "China trip",
-          creatorName: myName.trim(),
           startDate: startDate || null,
           input,
         }),
       });
+      if (res.status === 401) {
+        setUnauthenticated(true);
+        setCreating(false);
+        return;
+      }
       if (!res.ok) throw new Error(`Create failed (${res.status})`);
       const json: { id: string; joinCode: string } = await res.json();
-      localStorage.setItem(`cip-member-${json.id}`, myName.trim());
       saveMyTrip({
         id: json.id,
         name: tripName.trim() || "China trip",
@@ -211,7 +212,6 @@ function ShareTripCard({
         days: input.days,
         destinations: destinationNames,
         role: "creator",
-        memberName: myName.trim(),
       });
       router.push(`/trip/${json.id}?code=${json.joinCode}`);
     } catch {
@@ -227,7 +227,7 @@ function ShareTripCard({
         Turn this plan into a shared trip: everyone joins with a code, sees the same live
         itinerary, and ticks off packing and activities together.
       </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-ink-soft">
           Trip name
           <input
@@ -235,17 +235,6 @@ function ShareTripCard({
             value={tripName}
             onChange={(e) => setTripName(e.target.value)}
             maxLength={60}
-            className="mt-1 w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
-          />
-        </label>
-        <label className="text-xs font-medium text-ink-soft">
-          Your name
-          <input
-            type="text"
-            value={myName}
-            onChange={(e) => setMyName(e.target.value)}
-            maxLength={30}
-            placeholder="e.g. Darren"
             className="mt-1 w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
           />
         </label>
@@ -268,7 +257,19 @@ function ShareTripCard({
         >
           {creating ? "Creating…" : "Start shared trip →"}
         </button>
-        {error && <span className="text-xs text-seal">{error}</span>}
+        {unauthenticated ? (
+          <span className="text-xs text-seal">
+            Sign in to share this trip —{" "}
+            <Link
+              href={`/login?next=${encodeURIComponent(window.location.pathname)}`}
+              className="underline"
+            >
+              sign in
+            </Link>
+          </span>
+        ) : (
+          error && <span className="text-xs text-seal">{error}</span>
+        )}
       </div>
     </div>
   );

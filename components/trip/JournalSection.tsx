@@ -62,7 +62,6 @@ export function JournalSection({
     setBusy(true);
     try {
       const form = new FormData();
-      form.append("memberName", myName);
       form.append("photo", file);
       const res = await fetch(`/api/trips/${tripId}/photos`, { method: "POST", body: form });
       const json: unknown = await res.json();

@@ -2,32 +2,50 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AccountChip } from "@/components/auth/AccountChip";
 import { BriefingShare } from "@/components/trip/BriefingShare";
 import { BriefingView } from "@/components/trip/BriefingView";
 import { DayCard } from "@/components/trip/DayCard";
+import { GuestTripView } from "@/components/trip/GuestTripView";
+import { JoinClaimDialog } from "@/components/trip/JoinClaimDialog";
+import { PrivateGate } from "@/components/trip/PrivateGate";
 import { TicketsTab, type TicketDraft } from "@/components/trip/TicketsTab";
 import { MoneyTab } from "@/components/trip/MoneyTab";
 import type { ExpenseDraft } from "@/components/trip/ExpenseForm";
 import type { SettlementDraft } from "@/components/trip/BalancesCard";
 import { TrackerTab } from "@/components/trip/TrackerTab";
 import type { JournalDraft } from "@/components/trip/JournalSection";
+import { authClient } from "@/lib/authClient";
 import { buildBriefing } from "@/lib/briefing";
 import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip, saveMyTrip } from "@/lib/myTrips";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
-import { packingCheckKey, type TripPayload } from "@/lib/tripShared";
+import { packingCheckKey, type GuestTripPayload, type TripPayload } from "@/lib/tripShared";
 
 const POLL_MS = 4000;
 const TABS = ["Itinerary", "Tracker", "Money", "Tickets", "Packing", "Crew", "Briefing"] as const;
 type Tab = (typeof TABS)[number];
 
-type LoadState = "loading" | "ready" | "not-found";
-
 export function TripView({ tripId }: { tripId: string }) {
   const [payload, setPayload] = useState<TripPayload | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [myName, setMyName] = useState<string>("");
+  const [guestView, setGuestView] = useState<GuestTripPayload | null>(null);
+  const [claimable, setClaimable] = useState<string[] | null>(null);
+  const [loadState, setLoadState] = useState<
+    "loading" | "member" | "guest" | "private" | "not-found"
+  >("loading");
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const myName = payload?.myMemberName ?? "";
+  /** Pre-accounts identity on this device — powers the claim preselect + banner. */
+  const legacyName =
+    typeof window !== "undefined" ? localStorage.getItem(`cip-member-${tripId}`) : null;
+  const [guestCode, setGuestCode] = useState<string>(() =>
+    typeof window !== "undefined"
+      ? (localStorage.getItem(`cip-guest-code-${tripId}`) ??
+          new URLSearchParams(window.location.search).get("code") ??
+          "")
+      : ""
+  );
   const [tab, setTab] = useState<Tab>("Itinerary");
   const [copied, setCopied] = useState(false);
 
@@ -36,19 +54,6 @@ export function TripView({ tripId }: { tripId: string }) {
   const [addingDay, setAddingDay] = useState(false);
   const [addDayError, setAddDayError] = useState<string | null>(null);
 
-  // Join form state
-  const [joinName, setJoinName] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [joining, setJoining] = useState(false);
-
-  useEffect(() => {
-    const stored = localStorage.getItem(`cip-member-${tripId}`) ?? "";
-    setMyName(stored);
-    const code = new URLSearchParams(window.location.search).get("code");
-    if (code) setJoinCode(code);
-  }, [tripId]);
-
   // Never regress to older data: late responses are dropped unless forced
   // (forced = identity changes or post-error reconciliation).
   const applyPayload = useCallback((fresh: TripPayload, force = false) => {
@@ -56,33 +61,41 @@ export function TripView({ tripId }: { tripId: string }) {
   }, []);
 
   const fetchTrip = useCallback(
-    async (member: string, force = false) => {
-      const query = member ? `?member=${encodeURIComponent(member)}` : "";
+    async (force = false) => {
+      const query = guestCode ? `?code=${encodeURIComponent(guestCode)}` : "";
       const res = await fetch(`/api/trips/${tripId}${query}`, { cache: "no-store" });
-      if (res.status === 404) {
-        setLoadState("not-found");
+      if (res.status === 404) return setLoadState("not-found");
+      if (res.status === 403) {
+        setLoadState("private");
         return;
       }
       if (!res.ok) return;
-      const fresh: TripPayload = await res.json();
+      const json = await res.json();
+      if (json.guest === true) {
+        setGuestView(json as GuestTripPayload);
+        setLoadState("guest");
+        localStorage.setItem(`cip-guest-code-${tripId}`, guestCode);
+        return;
+      }
+      const fresh = json as TripPayload;
       applyPayload(fresh, force);
-      setLoadState("ready");
+      setLoadState("member");
     },
-    [tripId, applyPayload]
+    [tripId, guestCode, applyPayload]
   );
 
   useEffect(() => {
-    void fetchTrip(myName);
-  }, [fetchTrip, myName]);
+    void fetchTrip();
+  }, [fetchTrip]);
 
   // Live sync: poll while the tab is visible so every member sees updates,
   // and refetch immediately when the tab regains focus.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!document.hidden) void fetchTrip(myName);
+      if (!document.hidden) void fetchTrip();
     }, POLL_MS);
     const onVisible = () => {
-      if (!document.hidden) void fetchTrip(myName);
+      if (!document.hidden) void fetchTrip();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -91,7 +104,7 @@ export function TripView({ tripId }: { tripId: string }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [fetchTrip, myName]);
+  }, [fetchTrip, guestCode, session?.user.id]);
 
   const isMember = useMemo(
     () => Boolean(payload?.members.some((m) => m.name === myName)),
@@ -117,32 +130,23 @@ export function TripView({ tripId }: { tripId: string }) {
     if (loadState === "not-found") forgetMyTrip(tripId);
   }, [loadState, tripId]);
 
-  const join = async () => {
-    if (!joinName.trim() || !joinCode.trim()) {
-      setJoinError("Enter both your name and the join code.");
-      return;
-    }
-    setJoining(true);
-    setJoinError(null);
-    try {
-      const res = await fetch(`/api/trips/${tripId}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: joinName.trim(), code: joinCode.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setJoinError(typeof json.error === "string" ? json.error : "Couldn't join the trip.");
-        return;
-      }
-      localStorage.setItem(`cip-member-${tripId}`, joinName.trim());
-      setMyName(joinName.trim());
-      applyPayload(json as TripPayload, true);
-    } catch {
-      setJoinError("Couldn't reach the server — try again.");
-    } finally {
-      setJoining(false);
-    }
+  const loadClaimable = async () => {
+    const res = await fetch(`/api/trips/${tripId}/join?code=${encodeURIComponent(guestCode)}`);
+    if (res.ok) setClaimable(((await res.json()) as { claimable: string[] }).claimable);
+    else setClaimable([]);
+  };
+
+  const joinTrip = async (claimName: string | null): Promise<string | null> => {
+    const res = await fetch(`/api/trips/${tripId}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: guestCode, ...(claimName ? { claimName } : {}) }),
+    });
+    const json = await res.json();
+    if (!res.ok) return typeof json.error === "string" ? json.error : "Couldn't join.";
+    applyPayload(json as TripPayload, true);
+    setLoadState("member");
+    return null;
   };
 
   const toggleCheck = async (key: string, checked: boolean) => {
@@ -158,17 +162,17 @@ export function TripView({ tripId }: { tripId: string }) {
       const res = await fetch(`/api/trips/${tripId}/checks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberName: myName, key, checked }),
+        body: JSON.stringify({ key, checked }),
       });
       if (res.ok) {
         applyPayload((await res.json()) as TripPayload);
       } else {
         // The optimistic update kept the old version, so polls would never
         // reconcile it — force a fresh copy of the server state.
-        void fetchTrip(myName, true);
+        void fetchTrip(true);
       }
     } catch {
-      void fetchTrip(myName, true);
+      void fetchTrip(true);
     }
   };
 
@@ -181,7 +185,7 @@ export function TripView({ tripId }: { tripId: string }) {
         const res = await fetch(url, init);
         const json: unknown = await res.json();
         if (!res.ok) {
-          void fetchTrip(myName, true);
+          void fetchTrip(true);
           const message = (json as { error?: unknown }).error;
           return typeof message === "string" ? message : "Couldn't save that change.";
         }
@@ -191,7 +195,7 @@ export function TripView({ tripId }: { tripId: string }) {
         return "Couldn't reach the server — try again.";
       }
     },
-    [fetchTrip, myName, applyPayload]
+    [fetchTrip, applyPayload]
   );
 
   const jsonInit = (method: string, body: unknown): RequestInit => ({
@@ -200,48 +204,32 @@ export function TripView({ tripId }: { tripId: string }) {
     body: JSON.stringify(body),
   });
 
-  const planOp = (op: PlanOp) =>
-    mutate(`/api/trips/${tripId}/plan`, jsonInit("POST", { memberName: myName, op }));
+  const planOp = (op: PlanOp) => mutate(`/api/trips/${tripId}/plan`, jsonInit("POST", { op }));
   const addTicket = (ticket: TicketDraft) =>
-    mutate(`/api/trips/${tripId}/tickets`, jsonInit("POST", { memberName: myName, ticket }));
+    mutate(`/api/trips/${tripId}/tickets`, jsonInit("POST", { ticket }));
   const updateTicket = (ticketId: string, ticket: TicketDraft) =>
-    mutate(`/api/trips/${tripId}/tickets/${ticketId}`, jsonInit("PATCH", { memberName: myName, ticket }));
+    mutate(`/api/trips/${tripId}/tickets/${ticketId}`, jsonInit("PATCH", { ticket }));
   const deleteTicket = (ticketId: string) =>
-    mutate(`/api/trips/${tripId}/tickets/${ticketId}?member=${encodeURIComponent(myName)}`, {
-      method: "DELETE",
-    });
+    mutate(`/api/trips/${tripId}/tickets/${ticketId}`, { method: "DELETE" });
 
   const addExpense = (expense: ExpenseDraft) =>
-    mutate(`/api/trips/${tripId}/expenses`, jsonInit("POST", { memberName: myName, expense }));
+    mutate(`/api/trips/${tripId}/expenses`, jsonInit("POST", { expense }));
   const updateExpense = (expenseId: string, expense: ExpenseDraft) =>
-    mutate(
-      `/api/trips/${tripId}/expenses/${expenseId}`,
-      jsonInit("PATCH", { memberName: myName, expense })
-    );
+    mutate(`/api/trips/${tripId}/expenses/${expenseId}`, jsonInit("PATCH", { expense }));
   const deleteExpense = (expenseId: string) =>
-    mutate(`/api/trips/${tripId}/expenses/${expenseId}?member=${encodeURIComponent(myName)}`, {
-      method: "DELETE",
-    });
+    mutate(`/api/trips/${tripId}/expenses/${expenseId}`, { method: "DELETE" });
   const addSettlement = (settlement: SettlementDraft) =>
-    mutate(`/api/trips/${tripId}/settlements`, jsonInit("POST", { memberName: myName, settlement }));
+    mutate(`/api/trips/${tripId}/settlements`, jsonInit("POST", { settlement }));
   const deleteSettlement = (settlementId: string) =>
-    mutate(
-      `/api/trips/${tripId}/settlements/${settlementId}?member=${encodeURIComponent(myName)}`,
-      { method: "DELETE" }
-    );
+    mutate(`/api/trips/${tripId}/settlements/${settlementId}`, { method: "DELETE" });
   const saveCurrency = (home: string | null, rates: Record<string, number>) =>
-    mutate(`/api/trips/${tripId}/currency`, jsonInit("PUT", { memberName: myName, home, rates }));
+    mutate(`/api/trips/${tripId}/currency`, jsonInit("PUT", { home, rates }));
   const addJournal = (entry: JournalDraft) =>
-    mutate(`/api/trips/${tripId}/journal`, jsonInit("POST", { memberName: myName, entry }));
+    mutate(`/api/trips/${tripId}/journal`, jsonInit("POST", { entry }));
   const updateJournal = (entryId: string, entry: Partial<JournalDraft>) =>
-    mutate(
-      `/api/trips/${tripId}/journal/${entryId}`,
-      jsonInit("PATCH", { memberName: myName, entry })
-    );
+    mutate(`/api/trips/${tripId}/journal/${entryId}`, jsonInit("PATCH", { entry }));
   const deleteJournal = (entryId: string) =>
-    mutate(`/api/trips/${tripId}/journal/${entryId}?member=${encodeURIComponent(myName)}`, {
-      method: "DELETE",
-    });
+    mutate(`/api/trips/${tripId}/journal/${entryId}`, { method: "DELETE" });
 
   const copyShareLink = async () => {
     if (!payload?.joinCode) return;
@@ -259,6 +247,54 @@ export function TripView({ tripId }: { tripId: string }) {
     return (
       <Shell>
         <p className="mt-16 text-center text-sm text-ink-soft">Loading trip…</p>
+      </Shell>
+    );
+  }
+
+  if (loadState === "private") {
+    return (
+      <Shell>
+        <PrivateGate
+          onSubmitCode={async (code) => {
+            setGuestCode(code);
+            return null; // fetch effect re-runs on guestCode change; errors surface as staying private
+          }}
+        />
+      </Shell>
+    );
+  }
+
+  if (loadState === "guest" && guestView) {
+    return (
+      <Shell>
+        <GuestHeader view={guestView} />
+        {!sessionPending && session && claimable !== null && (
+          <JoinClaimDialog claimable={claimable} legacyName={legacyName} onJoin={joinTrip} />
+        )}
+        {!sessionPending && session && claimable === null && (
+          <button
+            type="button"
+            onClick={() => void loadClaimable()}
+            className="mt-6 rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white"
+          >
+            Join this trip
+          </button>
+        )}
+        {!sessionPending && !session && (
+          <p className="mt-6 text-sm text-ink-soft">
+            <Link href={`/login?next=/trip/${tripId}`} className="text-rail hover:underline">
+              Sign in
+            </Link>{" "}
+            to join and edit this trip.
+          </p>
+        )}
+        {legacyName && (
+          <p className="mt-2 rounded-lg border border-dashed border-seal/50 bg-paper px-4 py-2 text-xs text-ink-soft">
+            This device used to edit as <b>{legacyName}</b> — create an account and claim
+            that name to keep editing.
+          </p>
+        )}
+        <GuestTripView view={guestView} />
       </Shell>
     );
   }
@@ -340,46 +376,6 @@ export function TripView({ tripId }: { tripId: string }) {
           </div>
         )}
       </div>
-
-      {!isMember && (
-        <div className="mt-6 rounded-xl border-2 border-dashed border-seal/50 bg-paper p-5">
-          <h2 className="font-display text-lg font-semibold">Join this trip</h2>
-          <p className="mt-1 text-sm text-ink-soft">
-            You&apos;re viewing as a guest. Join with the code to tick things off together.
-          </p>
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <label className="text-xs font-medium text-ink-soft">
-              Your name
-              <input
-                type="text"
-                value={joinName}
-                onChange={(e) => setJoinName(e.target.value)}
-                maxLength={30}
-                className="mt-1 block w-44 rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
-              />
-            </label>
-            <label className="text-xs font-medium text-ink-soft">
-              Join code
-              <input
-                type="text"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                maxLength={12}
-                className="mt-1 block w-36 rounded-lg border border-sky bg-mist px-3 py-2 font-mono text-sm tracking-widest text-ink focus-visible:outline-2 focus-visible:outline-rail"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void join()}
-              disabled={joining}
-              className="rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-seal/85 disabled:opacity-50"
-            >
-              {joining ? "Joining…" : "Join trip"}
-            </button>
-            {joinError && <span className="text-xs text-seal">{joinError}</span>}
-          </div>
-        </div>
-      )}
 
       <nav className="mt-6 flex flex-wrap gap-2 print:hidden" aria-label="Trip sections">
         {TABS.map((t) => (
@@ -607,10 +603,42 @@ function Shell({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-ink-soft">Shared trip mode — live for every member</p>
             </div>
           </Link>
-          <span className="hidden font-kai text-lg text-seal sm:block">一路平安</span>
+          <div className="flex items-center gap-4">
+            <span className="hidden font-kai text-lg text-seal sm:block">一路平安</span>
+            <AccountChip />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-4xl px-4 pt-6">{children}</main>
+    </div>
+  );
+}
+
+/** Trimmed header for join-code guests: no invite chrome, no join code. */
+function GuestHeader({ view }: { view: GuestTripPayload }) {
+  const seasonMeta = SEASONS.find((s) => s.id === view.season);
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-rail-deep p-6 text-white sm:p-8">
+      <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+        同行
+      </span>
+      <p className="font-mono text-xs uppercase tracking-[0.3em] text-sky">Shared trip</p>
+      <h1 className="mt-2 font-display text-3xl font-bold">{view.tripName}</h1>
+      <p className="mt-3 font-mono text-sm tracking-wider text-sky">
+        {view.destinationNames.map((n) => n.toUpperCase()).join(" → ")}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        <span className="rounded-full bg-white/15 px-3 py-1">
+          {seasonMeta?.emoji} {seasonMeta?.label}
+        </span>
+        <span className="rounded-full bg-white/15 px-3 py-1">📅 {view.days} days</span>
+        {view.startDate && (
+          <span className="rounded-full bg-white/15 px-3 py-1">🚩 from {view.startDate}</span>
+        )}
+        <span className="rounded-full bg-white/15 px-3 py-1">
+          👥 {view.memberCount} member{view.memberCount > 1 ? "s" : ""}
+        </span>
+      </div>
     </div>
   );
 }
