@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { guestTripView } from "@/lib/redactTrip";
 import { buildTripData } from "@/lib/server/planService";
-import { tripAccessFromRequest } from "@/lib/server/authz";
+import { requireMember, tripAccessFromRequest } from "@/lib/server/authz";
 import { UpdateTripSchema } from "@/lib/server/schemas";
 import {
   clearScheduleChecks,
   DB_UNAVAILABLE,
   getTrip,
-  isMember,
   storeMode,
   updateTripData,
 } from "@/lib/server/store";
@@ -49,6 +48,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = UpdateTripSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -60,9 +62,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const existing = await getTrip(id);
   if (!existing) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    return NextResponse.json({ error: "Only trip members can edit" }, { status: 403 });
   }
 
   await ensureCatalogLoaded();
@@ -81,5 +80,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   await updateTripData(id, data);
   // The rebuilt plan has fresh item ids, so old schedule ticks are orphans.
   await clearScheduleChecks(id);
-  return NextResponse.json(await getTrip(id, parsed.data.memberName));
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }

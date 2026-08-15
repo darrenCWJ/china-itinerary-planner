@@ -3,15 +3,9 @@ import { newId } from "@/lib/id";
 import { applyPlanOp } from "@/lib/planOps";
 import { itemCheckKey } from "@/lib/tripShared";
 import { ensureCatalogLoaded, resolveDestinations } from "@/lib/server/catalog";
+import { requireMember } from "@/lib/server/authz";
 import { PlanEditSchema } from "@/lib/server/schemas";
-import {
-  DB_UNAVAILABLE,
-  getTrip,
-  isMember,
-  setCheck,
-  storeMode,
-  updateTripDataIf,
-} from "@/lib/server/store";
+import { DB_UNAVAILABLE, getTrip, setCheck, storeMode, updateTripDataIf } from "@/lib/server/store";
 
 /** Re-read/re-apply attempts when another member writes concurrently. */
 const MAX_WRITE_ATTEMPTS = 3;
@@ -31,17 +25,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = PlanEditSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid edit", details: parsed.error.flatten() },
       { status: 400 }
     );
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    const exists = await getTrip(id);
-    if (!exists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
-    return NextResponse.json({ error: "Only trip members can edit" }, { status: 403 });
   }
 
   await ensureCatalogLoaded();
@@ -69,7 +61,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result.removedItemId) {
       await setCheck(id, itemCheckKey(result.removedItemId), "", false);
     }
-    return NextResponse.json(await getTrip(id, parsed.data.memberName));
+    const payload = await getTrip(id, gate.memberName);
+    return NextResponse.json({ ...payload, myMemberName: gate.memberName });
   }
 
   return NextResponse.json(

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { newId } from "@/lib/id";
 import type { Ticket } from "@/lib/tripShared";
+import { requireMember } from "@/lib/server/authz";
 import { AddTicketSchema } from "@/lib/server/schemas";
-import { addTicket, DB_UNAVAILABLE, getTrip, isMember, storeMode } from "@/lib/server/store";
+import { addTicket, DB_UNAVAILABLE, getTrip, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,15 +21,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = AddTicketSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid ticket", details: parsed.error.flatten() },
       { status: 400 }
     );
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    return NextResponse.json({ error: "Only trip members can add tickets" }, { status: 403 });
   }
 
   const f = parsed.data.ticket;
@@ -44,11 +45,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     confirmation: clean(f.confirmation),
     price: clean(f.price),
     notes: clean(f.notes),
-    addedBy: parsed.data.memberName,
+    addedBy: gate.memberName,
   };
   const added = await addTicket(id, ticket);
   if (!added) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
-  return NextResponse.json(await getTrip(id, parsed.data.memberName), { status: 201 });
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName }, { status: 201 });
 }

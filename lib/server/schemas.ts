@@ -40,14 +40,12 @@ export const JoinTripSchema = z.object({
 });
 
 export const UpdateTripSchema = z.object({
-  memberName: MemberNameSchema,
   tripName: z.string().trim().min(1).max(60).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   input: TripInputSchema.optional(),
 });
 
 export const ToggleCheckSchema = z.object({
-  memberName: MemberNameSchema,
   key: z.string().min(1).max(200),
   checked: z.boolean(),
 });
@@ -89,7 +87,6 @@ export const PlanOpSchema = z.discriminatedUnion("op", [
 ]);
 
 export const PlanEditSchema = z.object({
-  memberName: MemberNameSchema,
   op: PlanOpSchema,
 });
 
@@ -109,12 +106,10 @@ export const TicketFieldsSchema = z.object({
 });
 
 export const AddTicketSchema = z.object({
-  memberName: MemberNameSchema,
   ticket: TicketFieldsSchema,
 });
 
 export const UpdateTicketSchema = z.object({
-  memberName: MemberNameSchema,
   ticket: TicketFieldsSchema.partial(),
 });
 

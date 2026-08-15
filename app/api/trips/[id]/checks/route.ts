@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireMember } from "@/lib/server/authz";
 import { ToggleCheckSchema } from "@/lib/server/schemas";
-import { DB_UNAVAILABLE, getTrip, isMember, setCheck, storeMode } from "@/lib/server/store";
+import { DB_UNAVAILABLE, getTrip, setCheck, storeMode } from "@/lib/server/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,6 +17,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const gate = await requireMember(req, id);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = ToggleCheckSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -24,13 +28,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 
-  if (!(await getTrip(id))) {
-    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
-  }
-  if (!(await isMember(id, parsed.data.memberName))) {
-    return NextResponse.json({ error: "Only trip members can tick items" }, { status: 403 });
-  }
-
-  await setCheck(id, parsed.data.key, parsed.data.memberName, parsed.data.checked);
-  return NextResponse.json(await getTrip(id, parsed.data.memberName));
+  await setCheck(id, parsed.data.key, gate.memberName, parsed.data.checked);
+  const payload = await getTrip(id, gate.memberName);
+  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }

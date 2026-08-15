@@ -1,4 +1,5 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { accountsEnabled, ACCOUNTS_UNAVAILABLE } from "./auth";
 import { getSessionUser } from "./session";
 import { joinCodeMatches, memberNameForUser } from "./store";
 
@@ -35,4 +36,27 @@ export async function tripAccessFromRequest(
   const user = await getSessionUser(req);
   const code = req.nextUrl.searchParams.get("code");
   return resolveTripAccess(tripId, user?.id ?? null, code);
+}
+
+/**
+ * The mutating-route gate: resolves the caller to a member name or returns
+ * the error response the route should send verbatim.
+ */
+export async function requireMember(
+  req: NextRequest,
+  tripId: string
+): Promise<{ memberName: string } | NextResponse> {
+  if (!accountsEnabled()) {
+    return NextResponse.json({ error: ACCOUNTS_UNAVAILABLE }, { status: 503 });
+  }
+  const access = await tripAccessFromRequest(req, tripId);
+  if (access.kind === "member") return { memberName: access.memberName };
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to make changes" }, { status: 401 });
+  }
+  return NextResponse.json(
+    { error: "Only trip members can make changes — join the trip first" },
+    { status: 403 }
+  );
 }
