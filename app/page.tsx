@@ -1,10 +1,10 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
-import { TripsDashboard } from "@/components/home/TripsDashboard";
 import { DESTINATIONS } from "@/lib/data";
 import { seasonOfMonth } from "@/lib/months";
 import type { TripInput } from "@/lib/itinerary";
@@ -14,6 +14,15 @@ import type { Destination, Interest, Season } from "@/lib/types";
 const STEPS = ["Destinations", "Trip details", "Your plan"] as const;
 const VISITED_KEY = "cip-visited-v1";
 const MAX_DAYS = 21;
+
+// Client-only: better-auth/react is server-externalized (next.config.ts,
+// for its optional-adapter requires), which breaks the shared React
+// instance if it runs during SSR. The dashboard already renders nothing
+// until it hydrates, so skipping SSR here changes nothing users see.
+const TripsDashboard = dynamic(
+  () => import("@/components/home/TripsDashboard").then((mod) => mod.TripsDashboard),
+  { ssr: false }
+);
 
 export default function Home() {
   const [step, setStep] = useState(0);

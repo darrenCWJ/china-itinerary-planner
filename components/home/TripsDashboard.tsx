@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { SyncDevices } from "@/components/home/SyncDevices";
+import { authClient } from "@/lib/authClient";
 import {
   forgetMyTrip,
   loadMyTrips,
@@ -15,6 +15,36 @@ import {
   type TripPhase,
 } from "@/lib/myTrips";
 import { forgetTripEverywhere, loadWalletCode, syncWallet } from "@/lib/walletSync";
+
+/** Shape of `GET /api/me/trips`'s `trips` entries (Task 3's `UserTrip`). */
+interface ApiTrip {
+  id: string;
+  name: string;
+  startDate: string | null;
+  days: number;
+  destinationNames: string[];
+  memberName: string;
+}
+
+type ServerFetchStatus = "idle" | "loading" | "ready" | "unauthorized" | "error";
+
+/**
+ * An account-linked trip has no per-device "role"/"savedAt" concept — the
+ * card rendering never reads either field, so inert defaults let it reuse
+ * `pickNextTrip`/`tripPhase`/`tripEndDate` and the card JSX unchanged.
+ */
+function toMyTrip(trip: ApiTrip): MyTrip {
+  return {
+    id: trip.id,
+    name: trip.name,
+    startDate: trip.startDate,
+    days: trip.days,
+    destinations: trip.destinationNames,
+    role: "member",
+    memberName: trip.memberName,
+    savedAt: 0,
+  };
+}
 
 function phaseLabel(phase: TripPhase, days: number): string {
   switch (phase.kind) {
@@ -35,63 +65,21 @@ function dateRange(trip: MyTrip): string | null {
   return end && end !== trip.startDate ? `${trip.startDate} → ${end}` : trip.startDate;
 }
 
-/**
- * "Your trips" — trips this device created or joined, remembered locally.
- * Renders nothing until hydrated (and nothing at all for first-time visitors).
- */
-export function TripsDashboard() {
-  const [trips, setTrips] = useState<MyTrip[] | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const local = loadMyTrips();
-    setTrips(local);
-    const code = loadWalletCode();
-    if (!code) return;
-    // Linked device: pull the wallet, merge, and push back any local news.
-    let cancelled = false;
-    void syncWallet(code, local).then((result) => {
-      if (cancelled) return;
-      setTrips(result.trips);
-      setSyncError(result.ok ? null : result.error);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!trips) return null;
-
-  const today = localTodayIso();
+/** The highlighted "next" trip plus a grid of the rest — shared by both data sources. */
+function TripCards({
+  trips,
+  today,
+  onForget,
+}: {
+  trips: MyTrip[];
+  today: string;
+  onForget?: (id: string) => void;
+}) {
   const next = pickNextTrip(trips, today);
   const others = trips.filter((t) => t.id !== next?.id);
-  const isLinked = Boolean(loadWalletCode());
-
-  const forget = (id: string) => {
-    forgetMyTrip(id);
-    setTrips((prev) => removeMyTrip(prev ?? [], id));
-    void forgetTripEverywhere(id);
-  };
-
-  // A fresh device with no trips still needs the link control to pull them.
-  if (trips.length === 0) {
-    return (
-      <section aria-label="Your trips" className="mb-8">
-        <SyncDevices onSynced={setTrips} />
-        {syncError && <p className="mt-1 text-xs text-seal">{syncError}</p>}
-      </section>
-    );
-  }
 
   return (
-    <section aria-label="Your trips" className="mb-8">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-lg font-bold">Your trips</h2>
-        <p className="text-xs text-ink-soft">
-          {isLinked ? "synced across your devices" : "remembered on this device"}
-        </p>
-      </div>
-
+    <>
       {next && (
         <Link
           href={`/trip/${next.id}`}
@@ -139,23 +127,160 @@ export function TripsDashboard() {
                     {dateRange(t) ? ` · ${dateRange(t)}` : ""}
                   </p>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => forget(t.id)}
-                  aria-label={`Forget "${t.name}" on this device`}
-                  title="Forget on this device (the trip itself is not deleted)"
-                  className="h-6 w-6 shrink-0 rounded text-xs text-ink-soft transition-colors hover:bg-sky hover:text-seal"
-                >
-                  ✕
-                </button>
+                {onForget && (
+                  <button
+                    type="button"
+                    onClick={() => onForget(t.id)}
+                    aria-label={`Forget "${t.name}" on this device`}
+                    title="Forget on this device (the trip itself is not deleted)"
+                    className="h-6 w-6 shrink-0 rounded text-xs text-ink-soft transition-colors hover:bg-sky hover:text-seal"
+                  >
+                    ✕
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
+    </>
+  );
+}
 
-      <SyncDevices onSynced={setTrips} />
+function SignInCta() {
+  return (
+    <Link
+      href="/login"
+      className="mt-3 inline-block rounded-lg border border-dashed border-rail/40 px-3 py-1.5 text-xs font-semibold text-rail transition-colors hover:bg-sky print:hidden"
+    >
+      Sign in to see your trips on every device →
+    </Link>
+  );
+}
+
+/**
+ * "Your trips" — signed-in accounts get the server-side list from
+ * `/api/me/trips` (synced everywhere); signed-out visitors keep the
+ * device-local list this page always had, with a nudge to sign in.
+ * Renders nothing until hydrated (and nothing at all for first-time visitors).
+ */
+export function TripsDashboard() {
+  const { data: session } = authClient.useSession();
+  const userId = session?.user.id;
+
+  const [localTrips, setLocalTrips] = useState<MyTrip[] | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerFetchStatus>("idle");
+  const [serverTrips, setServerTrips] = useState<MyTrip[]>([]);
+
+  useEffect(() => {
+    const local = loadMyTrips();
+    setLocalTrips(local);
+    const code = loadWalletCode();
+    if (!code) return;
+    // Linked device: pull the wallet, merge, and push back any local news.
+    let cancelled = false;
+    void syncWallet(code, local).then((result) => {
+      if (cancelled) return;
+      setLocalTrips(result.trips);
+      setSyncError(result.ok ? null : result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      setServerStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setServerStatus("loading");
+    fetch("/api/me/trips")
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.status === 401) {
+          // Session raced out between the client hook and the request —
+          // fall back to the signed-out rendering rather than erroring.
+          setServerStatus("unauthorized");
+          return;
+        }
+        if (!res.ok) {
+          console.error(`TripsDashboard: /api/me/trips failed (${res.status})`);
+          setServerStatus("error");
+          return;
+        }
+        const json: { trips: ApiTrip[] } = await res.json();
+        setServerTrips(json.trips.map(toMyTrip));
+        setServerStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error("TripsDashboard: failed to load trips", error);
+        setServerStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const forget = (id: string) => {
+    forgetMyTrip(id);
+    setLocalTrips((prev) => removeMyTrip(prev ?? [], id));
+    void forgetTripEverywhere(id);
+  };
+
+  // Signed in and the server list is on its way — render nothing rather
+  // than flash the local list first.
+  if (userId && (serverStatus === "idle" || serverStatus === "loading")) {
+    return null;
+  }
+
+  if (userId && serverStatus === "ready") {
+    if (serverTrips.length === 0) return null;
+    const today = localTodayIso();
+    return (
+      <section aria-label="Your trips" className="mb-8">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-display text-lg font-bold">Your trips</h2>
+          <p className="text-xs text-ink-soft">synced to your account</p>
+        </div>
+        <TripCards trips={serverTrips} today={today} />
+      </section>
+    );
+  }
+
+  // Signed out, session raced out (401), or a server-list fetch error — the
+  // localStorage list is always the fallback. Only invite sign-in when we
+  // know there is no valid session; a fetch hiccup while signed in should
+  // stay quiet.
+  if (!localTrips) return null;
+  const showSignInCta = !userId || serverStatus === "unauthorized";
+
+  if (localTrips.length === 0) {
+    if (!showSignInCta) return null;
+    return (
+      <section aria-label="Your trips" className="mb-8">
+        <SignInCta />
+      </section>
+    );
+  }
+
+  const today = localTodayIso();
+  const isLinked = Boolean(loadWalletCode());
+
+  return (
+    <section aria-label="Your trips" className="mb-8">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-lg font-bold">Your trips</h2>
+        <p className="text-xs text-ink-soft">
+          {isLinked ? "synced across your devices" : "remembered on this device"}
+        </p>
+      </div>
+      <TripCards trips={localTrips} today={today} onForget={forget} />
       {syncError && <p className="mt-1 text-xs text-seal">{syncError}</p>}
+      {showSignInCta && <SignInCta />}
     </section>
   );
 }
