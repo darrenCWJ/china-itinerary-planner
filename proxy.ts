@@ -35,6 +35,13 @@ export async function proxy(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
+// Static-asset boundary: this matcher only exempts favicon.ico by name.
+// Everything else under public/ (images, manifest files, etc.) is NOT
+// excluded here and sits behind the wall like any other page route — it's
+// simply never hit today because nothing currently links to a public/
+// asset from an exempt surface. Any future asset referenced from /b/* or
+// a guest view will need its own exemption added to this matcher, or it
+// will 404-via-redirect for signed-out visitors instead of loading.
 export const config = {
   // b/ stays exempt (briefing links are their own bearer secret); api/ routes
   // self-enforce auth; login/signup are the wall's own destination.
