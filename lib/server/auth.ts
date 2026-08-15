@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 import { admin } from "better-auth/plugins";
 import { getDb } from "./db";
 import { storeMode } from "./store";
@@ -45,6 +46,21 @@ function buildAuth() {
     database: database(),
     emailAndPassword: { enabled: true },
     plugins: [admin({ adminUserIds: adminUserIds() })],
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/sign-up/email") return;
+        const required = (process.env.ACCESS_CODE ?? "").trim();
+        if (!required) return; // no invite configured — signups open
+        const given = String(
+          (ctx.body as { inviteCode?: unknown })?.inviteCode ?? ""
+        ).trim();
+        if (given.toUpperCase() !== required.toUpperCase()) {
+          throw new APIError("FORBIDDEN", {
+            message: "Wrong invite code — ask the family for it.",
+          });
+        }
+      }),
+    },
   });
 }
 

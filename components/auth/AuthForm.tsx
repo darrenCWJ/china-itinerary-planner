@@ -22,6 +22,7 @@ export function AuthForm({ mode }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // "" on both server and first client render (no window access during
@@ -42,7 +43,15 @@ export function AuthForm({ mode }: Props) {
     setBusy(true);
     const result =
       mode === "signup"
-        ? await authClient.signUp.email({ email: email.trim(), password, name: name.trim() })
+        ? await authClient.$fetch("/sign-up/email", {
+            method: "POST",
+            body: {
+              email: email.trim(),
+              password,
+              name: name.trim(),
+              inviteCode: inviteCode.trim(),
+            },
+          })
         : await authClient.signIn.email({ email: email.trim(), password });
     setBusy(false);
     if (result.error) {
@@ -71,6 +80,18 @@ export function AuthForm({ mode }: Props) {
           <input type="text" value={name} maxLength={30} autoComplete="name" className={inputCls}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
+        </label>
+      )}
+      {mode === "signup" && (
+        <label className="mt-3 block text-xs font-medium text-ink-soft">
+          Family invite code
+          <input type="text" value={inviteCode} maxLength={64} className={inputCls}
+            autoComplete="off"
+            onChange={(e) => setInviteCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
+          <span className="mt-1 block text-[11px] font-normal text-ink-soft">
+            Ask the family for the code.
+          </span>
         </label>
       )}
       <label className="mt-3 block text-xs font-medium text-ink-soft">
