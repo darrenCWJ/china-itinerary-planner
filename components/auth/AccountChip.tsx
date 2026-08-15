@@ -12,6 +12,15 @@ export function AccountChip() {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // "" on both server and first client render (no window access during
+  // render, so no hydration mismatch); hydrates to `?next=<path>` right
+  // after mount so the signed-out "Sign in" link returns here post-login.
+  const [nextSuffix, setNextSuffix] = useState("");
+  useEffect(() => {
+    setNextSuffix(
+      `?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+    );
+  }, []);
 
   // Close on Escape and on click-outside — only while the menu is open.
   useEffect(() => {
@@ -33,7 +42,7 @@ export function AccountChip() {
   if (isPending) return null;
   if (!session) {
     return (
-      <Link href="/login"
+      <Link href={`/login${nextSuffix}`}
         className="flex min-h-10 items-center rounded-lg border border-sky bg-paper px-3 text-sm font-medium text-rail transition-colors hover:bg-sky">
         Sign in
       </Link>

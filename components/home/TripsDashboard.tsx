@@ -125,14 +125,24 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
 }
 
 /** The dashed-border invitation card shown when there's nothing to list yet. */
-function EmptyTripsCard({ heading, body }: { heading: string; body: string }) {
+function EmptyTripsCard({
+  heading,
+  body,
+  ctaHref = "/plan",
+  ctaLabel = "Plan a trip →",
+}: {
+  heading: string;
+  body: string;
+  ctaHref?: string;
+  ctaLabel?: string;
+}) {
   return (
     <div className="mt-8 rounded-2xl border-2 border-dashed border-sky bg-paper px-6 py-10 text-center">
       <p className="font-display text-xl font-bold [text-wrap:balance]">{heading}</p>
       <p className="mt-1 text-sm [text-wrap:pretty] text-ink-soft">{body}</p>
-      <Link href="/plan"
+      <Link href={ctaHref}
         className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-rail px-5 text-sm font-semibold text-white transition-colors hover:bg-rail-deep">
-        Plan a trip →
+        {ctaLabel}
       </Link>
     </div>
   );
@@ -145,7 +155,7 @@ function EmptyTripsCard({ heading, body }: { heading: string; body: string }) {
  * lifecycle, and accounts being disabled outright.
  */
 export function TripsDashboard() {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error } = authClient.useSession();
   const userId = session?.user.id;
 
   const [status, setStatus] = useState<FetchStatus>("loading");
@@ -183,14 +193,32 @@ export function TripsDashboard() {
   if (isPending) return null;
 
   // With the wall on, a signed-out visitor is redirected before ever
-  // reaching "/" — so a settled session with no user here means accounts
-  // are disabled on this deployment, not that this visitor is signed out.
+  // reaching "/" — so a settled session with no user here is *usually*
+  // because accounts are disabled on this deployment. But the wall's cookie
+  // check is optimistic (it only checks presence, not validity), so a
+  // present-yet-invalid cookie — password change with revokeOtherSessions,
+  // an admin password reset — passes the wall and still lands here. Better
+  // Auth's own get-session call distinguishes the two: it 503s (surfaced as
+  // `error`) when accounts are off, and 200s with a null user when the
+  // session was simply revoked. Use that to show the right invitation.
   if (!userId) {
+    if (error) {
+      return (
+        <section aria-label="Your trips" className="mb-8">
+          <EmptyTripsCard
+            heading="Plan locally"
+            body="Accounts are not set up on this deployment — plan a trip locally."
+          />
+        </section>
+      );
+    }
     return (
       <section aria-label="Your trips" className="mb-8">
         <EmptyTripsCard
-          heading="Plan locally"
-          body="Accounts are not set up on this deployment — plan a trip locally."
+          heading="Signed out"
+          body="Your session ended — sign in to see your trips."
+          ctaHref="/login?next=/"
+          ctaLabel="Sign in →"
         />
       </section>
     );
