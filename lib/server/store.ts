@@ -95,6 +95,11 @@ export async function joinTrip(
   return sqlite.joinTrip(tripId, code, name);
 }
 
+export async function joinCodeMatches(tripId: string, code: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).joinCodeMatches(tripId, code);
+  return sqlite.joinCodeMatches(tripId, code);
+}
+
 export async function updateTripData(tripId: string, data: TripData): Promise<boolean> {
   if (storeMode() === "postgres") return (await pg()).updateTripData(tripId, data);
   return sqlite.updateTripData(tripId, data);
