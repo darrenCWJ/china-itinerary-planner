@@ -636,15 +636,21 @@ export async function tripsForUser(userId: string): Promise<UserTrip[]> {
   const rows = await sql()`SELECT t.id, t.data, ma.member_name, ma.linked_at FROM member_accounts ma
     JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ${userId}
     ORDER BY ma.linked_at DESC, ma.trip_id DESC`;
-  return rows.map((r): UserTrip => {
-    const data = r.data as TripData;
-    return {
-      id: r.id as string,
-      name: data.tripName,
-      startDate: data.startDate,
-      days: data.plan.days.length,
-      destinationNames: data.destinationNames,
-      memberName: r.member_name as string,
-    };
-  });
+  const out: UserTrip[] = [];
+  for (const r of rows) {
+    try {
+      const data = r.data as TripData;
+      out.push({
+        id: r.id as string,
+        name: data.tripName,
+        startDate: data.startDate,
+        days: data.plan.days.length,
+        destinationNames: data.destinationNames,
+        memberName: r.member_name as string,
+      });
+    } catch {
+      // Skip a corrupted trip rather than failing the whole list.
+    }
+  }
+  return out;
 }
