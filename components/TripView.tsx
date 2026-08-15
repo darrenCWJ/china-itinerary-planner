@@ -151,6 +151,8 @@ export function TripView({ tripId }: { tripId: string }) {
     });
     const json = await res.json();
     if (!res.ok) return typeof json.error === "string" ? json.error : "Couldn't join.";
+    // Invalidate any in-flight poll so a stale guest response can't revert the join.
+    fetchSeq.current++;
     applyPayload(json as TripPayload, true);
     setLoadState("member");
     return null;
