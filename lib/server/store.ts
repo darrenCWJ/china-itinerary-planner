@@ -11,7 +11,9 @@ import type {
 import { planIdMigration } from "./migrate";
 import { photoUploadsSupported } from "./photoStore";
 import * as sqlite from "./tripStore";
-import type { BriefingRecord, JoinResult, WalletPutResult } from "./tripStore";
+import type { BriefingRecord, JoinResult, LinkResult, UserTrip, WalletPutResult } from "./tripStore";
+
+export type { LinkResult, UserTrip };
 
 /**
  * Storage facade: Postgres (Supabase) when DATABASE_URL is set, SQLite for
@@ -231,4 +233,28 @@ export async function setCurrencySettings(
 ): Promise<boolean> {
   if (storeMode() === "postgres") return (await pg()).setCurrencySettings(tripId, settings);
   return sqlite.setCurrencySettings(tripId, settings);
+}
+
+export async function linkMemberAccount(
+  tripId: string,
+  memberName: string,
+  userId: string
+): Promise<LinkResult> {
+  if (storeMode() === "postgres") return (await pg()).linkMemberAccount(tripId, memberName, userId);
+  return sqlite.linkMemberAccount(tripId, memberName, userId);
+}
+
+export async function memberNameForUser(tripId: string, userId: string): Promise<string | null> {
+  if (storeMode() === "postgres") return (await pg()).memberNameForUser(tripId, userId);
+  return sqlite.memberNameForUser(tripId, userId);
+}
+
+export async function isNameClaimed(tripId: string, memberName: string): Promise<boolean> {
+  if (storeMode() === "postgres") return (await pg()).isNameClaimed(tripId, memberName);
+  return sqlite.isNameClaimed(tripId, memberName);
+}
+
+export async function tripsForUser(userId: string): Promise<UserTrip[]> {
+  if (storeMode() === "postgres") return (await pg()).tripsForUser(userId);
+  return sqlite.tripsForUser(userId);
 }

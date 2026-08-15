@@ -22,10 +22,14 @@ import {
   getBriefingForTrip,
   getTrip,
   isMember,
+  isNameClaimed,
   joinTrip,
+  linkMemberAccount,
+  memberNameForUser,
   revokeBriefing,
   setCheck,
   setCurrencySettings,
+  tripsForUser,
   updateExpense,
   updateJournalEntry,
   updateTripData,
@@ -271,5 +275,37 @@ describe("money & journal storage", () => {
     const trip = getTrip(id)!;
     expect(trip.currencySettings).toEqual(settings);
     expect(setCurrencySettings("nope", settings)).toBe(false);
+  });
+});
+
+describe("member accounts", () => {
+  test("link, lookup and claim rules", () => {
+    const { id, joinCode } = createTrip(tripData(), "Ada");
+    joinTrip(id, joinCode, "Bob");
+
+    expect(linkMemberAccount(id, "Ada", "user-1")).toBe("linked");
+    expect(memberNameForUser(id, "user-1")).toBe("Ada");
+    expect(isNameClaimed(id, "Ada")).toBe(true);
+    expect(isNameClaimed(id, "Bob")).toBe(false);
+
+    // A claimed name cannot be re-claimed; a linked user cannot link twice.
+    expect(linkMemberAccount(id, "Ada", "user-2")).toBe("name-claimed");
+    expect(linkMemberAccount(id, "Bob", "user-1")).toBe("user-already-member");
+
+    // Unknown trip or member name.
+    expect(linkMemberAccount("nope", "Ada", "user-9")).toBe("not-found");
+    expect(linkMemberAccount(id, "Ghost", "user-9")).toBe("not-found");
+    expect(memberNameForUser(id, "user-9")).toBeNull();
+  });
+
+  test("tripsForUser lists linked trips newest-first", () => {
+    const a = createTrip(tripData({ tripName: "Trip A" }), "Ada");
+    const b = createTrip(tripData({ tripName: "Trip B" }), "Ada");
+    linkMemberAccount(a.id, "Ada", "user-list");
+    linkMemberAccount(b.id, "Ada", "user-list");
+    const list = tripsForUser("user-list");
+    expect(list.map((t) => t.name)).toEqual(["Trip B", "Trip A"]);
+    expect(list[0].memberName).toBe("Ada");
+    expect(list[0].destinationNames).toEqual(["Beijing"]);
   });
 });
