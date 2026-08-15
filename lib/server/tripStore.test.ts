@@ -307,5 +307,11 @@ describe("member accounts", () => {
     expect(list.map((t) => t.name)).toEqual(["Trip B", "Trip A"]);
     expect(list[0].memberName).toBe("Ada");
     expect(list[0].destinationNames).toEqual(["Beijing"]);
+    expect(list[0].days).toBe(0);
+    expect(list[0].startDate).toBeNull();
+  });
+
+  test("tripsForUser returns an empty array for a user with no linked trips", () => {
+    expect(tripsForUser("nobody")).toEqual([]);
   });
 });

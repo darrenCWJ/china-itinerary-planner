@@ -32,5 +32,15 @@ describe("embedded better-auth schema", () => {
       .map((r) => (r as { name: string }).name);
     expect(cols).toContain("role");
     expect(cols).toContain("banned");
+    expect(cols).toContain("banReason");
+    expect(cols).toContain("banExpires");
+  });
+
+  test("session table has the admin impersonation column", () => {
+    const cols = getDb()
+      .prepare("PRAGMA table_info(session)")
+      .all()
+      .map((r) => (r as { name: string }).name);
+    expect(cols).toContain("impersonatedBy");
   });
 });

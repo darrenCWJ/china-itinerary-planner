@@ -47,7 +47,8 @@ function fullPayload(): TripPayload {
 
 describe("guestTripView", () => {
   test("contains exactly the whitelisted fields", () => {
-    const view = guestTripView(fullPayload());
+    const payload = fullPayload();
+    const view = guestTripView(payload);
     expect(Object.keys(view).sort()).toEqual(
       [
         "days",
@@ -66,6 +67,14 @@ describe("guestTripView", () => {
     expect(view.guest).toBe(true);
     expect(view.memberCount).toBe(2);
     expect(view.planDays[0].items[0].title).toBe("Great Wall");
+    expect(view.id).toBe("trip-1");
+    expect(view.version).toBe(7);
+    expect(view.tripName).toBe("Family Trip");
+    expect(view.startDate).toBe("2026-12-20");
+    expect(view.days).toBe(3);
+    expect(view.season).toBe("winter");
+    expect(view.destinationNames).toEqual(["Beijing"]);
+    expect(view.packing).toEqual(payload.data.packing);
   });
 
   test("leaks nothing sensitive anywhere in the serialized view", () => {
