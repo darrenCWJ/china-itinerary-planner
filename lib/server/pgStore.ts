@@ -14,7 +14,7 @@ import type {
 import { DEFAULT_CURRENCY_SETTINGS } from "../tripShared";
 import { newBriefingCode, newWalletCode } from "./ids";
 import { newJoinCode, newTripId } from "./ids";
-import type { BriefingRecord, JoinResult } from "./tripStore";
+import type { BriefingRecord, JoinResult, LinkResult, UserTrip } from "./tripStore";
 
 /**
  * Postgres (Supabase) implementation of the trip store. Used when
@@ -173,6 +173,14 @@ function ensureSchema(): Promise<void> {
       await s`CREATE INDEX IF NOT EXISTS session_userId_idx ON "session" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS account_userId_idx ON "account" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`;
+      await s`CREATE TABLE IF NOT EXISTS member_accounts (
+        trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+        member_name text NOT NULL,
+        user_id text NOT NULL,
+        linked_at bigint NOT NULL,
+        PRIMARY KEY (trip_id, member_name),
+        UNIQUE (trip_id, user_id)
+      )`;
     })().catch((err) => {
       // Allow a later request to retry instead of caching the failure forever.
       globalThis.__cipSchemaReady = undefined;
@@ -184,6 +192,21 @@ function ensureSchema(): Promise<void> {
 
 async function touch(tripId: string): Promise<void> {
   await sql()`UPDATE trips SET version = version + 1, updated_at = ${Date.now()} WHERE id = ${tripId}`;
+}
+
+/**
+ * Date.now() can return the same millisecond across back-to-back calls (the
+ * system clock's resolution can be much coarser than 1ms, notably on
+ * Windows). tripsForUser sorts by linked_at DESC, so ties would make "most
+ * recently linked" nondeterministic; this keeps timestamps strictly
+ * increasing without changing the schema or the ORDER BY clause. Mirrors
+ * tripStore.ts's nextLinkedAt.
+ */
+let lastLinkedAt = 0;
+function nextLinkedAt(): number {
+  const now = Date.now();
+  lastLinkedAt = now > lastLinkedAt ? now : lastLinkedAt + 1;
+  return lastLinkedAt;
 }
 
 export async function createTrip(
@@ -547,4 +570,58 @@ export async function setCurrencySettings(
     ON CONFLICT (trip_id) DO UPDATE SET currency_settings = EXCLUDED.currency_settings`;
   await touch(tripId);
   return true;
+}
+
+export async function linkMemberAccount(
+  tripId: string,
+  memberName: string,
+  userId: string
+): Promise<LinkResult> {
+  await ensureSchema();
+  const s = sql();
+  const member = await s`SELECT 1 FROM members WHERE trip_id = ${tripId} AND name = ${memberName}`;
+  if (member.length === 0) return "not-found";
+  const nameTaken = await s`SELECT user_id FROM member_accounts
+    WHERE trip_id = ${tripId} AND member_name = ${memberName}`;
+  if (nameTaken.length > 0) {
+    return (nameTaken[0].user_id as string) === userId ? "linked" : "name-claimed";
+  }
+  const userLinked = await s`SELECT 1 FROM member_accounts
+    WHERE trip_id = ${tripId} AND user_id = ${userId}`;
+  if (userLinked.length > 0) return "user-already-member";
+  await s`INSERT INTO member_accounts (trip_id, member_name, user_id, linked_at)
+    VALUES (${tripId}, ${memberName}, ${userId}, ${nextLinkedAt()})`;
+  await touch(tripId);
+  return "linked";
+}
+
+export async function memberNameForUser(tripId: string, userId: string): Promise<string | null> {
+  await ensureSchema();
+  const rows = await sql()`SELECT member_name FROM member_accounts
+    WHERE trip_id = ${tripId} AND user_id = ${userId}`;
+  return rows.length > 0 ? (rows[0].member_name as string) : null;
+}
+
+export async function isNameClaimed(tripId: string, memberName: string): Promise<boolean> {
+  await ensureSchema();
+  const rows = await sql()`SELECT 1 FROM member_accounts
+    WHERE trip_id = ${tripId} AND member_name = ${memberName}`;
+  return rows.length > 0;
+}
+
+export async function tripsForUser(userId: string): Promise<UserTrip[]> {
+  await ensureSchema();
+  const rows = await sql()`SELECT t.id, t.data, ma.member_name, ma.linked_at FROM member_accounts ma
+    JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ${userId} ORDER BY ma.linked_at DESC`;
+  return rows.map((r): UserTrip => {
+    const data = r.data as TripData;
+    return {
+      id: r.id as string,
+      name: data.tripName,
+      startDate: data.startDate,
+      days: data.plan.days.length,
+      destinationNames: data.destinationNames,
+      memberName: r.member_name as string,
+    };
+  });
 }

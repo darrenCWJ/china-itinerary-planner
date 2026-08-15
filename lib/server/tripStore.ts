@@ -30,6 +30,20 @@ function touch(tripId: string): void {
     .run(Date.now(), tripId);
 }
 
+/**
+ * Date.now() can return the same millisecond across back-to-back calls (the
+ * system clock's resolution can be much coarser than 1ms, notably on
+ * Windows). tripsForUser sorts by linked_at DESC, so ties would make "most
+ * recently linked" nondeterministic; this keeps timestamps strictly
+ * increasing without changing the schema or the ORDER BY clause.
+ */
+let lastLinkedAt = 0;
+function nextLinkedAt(): number {
+  const now = Date.now();
+  lastLinkedAt = now > lastLinkedAt ? now : lastLinkedAt + 1;
+  return lastLinkedAt;
+}
+
 type JsonRowTable = "expenses" | "settlements" | "journal_entries";
 
 function insertJsonRow(table: JsonRowTable, tripId: string, id: string, data: unknown): boolean {
@@ -430,4 +444,81 @@ export function getBriefingForTrip(tripId: string): BriefingRecord | null {
     .get(tripId) as { code: string; include_bookings: number } | undefined;
   if (!row) return null;
   return { code: row.code, includeBookings: row.include_bookings === 1 };
+}
+
+export type LinkResult = "linked" | "name-claimed" | "user-already-member" | "not-found";
+
+export function linkMemberAccount(
+  tripId: string,
+  memberName: string,
+  userId: string
+): LinkResult {
+  const db = getDb();
+  const member = db
+    .prepare("SELECT 1 FROM members WHERE trip_id = ? AND name = ?")
+    .get(tripId, memberName);
+  if (!member) return "not-found";
+  const nameTaken = db
+    .prepare("SELECT user_id FROM member_accounts WHERE trip_id = ? AND member_name = ?")
+    .get(tripId, memberName) as { user_id: string } | undefined;
+  if (nameTaken) return nameTaken.user_id === userId ? "linked" : "name-claimed";
+  const userLinked = db
+    .prepare("SELECT 1 FROM member_accounts WHERE trip_id = ? AND user_id = ?")
+    .get(tripId, userId);
+  if (userLinked) return "user-already-member";
+  db.prepare(
+    "INSERT INTO member_accounts (trip_id, member_name, user_id, linked_at) VALUES (?, ?, ?, ?)"
+  ).run(tripId, memberName, userId, nextLinkedAt());
+  touch(tripId);
+  return "linked";
+}
+
+export function memberNameForUser(tripId: string, userId: string): string | null {
+  const row = getDb()
+    .prepare("SELECT member_name FROM member_accounts WHERE trip_id = ? AND user_id = ?")
+    .get(tripId, userId) as { member_name: string } | undefined;
+  return row?.member_name ?? null;
+}
+
+export function isNameClaimed(tripId: string, memberName: string): boolean {
+  return (
+    getDb()
+      .prepare("SELECT 1 FROM member_accounts WHERE trip_id = ? AND member_name = ?")
+      .get(tripId, memberName) !== undefined
+  );
+}
+
+export interface UserTrip {
+  id: string;
+  name: string;
+  startDate: string | null;
+  days: number;
+  destinationNames: string[];
+  memberName: string;
+}
+
+export function tripsForUser(userId: string): UserTrip[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT t.id, t.data, ma.member_name, ma.linked_at FROM member_accounts ma " +
+        "JOIN trips t ON t.id = ma.trip_id WHERE ma.user_id = ? ORDER BY ma.linked_at DESC"
+    )
+    .all(userId) as { id: string; data: string; member_name: string }[];
+  const out: UserTrip[] = [];
+  for (const r of rows) {
+    try {
+      const data = JSON.parse(r.data) as TripData;
+      out.push({
+        id: r.id,
+        name: data.tripName,
+        startDate: data.startDate,
+        days: data.plan.days.length,
+        destinationNames: data.destinationNames,
+        memberName: r.member_name,
+      });
+    } catch {
+      // Skip a corrupted trip rather than failing the whole list.
+    }
+  }
+  return out;
 }

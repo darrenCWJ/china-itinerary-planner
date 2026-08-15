@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS verification (
 CREATE INDEX IF NOT EXISTS session_userId_idx ON session(userId);
 CREATE INDEX IF NOT EXISTS account_userId_idx ON account(userId);
 CREATE INDEX IF NOT EXISTS verification_identifier_idx ON verification(identifier);
+
+CREATE TABLE IF NOT EXISTS member_accounts (
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  member_name TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  linked_at INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, member_name),
+  UNIQUE (trip_id, user_id)
+);
 `;
 
 export function getDb(): Database.Database {
