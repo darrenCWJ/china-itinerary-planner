@@ -42,6 +42,13 @@ export async function POST(req: NextRequest) {
 
   const creatorName = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   const { id, joinCode } = await createTrip(data, creatorName);
-  await linkMemberAccount(id, creatorName, user.id);
+  const linked = await linkMemberAccount(id, creatorName, user.id);
+  if (linked !== "linked") {
+    console.error(`trip create: creator link failed (${linked}) for trip ${id}`);
+    return NextResponse.json(
+      { error: "Trip was created but your account couldn't be linked — try opening it and joining with the code." },
+      { status: 500 }
+    );
+  }
   return NextResponse.json({ id, joinCode }, { status: 201 });
 }

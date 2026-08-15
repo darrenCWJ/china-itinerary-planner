@@ -123,6 +123,9 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (storeMode() === "unavailable") {
     return NextResponse.json({ error: DB_UNAVAILABLE }, { status: 503 });
   }
+  if (!accountsEnabled()) {
+    return NextResponse.json({ error: ACCOUNTS_UNAVAILABLE }, { status: 503 });
+  }
   const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Sign in to join a trip" }, { status: 401 });
