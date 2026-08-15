@@ -165,7 +165,7 @@ function SignInCta() {
  * Renders nothing until hydrated (and nothing at all for first-time visitors).
  */
 export function TripsDashboard() {
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending } = authClient.useSession();
   const userId = session?.user.id;
 
   const [localTrips, setLocalTrips] = useState<MyTrip[] | null>(null);
@@ -230,6 +230,11 @@ export function TripsDashboard() {
     setLocalTrips((prev) => removeMyTrip(prev ?? [], id));
     void forgetTripEverywhere(id);
   };
+
+  // The session hook itself hasn't settled yet — render nothing rather
+  // than flash the signed-out CTA (or local list) before we know whether
+  // the visitor is signed in.
+  if (isPending) return null;
 
   // Signed in and the server list is on its way — render nothing rather
   // than flash the local list first.
