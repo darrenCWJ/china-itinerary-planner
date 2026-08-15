@@ -43,15 +43,24 @@ export function AuthForm({ mode }: Props) {
     setBusy(true);
     const result =
       mode === "signup"
-        ? await authClient.$fetch("/sign-up/email", {
-            method: "POST",
-            body: {
-              email: email.trim(),
-              password,
-              name: name.trim(),
-              inviteCode: inviteCode.trim(),
+        ? // Route through the typed signUp.email proxy (not authClient.$fetch)
+          // so its built-in onSuccess listener still fires $sessionSignal —
+          // that's what makes every mounted useSession() consumer refetch
+          // after signup. The typed body rejects the extra inviteCode key,
+          // so it's smuggled in via the second (fetch-options) argument,
+          // whose body type is intentionally Record<string, any> and gets
+          // merged over the first argument's serialized body.
+          await authClient.signUp.email(
+            { email: email.trim(), password, name: name.trim() },
+            {
+              body: {
+                email: email.trim(),
+                password,
+                name: name.trim(),
+                inviteCode: inviteCode.trim(),
+              },
             },
-          })
+          )
         : await authClient.signIn.email({ email: email.trim(), password });
     setBusy(false);
     if (result.error) {
