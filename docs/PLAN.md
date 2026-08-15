@@ -21,6 +21,10 @@ Auth.js) and per-member sessions. Checks are keyed `day:N:idx` /
 `pack:group:item`, so regenerating a plan can orphan old schedule ticks —
 accepted for now.
 
+Update 2026-08: done — Better Auth email+password accounts with per-member
+sessions; join codes demoted to view-only keys (spec:
+docs/superpowers/specs/2026-08-15-accounts-auth-design.md).
+
 ## How the planner core works (Phase 1 — shipped)
 
 ```

@@ -46,10 +46,12 @@ searchable catalog of **every city in China**, not just the highlights.
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/trips` | POST | Create a shared trip (returns id + join code) |
-| `/api/trips/:id` | GET | Fetch live trip state (`?member=` for member view) |
+| `/api/trips/:id` | GET | Fetch trip state (member session = full; `?code=` = guest view; else 403) |
 | `/api/trips/:id` | PATCH | Update trip input — plan regenerates server-side |
-| `/api/trips/:id/join` | POST | Join with `{ name, code }` |
+| `/api/trips/:id/join` | POST · GET | Join/claim with account + code · list claimable names |
 | `/api/trips/:id/checks` | POST | Tick/untick an item `{ memberName, key, checked }` |
+| `/api/me/trips` | GET | Signed-in user's trips |
+| `/api/auth/*` | * | Better Auth (signup, login, sessions, admin) |
 | `/api/destinations` | GET | Search the all-China catalog (`?q=`) |
 | `/api/destinations/resolve` | GET | Full plannable data for catalog ids (`?ids=`) |
 | `/api/destinations/refresh` | POST | **Self-update**: re-run the Wikidata/Wikipedia ingestion |
@@ -101,10 +103,14 @@ docs/
 
 ## How "many people can join" works
 
-No accounts: a trip is an unguessable id + a join code. Members are just
-names. Anyone with the invite link (or the code) can join; only members can
-tick items or edit the trip. This is deliberately lightweight for
-friends-and-family use — see docs/PLAN.md for the auth upgrade path.
+Accounts (email + password) own editing: members sign in once and their
+trips follow them to any device. A trip's join code is now a **view key** —
+anyone holding it can see the itinerary and packing lists (read-only,
+nothing personal), while joining as an editing member requires an account
+plus the code. Pre-account members are preserved: sign up and claim your
+old member name to inherit everything you ticked, spent and wrote. The
+bare trip link without the code shows only a private screen. Password
+resets are admin-assisted (`ADMIN_USER_IDS`) — no email service needed.
 
 ## Deploying
 
