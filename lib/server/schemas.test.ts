@@ -4,6 +4,7 @@ import {
   AddJournalSchema,
   AddSettlementSchema,
   CurrencySettingsSchema,
+  PlanOpSchema,
   TripInputSchema,
   UpdateJournalSchema,
 } from "./schemas";
@@ -182,5 +183,78 @@ describe("trip input country", () => {
     for (const country of ["JPN", "J", "", "12", "日本"]) {
       expect(TripInputSchema.safeParse({ ...tripInput, country }).success).toBe(false);
     }
+  });
+});
+
+describe("plan op timing", () => {
+  const setTiming = { op: "setTiming", day: 1, itemId: "item-1" };
+
+  test("accepts a time block", () => {
+    const parsed = PlanOpSchema.parse({ ...setTiming, startMinutes: 540, durationMinutes: 90 });
+    expect(parsed).toMatchObject({ op: "setTiming", startMinutes: 540, durationMinutes: 90 });
+  });
+
+  test("accepts midnight and a full-day block at the edges of the range", () => {
+    expect(
+      PlanOpSchema.safeParse({ ...setTiming, startMinutes: 0, durationMinutes: 1440 }).success
+    ).toBe(true);
+    expect(
+      PlanOpSchema.safeParse({ ...setTiming, startMinutes: 1439, durationMinutes: 1 }).success
+    ).toBe(true);
+  });
+
+  test("accepts explicit nulls, which clear the block", () => {
+    expect(
+      PlanOpSchema.safeParse({ ...setTiming, startMinutes: null, durationMinutes: null }).success
+    ).toBe(true);
+  });
+
+  test("rejects minutes outside a day, fractions and non-numbers", () => {
+    const bad = [
+      { startMinutes: 1440, durationMinutes: 90 },
+      { startMinutes: -1, durationMinutes: 90 },
+      { startMinutes: 9.5, durationMinutes: 90 },
+      { startMinutes: 540, durationMinutes: 0 },
+      { startMinutes: 540, durationMinutes: -30 },
+      { startMinutes: 540, durationMinutes: 1441 },
+      { startMinutes: 540, durationMinutes: 90.5 },
+      { startMinutes: "540", durationMinutes: 90 },
+      { startMinutes: Number.NaN, durationMinutes: 90 },
+    ];
+    for (const timing of bad) {
+      expect(PlanOpSchema.safeParse({ ...setTiming, ...timing }).success).toBe(false);
+    }
+  });
+
+  test("requires both fields on setTiming so a half-set block cannot be stored", () => {
+    expect(PlanOpSchema.safeParse({ ...setTiming, startMinutes: 540 }).success).toBe(false);
+    expect(PlanOpSchema.safeParse({ ...setTiming, durationMinutes: 90 }).success).toBe(false);
+  });
+
+  test("addItem takes optional timing and stays valid without it", () => {
+    const base = { op: "addItem", day: 1, title: "Lunch", slot: "afternoon" };
+    expect(PlanOpSchema.parse(base)).not.toHaveProperty("startMinutes");
+    expect(
+      PlanOpSchema.parse({ ...base, startMinutes: 540, durationMinutes: 90 })
+    ).toMatchObject({ startMinutes: 540, durationMinutes: 90 });
+    expect(PlanOpSchema.safeParse({ ...base, startMinutes: 1440 }).success).toBe(false);
+    // addItem creates the item, so there is nothing to clear: no nulls here.
+    expect(PlanOpSchema.safeParse({ ...base, startMinutes: null }).success).toBe(false);
+  });
+
+  test("updateItem takes nullable timing so an edit can clear the block", () => {
+    const base = { op: "updateItem", day: 1, itemId: "item-1" };
+    expect(PlanOpSchema.parse(base)).not.toHaveProperty("startMinutes");
+    expect(
+      PlanOpSchema.safeParse({ ...base, startMinutes: null, durationMinutes: null }).success
+    ).toBe(true);
+    expect(
+      PlanOpSchema.parse({ ...base, startMinutes: 600, durationMinutes: 45 })
+    ).toMatchObject({ startMinutes: 600, durationMinutes: 45 });
+    expect(PlanOpSchema.safeParse({ ...base, durationMinutes: 0 }).success).toBe(false);
+  });
+
+  test("still rejects an unknown op", () => {
+    expect(PlanOpSchema.safeParse({ op: "reflow", day: 1 }).success).toBe(false);
   });
 });
