@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { applyPlanOp } from "../planOps";
 import type { CurrencySettings, Expense, JournalEntry, Settlement, TripData } from "../tripShared";
 
 const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "cip-test-"));
@@ -33,6 +34,7 @@ import {
   updateExpense,
   updateJournalEntry,
   updateTripData,
+  updateTripDataIf,
 } from "./tripStore";
 
 function tripData(overrides: Partial<TripData> = {}): TripData {
@@ -313,5 +315,74 @@ describe("member accounts", () => {
 
   test("tripsForUser returns an empty array for a user with no linked trips", () => {
     expect(tripsForUser("nobody")).toEqual([]);
+  });
+});
+
+describe("plan item timing", () => {
+  function timedPlan(): TripData {
+    return tripData({
+      plan: {
+        days: [
+          {
+            day: 1,
+            destinationId: "beijing",
+            destinationName: "Beijing",
+            items: [
+              { id: "timed", slot: "morning", kind: "activity", title: "Great Wall", startMinutes: 540, durationMinutes: 90 },
+              // No timing keys at all — the shape every stored plan has today.
+              { id: "legacy", slot: "evening", kind: "free", title: "Dinner" },
+            ],
+          },
+        ],
+        tips: [],
+      },
+    });
+  }
+
+  test("round-trips a timed item and leaves an untimed one untimed", () => {
+    const { id } = createTrip(timedPlan(), "Ada");
+    const items = getTrip(id)!.data.plan.days[0].items;
+    expect(items[0]).toMatchObject({ id: "timed", startMinutes: 540, durationMinutes: 90 });
+    // Serialisation must not invent keys: an untimed item comes back untimed,
+    // which is what keeps legacy trips renderable in their slot lanes.
+    expect(items[1]).not.toHaveProperty("startMinutes");
+    expect(items[1]).not.toHaveProperty("durationMinutes");
+  });
+
+  test("a setTiming edit written through the version-guarded path is readable back", () => {
+    const { id } = createTrip(timedPlan(), "Ada");
+    const before = getTrip(id)!;
+    const edited = applyPlanOp(
+      before.data.plan,
+      { op: "setTiming", day: 1, itemId: "legacy", startMinutes: 1140, durationMinutes: 120 },
+      { newId: () => "unused", resolveDestinationName: () => null }
+    );
+    if (!edited.ok) throw new Error(edited.error);
+
+    // The exact write path the plan route uses.
+    expect(updateTripDataIf(id, { ...before.data, plan: edited.plan }, before.version)).toBe(true);
+    const after = getTrip(id)!;
+    expect(after.data.plan.days[0].items[1]).toMatchObject({
+      id: "legacy",
+      startMinutes: 1140,
+      durationMinutes: 120,
+    });
+    expect(after.data.plan.days[0].items[0]).toMatchObject({ startMinutes: 540, durationMinutes: 90 });
+  });
+
+  test("clearing a block stores an item indistinguishable from a legacy one", () => {
+    const { id } = createTrip(timedPlan(), "Ada");
+    const before = getTrip(id)!;
+    const cleared = applyPlanOp(
+      before.data.plan,
+      { op: "setTiming", day: 1, itemId: "timed", startMinutes: null, durationMinutes: null },
+      { newId: () => "unused", resolveDestinationName: () => null }
+    );
+    if (!cleared.ok) throw new Error(cleared.error);
+    expect(updateTripDataIf(id, { ...before.data, plan: cleared.plan }, before.version)).toBe(true);
+
+    const item = getTrip(id)!.data.plan.days[0].items[0];
+    expect(item).not.toHaveProperty("startMinutes");
+    expect(item).not.toHaveProperty("durationMinutes");
   });
 });
