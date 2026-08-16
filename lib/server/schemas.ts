@@ -250,3 +250,17 @@ export const CurrencySettingsSchema = z.object({
   // longer matches what the client sent.
   pivot: CurrencyCodeSchema.optional(),
 });
+
+/**
+ * Everything a user can choose about the accent is a hue, never a colour.
+ * Lightness and chroma stay pinned in lib/accent, so the whole validation
+ * burden for a user-supplied accent is a bounded integer — no string, no
+ * escaping question, nothing that could reach a stylesheet as syntax.
+ */
+const HueSchema = z.number().int().min(0).max(359);
+
+export const PrefsSchema = z.object({
+  theme: z.enum(["light", "dark", "system"]).default("light"),
+  accent: z.union([z.literal("country"), HueSchema]).default("country"),
+  accentHues: z.record(z.string().regex(/^[A-Z]{2}$/), HueSchema).default({}),
+});

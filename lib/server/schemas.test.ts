@@ -5,6 +5,7 @@ import {
   AddSettlementSchema,
   CurrencySettingsSchema,
   PlanOpSchema,
+  PrefsSchema,
   TripInputSchema,
   UpdateJournalSchema,
 } from "./schemas";
@@ -256,5 +257,46 @@ describe("plan op timing", () => {
 
   test("still rejects an unknown op", () => {
     expect(PlanOpSchema.safeParse({ op: "reflow", day: 1 }).success).toBe(false);
+  });
+});
+
+describe("PrefsSchema", () => {
+  test("accepts each accent mode", () => {
+    expect(PrefsSchema.parse({ theme: "dark", accent: "country" })).toMatchObject({
+      theme: "dark",
+      accent: "country",
+    });
+    expect(PrefsSchema.parse({ theme: "light", accent: 210 })).toMatchObject({ accent: 210 });
+    expect(PrefsSchema.parse({ accentHues: { CN: 200, JP: 40 } }).accentHues).toEqual({
+      CN: 200,
+      JP: 40,
+    });
+  });
+
+  test("an omitted field takes its default", () => {
+    expect(PrefsSchema.parse({})).toEqual({ theme: "light", accent: "country", accentHues: {} });
+  });
+
+  test("rejects a theme outside the allowlist", () => {
+    expect(PrefsSchema.safeParse({ theme: "purple" }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ theme: "<script>alert(1)</script>" }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ theme: 1 }).success).toBe(false);
+  });
+
+  test("rejects an accent that is not a hue", () => {
+    // Hex is no longer a valid accent anywhere: only hue varies, so lightness
+    // and chroma stay pinned and no choice can be illegible.
+    expect(PrefsSchema.safeParse({ accent: "#1d5c9e" }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accent: 400 }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accent: -1 }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accent: 12.5 }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accent: 0 }).success).toBe(true);
+    expect(PrefsSchema.safeParse({ accent: 359 }).success).toBe(true);
+  });
+
+  test("rejects malformed override maps", () => {
+    expect(PrefsSchema.safeParse({ accentHues: { china: 10 } }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accentHues: { CN: 999 } }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ accentHues: { CN: "200" } }).success).toBe(false);
   });
 });
