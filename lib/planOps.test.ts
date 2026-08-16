@@ -96,6 +96,146 @@ describe("updateItem", () => {
   });
 });
 
+describe("setTiming", () => {
+  it("sets both fields on the target item and leaves the rest of the plan alone", () => {
+    const before = plan();
+    const res = applyPlanOp(
+      before,
+      { op: "setTiming", day: 1, itemId: "b", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    if (!res.ok) throw new Error(res.error);
+    expect(res.plan.days[0].items[1]).toMatchObject({ id: "b", startMinutes: 540, durationMinutes: 90 });
+    // Neighbours keep whatever timing they had — which is none.
+    expect(res.plan.days[0].items[0].startMinutes).toBeUndefined();
+    expect(res.plan.days[1].items[0].startMinutes).toBeUndefined();
+    // Immutability: neither the input plan nor the input item was touched.
+    expect(before.days[0].items[1].startMinutes).toBeUndefined();
+    expect(res.plan).not.toBe(before);
+    expect(res.plan.days[0]).not.toBe(before.days[0]);
+  });
+
+  it("clears timing back to untimed when passed nulls", () => {
+    const timed = applyPlanOp(
+      plan(),
+      { op: "setTiming", day: 1, itemId: "b", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    if (!timed.ok) throw new Error(timed.error);
+    const res = applyPlanOp(
+      timed.plan,
+      { op: "setTiming", day: 1, itemId: "b", startMinutes: null, durationMinutes: null },
+      ctx
+    );
+    if (!res.ok) throw new Error(res.error);
+    const item = res.plan.days[0].items[1];
+    expect(item.startMinutes).toBeUndefined();
+    expect(item.durationMinutes).toBeUndefined();
+    // Cleared means untimed in the persisted sense: the keys are gone, so the
+    // item is indistinguishable from one saved before timing existed.
+    expect(JSON.parse(JSON.stringify(item))).not.toHaveProperty("startMinutes");
+  });
+
+  it("errors when the item no longer exists", () => {
+    const res = applyPlanOp(
+      plan(),
+      { op: "setTiming", day: 1, itemId: "zz", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    expect(res).toEqual({ ok: false, error: "That item no longer exists" });
+  });
+
+  it("errors when the day does not exist", () => {
+    const res = applyPlanOp(
+      plan(),
+      { op: "setTiming", day: 9, itemId: "b", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    expect(res).toEqual({ ok: false, error: "Day not found" });
+  });
+});
+
+describe("timing is never fabricated", () => {
+  it("addItem lands the timing it was given", () => {
+    const res = applyPlanOp(
+      plan(),
+      { op: "addItem", day: 1, title: "Lunch", slot: "afternoon", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    if (!res.ok) throw new Error(res.error);
+    expect(res.plan.days[0].items[3]).toMatchObject({ startMinutes: 540, durationMinutes: 90 });
+  });
+
+  it("addItem without timing creates an untimed item — no invented start", () => {
+    const res = applyPlanOp(plan(), { op: "addItem", day: 1, title: "Lunch", slot: "afternoon" }, ctx);
+    if (!res.ok) throw new Error(res.error);
+    const item = res.plan.days[0].items[3];
+    expect(item.startMinutes).toBeUndefined();
+    expect(item.durationMinutes).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(item))).not.toHaveProperty("startMinutes");
+  });
+
+  it("editing a legacy untimed item leaves it untimed", () => {
+    // Every item in `plan()` is legacy-shaped: no timing keys at all. Giving one
+    // a start here would be a silent data change to a trip members already own.
+    const res = applyPlanOp(plan(), { op: "updateItem", day: 1, itemId: "b", title: "Renamed" }, ctx);
+    if (!res.ok) throw new Error(res.error);
+    const item = res.plan.days[0].items[1];
+    expect(item.title).toBe("Renamed");
+    expect(item.startMinutes).toBeUndefined();
+    expect(item.durationMinutes).toBeUndefined();
+  });
+
+  it("updateItem preserves timing it was not asked to change", () => {
+    const timed = applyPlanOp(
+      plan(),
+      { op: "setTiming", day: 1, itemId: "b", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    if (!timed.ok) throw new Error(timed.error);
+    const res = applyPlanOp(
+      timed.plan,
+      { op: "updateItem", day: 1, itemId: "b", title: "Renamed", slot: "evening" },
+      ctx
+    );
+    if (!res.ok) throw new Error(res.error);
+    expect(res.plan.days[0].items[1]).toMatchObject({ startMinutes: 540, durationMinutes: 90 });
+  });
+
+  it("updateItem sets timing when asked and clears it on null", () => {
+    const set = applyPlanOp(
+      plan(),
+      { op: "updateItem", day: 1, itemId: "b", startMinutes: 600, durationMinutes: 45 },
+      ctx
+    );
+    if (!set.ok) throw new Error(set.error);
+    expect(set.plan.days[0].items[1]).toMatchObject({ startMinutes: 600, durationMinutes: 45 });
+
+    const cleared = applyPlanOp(
+      set.plan,
+      { op: "updateItem", day: 1, itemId: "b", startMinutes: null, durationMinutes: null },
+      ctx
+    );
+    if (!cleared.ok) throw new Error(cleared.error);
+    expect(cleared.plan.days[0].items[1].startMinutes).toBeUndefined();
+    expect(cleared.plan.days[0].items[1].durationMinutes).toBeUndefined();
+  });
+
+  it("moveItem carries timing with the item instead of re-deriving it", () => {
+    const timed = applyPlanOp(
+      plan(),
+      { op: "setTiming", day: 1, itemId: "b", startMinutes: 540, durationMinutes: 90 },
+      ctx
+    );
+    if (!timed.ok) throw new Error(timed.error);
+    const res = applyPlanOp(timed.plan, { op: "moveItem", day: 1, itemId: "b", direction: "up" }, ctx);
+    if (!res.ok) throw new Error(res.error);
+    expect(res.plan.days[0].items[0]).toMatchObject({ id: "b", startMinutes: 540, durationMinutes: 90 });
+    // The item it swapped past stays untimed — a move is not a reflow.
+    expect(res.plan.days[0].items[1].startMinutes).toBeUndefined();
+  });
+});
+
 describe("removeItem", () => {
   it("removes the item and reports its id", () => {
     const res = applyPlanOp(plan(), { op: "removeItem", day: 1, itemId: "b" }, ctx);
