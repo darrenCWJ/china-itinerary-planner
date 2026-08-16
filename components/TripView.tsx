@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BriefingShare } from "@/components/trip/BriefingShare";
 import { BriefingView } from "@/components/trip/BriefingView";
 import { DayCard } from "@/components/trip/DayCard";
@@ -20,97 +20,30 @@ import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip } from "@/lib/myTrips";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
-import { packingCheckKey, type GuestTripPayload, type TripPayload } from "@/lib/tripShared";
+import { packingCheckKey, type GuestTripPayload } from "@/lib/tripShared";
+import { useTripPayload } from "@/lib/useTripPayload";
 
-const POLL_MS = 4000;
 const TABS = ["Itinerary", "Tracker", "Money", "Tickets", "Packing", "Crew", "Briefing"] as const;
 type Tab = (typeof TABS)[number];
 
 export function TripView({ tripId }: { tripId: string }) {
-  const [payload, setPayload] = useState<TripPayload | null>(null);
-  const [guestView, setGuestView] = useState<GuestTripPayload | null>(null);
+  // Every read and write of the trip payload goes through this one accessor
+  // (spec §7 C4) — this component does not fetch trip data itself.
+  const { payload, guestView, loadState, mutate, toggleCheck, joinTrip, loadClaimable, probeCode } =
+    useTripPayload(tripId);
   const [claimable, setClaimable] = useState<string[] | null>(null);
-  const [loadState, setLoadState] = useState<
-    "loading" | "member" | "guest" | "private" | "not-found"
-  >("loading");
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const myName = payload?.myMemberName ?? "";
   /** Pre-accounts identity on this device — powers the claim preselect + banner. */
   const legacyName =
     typeof window !== "undefined" ? localStorage.getItem(`cip-member-${tripId}`) : null;
-  const [guestCode, setGuestCode] = useState<string>(() =>
-    typeof window !== "undefined"
-      ? (localStorage.getItem(`cip-guest-code-${tripId}`) ??
-          new URLSearchParams(window.location.search).get("code") ??
-          "")
-      : ""
-  );
   const [tab, setTab] = useState<Tab>("Itinerary");
   const [copied, setCopied] = useState(false);
-  // Guards against out-of-order responses: a poll issued before a join
-  // resolves, or a fetch with a stale guestCode, can land after a newer
-  // request. Only the most recently issued fetchTrip call may update state.
-  const fetchSeq = useRef(0);
 
   // Add-day control state
   const [newDayDest, setNewDayDest] = useState("");
   const [addingDay, setAddingDay] = useState(false);
   const [addDayError, setAddDayError] = useState<string | null>(null);
-
-  // Never regress to older data: late responses are dropped unless forced
-  // (forced = identity changes or post-error reconciliation).
-  const applyPayload = useCallback((fresh: TripPayload, force = false) => {
-    setPayload((prev) => (!force && prev && prev.version >= fresh.version ? prev : fresh));
-  }, []);
-
-  const fetchTrip = useCallback(
-    async (force = false) => {
-      const seq = ++fetchSeq.current;
-      const query = guestCode ? `?code=${encodeURIComponent(guestCode)}` : "";
-      const res = await fetch(`/api/trips/${tripId}${query}`, { cache: "no-store" });
-      if (seq !== fetchSeq.current) return;
-      if (res.status === 404) return setLoadState("not-found");
-      if (res.status === 403) {
-        setLoadState("private");
-        return;
-      }
-      if (!res.ok) return;
-      const json = await res.json();
-      if (seq !== fetchSeq.current) return;
-      if (json.guest === true) {
-        setGuestView(json as GuestTripPayload);
-        setLoadState("guest");
-        localStorage.setItem(`cip-guest-code-${tripId}`, guestCode);
-        return;
-      }
-      const fresh = json as TripPayload;
-      applyPayload(fresh, force);
-      setLoadState("member");
-    },
-    [tripId, guestCode, applyPayload]
-  );
-
-  useEffect(() => {
-    void fetchTrip();
-  }, [fetchTrip]);
-
-  // Live sync: poll while the tab is visible so every member sees updates,
-  // and refetch immediately when the tab regains focus.
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!document.hidden) void fetchTrip();
-    }, POLL_MS);
-    const onVisible = () => {
-      if (!document.hidden) void fetchTrip();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [fetchTrip, guestCode, session?.user.id]);
 
   const isMember = useMemo(
     () => Boolean(payload?.members.some((m) => m.name === myName)),
@@ -121,75 +54,9 @@ export function TripView({ tripId }: { tripId: string }) {
     if (loadState === "not-found") forgetMyTrip(tripId);
   }, [loadState, tripId]);
 
-  const loadClaimable = async () => {
-    const res = await fetch(`/api/trips/${tripId}/join?code=${encodeURIComponent(guestCode)}`);
-    if (res.ok) setClaimable(((await res.json()) as { claimable: string[] }).claimable);
-    else setClaimable([]);
-  };
+  const onToggleCheck = (key: string, checked: boolean) => void toggleCheck(key, checked, myName);
 
-  const joinTrip = async (claimName: string | null): Promise<string | null> => {
-    const res = await fetch(`/api/trips/${tripId}/join`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: guestCode, ...(claimName ? { claimName } : {}) }),
-    });
-    const json = await res.json();
-    if (!res.ok) return typeof json.error === "string" ? json.error : "Couldn't join.";
-    // Invalidate any in-flight poll so a stale guest response can't revert the join.
-    fetchSeq.current++;
-    applyPayload(json as TripPayload, true);
-    setLoadState("member");
-    return null;
-  };
-
-  const toggleCheck = async (key: string, checked: boolean) => {
-    if (!payload || !isMember) return;
-    // Optimistic update; the server response is the source of truth.
-    setPayload({
-      ...payload,
-      checks: checked
-        ? [...payload.checks.filter((c) => c.key !== key), { key, by: myName }]
-        : payload.checks.filter((c) => c.key !== key),
-    });
-    try {
-      const res = await fetch(`/api/trips/${tripId}/checks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, checked }),
-      });
-      if (res.ok) {
-        applyPayload((await res.json()) as TripPayload);
-      } else {
-        // The optimistic update kept the old version, so polls would never
-        // reconcile it — force a fresh copy of the server state.
-        void fetchTrip(true);
-      }
-    } catch {
-      void fetchTrip(true);
-    }
-  };
-
-  // Shared mutation path: POST/PATCH/DELETE, apply the fresh payload on
-  // success, reconcile via a forced refetch on failure. Returns an error
-  // message for the calling form, or null when the change stuck.
-  const mutate = useCallback(
-    async (url: string, init: RequestInit): Promise<string | null> => {
-      try {
-        const res = await fetch(url, init);
-        const json: unknown = await res.json();
-        if (!res.ok) {
-          void fetchTrip(true);
-          const message = (json as { error?: unknown }).error;
-          return typeof message === "string" ? message : "Couldn't save that change.";
-        }
-        applyPayload(json as TripPayload);
-        return null;
-      } catch {
-        return "Couldn't reach the server — try again.";
-      }
-    },
-    [fetchTrip, applyPayload]
-  );
+  const showClaimable = async () => setClaimable(await loadClaimable());
 
   const jsonInit = (method: string, body: unknown): RequestInit => ({
     method,
@@ -247,18 +114,7 @@ export function TripView({ tripId }: { tripId: string }) {
   if (loadState === "private") {
     return (
       <Shell>
-        <PrivateGate
-          onSubmitCode={async (code) => {
-            const res = await fetch(`/api/trips/${tripId}?code=${encodeURIComponent(code)}`, {
-              cache: "no-store",
-            });
-            if (res.status === 403) return "Wrong join code — check it and try again.";
-            if (!res.ok && res.status !== 404) return "Couldn't check that code — try again.";
-            if (res.status === 404) return "Trip not found.";
-            setGuestCode(code);
-            return null; // fetch effect re-runs on guestCode change and renders the guest view
-          }}
-        />
+        <PrivateGate onSubmitCode={probeCode} />
       </Shell>
     );
   }
@@ -273,7 +129,7 @@ export function TripView({ tripId }: { tripId: string }) {
         {!sessionPending && session && claimable === null && (
           <button
             type="button"
-            onClick={() => void loadClaimable()}
+            onClick={() => void showClaimable()}
             className="mt-6 rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white"
           >
             Join this trip
@@ -412,7 +268,7 @@ export function TripView({ tripId }: { tripId: string }) {
                 tickets={dayTickets}
                 checkedBy={checkedBy}
                 isMember={isMember}
-                onToggle={(key, checked) => void toggleCheck(key, checked)}
+                onToggle={onToggleCheck}
                 onOp={planOp}
               />
             );
@@ -452,7 +308,7 @@ export function TripView({ tripId }: { tripId: string }) {
           payload={payload}
           myName={myName}
           isMember={isMember}
-          onToggle={(key, checked) => void toggleCheck(key, checked)}
+          onToggle={onToggleCheck}
           onAddJournal={addJournal}
           onUpdateJournal={updateJournal}
           onDeleteJournal={deleteJournal}
@@ -506,7 +362,7 @@ export function TripView({ tripId }: { tripId: string }) {
                           type="checkbox"
                           checked={by !== undefined}
                           disabled={!isMember}
-                          onChange={(e) => void toggleCheck(key, e.target.checked)}
+                          onChange={(e) => onToggleCheck(key, e.target.checked)}
                           className="mt-0.5 h-4 w-4 accent-rail"
                         />
                         <span className={by ? "text-ink-soft line-through" : ""}>
