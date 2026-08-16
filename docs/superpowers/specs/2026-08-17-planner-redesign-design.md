@@ -172,10 +172,24 @@ Light and dark redefine only the ramp. The existing `@theme` block in
 The prototype hand-picks a hex per country. That approach fails at ~195
 countries and is rejected.
 
-- A small **curated override table** for countries that warrant hand-tuning.
-  China keeps a deliberately chosen accent.
-- Everything else derives: `hash(iso2) → hue`, rendered in **OKLCH at pinned
-  lightness and chroma**.
+Accent resolves through three layers, in order:
+
+1. **User override** (§4.3) — a per-user, per-country hue.
+2. **Curated override** — a small hand-tuned table. China keeps a deliberately
+   chosen hue.
+3. **Derived** — the default for every country nobody has touched.
+
+**Only hue varies. Lightness and chroma are pinned at every layer**, including
+user-chosen ones, which is what makes the contrast guarantee hold regardless of
+who picked what.
+
+**Derivation uses golden-angle spacing over the ISO list, not a plain hash.**
+`hue = (index in ISO 3166-1 alpha-2 × 137.508°) mod 360`. A naive
+`hash(iso2) → hue` was specified first and measured badly — it put **CN at 324°,
+TH at 321° and VN at 325°**, three countries that routinely appear in the same
+trip list rendering as the same pink, and **IT at 48° beside FR at 49°**. Golden
+angle guarantees consecutive indices land far apart. The ISO list is a stable
+standard, so adding a country never reshuffles the countries already assigned.
 
 **Lightness is pinned per role, not per theme.** An earlier draft of this spec
 specified a single `oklch(58% 0.15 H)` for light theme and claimed it passed
@@ -210,8 +224,27 @@ patch — but not the need to verify it.
 ### 4.3 Toggles
 
 - **Theme:** Light (default) · Dark · System
-- **Accent:** "Per country" (default) or a fixed override, so a user who
-  dislikes a generated hue can replace it
+- **Accent mode:** "Per country" (default) or one fixed accent applied
+  everywhere
+- **Per-country hue:** in "per country" mode, any country's hue can be
+  overridden individually
+
+**The per-country picker offers a hue wheel, never a freeform colour field.**
+A raw colour input lets someone choose `#FFFF00`, which is illegible on paper
+and defeats §4.2 entirely. Restricting the choice to hue keeps lightness and
+chroma pinned, so **every selection a user can physically make is legible in
+both themes.** Expressive control is preserved; the failure mode is removed.
+
+**Overrides are per user, not per trip.** Members of a shared trip may each see
+their own colours. This keeps the data in the prefs record already required
+above, with no shared-state conflict resolution — at the cost that "the pink
+trip" is not a phrase two members can reliably exchange. Trip-level colour is a
+deliberate non-goal.
+
+Overrides are sparse: a map of ISO code to hue holding only what the user has
+actually changed. An untouched country falls through to the curated table, then
+to derivation, so a country seen for the first time always renders correctly
+without anyone configuring it.
 
 Both persist per user. Theme must be applied before first paint to avoid a
 flash.
