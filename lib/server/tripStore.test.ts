@@ -3,13 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { applyPlanOp } from "../planOps";
+import { DEFAULT_PREFS, type UserPrefs } from "../prefs";
 import type { CurrencySettings, Expense, JournalEntry, Settlement, TripData } from "../tripShared";
 
 const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "cip-test-"));
 process.env.CIP_DB_PATH = path.join(dbDir, "test.db");
 
 // Imported after the env override so the store opens the temp database.
-import { closeDb } from "./db";
+import { closeDb, getDb } from "./db";
 import {
   addExpense,
   addJournalEntry,
@@ -22,6 +23,7 @@ import {
   getBriefingByCode,
   getBriefingForTrip,
   getTrip,
+  getUserPrefs,
   isMember,
   isNameClaimed,
   joinTrip,
@@ -30,6 +32,7 @@ import {
   revokeBriefing,
   setCheck,
   setCurrencySettings,
+  setUserPrefs,
   tripsForUser,
   updateExpense,
   updateJournalEntry,
@@ -384,5 +387,56 @@ describe("plan item timing", () => {
     const item = getTrip(id)!.data.plan.days[0].items[0];
     expect(item).not.toHaveProperty("startMinutes");
     expect(item).not.toHaveProperty("durationMinutes");
+  });
+});
+
+describe("user prefs", () => {
+  test("a user who has never saved prefs reads as null, not as defaults", () => {
+    // The store reports absence; DEFAULT_PREFS is applied a layer up, so a
+    // caller can still tell "never chose" from "chose the defaults".
+    expect(getUserPrefs("u-none")).toBeNull();
+  });
+
+  test("prefs round-trip", () => {
+    const prefs: UserPrefs = { theme: "dark", accent: "country", accentHues: { CN: 200 } };
+    setUserPrefs("u1", prefs);
+
+    expect(getUserPrefs("u1")).toEqual(prefs);
+  });
+
+  test("saving again overwrites in place rather than accumulating rows", () => {
+    setUserPrefs("u2", { theme: "light", accent: "country", accentHues: {} });
+    setUserPrefs("u2", { theme: "system", accent: 40, accentHues: { JP: 10 } });
+
+    expect(getUserPrefs("u2")).toEqual({ theme: "system", accent: 40, accentHues: { JP: 10 } });
+    const rows = getDb().prepare("SELECT COUNT(*) AS n FROM user_prefs WHERE user_id = ?").get("u2");
+    expect((rows as { n: number }).n).toBe(1);
+  });
+
+  test("a corrupted row degrades to null instead of throwing", () => {
+    getDb()
+      .prepare("INSERT INTO user_prefs (user_id, data, updated_at) VALUES (?, ?, ?)")
+      .run("u-corrupt", "{not json", Date.now());
+
+    expect(() => getUserPrefs("u-corrupt")).not.toThrow();
+    expect(getUserPrefs("u-corrupt")).toBeNull();
+  });
+
+  test("a row whose shape has drifted is read through the allowlist, not trusted", () => {
+    // Valid JSON, invalid contents: an older or hand-edited row must not be
+    // able to put an unknown theme or an out-of-range hue into a response.
+    getDb()
+      .prepare("INSERT INTO user_prefs (user_id, data, updated_at) VALUES (?, ?, ?)")
+      .run("u-drift", JSON.stringify({ theme: "purple", accent: 999, accentHues: { china: 5 } }), Date.now());
+
+    expect(getUserPrefs("u-drift")).toEqual(DEFAULT_PREFS);
+  });
+
+  test("prefs are per user", () => {
+    setUserPrefs("u3", { theme: "dark", accent: 120, accentHues: {} });
+    setUserPrefs("u4", { theme: "light", accent: "country", accentHues: {} });
+
+    expect(getUserPrefs("u3")?.theme).toBe("dark");
+    expect(getUserPrefs("u4")?.theme).toBe("light");
   });
 });

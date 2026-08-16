@@ -1,4 +1,5 @@
 import type { MyTrip } from "../myTrips";
+import type { UserPrefs } from "../prefs";
 import type {
   CurrencySettings,
   Expense,
@@ -274,4 +275,14 @@ export async function isNameClaimed(tripId: string, memberName: string): Promise
 export async function tripsForUser(userId: string): Promise<UserTrip[]> {
   if (storeMode() === "postgres") return (await pg()).tripsForUser(userId);
   return sqlite.tripsForUser(userId);
+}
+
+export async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
+  if (storeMode() === "postgres") return (await pg()).getUserPrefs(userId);
+  return sqlite.getUserPrefs(userId);
+}
+
+export async function setUserPrefs(userId: string, prefs: UserPrefs): Promise<void> {
+  if (storeMode() === "postgres") return (await pg()).setUserPrefs(userId, prefs);
+  return sqlite.setUserPrefs(userId, prefs);
 }
