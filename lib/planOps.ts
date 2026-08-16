@@ -3,7 +3,16 @@ import type { TimeSlot } from "./types";
 
 /** One member edit to the stored plan, applied server-side. */
 export type PlanOp =
-  | { op: "addItem"; day: number; title: string; slot: TimeSlot; time?: string; note?: string }
+  | {
+      op: "addItem";
+      day: number;
+      title: string;
+      slot: TimeSlot;
+      time?: string;
+      note?: string;
+      startMinutes?: number;
+      durationMinutes?: number;
+    }
   | {
       op: "updateItem";
       day: number;
@@ -13,6 +22,16 @@ export type PlanOp =
       /** null clears the field; undefined leaves it unchanged. */
       time?: string | null;
       note?: string | null;
+      startMinutes?: number | null;
+      durationMinutes?: number | null;
+    }
+  /** Set or clear an item's time block. Both null = back to untimed. */
+  | {
+      op: "setTiming";
+      day: number;
+      itemId: string;
+      startMinutes: number | null;
+      durationMinutes: number | null;
     }
   | { op: "removeItem"; day: number; itemId: string }
   | { op: "moveItem"; day: number; itemId: string; direction: "up" | "down" }
@@ -30,6 +49,19 @@ export type PlanOpResult =
 
 function replaceDay(plan: TripPlan, day: DayPlan): TripPlan {
   return { ...plan, days: plan.days.map((d) => (d.day === day.day ? day : d)) };
+}
+
+/**
+ * Timing patch semantics, shared by `updateItem` and `setTiming`: `undefined`
+ * leaves the field alone, `null` clears it. Clearing lands on `undefined` rather
+ * than `null` so the persisted item loses the key entirely and reads back
+ * identical to one saved before time blocks existed.
+ */
+function patchTiming(
+  current: number | null | undefined,
+  next: number | null | undefined
+): number | undefined {
+  return (next === undefined ? current : next) ?? undefined;
 }
 
 export function applyPlanOp(plan: TripPlan, op: PlanOp, ctx: PlanOpContext): PlanOpResult {
@@ -69,6 +101,8 @@ export function applyPlanOp(plan: TripPlan, op: PlanOp, ctx: PlanOpContext): Pla
         title: op.title,
         time: op.time || undefined,
         note: op.note || undefined,
+        startMinutes: op.startMinutes,
+        durationMinutes: op.durationMinutes,
       };
       return { ok: true, plan: replaceDay(plan, { ...day, items: [...day.items, item] }) };
     }
@@ -84,6 +118,20 @@ export function applyPlanOp(plan: TripPlan, op: PlanOp, ctx: PlanOpContext): Pla
         fullDay: slotChanged ? undefined : existing.fullDay,
         time: op.time === undefined ? existing.time : op.time || undefined,
         note: op.note === undefined ? existing.note : op.note || undefined,
+        startMinutes: patchTiming(existing.startMinutes, op.startMinutes),
+        durationMinutes: patchTiming(existing.durationMinutes, op.durationMinutes),
+      };
+      const items = day.items.map((i) => (i.id === op.itemId ? patched : i));
+      return { ok: true, plan: replaceDay(plan, { ...day, items }) };
+    }
+
+    case "setTiming": {
+      const existing = day.items.find((i) => i.id === op.itemId);
+      if (!existing) return { ok: false, error: "That item no longer exists" };
+      const patched: ScheduledItem = {
+        ...existing,
+        startMinutes: patchTiming(existing.startMinutes, op.startMinutes),
+        durationMinutes: patchTiming(existing.durationMinutes, op.durationMinutes),
       };
       const items = day.items.map((i) => (i.id === op.itemId ? patched : i));
       return { ok: true, plan: replaceDay(plan, { ...day, items }) };

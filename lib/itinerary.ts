@@ -27,6 +27,15 @@ export interface ScheduledItem {
   title: string;
   /** Free-text time, e.g. "19:00" — only on member-added items. */
   time?: string;
+  /**
+   * Minutes from midnight (0-1439). Optional *and* nullable: items saved before
+   * time blocks existed carry no key at all, so a required-nullable field would
+   * make every stored plan type-lie. Absent means untimed, and an untimed item
+   * is never given a start it did not have.
+   */
+  startMinutes?: number | null;
+  /** Block length in minutes. Absent/null alongside `startMinutes` = untimed. */
+  durationMinutes?: number | null;
   note?: string;
   interests?: Interest[];
 }
