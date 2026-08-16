@@ -16,6 +16,12 @@ export const InterestSchema = z.enum([
   "family",
 ]);
 
+const CountryCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{2}$/, "ISO alpha-2 country code");
+
 export const TripInputSchema = z.object({
   destinationIds: z.array(z.string().min(1).max(60)).min(1).max(8),
   days: z.number().int().min(1).max(21),
@@ -23,6 +29,10 @@ export const TripInputSchema = z.object({
   adults: z.number().int().min(1).max(12),
   kids: z.number().int().min(0).max(12),
   interests: z.array(InterestSchema).max(11),
+  // Optional in, guaranteed out. Country arrives on the next natural write of
+  // each trip rather than through a bulk rewrite: updateTripData carries no
+  // version guard, so a migration pass could clobber a concurrent member edit.
+  country: CountryCodeSchema.default("CN"),
 });
 
 const MemberNameSchema = z.string().trim().min(1).max(30);

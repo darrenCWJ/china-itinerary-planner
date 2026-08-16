@@ -13,7 +13,16 @@ export type Interest =
   | "hiking"
   | "family";
 
-export type Region =
+import type { CountryCode } from "./countries";
+
+/** Defined once in lib/countries; re-exported so type-only consumers stay here. */
+export type { CountryCode };
+
+/**
+ * China's own region split. Named for the country it describes because the
+ * word "region" means something different in every other one.
+ */
+export type ChinaRegion =
   | "North"
   | "Northeast"
   | "Northwest"
@@ -21,6 +30,9 @@ export type Region =
   | "South"
   | "Southwest"
   | "Central";
+
+/** @deprecated Use ChinaRegion. Kept so existing consumers compile unchanged. */
+export type Region = ChinaRegion;
 
 export type TimeSlot = "morning" | "afternoon" | "evening";
 
@@ -44,7 +56,14 @@ export interface Destination {
   id: string;
   name: string;
   chineseName: string;
+  /**
+   * Name in the local language. Added alongside `chineseName`, which every
+   * consumer still reads; the two converge when consumers migrate.
+   */
+  localName?: string | null;
   region: Region;
+  /** ISO alpha-2. Absent on the curated data, which is all China. */
+  country?: CountryCode;
   /** City-centre coordinates for the map view. */
   lat: number;
   lon: number;

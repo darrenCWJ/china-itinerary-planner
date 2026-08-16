@@ -1,6 +1,6 @@
 import type { TripInput, TripPlan } from "./itinerary";
 import type { PackingGroup } from "./packing";
-import type { Season } from "./types";
+import type { CountryCode, Season } from "./types";
 
 /** Snapshot stored per trip and served to every member. */
 export interface TripData {
@@ -11,6 +11,16 @@ export interface TripData {
   packing: PackingGroup[];
   foods: { destination: string; emoji: string; dishes: string[] }[];
   destinationNames: string[];
+}
+
+/**
+ * The country a trip is in. The only way callers should read it: every trip
+ * saved before the field existed is a China trip, so an absent country is an
+ * explicit "CN" rather than an unknown — which is what removes the need for a
+ * backfill. No caller should ever see `undefined` here.
+ */
+export function tripCountry(data: TripData): CountryCode {
+  return data.input.country ?? "CN";
 }
 
 export interface TripMember {

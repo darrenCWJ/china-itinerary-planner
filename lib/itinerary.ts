@@ -1,5 +1,5 @@
 import { newId } from "./id";
-import type { Activity, Destination, Interest, Season, TimeSlot } from "./types";
+import type { Activity, CountryCode, Destination, Interest, Season, TimeSlot } from "./types";
 
 export interface TripInput {
   destinationIds: string[];
@@ -8,6 +8,11 @@ export interface TripInput {
   adults: number;
   kids: number;
   interests: Interest[];
+  /**
+   * ISO alpha-2. Optional because trips saved before the field existed do not
+   * carry it — read it through `tripCountry`, never directly.
+   */
+  country?: CountryCode;
 }
 
 export type ItemKind = "activity" | "travel" | "arrival" | "departure" | "free" | "custom";
