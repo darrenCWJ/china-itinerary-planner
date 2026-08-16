@@ -4,8 +4,18 @@ import {
   AddJournalSchema,
   AddSettlementSchema,
   CurrencySettingsSchema,
+  TripInputSchema,
   UpdateJournalSchema,
 } from "./schemas";
+
+const tripInput = {
+  destinationIds: ["beijing", "xian"],
+  days: 7,
+  season: "spring",
+  adults: 2,
+  kids: 1,
+  interests: ["food", "history"],
+};
 
 const expense = {
   memberName: "Ada",
@@ -152,6 +162,25 @@ describe("currency settings schema", () => {
           rates: { SGD: rate },
         }).success
       ).toBe(false);
+    }
+  });
+});
+
+describe("trip input country", () => {
+  test("defaults to CN when the client sends no country", () => {
+    // The write boundary is where country actually lands in storage: every
+    // create/update from here on persists one, so no backfill is needed.
+    const parsed = TripInputSchema.parse(tripInput);
+    expect(parsed.country).toBe("CN");
+  });
+
+  test("normalizes a lowercase country to uppercase", () => {
+    expect(TripInputSchema.parse({ ...tripInput, country: "jp" }).country).toBe("JP");
+  });
+
+  test("rejects anything that is not ISO alpha-2", () => {
+    for (const country of ["JPN", "J", "", "12", "日本"]) {
+      expect(TripInputSchema.safeParse({ ...tripInput, country }).success).toBe(false);
     }
   });
 });
