@@ -3,6 +3,24 @@ export interface LatLon {
   lon: number;
 }
 
+/** A place that may not have been located yet — nulls mean "off the map". */
+export interface MaybeLatLon {
+  lat: number | null;
+  lon: number | null;
+}
+
+/**
+ * Narrow a possibly-unlocated place to a point, or null if it has none.
+ *
+ * The single narrowing every consumer of nullable coordinates goes through, so
+ * "no coordinates" reliably becomes "no estimate" instead of a made-up
+ * position. Explicit null checks rather than truthiness: 0,0 is a real point.
+ */
+export function latLonOf(place: MaybeLatLon): LatLon | null {
+  if (place.lat === null || place.lon === null) return null;
+  return { lat: place.lat, lon: place.lon };
+}
+
 const EARTH_RADIUS_KM = 6371;
 
 /** Great-circle distance in km between two points. */

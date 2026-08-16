@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getDestination } from "@/lib/data";
+import { latLonOf } from "@/lib/geo";
 import { expensesOnDate, formatMinor, totalsByCurrency } from "@/lib/money";
 import { dayDate } from "@/lib/tickets";
 import {
@@ -118,7 +119,9 @@ export function TrackerTab({
   const cities = citiesSoFar(days, doneIndex);
   const km = railKmSoFar(days, doneIndex, (id) => {
     const d = getDestination(id);
-    return d ? { lat: d.lat, lon: d.lon } : null;
+    // An off-map destination resolves to null, so railKmSoFar skips the leg
+    // rather than inventing a distance for it.
+    return d ? latLonOf(d) : null;
   });
   const tripTotals = totalsByCurrency(expenses);
 
