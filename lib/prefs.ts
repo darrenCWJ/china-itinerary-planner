@@ -55,3 +55,54 @@ export function sanitizePrefs(value: unknown): UserPrefs {
     accentHues,
   };
 }
+
+/**
+ * Read by the first-paint inline script, so it is deliberately not HttpOnly
+ * (see the plan's J8). That is safe only because of what it holds: a theme
+ * enum and bounded integers, nothing sensitive, re-validated through the
+ * allowlist on every single read.
+ */
+export const PREFS_COOKIE = "cip-prefs";
+
+/**
+ * `theme=dark&accent=210&hues=CN:200.JP:40`.
+ *
+ * Flat key=value pairs rather than JSON because the inline script has to read
+ * this before any bundle loads: a handful of string splits is code that can be
+ * written once as a constant and audited by eye.
+ *
+ * Overrides are separated by "." and not "," because RFC 6265's cookie-octet
+ * excludes the comma — a comma would need percent-encoding, which the inline
+ * script would then have to decode.
+ */
+export function parsePrefsCookie(value: string | undefined | null): UserPrefs {
+  if (!value) return DEFAULT_PREFS;
+
+  const fields: Record<string, string> = {};
+  for (const pair of value.split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    fields[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+
+  const accentHues: Record<string, number> = {};
+  for (const entry of (fields.hues ?? "").split(".")) {
+    const [code, hue] = entry.split(":");
+    if (code && hue !== undefined) accentHues[code] = Number(hue);
+  }
+
+  // Every field lands in sanitizePrefs rather than being trusted here, so the
+  // cookie has exactly the same trust level as a stored row: none.
+  return sanitizePrefs({
+    theme: fields.theme,
+    accent: fields.accent === undefined ? undefined : Number(fields.accent),
+    accentHues,
+  });
+}
+
+export function serializePrefsCookie(prefs: UserPrefs): string {
+  const parts = [`theme=${prefs.theme}`, `accent=${prefs.accent}`];
+  const hues = Object.entries(prefs.accentHues).map(([code, hue]) => `${code}:${hue}`);
+  if (hues.length > 0) parts.push(`hues=${hues.join(".")}`);
+  return parts.join("&");
+}
