@@ -1,5 +1,73 @@
 @import "tailwindcss";
 
+/*
+ * Redesign token set — PR1. The @theme block below is the light-only palette
+ * the current UI renders from; it stays exactly as it is and is retired in
+ * PR3. These are plain custom properties on purpose: mapping them into
+ * Tailwind's @theme would generate utility classes nothing consumes yet and
+ * risks colliding with the retiring block, so PR2 owns that wiring. Nothing
+ * reads these variables in PR1 — they exist so PR2's shell has correct values
+ * in both ramps from its first commit.
+ *
+ * Light values are lifted from the @theme palette so the two agree.
+ * lib/accent.test.ts asserts this file against lib/accent's constants, which
+ * is what stops the two definitions of the dark paper from drifting apart.
+ */
+:root {
+  /* text ramp, strongest to faintest */
+  --ink-0: #17263b;
+  --ink-1: #2c3e57;
+  --ink-2: #4a5b72;
+  --ink-3: #78889d;
+  --ink-4: #a8b4c4;
+  /* borders */
+  --line-1: #d9e7f4;
+  --line-2: #e8eff7;
+  /* panel fills */
+  --surf-1: #f1f5fa;
+  --surf-2: #e6edf5;
+  /* base, elevated, overlay */
+  --paper: #ffffff;
+  --raise: #f8fafd;
+  --scrim: rgb(23 38 59 / 0.55);
+  /* Country accent, defaulting to China. The providers overwrite these per
+     country at runtime; only the hue ever moves, so the pinned lightness and
+     chroma below must stay in step with lib/accent's RAMP. */
+  --accent-ink: oklch(50% 0.08 30);
+  --accent-fill: oklch(72% 0.115 30);
+  /* Spec §7 C5 — present from the start even though desktop needs neither, so
+     the mobile spec is an addition rather than a retrofit. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --tap-min: 44px;
+}
+
+/*
+ * Unreachable in PR1: the shell pins data-theme="light" because the current
+ * components hardcode light palette utilities and a dark flip would restyle
+ * half of them. The values land now so PR2 flips a switch instead of picking
+ * colours under deadline.
+ */
+[data-theme="dark"] {
+  --ink-0: #edf2f9;
+  --ink-1: #d2dbe6;
+  --ink-2: #a4b0c0;
+  --ink-3: #77859a;
+  --ink-4: #55637a;
+  --line-1: #2a3442;
+  --line-2: #1d2531;
+  --surf-1: #161d27;
+  --surf-2: #1f2833;
+  /* MUST equal lib/accent's DARK_PAPER — oklch(18% 0.015 250) in sRGB. */
+  --paper: #0d1218;
+  --raise: #151b24;
+  --scrim: rgb(3 6 10 / 0.65);
+  --accent-ink: oklch(80% 0.095 30);
+  --accent-fill: oklch(80% 0.095 30);
+}
+
 @theme {
   --color-ink: #17263b;
   --color-ink-soft: #4a5b72;
