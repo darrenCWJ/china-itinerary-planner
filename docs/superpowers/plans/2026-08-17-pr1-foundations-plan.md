@@ -14,7 +14,7 @@ npm run build
 Run all three after **every** numbered task. Commit per task with a conventional-commit message so any task can be reverted in isolation.
 
 **Test infrastructure facts (verified against the repo):**
-- vitest config (`vitest.config.ts`) includes **only** `lib/**/*.test.ts`, environment `node`. Every new test file in this plan therefore lives under `lib/`. No jsdom, no @testing-library — see Judgement call J2 for how the accessor hook is tested within that constraint.
+- vitest config (`vitest.config.ts`) ships node-only (`lib/**/*.test.ts`, environment `node`). **Task 1 restructures it into two projects**: the node project unchanged, plus a jsdom project (`@testing-library/react`) for component/hook tests. Convention from Task 1 onward: pure-logic tests are `.test.ts` under `lib/` (node project); anything that renders is `.test.tsx` (jsdom project). See J2 (resolved).
 - sqlite store tests run live against a temp DB (`lib/server/tripStore.test.ts` pattern: set `CIP_DB_PATH` before importing, `closeDb()` in before/after). The **pg store is inspection-verified only** in this repo (no live pg in CI — see project memory); pg changes in this plan mirror the sqlite changes structurally and are flagged for the live-pg matrix before any pg deploy.
 
 **Boundary contract this PR must hand to PR2** (a parallel agent plans against exactly this — do not rename these exports):
@@ -40,11 +40,30 @@ Run all three after **every** numbered task. Commit per task with a conventional
 
 ---
 
+## Task 1 — component test harness (jsdom project)
+
+**Goal:** approved test infrastructure so component and hook tests can render for real: `jsdom` + `@testing-library/react` devDependencies and a two-project vitest config. Lands before any task whose test wants to render (the providers in Task 15, the hook in Task 17). No existing test is modified or reclassified.
+
+**Test first** — create `components/harness.test.tsx`: render a trivial inline component with `@testing-library/react` and assert its text is present. RED two ways before the change: `npm test` does not pick the file up at all (include is `lib/**/*.test.ts`), and the targeted run `npx vitest run components/harness.test.tsx` fails (no matching test file / missing deps / no DOM). Record both, then:
+
+**Implement:**
+- `npm i -D jsdom @testing-library/react @testing-library/jest-dom` — versions compatible with React 19 (`@testing-library/react` ≥ 16). jest-dom is included deliberately: `toBeInTheDocument()`-style matchers keep component assertions readable; dev-only (see J2).
+- Create `vitest.setup.ts`: `import "@testing-library/jest-dom/vitest";`
+- Restructure `vitest.config.ts` into two projects sharing the existing `@` alias:
+  - **node** (existing semantics untouched): include `["lib/**/*.test.ts"]`, environment `node`.
+  - **jsdom** (new): include `["components/**/*.test.tsx", "lib/**/*.test.tsx"]`, environment `jsdom`, `setupFiles: ["./vitest.setup.ts"]`.
+  The `.ts` / `.tsx` split means the two includes cannot overlap — every pre-existing test stays in the node project, untouched.
+- `components/harness.test.tsx` stays in the tree as the harness canary.
+
+**Verify:** `npm test` runs both projects and every pre-existing lib test passes with identical counts; `npx vitest run components/harness.test.tsx` passes; `npx tsc --noEmit`; `npm run build` (test-only deps must not leak into the build).
+
+---
+
 ## Workstream A — Pure country modules (spec PR1 step 2)
 
 Ordered first: zero dependencies on anything else, pure, highest test leverage.
 
-### Task 1 — `lib/countries`
+### Task 2 — `lib/countries`
 
 **Goal:** country records, ISO alpha-2 codes, curated overrides, safe fallback for unknown codes.
 
@@ -81,7 +100,7 @@ export interface Country {
 
 ---
 
-### Task 2 — `lib/accent` (role-pinned OKLCH derivation)
+### Task 3 — `lib/accent` (role-pinned OKLCH derivation)
 
 **Goal:** the PR2 contract function: `(iso2, theme, role) → OKLCH string`, with contrast guaranteed by construction (spec §4.2), chroma clamped to the sRGB gamut max.
 
@@ -95,7 +114,7 @@ export interface Country {
 - **Contrast by construction (spec §9):** iterate all 676 two-letter codes (superset of the 195 real ISO codes):
   - light theme, ink role: WCAG contrast vs white `#ffffff` ≥ 4.5.
   - light theme, fill role: contrast between the fill and the light-theme `--ink-0` value (`#17263b`, current `--color-ink`) ≥ 3.0.
-  - dark theme, ink role: contrast vs the dark paper value `DARK_PAPER` exported from `lib/accent` ≥ 4.5. (`DARK_PAPER` is the single source of truth the CSS dark ramp in Task 10 must copy — keep them in sync, the test cites the CSS line.)
+  - dark theme, ink role: contrast vs the dark paper value `DARK_PAPER` exported from `lib/accent` ≥ 4.5. (`DARK_PAPER` is the single source of truth the CSS dark ramp in Task 12 must copy — keep them in sync, the test cites the CSS line.)
 
 RED (module missing).
 
@@ -105,14 +124,14 @@ RED (module missing).
 - `export type AccentRole = "ink" | "fill"; export type AccentTheme = "light" | "dark";`
 - `export function accentColor(iso2: string, theme: AccentTheme, role: AccentRole): string` — hue from curated `accentHue` else hash; L per the §4.2 table; returns `oklch(L% C H)`.
 - `export function oklchToSrgb(l: number, c: number, h: number): [number, number, number]` — standard OKLab → linear sRGB → sRGB conversion (needed by the tests and later by any canvas/SVG consumer; ~30 lines, no dependency).
-- `export const DARK_PAPER = "..."` — the dark-theme paper colour (pick ≈ `oklch(18% 0.015 250)`-equivalent hex) used by both the test and Task 10's CSS.
+- `export const DARK_PAPER = "..."` — the dark-theme paper colour (pick ≈ `oklch(18% 0.015 250)`-equivalent hex) used by both the test and Task 12's CSS.
 - Also export a plain `relativeLuminance([r,g,b])` + `contrastRatio(a, b)` used by the test (kept in `lib/accent.ts` so PR2's visual checks can reuse them).
 
 **Verify:** three gates. This is the highest-value test in the PR — do not weaken the 676-code sweep.
 
 ---
 
-### Task 3 — additive exports feeding the China profile
+### Task 4 — additive exports feeding the China profile
 
 **Goal:** make the China-specific constants referenceable without duplication. Pure export additions; no behaviour change.
 
@@ -136,7 +155,7 @@ RED (module missing).
 
 ---
 
-### Task 4 — `lib/countryProfile`
+### Task 5 — `lib/countryProfile`
 
 **Goal:** the §5.2 seam: `getCountryProfile(code)` with China fully populated and a neutral default that degrades instead of throwing.
 
@@ -187,9 +206,34 @@ export function getCountryProfile(code: string): CountryProfile;
 
 ---
 
+### Task 6 — currency pivot (spec §5.5, assigned to PR1 by coordinator decision)
+
+Folded in after the original plan was written: the `lib/money.ts` half of §5.5 lands here; the MoneyTab label changes ("Total CNY" etc.) are PR2's. Sequenced directly after Task 5 because the pivot's supplier is `CountryProfile.currency`. Pure, node-testable.
+
+**Goal:** the conversion pivot stops being the hardcoded `"CNY"` (`lib/money.ts:41`, and the `home === "CNY"` check at `:48`) and becomes a parameter defaulting to `"CNY"`. Existing trips are read with an explicit `"CNY"` pivot so their persisted rate semantics ("CNY per 1 unit", `lib/tripShared.ts:102`) are preserved, never reinterpreted — a correctness requirement.
+
+**Test first** — extend `lib/money.test.ts`:
+- Back-compat pin: `convertedTotals(totals, settings)` with no pivot argument returns exactly today's values for a CNY+SGD mix (existing tests already pin the numbers — extend one to also assert `result.pivot === "CNY"` and `result.grandTotal === result.cny`).
+- Explicit pivot: with `rates = { USD: 150 }` read as "JPY per 1 USD" and pivot `"JPY"`: a JPY total converts at rate 1, a USD total multiplies by 150, an unknown currency lands in `unconverted`, `home: "JPY"` resolves at rate 1.
+- Seam composition: `convertedTotals(totals, settings, getCountryProfile("CN").currency)` equals the default-pivot result — proves the profile supplies the pivot with no special-casing.
+- Read helper: `currencyPivot({ home: null, rates: {} })` → `"CNY"` (legacy blob without the field — the explicit-CNY guarantee); `currencyPivot({ home: null, rates: {}, pivot: "JPY" })` → `"JPY"`.
+- Extend `lib/server/schemas.test.ts`: `CurrencySettingsSchema` accepts optional `pivot: "JPY"`, rejects `pivot: "JP"`, and parses legacy `{ home, rates }` bodies unchanged.
+
+RED.
+
+**Implement:**
+- `lib/money.ts` — `convertedTotals(totals, settings, pivot = "CNY")`; replace the two hardcoded `"CNY"` comparisons with `pivot`. `ConvertedTotals` gains `pivot: string` and `grandTotal: number` (grand total in pivot minor units); **`cny` is kept**, populated with the same number as `grandTotal`, doc-commented `@deprecated equal to grandTotal; named for the CNY-pivot era — PR3 deletes it` (added-field, not rename — see J12).
+- `lib/tripShared.ts` — `CurrencySettings` gains `pivot?: string` ("absent = legacy CNY-relative rates") and export `currencyPivot(settings: CurrencySettings): string` returning `settings.pivot ?? "CNY"` — the same read-boundary idiom as `tripCountry` (Task 7).
+- `lib/server/schemas.ts` — `CurrencySettingsSchema` gains `pivot: CurrencyCodeSchema.optional()` (zod strips unknown keys, so without this a PR2 client's pivot would be silently dropped by the currency route).
+- No component changes: `MoneyTab` keeps calling `convertedTotals(totals, settings)` and reading `.cny` — compiles and behaves identically. `app/api/trips/[id]/currency` needs no edit (the schema flows through).
+
+**Verify:** three gates.
+
+---
+
 ## Workstream B — Additive type changes (spec PR1 step 3)
 
-### Task 5 — `country` + `localName` + `ChinaRegion` alias (types + zod + read helper)
+### Task 7 — `country` + `localName` + `ChinaRegion` alias (types + zod + read helper)
 
 **Goal:** `country` optional everywhere with a guaranteed `"CN"` at the read boundary; `localName` added alongside `chineseName` (nothing deleted); `Region` retained and mechanically aliased.
 
@@ -233,7 +277,7 @@ RED.
 
 ---
 
-### Task 6 — widen `lat`/`lon` to nullable
+### Task 8 — widen `lat`/`lon` to nullable
 
 **Goal:** `Destination.lat/lon: number | null` (spec §5.6 prerequisite). Route behaviour changes (`RoutePlace`, untimed transfers) are **PR2** — PR1 only widens the type and guards the compile breaks.
 
@@ -260,7 +304,7 @@ Additionally add one runtime regression test to `lib/route.test.ts`: construct t
 
 ## Workstream C — Timing fields + `setTiming` (spec PR1 step 5, §5.3)
 
-### Task 7 — `ScheduledItem` timing + `applyPlanOp` `setTiming`
+### Task 9 — `ScheduledItem` timing + `applyPlanOp` `setTiming`
 
 **Goal:** persistable time blocks: nullable `startMinutes`/`durationMinutes`, a `setTiming` op, `addItem`/`updateItem` accepting the fields. No UI uses them yet.
 
@@ -291,7 +335,7 @@ RED.
 
 ---
 
-### Task 8 — zod validation for timing
+### Task 10 — zod validation for timing
 
 **Goal:** the server accepts and bounds the new fields.
 
@@ -316,7 +360,7 @@ const DurationMinutesSchema = z.number().int().min(1).max(1440);
 
 ---
 
-### Task 9 — timing round-trip through the stores
+### Task 11 — timing round-trip through the stores
 
 **Goal:** the PR2 contract "round-trippable through both store backends", proven live for sqlite, mirrored by inspection for pg.
 
@@ -336,11 +380,11 @@ RED only if serialisation mangles anything — likely GREEN immediately (both ba
 
 ## Workstream D — Tokens, prefs, providers (spec PR1 step 1)
 
-### Task 10 — token set alongside the existing `@theme`
+### Task 12 — token set alongside the existing `@theme`
 
 **Goal:** the §4.1 semantic tokens plus §C5 safe-area/touch tokens, added to `app/globals.css` **without touching** the existing `@theme` block (old utilities keep working; PR3 removes the old block).
 
-**Test first:** CSS has no unit test in this repo's harness. The executable check is Task 2's `DARK_PAPER` constant: after writing the CSS, assert by eye + a comment cross-reference that the CSS dark `--paper` equals `lib/accent.DARK_PAPER`, and add one line to `lib/accent.test.ts`: a comment-anchored assertion `expect(DARK_PAPER).toBe("<the exact value written in globals.css>")` so a drive-by CSS edit that drifts the value fails a test. Gate otherwise = `npm run build` + visual identity of the old UI (tokens are defined but consumed by nothing).
+**Test first:** CSS has no unit test in this repo's harness. The executable check is Task 3's `DARK_PAPER` constant: after writing the CSS, assert by eye + a comment cross-reference that the CSS dark `--paper` equals `lib/accent.DARK_PAPER`, and add one line to `lib/accent.test.ts`: a comment-anchored assertion `expect(DARK_PAPER).toBe("<the exact value written in globals.css>")` so a drive-by CSS edit that drifts the value fails a test. Gate otherwise = `npm run build` + visual identity of the old UI (tokens are defined but consumed by nothing).
 
 **Implement** — append to `app/globals.css` (below the existing blocks, clearly commented `/* Redesign token set — PR1. Old @theme above is retired in PR3. */`):
 ```css
@@ -378,7 +422,7 @@ Light values are lifted from the existing palette so PR2's shell starts visually
 
 ---
 
-### Task 11 — prefs storage in both backends
+### Task 13 — prefs storage in both backends
 
 **Goal:** a `user_prefs` table in sqlite **and** postgres, store functions, and the facade — no such table exists today (verified: `lib/server/db.ts` SCHEMA and `pgStore.ts ensureSchema` both lack it).
 
@@ -391,7 +435,7 @@ Light values are lifted from the existing palette so PR2's shell starts visually
 RED (functions missing).
 
 **Implement:**
-- Shared type — create `lib/prefs.ts` (started here, finished in Task 12):
+- Shared type — create `lib/prefs.ts` (started here, finished in Task 14):
   ```ts
   export interface UserPrefs { theme: "light" | "dark" | "system"; accent: string; } // accent: "country" | fixed CSS colour
   export const DEFAULT_PREFS: UserPrefs = { theme: "light", accent: "country" };
@@ -412,7 +456,7 @@ RED (functions missing).
 
 ---
 
-### Task 12 — prefs cookie + endpoint
+### Task 14 — prefs cookie + endpoint
 
 **Goal:** read/write endpoint and the cookie used for correct first paint.
 
@@ -438,11 +482,13 @@ RED.
 
 ---
 
-### Task 13 — theme + accent providers and first-paint script
+### Task 15 — theme + accent providers and first-paint script
 
 **Goal:** providers wired into the layout; theme applied before first paint via cookie + inline script. Theme toggle ships **hidden** (PR1: old components hardcode the light palette; a dark toggle would restyle half the app — spec §10.1).
 
-**Test first:** provider components are client React — outside the vitest node harness (J2). The testable parts are already tested (Task 12's codec). Add to `lib/prefs.test.ts` one more pure function introduced here: `resolveAccentVars(prefs, countryCode)` → `{ "--accent-ink": string; "--accent-fill": string }` — asserts: `accent: "country"` + `"CN"` yields Task 2's `accentColor("CN", "light", …)` values; a fixed `#rrggbb` accent yields that hex for both vars. RED, then implement `resolveAccentVars` in `lib/prefs.ts` (imports `lib/accent`).
+**Test first:** two layers, both RED before implementation.
+- Pure: add to `lib/prefs.test.ts` (node project) the pure function introduced here: `resolveAccentVars(prefs, countryCode)` → `{ "--accent-ink": string; "--accent-fill": string }` — asserts: `accent: "country"` + `"CN"` yields Task 3's `accentColor("CN", "light", …)` values; a fixed `#rrggbb` accent yields that hex for both vars. Implement `resolveAccentVars` in `lib/prefs.ts` (imports `lib/accent`).
+- Component (Task 1's jsdom project): create `components/shell/PrefsProvider.test.tsx` — renders children; pins `data-theme="light"` on `document.documentElement` regardless of a `cip-prefs=theme=dark…` cookie (the PR1 pinning behaviour); `usePrefs()` exposes the parsed cookie prefs; a `setPrefs` call writes the cookie (mock `fetch` for the fire-and-forget PUT).
 
 **Implement:**
 - Create `components/shell/PrefsProvider.tsx` (`"use client"`): React context holding `UserPrefs` + `setPrefs`; initial state from `parsePrefsCookie(document.cookie …)` (guarded for SSR); on change: writes the cookie, PUTs `/api/me/prefs` (fire-and-forget, errors swallowed to console), sets `data-theme` on `<html>` and the two accent vars on `document.documentElement.style`. Exports `usePrefs()`. In PR1 `data-theme` is **pinned to `"light"`** regardless of stored pref (old UI is light-hardcoded); the stored value is still persisted so PR2 honours it. No toggle UI is rendered anywhere.
@@ -464,9 +510,9 @@ RED.
 
 ## Workstream E — Trip-payload accessor (spec PR1 step 4, contract C4)
 
-The riskiest workstream. Sequenced last so everything else lands even if this needs iteration. Three tasks: pure core (tested), hook (thin), TripView swap (isolated commit).
+The riskiest workstream. Sequenced last so everything else lands even if this needs iteration. Three tasks: pure core (node-tested), hook (thin, jsdom-tested via the Task 1 harness), TripView swap (isolated commit).
 
-### Task 14 — pure payload core
+### Task 16 — pure payload core
 
 **Goal:** every piece of accessor logic that can be a pure function, extracted and unit-tested in the node harness.
 
@@ -483,11 +529,21 @@ RED.
 
 **Verify:** three gates.
 
----### Task 15 — `useTripPayload` hook
+---
+
+### Task 17 — `useTripPayload` hook
 
 **Goal:** the C4 accessor. All fetching of trip-payload data lives here; components stop calling `fetch` for trip data.
 
-**Test:** the hook is a thin composition of Task 14's tested core over `fetch`/`setInterval`/listeners — per J2 it gets no jsdom test in this repo; its correctness gate is (a) the core tests, (b) `npx tsc --noEmit`, (c) the Task 16 behavioural smoke. Keep it genuinely thin: any branch more complex than "call core, set state" belongs in `tripPayloadCore` with a test.
+**Test first** — create `lib/useTripPayload.test.tsx` (jsdom project, `renderHook` from `@testing-library/react`, `vi.stubGlobal("fetch", …)` + `vi.useFakeTimers()`):
+- Initial fetch resolves a member payload → `loadState === "member"`, `payload` set.
+- Version-monotonic through the hook: a poll response carrying a **lower** version does not regress `payload`; a higher one replaces it (advance timers past `POLL_MS`).
+- Response classification: 403 → `"private"`; 404 → `"not-found"`; `{ guest: true }` body → `"guest"` with `guestView` set and the `cip-guest-code-*` localStorage write.
+- `mutate` with a non-ok response returns the server's error string and triggers a forced refetch (assert an extra fetch call).
+- `toggleCheck` applies the optimistic check synchronously (payload shows the tick before the mocked response resolves); a failed response forces a refetch.
+- Unmount clears the poll interval — advancing timers after unmount issues no further fetch.
+
+RED (module missing). The hook stays a thin composition of Task 16's tested core over `fetch`/`setInterval`/listeners: any branch more complex than "call core, set state" still belongs in `tripPayloadCore` with a node test — the jsdom tests cover the wiring the core cannot.
 
 **Implement** — create `lib/useTripPayload.ts` (`"use client"`):
 ```ts
@@ -518,11 +574,11 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 - `joinTrip` with seq invalidation + forced apply (lines 130–143); guest-code persistence to `localStorage` (`cip-guest-code-*`) moves in with `fetchTrip`.
 - The boundary contract names `payload`, `loadState`, `refetch(force)`, `mutate` — those four are sacred; the additional members are the minimum TripView needs and are additive to the contract (PR2 may ignore them).
 
-**Verify:** three gates (the hook compiles but nothing imports it yet — that is fine and keeps this commit revertible).
+**Verify:** three gates (the hook is imported only by its test — nothing in the app consumes it yet, which keeps this commit revertible).
 
 ---
 
-### Task 16 — TripView consumes the hook
+### Task 18 — TripView consumes the hook
 
 **Goal:** delete the duplicated logic from `components/TripView.tsx`; behaviour unchanged from the user's perspective. **One isolated commit** (see rollback R1).
 
@@ -533,11 +589,11 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 - `claimable` UI state (`useState<string[] | null>`) stays in TripView, populated via `trip.loadClaimable()`.
 - Confirm with a grep that after the swap, `fetch(` appears in `components/TripView.tsx` **zero** times.
 
-**Verify:** three gates, then `npm run dev` and walk the recorded behaviours (member trip, guest code, private gate, checkbox, add day). C4 grep (also rechecked in Task 17): the only `fetch` calls touching `/api/trips/${tripId}` outside `lib/useTripPayload.ts` are `components/trip/BriefingShare.tsx` (briefing-link management — its own endpoint, does not return `TripPayload`) and `components/trip/JournalSection.tsx:66` (multipart photo upload). Both are outside the trip-payload contract as specced; recorded in J9 so PR2 does not "fix" them accidentally.
+**Verify:** three gates, then `npm run dev` and walk the recorded behaviours (member trip, guest code, private gate, checkbox, add day). C4 grep (also rechecked in Task 19): the only `fetch` calls touching `/api/trips/${tripId}` outside `lib/useTripPayload.ts` are `components/trip/BriefingShare.tsx` (briefing-link management — its own endpoint, does not return `TripPayload`) and `components/trip/JournalSection.tsx:66` (multipart photo upload). Both are outside the trip-payload contract as specced; recorded in J9 so PR2 does not "fix" them accidentally.
 
 ---
 
-## Task 17 — final gate + contract sweep
+## Task 19 — final gate + contract sweep
 
 **Goal:** prove PR1's promises before handing to PR2.
 
@@ -545,9 +601,9 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 1. All three gates from a clean checkout of the branch.
 2. Contract greps (record output in the PR description):
    - C4: `grep -rn "fetch(\`/api/trips/" components app lib --include="*.tsx" --include="*.ts"` → only `lib/useTripPayload.ts` + the two documented exceptions.
-   - Boundary exports exist: `lib/accent` `accentColor`, `lib/countryProfile` `getCountryProfile`, `lib/useTripPayload` `useTripPayload`, `lib/tripShared` `tripCountry`.
+   - Boundary exports exist: `lib/accent` `accentColor`, `lib/countryProfile` `getCountryProfile`, `lib/useTripPayload` `useTripPayload`, `lib/tripShared` `tripCountry` and `currencyPivot`, `lib/money` pivot-aware `convertedTotals`.
    - No consumer reads `data.input.country` directly except `tripCountry` (grep `input.country`).
-3. `npm test` — full suite; optionally `npx vitest run --coverage` if `@vitest/coverage-v8` is present (it is **not** a current devDependency — do not add it silently; note coverage was assessed by inspection against the 80% standard: every new module in this PR carries a test file except the two thin client wrappers documented in J2).
+3. `npm test` — full suite, both projects (node + jsdom); optionally `npx vitest run --coverage` if `@vitest/coverage-v8` is present (it is **not** a current devDependency — do not add it silently; note coverage was assessed by inspection against the 80% standard: every new module in this PR carries a test file — including the hook and `PrefsProvider` via the Task 1 jsdom harness; the only untested wrappers are the thin route handlers, per repo convention).
 4. Visual: `npm run dev`, click through `/`, `/plan`, a trip page — identical to `main`.
 5. Confirm the diff contains **no** edits to: `lib/packing.ts`, `lib/months.ts` behaviour (only possible export additions), `components/DestinationStep.tsx`, `components/DetailsStep.tsx`, wizard order, `ChinaMap`, money/settlement logic — all PR2/PR3 territory.
 
@@ -555,16 +611,16 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 
 ## Rollback notes (the two riskiest tasks)
 
-**R1 — Accessor extraction (Tasks 14–16).** Tasks 14 and 15 are purely additive (new files, nothing imports them) — reverting them is deleting files. All behavioural risk is concentrated in Task 16, which must therefore be a single commit touching only `components/TripView.tsx` (plus at most one accessor-member addition in `lib/useTripPayload.ts`). Rollback = `git revert <task-16-sha>`: TripView returns to its self-contained implementation, the hook remains as dead-but-tested code, tree green. Do not interleave any other change into that commit. If a subtle regression (polling storm, stale-guest flash, lost optimistic tick) is found after later commits land, the revert still applies cleanly because no other PR1 task touches TripView.
+**R1 — Accessor extraction (Tasks 16–18).** Tasks 16 and 17 are purely additive (new files, imported only by their tests) — reverting them is deleting files. All behavioural risk is concentrated in Task 18, which must therefore be a single commit touching only `components/TripView.tsx` (plus at most one accessor-member addition in `lib/useTripPayload.ts`). Rollback = `git revert <task-18-sha>`: TripView returns to its self-contained implementation, the hook remains as dead-but-tested code, tree green. Do not interleave any other change into that commit. If a subtle regression (polling storm, stale-guest flash, lost optimistic tick) is found after later commits land, the revert still applies cleanly because no other PR1 task touches TripView.
 
-**R2 — Prefs table across two backends (Task 11).** Both backends add the table via `CREATE TABLE IF NOT EXISTS` inside the existing schema bootstrap — no ALTER, no data migration, no touch of existing tables. Rollback = revert the commit; an already-created `user_prefs` table is left behind in any DB that ran the code, which is inert (nothing else references it) and can be dropped manually later. Two cautions: (a) **pg**: `ensureSchema` caches its promise in `globalThis.__cipSchemaReady` and clears it on failure — keep the new DDL inside the existing `(async () => { … })()` block so a failure in the new statement retains the retry semantics, and mis-typed DDL will fail *every* request on a fresh deploy: test the exact statement against a scratch Postgres before merging (project memory: pg path is inspection-verified only — run the live-pg matrix before any pg deploy). (b) **sqlite**: the SCHEMA string executes on every `getDb()` cold start including tests; a syntax error breaks every store test — the Task 11 tests catch this immediately.
+**R2 — Prefs table across two backends (Task 13).** Both backends add the table via `CREATE TABLE IF NOT EXISTS` inside the existing schema bootstrap — no ALTER, no data migration, no touch of existing tables. Rollback = revert the commit; an already-created `user_prefs` table is left behind in any DB that ran the code, which is inert (nothing else references it) and can be dropped manually later. Two cautions: (a) **pg**: `ensureSchema` caches its promise in `globalThis.__cipSchemaReady` and clears it on failure — keep the new DDL inside the existing `(async () => { … })()` block so a failure in the new statement retains the retry semantics, and mis-typed DDL will fail *every* request on a fresh deploy: test the exact statement against a scratch Postgres before merging (project memory: pg path is inspection-verified only — run the live-pg matrix before any pg deploy). (b) **sqlite**: the SCHEMA string executes on every `getDb()` cold start including tests; a syntax error breaks every store test — the Task 13 tests catch this immediately.
 
 ---
 
 ## Judgement calls
 
 - **J1 — "Read-boundary zod default" has no zod read path to hang on.** The spec (§5.4, PR1 step 3) says `country` defaults to `"CN"` "at the read boundary via a zod default". Verified reality: nothing zod-parses `TripData` on read — `getTrip` casts `JSON.parse` output (`tripStore.ts:119`, `pgStore.ts:245`). Introducing full zod validation of persisted blobs on every read would be new (risky, non-additive) behaviour. Decision: the zod `.default("CN")` lands on `TripInputSchema` (the validated **write** boundary, so every new write persists a country), and the read-side guarantee is the exported `tripCountry(data)` helper, which PR2 must use exclusively. The boundary contract's wording ("readable off trip data with a guaranteed CN default") is satisfied; the mechanism differs from the spec's letter.
-- **J2 — Hook testing without jsdom.** vitest here is node-only (`vitest.config.ts`: `lib/**/*.test.ts`, `environment: "node"`) and no React testing library is installed. Rather than adding `jsdom` + `@testing-library/react` (new deps, config change — not additive infrastructure), the accessor's logic is extracted into pure `lib/tripPayloadCore.ts` with full node tests; `useTripPayload` and `PrefsProvider` are deliberately thin untested wrappers, consistent with how this repo treats route handlers. If the parent prefers real hook tests, add the deps in a separate task — flagged, not silently decided.
+- **J2 — Component test infrastructure (RESOLVED — was: hook testing without jsdom).** Originally flagged: vitest was node-only (`vitest.config.ts`: `lib/**/*.test.ts`, `environment: "node"`) with no React testing library, and this plan declined to add dependencies silently. The decision came back approving them: Task 1 adds `jsdom` + `@testing-library/react` + `@testing-library/jest-dom` and restructures vitest into two projects (node for `lib/**/*.test.ts`, untouched; jsdom for `*.test.tsx`). The accessor hook is therefore tested directly (Task 17) and `PrefsProvider` gets a component test (Task 15), rather than relying only on pure cores. The pure-core extraction (Task 16) is deliberately retained: framework-free logic with node tests is good design independent of testability, and the jsdom tests cover only the wiring the core cannot. jest-dom was a judgement within the mandate — dev-only, and its matchers keep component assertions readable.
 - **J3 — Timing fields are `?: number | null`, not `: number | null`.** Spec §5.3 writes `startMinutes: number | null`. Legacy persisted items have **no** key at all, so a required-nullable field would make every existing blob type-lying. Optional-and-nullable matches the persisted reality and the existing `time?`/`note?` convention; zod ops use `.nullable()` where "explicit clear" semantics are needed.
 - **J4 — `lat`/`lon` widening is not literally additive.** Widening a required property breaks assignability at exactly two verified call sites (`components/map/MapExplorer.tsx:84`, `components/trip/TrackerTab.tsx:121`); PR1 adds narrowing guards there. `RoutePlace` keeps required coordinates — the "untimed transfer / no estimate" behaviour of §5.6 is PR2. The tree is intentionally red *within* Task 6 between the widen and the guards; one commit.
 - **J5 — Curated accent override is a hue, not a hex.** Spec §5.1 declares `Country.accent?: string`. A free-form hex override would bypass the role-pinned lightness that makes §9's contrast test pass by construction (the exact failure §4.2 documents). PR1 implements the curated override as `accentHue?: number` (hue only; L and C stay pinned). The user-facing *fixed accent* preference (§4.3) is a separate concept and stays a validated `#rrggbb` string in prefs. If a curated full-colour override is truly wanted later, it must carry its own contrast proof.
@@ -574,3 +630,4 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 - **J9 — C4's blast radius.** Two components legitimately fetch trip-scoped endpoints that are not the trip payload: `BriefingShare` (briefing-link management, own response shape) and `JournalSection` (multipart photo upload). They are outside the "trip data" contract and stay as-is in PR1; PR2's cache layer under the accessor does not need them. Recorded so neither parallel plan "fixes" them into the hook unprompted.
 - **J10 — Spec's "no migration runner in either backend" vs `lib/server/migrate.ts`.** The file exists but is a lazy read-time upgrader (`planIdMigration`, applied inside `getTrip`), not a fleet-wide runner — the spec's claim and its no-bulk-backfill conclusion stand. Noted only so the file's existence doesn't read as contradicting the spec.
 - **J11 — Southern-hemisphere data rows in `lib/countries`.** Fixing the hemisphere bug structurally needs *some* country to be marked southern. A handful of hemisphere-only curated rows (AU, NZ, ZA, AR, CL, PE, BR, ID) is data, not per-country hand-authoring of content, and is the minimum to make the Task 4 hemisphere test meaningful. A latitude-derived hemisphere (spec §5.2 "hemisphere from latitude") needs per-country centroids PR1 doesn't have; the curated rows are the stopgap and the map data in PR2 can replace them.
+- **J12 — Currency pivot: added fields, not a rename; optional trailing parameter.** Spec §5.5 (assigned to PR1 by coordinator decision) forces a choice on `ConvertedTotals.cny`. Renaming it would touch `MoneyTab` — UI territory that PR2 owns and the strictly-additive constraint forbids here. Decision (Task 6): `convertedTotals` gains an optional trailing `pivot = "CNY"` parameter (existing callers untouched, legacy correctness guaranteed by the default), `ConvertedTotals` gains `pivot` and `grandTotal`, and `cny` is kept as a deprecated field always equal to `grandTotal` until PR3 deletes it — its name is only *accurate* when the pivot is CNY, which is true for every caller that exists in PR1. Additionally `CurrencySettings` gains an optional persisted `pivot` (spec: "new trips record their pivot alongside the rates") with `currencyPivot(settings)` as the read-boundary helper mirroring `tripCountry` — legacy blobs lack the field and are read with an explicit `"CNY"` pivot, never reinterpreted. The zod schema must list `pivot` explicitly or the currency route would silently strip it (zod strips unknown keys).
