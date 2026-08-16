@@ -91,7 +91,8 @@ export async function ensureCatalogLoaded(): Promise<void> {
   if (current && current.cities.length > 0) return;
   if (!remoteLoad) {
     remoteLoad = (async () => {
-      const url = process.env.CATALOG_URL ?? DEFAULT_CATALOG_URL;
+      // `||` so a present-but-empty CATALOG_URL falls back instead of fetching "".
+      const url = process.env.CATALOG_URL?.trim() || DEFAULT_CATALOG_URL;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`);
       setCache((await res.json()) as Catalog, -2);

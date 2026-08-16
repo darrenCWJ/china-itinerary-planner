@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import { admin } from "better-auth/plugins";
+import { checkAuthSecret } from "../authSecret";
 import { getDb } from "./db";
 import { storeMode } from "./store";
 
@@ -35,9 +36,27 @@ function database() {
 // betterAuth>` (betterAuth is generic) resolves against the generic's
 // default type parameter instead of our call-site options and does not
 // type-check against the value `betterAuth({...})` actually produces.
+/**
+ * Second line of defence behind instrumentation.ts, which is what actually
+ * catches a missing secret at startup. This one only ever sees the
+ * present-but-weak cases: the route guards on accountsEnabled() first, so an
+ * absent secret 503s without reaching here. Locally it warns rather than
+ * throws — no secret is the documented no-accounts planning mode.
+ */
+function assertSecret() {
+  const check = checkAuthSecret(process.env.BETTER_AUTH_SECRET, Boolean(process.env.VERCEL));
+  if (check.ok) return;
+  if (check.fatal) throw new Error(check.message);
+  console.warn(check.message);
+}
+
 function buildAuth() {
+  assertSecret();
   return betterAuth({
-    baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+    // `||`, not `??`: an env var present but empty (a bare `BETTER_AUTH_URL=`
+    // line, or a blank field in a hosting dashboard) is a string, so `??`
+    // would hand Better Auth an empty baseURL instead of falling back.
+    baseURL: process.env.BETTER_AUTH_URL?.trim() || "http://localhost:3000",
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
       .split(",")

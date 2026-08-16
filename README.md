@@ -70,6 +70,7 @@ All inputs are validated with Zod; trip state lives in SQLite (`data/app.db`).
 
 ```bash
 npm install
+cp .env.example .env.local             # optional; see Environment variables
 node scripts/ingest-destinations.mjs   # build the all-China catalog (once; ~5-10 min)
 npm run dev                            # start the app
 npm test                               # unit tests
@@ -77,6 +78,10 @@ npm test                               # unit tests
 
 The app works without the catalog too — you just get the 16 curated
 destinations until it's generated.
+
+`.env.local` is optional locally: with no `BETTER_AUTH_SECRET` the app runs in
+no-accounts mode, with the login wall off and everything open. Fill the secret
+in to exercise accounts and the wall.
 
 ## Project layout
 
@@ -140,7 +145,7 @@ automatically on first use.
 | `DATABASE_URL` | Postgres (Supabase) connection string — enables shared trips |
 | `ACCESS_CODE` | Family invite code required to create an account. Unset = open signups. (No longer a site-wide gate — signed-out visitors land on /login instead.) |
 | `CATALOG_URL` | Optional: override the remote catalog fallback URL |
-| `BETTER_AUTH_SECRET` | Enables accounts (any long random string). Unset = account features 503 |
+| `BETTER_AUTH_SECRET` | Enables accounts. 32 random bytes — `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Unset locally = accounts off; unset (or an example value) on a deployment = boot refused |
 | `BETTER_AUTH_URL` | Base URL of this deployment (e.g. `http://192.168.1.20:3000` on a Pi) |
 | `TRUSTED_ORIGINS` | Comma-separated extra origins allowed to call the auth API |
 | `ADMIN_USER_IDS` | Comma-separated account ids that may reset other members' passwords |
@@ -151,6 +156,15 @@ automatically on first use.
 >
 > Old `/unlock` bookmarks now 404 — harmless, that page was retired along
 > with the unlock gate.
+
+**Rotating `BETTER_AUTH_SECRET`.** Safe to do any time. Set a new value and
+redeploy: everyone is signed out (the secret signs session cookies) but
+passwords survive — Better Auth salts each one separately, the secret is not
+part of the hash. Nothing else needs migrating; old rows in `session` become
+dead weight and can be deleted. On Vercel the change needs a redeploy to take
+effect, since the auth instance is cached per process. A blank value makes the
+deployment fail to start (see `instrumentation.ts`) rather than quietly
+reopening the site.
 
 The catalog refresh endpoint is local-only (serverless filesystems are
 read-only): rerun `node scripts/ingest-destinations.mjs`, commit, redeploy.
