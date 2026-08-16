@@ -216,4 +216,8 @@ export const CurrencySettingsSchema = z.object({
   // Key schema is deliberately transform-free: record keys must stay plain
   // strings, so validate the shape and let the client send uppercase.
   rates: z.record(z.string().regex(/^[A-Z]{3}$/), z.number().positive().finite()),
+  // Listed explicitly because unknown keys are stripped: without this the
+  // route would accept a pivot, drop it, and store rates whose meaning no
+  // longer matches what the client sent.
+  pivot: CurrencyCodeSchema.optional(),
 });

@@ -21,36 +21,52 @@ export function expensesOnDate(expenses: Expense[], isoDate: string): Expense[] 
 }
 
 export interface ConvertedTotals {
-  /** Grand total expressed in CNY minor units (fen). */
+  /**
+   * @deprecated Equal to grandTotal. Named for the era when the pivot was
+   * always CNY; kept so existing readers keep compiling.
+   */
   cny: number;
+  /** Grand total in the pivot currency's minor units. */
+  grandTotal: number;
+  /** The currency the rates are expressed against. */
+  pivot: string;
   /** Grand total expressed in the home currency, when its rate is known. */
   home: CurrencyAmount | null;
   /** Currencies that had no rate — shown unconverted, never silently dropped. */
   unconverted: CurrencyAmount[];
 }
 
-/** Rates are CNY per 1 unit of foreign currency. Null when no home currency set. */
+/**
+ * Rates are pivot-currency units per 1 unit of foreign currency. Null when no
+ * home currency is set.
+ *
+ * The pivot is a trailing parameter defaulting to CNY because rate semantics
+ * are persisted: a trip saved before pivots existed holds CNY-relative rates,
+ * and reading it with any other pivot would silently reprice the whole trip.
+ * The default is the guarantee that never happens by accident.
+ */
 export function convertedTotals(
   totals: CurrencyAmount[],
-  settings: CurrencySettings
+  settings: CurrencySettings,
+  pivot = "CNY"
 ): ConvertedTotals | null {
   if (settings.home === null) return null;
-  let cny = 0;
+  let grandTotal = 0;
   const unconverted: CurrencyAmount[] = [];
   for (const t of totals) {
-    const rate = t.currency === "CNY" ? 1 : settings.rates[t.currency];
+    const rate = t.currency === pivot ? 1 : settings.rates[t.currency];
     if (rate === undefined) {
       unconverted.push(t);
       continue;
     }
-    cny += Math.round(t.amount * rate);
+    grandTotal += Math.round(t.amount * rate);
   }
-  const homeRate = settings.home === "CNY" ? 1 : settings.rates[settings.home];
+  const homeRate = settings.home === pivot ? 1 : settings.rates[settings.home];
   const home =
     homeRate === undefined
       ? null
-      : { currency: settings.home, amount: Math.round(cny / homeRate) };
-  return { cny, home, unconverted };
+      : { currency: settings.home, amount: Math.round(grandTotal / homeRate) };
+  return { cny: grandTotal, grandTotal, pivot, home, unconverted };
 }
 
 const SYMBOLS: Record<string, string> = {

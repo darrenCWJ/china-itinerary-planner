@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { Expense, Settlement } from "./tripShared";
+import { getCountryProfile } from "./countryProfile";
+import { currencyPivot, type Expense, type Settlement } from "./tripShared";
 import {
   balancesByCurrency,
   convertedTotals,
@@ -84,8 +85,12 @@ describe("convertedTotals", () => {
   test("converts everything to CNY then to home", () => {
     const c = convertedTotals(totals, { home: "SGD", rates: { SGD: 5.2 } });
     // 100_000 + 10_000×5.2 = 152_000 fen; home = 152_000 / 5.2 ≈ 29_231 cents
+    // Back-compat pin: with no pivot argument the numbers are exactly what
+    // they have always been, and the pivot is CNY by default.
     expect(c).toEqual({
       cny: 152_000,
+      grandTotal: 152_000,
+      pivot: "CNY",
       home: { currency: "SGD", amount: 29_231 },
       unconverted: [],
     });
@@ -110,6 +115,46 @@ describe("convertedTotals", () => {
     expect(c!.home).toBeNull();
     expect(c!.cny).toBe(100_000);
     expect(c!.unconverted).toEqual([{ currency: "SGD", amount: 10_000 }]);
+  });
+
+  test("an explicit pivot reads the rates in that pivot's terms", () => {
+    // rates = { USD: 150 } read as "JPY per 1 USD".
+    const c = convertedTotals(
+      [
+        { currency: "JPY", amount: 10_000 },
+        { currency: "USD", amount: 100 },
+        { currency: "XXX", amount: 5 },
+      ],
+      { home: "JPY", rates: { USD: 150 } },
+      "JPY"
+    );
+    expect(c!.pivot).toBe("JPY");
+    expect(c!.grandTotal).toBe(25_000);
+    expect(c!.unconverted).toEqual([{ currency: "XXX", amount: 5 }]);
+    expect(c!.home).toEqual({ currency: "JPY", amount: 25_000 });
+  });
+
+  test("the country profile supplies the pivot with no special-casing", () => {
+    const settings = { home: "SGD", rates: { SGD: 5.2 } };
+    expect(convertedTotals(totals, settings, getCountryProfile("CN").currency)).toEqual(
+      convertedTotals(totals, settings)
+    );
+  });
+
+  test("cny stays an alias of the grand total for existing readers", () => {
+    const c = convertedTotals(totals, { home: "SGD", rates: { SGD: 5.2 } }, "JPY");
+    expect(c!.cny).toBe(c!.grandTotal);
+  });
+});
+
+describe("currencyPivot", () => {
+  test("settings without the field are read as CNY, never reinterpreted", () => {
+    expect(currencyPivot({ home: null, rates: {} })).toBe("CNY");
+    expect(currencyPivot({ home: "SGD", rates: { SGD: 5.2 } })).toBe("CNY");
+  });
+
+  test("a recorded pivot is used as-is", () => {
+    expect(currencyPivot({ home: null, rates: {}, pivot: "JPY" })).toBe("JPY");
   });
 });
 

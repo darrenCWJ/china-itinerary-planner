@@ -99,13 +99,24 @@ export interface JournalEntry {
   updatedAt: number;
 }
 
-/** Optional per-trip conversion: rates are CNY per 1 unit of the currency. */
+/** Optional per-trip conversion: rates are pivot units per 1 unit of the currency. */
 export interface CurrencySettings {
   home: string | null;
   rates: Record<string, number>;
+  /** The currency the rates are against. Absent = legacy CNY-relative rates. */
+  pivot?: string;
 }
 
 export const DEFAULT_CURRENCY_SETTINGS: CurrencySettings = { home: null, rates: {} };
+
+/**
+ * The pivot a trip's rates are expressed in. The only way callers should read
+ * it: settings saved before the field existed are CNY-relative, so an absent
+ * pivot is an explicit CNY rather than an unknown.
+ */
+export function currencyPivot(settings: CurrencySettings): string {
+  return settings.pivot ?? "CNY";
+}
 
 /** GET /api/trips/:id response. */
 export interface TripPayload {

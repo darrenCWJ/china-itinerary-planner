@@ -31,6 +31,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const saved = await setCurrencySettings(id, {
     home: parsed.data.home,
     rates: parsed.data.rates,
+    // Omitted rather than nulled when absent: settings with no pivot are read
+    // as CNY-relative, and writing the key would change what an old trip means.
+    ...(parsed.data.pivot !== undefined ? { pivot: parsed.data.pivot } : {}),
   });
   if (!saved) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });

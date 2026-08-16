@@ -111,6 +111,38 @@ describe("currency settings schema", () => {
     ).toBe(true);
   });
 
+  test("carries an optional pivot through instead of stripping it", () => {
+    const ok = CurrencySettingsSchema.safeParse({
+      memberName: "Ada",
+      home: "JPY",
+      rates: { USD: 150 },
+      pivot: "JPY",
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data.pivot).toBe("JPY");
+  });
+
+  test("rejects a malformed pivot", () => {
+    expect(
+      CurrencySettingsSchema.safeParse({
+        memberName: "Ada",
+        home: "JPY",
+        rates: {},
+        pivot: "JP",
+      }).success
+    ).toBe(false);
+  });
+
+  test("legacy bodies without a pivot still parse, with the field absent", () => {
+    const ok = CurrencySettingsSchema.safeParse({
+      memberName: "Ada",
+      home: "SGD",
+      rates: { SGD: 5.2 },
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data.pivot).toBeUndefined();
+  });
+
   test("rejects non-positive or non-finite rates", () => {
     for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(
