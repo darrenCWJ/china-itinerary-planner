@@ -1,3 +1,5 @@
+import { accentColor, type AccentTheme } from "./accent";
+
 export type ThemePref = "light" | "dark" | "system";
 
 /**
@@ -105,4 +107,30 @@ export function serializePrefsCookie(prefs: UserPrefs): string {
   const hues = Object.entries(prefs.accentHues).map(([code, hue]) => `${code}:${hue}`);
   if (hues.length > 0) parts.push(`hues=${hues.join(".")}`);
   return parts.join("&");
+}
+
+/**
+ * The two accent custom properties for one country under one theme.
+ *
+ * Precedence is not reimplemented here. A fixed accent short-circuits to its
+ * own hue; everything else hands the resolution to lib/accent's accentHue,
+ * which owns the user-override / curated / derived order. Fixed mode ignores
+ * accentHues by construction — "one accent everywhere" and "this country is
+ * different" cannot both be honoured, and the explicit choice wins.
+ *
+ * Lightness and chroma never appear here at all, which is the guarantee: they
+ * come from lib/accent's ramp whatever the user picked.
+ */
+export function resolveAccentVars(
+  prefs: UserPrefs,
+  countryCode: string,
+  theme: AccentTheme
+): { "--accent-ink": string; "--accent-fill": string } {
+  const code = countryCode.trim().toUpperCase();
+  const override = typeof prefs.accent === "number" ? prefs.accent : prefs.accentHues[code];
+
+  return {
+    "--accent-ink": accentColor(code, theme, "ink", override),
+    "--accent-fill": accentColor(code, theme, "fill", override),
+  };
 }
