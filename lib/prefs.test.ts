@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
+import { accentColor, lightnessFor } from "./accent";
+import { getCountry } from "./countries";
 import {
   DEFAULT_PREFS,
   PREFS_COOKIE,
   parsePrefsCookie,
+  resolveAccentVars,
   sanitizePrefs,
   serializePrefsCookie,
   type UserPrefs,
@@ -120,5 +123,79 @@ describe("prefs cookie", () => {
   test("the cookie name is stable", () => {
     // The first-paint inline script matches this name as a literal.
     expect(PREFS_COOKIE).toBe("cip-prefs");
+  });
+});
+
+describe("resolveAccentVars", () => {
+  const lightnessOf = (css: string): number => Number(/oklch\((\d+(?:\.\d+)?)%/.exec(css)![1]);
+  const hueOf = (css: string): number => Number(/ (\d+(?:\.\d+)?)\)$/.exec(css)![1]);
+
+  test("per-country mode with no override is exactly lib/accent's answer", () => {
+    const vars = resolveAccentVars(DEFAULT_PREFS, "CN", "light");
+
+    expect(vars).toEqual({
+      "--accent-ink": accentColor("CN", "light", "ink"),
+      "--accent-fill": accentColor("CN", "light", "fill"),
+    });
+  });
+
+  test("an unknown country still resolves, through derivation", () => {
+    expect(resolveAccentVars(DEFAULT_PREFS, "XZ", "light")).toEqual({
+      "--accent-ink": accentColor("XZ", "light", "ink"),
+      "--accent-fill": accentColor("XZ", "light", "fill"),
+    });
+  });
+
+  test("a per-country override beats the curated hue", () => {
+    // CN is curated at 30; the user's 200 must win, or the override does
+    // nothing for exactly the countries anyone has bothered to curate.
+    expect(getCountry("CN").accentHue).toBe(30);
+    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+    const vars = resolveAccentVars(prefs, "CN", "light");
+
+    expect(hueOf(vars["--accent-ink"])).toBe(200);
+    expect(hueOf(vars["--accent-fill"])).toBe(200);
+  });
+
+  test("an override applies only to the country it names", () => {
+    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+
+    expect(hueOf(resolveAccentVars(prefs, "JP", "light")["--accent-ink"])).toBe(
+      hueOf(accentColor("JP", "light", "ink"))
+    );
+  });
+
+  test("a fixed accent applies everywhere and ignores the override map", () => {
+    const prefs: UserPrefs = { theme: "light", accent: 40, accentHues: { CN: 200, JP: 300 } };
+
+    for (const code of ["CN", "JP", "XZ"]) {
+      expect(hueOf(resolveAccentVars(prefs, code, "light")["--accent-ink"])).toBe(40);
+      expect(hueOf(resolveAccentVars(prefs, code, "light")["--accent-fill"])).toBe(40);
+    }
+  });
+
+  test("a country code is matched case-insensitively", () => {
+    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+
+    expect(hueOf(resolveAccentVars(prefs, "cn", "light")["--accent-ink"])).toBe(200);
+  });
+
+  test("both roles keep their pinned lightness whatever the user chose", () => {
+    // The point of storing a hue rather than a colour: no selection a user can
+    // make moves lightness, so the contrast guarantee survives the picker.
+    const cases: UserPrefs[] = [
+      DEFAULT_PREFS,
+      { theme: "light", accent: "country", accentHues: { CN: 200 } },
+      { theme: "light", accent: 40, accentHues: {} },
+      { theme: "light", accent: 0, accentHues: {} },
+      { theme: "light", accent: 359, accentHues: {} },
+    ];
+    for (const prefs of cases) {
+      for (const theme of ["light", "dark"] as const) {
+        const vars = resolveAccentVars(prefs, "CN", theme);
+        expect(lightnessOf(vars["--accent-ink"])).toBe(lightnessFor(theme, "ink"));
+        expect(lightnessOf(vars["--accent-fill"])).toBe(lightnessFor(theme, "fill"));
+      }
+    }
   });
 });
