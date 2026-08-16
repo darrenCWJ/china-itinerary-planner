@@ -66,6 +66,11 @@ const ItemIdSchema = z.string().min(1).max(60);
 const ItemTitleSchema = z.string().trim().min(1).max(80);
 const ItemTimeSchema = z.string().trim().max(20);
 const ItemNoteSchema = z.string().trim().max(200);
+// Minutes from midnight, so a day is the natural bound: 1439 is 23:59, the last
+// minute a block can start on. A duration of 0 is not a block, and nothing
+// longer than 24h belongs on a single day.
+const StartMinutesSchema = z.number().int().min(0).max(1439);
+const DurationMinutesSchema = z.number().int().min(1).max(1440);
 
 export const PlanOpSchema = z.discriminatedUnion("op", [
   z.object({
@@ -75,6 +80,9 @@ export const PlanOpSchema = z.discriminatedUnion("op", [
     slot: TimeSlotSchema,
     time: ItemTimeSchema.optional(),
     note: ItemNoteSchema.optional(),
+    // Not nullable: a brand-new item has no block to clear.
+    startMinutes: StartMinutesSchema.optional(),
+    durationMinutes: DurationMinutesSchema.optional(),
   }),
   z.object({
     op: z.literal("updateItem"),
@@ -84,6 +92,17 @@ export const PlanOpSchema = z.discriminatedUnion("op", [
     slot: TimeSlotSchema.optional(),
     time: ItemTimeSchema.nullable().optional(),
     note: ItemNoteSchema.nullable().optional(),
+    startMinutes: StartMinutesSchema.nullable().optional(),
+    durationMinutes: DurationMinutesSchema.nullable().optional(),
+  }),
+  z.object({
+    op: z.literal("setTiming"),
+    day: DayNumberSchema,
+    itemId: ItemIdSchema,
+    // Both required, so a block is always set or cleared as a whole and a half
+    // a block can never reach storage.
+    startMinutes: StartMinutesSchema.nullable(),
+    durationMinutes: DurationMinutesSchema.nullable(),
   }),
   z.object({ op: z.literal("removeItem"), day: DayNumberSchema, itemId: ItemIdSchema }),
   z.object({
