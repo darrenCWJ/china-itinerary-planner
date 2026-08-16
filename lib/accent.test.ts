@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   DARK_PAPER,
@@ -208,5 +210,104 @@ describe("colour maths", () => {
     expect(contrastRatio([1, 1, 1], [0, 0, 0])).toBeCloseTo(21, 2);
     expect(contrastRatio([0, 0, 0], [1, 1, 1])).toBeCloseTo(21, 2);
     expect(contrastRatio([1, 1, 1], [1, 1, 1])).toBeCloseTo(1, 5);
+  });
+});
+
+/**
+ * The token set in app/globals.css is not otherwise executable, so it is
+ * asserted here against the constants it must copy. Reading the real file
+ * (rather than restating its values) is what stops a drive-by CSS edit from
+ * drifting the dark paper away from DARK_PAPER while the suite stays green.
+ */
+describe("globals.css token set", () => {
+  const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+
+  const blockAfter = (selector: string): string => {
+    const start = css.indexOf(selector);
+    if (start === -1) throw new Error(`no ${selector} block in app/globals.css`);
+    const open = css.indexOf("{", start);
+    const close = css.indexOf("}", open);
+    return css.slice(open + 1, close);
+  };
+
+  const varIn = (block: string, name: string): string => {
+    const m = new RegExp(`${name}:\s*([^;]+);`).exec(block);
+    if (!m) throw new Error(`no ${name} in block`);
+    return m[1].trim();
+  };
+
+  const toHex = ([r, g, b]: [number, number, number]): string =>
+    "#" +
+    [r, g, b]
+      .map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0"))
+      .join("");
+
+  test("the dark ramp's paper is exactly lib/accent's DARK_PAPER", () => {
+    expect(varIn(blockAfter('[data-theme="dark"]'), "--paper")).toBe(toHex(DARK_PAPER));
+  });
+
+  test("the existing @theme block is left intact", () => {
+    expect(css).toContain("--color-seal: #c93b2e;");
+    expect(css).toContain("--color-ink: #17263b;");
+  });
+
+  test("light and dark both define the full semantic ramp", () => {
+    const names = [
+      "--ink-0",
+      "--ink-1",
+      "--ink-2",
+      "--ink-3",
+      "--ink-4",
+      "--line-1",
+      "--line-2",
+      "--surf-1",
+      "--surf-2",
+      "--paper",
+      "--raise",
+      "--scrim",
+      "--accent-ink",
+      "--accent-fill",
+    ];
+    for (const block of [blockAfter(":root"), blockAfter('[data-theme="dark"]')]) {
+      for (const name of names) expect(() => varIn(block, name)).not.toThrow();
+    }
+  });
+
+  test("safe-area and touch-target tokens exist from the start (spec C5)", () => {
+    const root = blockAfter(":root");
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(varIn(root, `--safe-${side}`)).toBe(`env(safe-area-inset-${side}, 0px)`);
+    }
+    expect(varIn(root, "--tap-min")).toBe("44px");
+  });
+
+  test("the light ink ramp starts at the palette's existing ink", () => {
+    expect(varIn(blockAfter(":root"), "--ink-0")).toBe("#17263b");
+  });
+});
+
+describe("globals.css accent defaults", () => {
+  const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+
+  const varIn = (selector: string, name: string): string => {
+    const open = css.indexOf("{", css.indexOf(selector));
+    const block = css.slice(open + 1, css.indexOf("}", open));
+    const m = new RegExp(`${name}:\s*([^;]+);`).exec(block);
+    if (!m) throw new Error(`no ${name} under ${selector}`);
+    return m[1].trim();
+  };
+
+  /**
+   * The static defaults are China's accent, so the shipped stylesheet is
+   * coherent before any provider runs. Asserting against accentColor rather
+   * than a literal means a change to the pinned lightness or chroma shows up
+   * here instead of silently disagreeing with the runtime values.
+   */
+  test.each([
+    ["light", ":root"],
+    ["dark", '[data-theme="dark"]'],
+  ] as const)("%s defaults are China's accent at the pinned ramp", (theme, selector) => {
+    expect(varIn(selector, "--accent-ink")).toBe(accentColor("CN", theme, "ink"));
+    expect(varIn(selector, "--accent-fill")).toBe(accentColor("CN", theme, "fill"));
   });
 });
