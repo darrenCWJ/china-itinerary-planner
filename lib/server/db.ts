@@ -135,6 +135,15 @@ CREATE INDEX IF NOT EXISTS session_userId_idx ON session(userId);
 CREATE INDEX IF NOT EXISTS account_userId_idx ON account(userId);
 CREATE INDEX IF NOT EXISTS verification_identifier_idx ON verification(identifier);
 
+-- Display preferences, keyed by better-auth user id. Deliberately not a
+-- foreign key on "user": prefs are disposable and a signed-out read simply
+-- finds nothing, so a dangling row is cheaper than a cascade.
+CREATE TABLE IF NOT EXISTS user_prefs (
+  user_id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS member_accounts (
   trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
   member_name TEXT NOT NULL,

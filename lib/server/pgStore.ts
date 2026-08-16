@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import type { MyTrip } from "../myTrips";
+import { sanitizePrefs, type UserPrefs } from "../prefs";
 import type {
   CurrencySettings,
   Expense,
@@ -173,6 +174,14 @@ function ensureSchema(): Promise<void> {
       await s`CREATE INDEX IF NOT EXISTS session_userId_idx ON "session" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS account_userId_idx ON "account" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`;
+      // Mirrors the sqlite user_prefs table. Additive DDL inside the existing
+      // bootstrap block, so a failure here still clears the cached promise
+      // below and lets a later request retry.
+      await s`CREATE TABLE IF NOT EXISTS user_prefs (
+        user_id text PRIMARY KEY,
+        data jsonb NOT NULL,
+        updated_at bigint NOT NULL
+      )`;
       await s`CREATE TABLE IF NOT EXISTS member_accounts (
         trip_id text NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
         member_name text NOT NULL,
@@ -653,4 +662,24 @@ export async function tripsForUser(userId: string): Promise<UserTrip[]> {
     }
   }
   return out;
+}
+
+/** Mirrors the sqlite reader: null for absent, and for anything unreadable. */
+export async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
+  await ensureSchema();
+  const rows = await sql()`SELECT data FROM user_prefs WHERE user_id = ${userId}`;
+  if (rows.length === 0) return null;
+  try {
+    return sanitizePrefs(rows[0].data);
+  } catch {
+    return null;
+  }
+}
+
+export async function setUserPrefs(userId: string, prefs: UserPrefs): Promise<void> {
+  await ensureSchema();
+  const s = sql();
+  await s`INSERT INTO user_prefs (user_id, data, updated_at)
+    VALUES (${userId}, ${s.json(JSON.parse(JSON.stringify(prefs)))}, ${Date.now()})
+    ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`;
 }

@@ -1,4 +1,5 @@
 import type { MyTrip } from "../myTrips";
+import { sanitizePrefs, type UserPrefs } from "../prefs";
 import type {
   CurrencySettings,
   Expense,
@@ -515,4 +516,31 @@ export function tripsForUser(userId: string): UserTrip[] {
     }
   }
   return out;
+}
+
+/**
+ * Null means this user has never saved prefs — distinct from having saved the
+ * defaults, so a caller can still tell "untouched" from "chosen". A row that
+ * will not parse reads the same way, matching the store's convention of
+ * degrading corrupted JSON rather than 500ing.
+ */
+export function getUserPrefs(userId: string): UserPrefs | null {
+  const row = getDb()
+    .prepare("SELECT data FROM user_prefs WHERE user_id = ?")
+    .get(userId) as { data: string } | undefined;
+  if (!row) return null;
+  try {
+    return sanitizePrefs(JSON.parse(row.data));
+  } catch {
+    return null;
+  }
+}
+
+export function setUserPrefs(userId: string, prefs: UserPrefs): void {
+  getDb()
+    .prepare(
+      "INSERT INTO user_prefs (user_id, data, updated_at) VALUES (?, ?, ?) " +
+        "ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
+    )
+    .run(userId, JSON.stringify(prefs), Date.now());
 }
