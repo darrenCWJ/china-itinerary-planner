@@ -160,7 +160,8 @@ nothing re-renders structurally.
 --line-1 … --line-2    borders
 --surf-1 … --surf-2    panel fills
 --paper --raise --scrim  base, elevated, and overlay surfaces
---accent --accent-ink  country colour; --accent-ink is the text-safe variant
+--accent-ink           country colour as TEXT on paper   (see §4.2)
+--accent-fill          country colour as FILL behind ink (see §4.2)
 ```
 
 Light and dark redefine only the ramp. The existing `@theme` block in
@@ -174,13 +175,37 @@ countries and is rejected.
 - A small **curated override table** for countries that warrant hand-tuning.
   China keeps a deliberately chosen accent.
 - Everything else derives: `hash(iso2) → hue`, rendered in **OKLCH at pinned
-  lightness and chroma** — `oklch(58% 0.15 H)` for light, `oklch(80% 0.18 H)`
-  for dark.
+  lightness and chroma**.
 
-Pinning L and C means every generated accent passes contrast in both themes
-without inspection. The prototype needs a `darken()` helper precisely because
-its neon hexes are illegible on light backgrounds; pinning lightness removes the
-need for that patch entirely.
+**Lightness is pinned per role, not per theme.** An earlier draft of this spec
+specified a single `oklch(58% 0.15 H)` for light theme and claimed it passed
+contrast "without inspection". That was wrong, and the arithmetic is worth
+recording so it is not reintroduced: WCAG contrast derives from sRGB relative
+luminance, and for near-neutrals `Y ≈ L³`. At L 58%, `Y ≈ 0.195`, giving
+**4.29:1 against white paper — below the 4.5:1 AA threshold before hue variation
+is considered at all.** The same value used as a fill behind dark ink gives
+≈3.5:1, also failing.
+
+One lightness cannot serve both roles. The token set therefore carries two:
+
+| Token | Role | Light theme | Dark theme |
+|---|---|---|---|
+| `--accent-ink` | accent **as text** on paper | `oklch(50% C H)` (≈6:1 on white) | `oklch(80% C H)` |
+| `--accent-fill` | accent **as fill** behind dark ink | `oklch(72% C H)` | `oklch(80% C H)` |
+
+**Chroma is clamped to the sRGB gamut maximum across all hues at the chosen
+lightness (~0.12), not set to 0.15.** Above that, yellow-greens fall outside
+sRGB and browsers gamut-map by reducing chroma — which preserves contrast but
+makes adjacent countries render at visibly different saturation, undermining the
+consistency the derivation exists to provide.
+
+The correct framing of the guarantee: pinning L and C per role makes the §9
+contrast test pass **by construction**. The test is the guarantee; the
+derivation is what makes the test cheap to satisfy.
+
+The prototype needs a `darken()` helper precisely because its neon hexes are
+illegible on light backgrounds. Role-pinned lightness removes the need for that
+patch — but not the need to verify it.
 
 ### 4.3 Toggles
 
@@ -190,6 +215,11 @@ need for that patch entirely.
 
 Both persist per user. Theme must be applied before first paint to avoid a
 flash.
+
+There is no user-preferences storage today — neither store backend has a prefs
+table and there is no prefs endpoint. This is small but real work and belongs to
+PR1 step 1: a prefs table in both backends, a read/write endpoint, and a cookie
+plus inline script so the first paint is correct rather than corrected.
 
 ### 4.4 Country imagery
 
@@ -253,25 +283,130 @@ wrong for Australia or Peru and feeds the itinerary generator.
 
 Move these behind an interface:
 
+A four-field interface is not enough. Review against the code found the
+coupling is both wider and deeper:
+
+- **Transport is China's HSR.** `RAIL_KMH = 230` and
+  `FLIGHT_THRESHOLD_KM = 1200` (`lib/route.ts:27-32`) encode a dense
+  high-speed-rail network; "rail at 230 km/h" is fiction in most countries.
+  Booking copy names 12306 and Trip.com (`:115`).
+- **Generated copy is China's, and it is persisted.** `GENERAL_TIPS` names
+  Alipay, VPN, 12306 and Amap (`lib/itinerary.ts:47-53`); travel items read
+  "High-speed rail or flight to X … passport needed to board" (`:171-176`).
+  These are snapshotted into `TripData` at creation, so they are a
+  generation-time concern, not a render-time one.
+- **Packing is a China document, not a rule set.** `lib/packing.ts:50-77`
+  hardcodes RMB cash, Alipay/WeChat, VPN, plug types, and non-potable tap water,
+  with `BEACH_DESTINATIONS` as a set of Chinese destination ids (`:36`) and a
+  Harbin cold-weather special case (`:40-44`). Destination-id checks must become
+  attributes (`hasBeach`, `severeWinter`).
+- **Climate has no profile analogue.** `REGION_MONTHS` is
+  `Record<Region, …>` (`lib/months.ts:116`) and is the fallback month-fit for
+  every non-curated place. An unknown region key throws rather than degrades.
+- **`Season` itself is temperate-biased** (`lib/types.ts:1`). Wet/dry tropical
+  countries do not map onto four temperate seasons.
+
 ```ts
 interface CountryProfile {
-  seasonOfMonth(month: number): Season;  // hemisphere-aware
+  seasonOfMonth(month: number): Season;   // hemisphere-aware
   crowdByMonth: number[];
   holidays: HolidayBand[];
-  packingRules: PackingRule[];
+  packing: PackingDocument;               // whole document, not deltas
+  transport: TransportProfile;            // modes, speeds, thresholds, booking copy
+  tips: string[];                         // generation-time, persisted
+  climateFor(region: string): RegionMonthClimate[] | null;  // null degrades, never throws
+  currency: CurrencyCode;                 // conversion pivot — see §5.5
 }
 ```
 
+**Trip-level season is the deepest coupling and needs an explicit decision.**
+`TripInput.season` is a single `Season` for a whole trip
+(`lib/itinerary.ts:7`), derived client-side through the hardcoded northern
+`seasonOfMonth` at `app/plan/page.tsx:162`, then persisted. A hemisphere-aware
+profile changes nothing while derivation stays on the client. **Resolution:
+season derivation moves server-side behind the profile.** Per-destination season
+— which a Peru + Mexico trip genuinely needs — is acknowledged as a limitation
+and deferred; a single trip-level season resolved through the right country's
+profile is correct for single-country trips, which is every trip today.
+
 China ships as the one fully populated profile. Every other country falls back
-to a neutral default deriving hemisphere from latitude, a flat crowd curve, and
-generic packing rules. This fixes the hemisphere bug structurally rather than
-patching it, and reduces "add Japan" to authoring a profile file.
+to a neutral default: hemisphere from latitude, flat crowd curve, generic
+packing, no climate rows (rendering unfit-unknown rather than throwing). This
+fixes the hemisphere bug structurally and reduces "add Japan" to authoring a
+profile file.
 
-### 5.3 Migration
+### 5.3 The time-block data model
 
-Existing trips carry destination ids with no country. Backfill `country: "CN"`.
-The backfill is additive and must not touch member-owned plan edits — generated
-plans are drafts that members own, and a schema migration is not a rebuild.
+§3.2.6 specifies time-blocked days with durations and reflow. The persisted
+model does not support that today: `ScheduledItem` carries
+`slot: morning | afternoon | evening` plus an optional `time` string
+(`lib/itinerary.ts:15-27`), and the accepted mutations — `addItem`,
+`updateItem`, `removeItem`, `moveItem`, `addDay` (`lib/server/schemas.ts:60-86`)
+— have no duration or start-time semantics. **As specified, the day builder's
+core interaction cannot be saved.**
+
+Required, and in scope:
+
+- `ScheduledItem` gains `startMinutes: number | null` and
+  `durationMinutes: number | null`. Both nullable, because legacy items have
+  neither.
+- `PlanOp` gains a `setTiming` operation; `addItem`/`updateItem` accept the new
+  fields.
+- **Legacy items render in slot lanes.** An item with null timing is placed in
+  its slot's band and shown as untimed rather than assigned a fabricated start.
+  Assigning invented times to existing trips would be a silent data change.
+- Reflow only pushes items that have timing. Untimed items never move.
+
+### 5.4 Migration
+
+Existing trips carry destination ids with no country.
+
+**There is no bulk backfill.** An earlier draft specified one; it was both
+unsafe and unnecessary.
+
+*Unnecessary:* nothing persisted carries country-shaped data. `trips.data` is a
+`TripData` JSON blob holding `input.destinationIds` as bare strings; destination
+objects are resolved at read time (`lib/briefing.ts:85-87`). A read-boundary
+default is exactly equivalent to a rewrite.
+
+*Unsafe:* the only unguarded write path is `updateTripData`
+(`lib/server/tripStore.ts:200`), which has no version check — the guarded
+variant is `updateTripDataIf` (`:214`). A migration reading a trip and writing
+through the unguarded path would silently clobber any member edit landing
+concurrently through the version-guarded plan route. That is precisely the
+member-owned-edit loss this project's ownership model forbids. There is also no
+migration runner in either backend, and `touch()` bumps `version` on every
+write, so a fleet-wide rewrite would churn every polling client.
+
+**The approach instead:** `country` defaults to `"CN"` at the read boundary via
+a zod default when the field is absent, and is written through on the next
+natural write. Bulk rewrites through `updateTripData` are forbidden.
+
+### 5.5 Currency pivot
+
+`lib/money.ts:41` hardcodes CNY as the conversion pivot, and
+`CurrencySettings.rates` is documented as "CNY per 1 unit"
+(`lib/tripShared.ts:102`) — a semantic baked into persisted trip data. A Japan
+trip would show totals labelled CNY on day one.
+
+§1 lists expense-splitting logic as a non-goal and that stands: the *split*
+arithmetic is unchanged. But the **pivot** moves from a hardcoded constant to
+`CountryProfile.currency`. Because rate semantics are persisted, existing trips
+keep CNY-relative rates and are read with an explicit pivot of `"CNY"` rather
+than being reinterpreted. New trips record their pivot alongside the rates.
+
+### 5.6 Off-map places
+
+§3.2.7 requires places without coordinates. `Destination.lat/lon` are currently
+required numbers (`lib/types.ts:48-50`) and `RoutePlace extends LatLon`, so
+`suggestRoute` and `estimateLeg` assume coordinates on every place
+(`lib/route.ts:3-6,38-45`).
+
+- `lat`/`lon` become `number | null`.
+- A route leg with a coordinate-less endpoint yields no distance or duration
+  estimate and renders as an untimed transfer rather than a fabricated one.
+- Off-map places take a default `suggestedDays` of `[1, 2]` so the feasibility
+  counter in §3.2.3 still has an input.
 
 ---
 
@@ -281,8 +416,16 @@ plans are drafts that members own, and a schema migration is not a rebuild.
 renders TopoJSON through `geoMercator` + `geoPath` from
 `public/china-provinces.json`. The world map reuses this pipeline exactly.
 
-- Add `public/world-countries.json` — Natural Earth 110m, public domain, keyed
-  by ISO code. No new dependencies.
+- Add `public/world-countries.json` — **Natural Earth 50m**, public domain,
+  keyed by ISO code. No new dependencies.
+
+  Not 110m. At 110m resolution, city-states and small islands are absent or
+  sub-pixel — Singapore, Malta, Maldives, Bahrain among them, which are prime
+  travel destinations, and Hong Kong and Macau are not ISO-coded features at
+  all. 50m plus a point-feature layer for countries below an area threshold
+  keeps them selectable. **Search remains the guaranteed path to every
+  country**; the map is a discovery affordance, never the only route to a
+  selection.
 - `ChinaMap` generalises to a two-level component:
   - **World level** — countries as selectable features, tinted by their accent.
   - **Country level** — the existing province/city behaviour. China is the only
@@ -379,29 +522,84 @@ trip-data `fetch` outside the accessor (C4).
 
 ## 10. Build order
 
-1. Token system + theme/accent providers and toggles (unblocks everything visual)
-2. `lib/countries`, `lib/accent`, `lib/countryProfile` + tests
-3. Type changes and CN backfill migration
-4. App shell — rail, header, trip switcher, crew, Share
-5. Trip page — collapse 7 tabs into Plan / Today / Money / Kit
-6. Planner — wizard reorder, merged search, feasibility counter
-7. Day builder — shelf, target day, reflow, drag layer
-8. World map + country map generalisation
-9. Country imagery with scrim and fallback
+Delivered as **three** pull requests, not two. An earlier draft claimed the
+foundation work was "independent of the UI work"; that was wrong. Renaming
+`Destination.chineseName` touches 17 files, and replacing the `Region` union
+breaks `REGION_MONTHS` (`lib/months.ts:116`, a `Record<Region, …>`),
+`provinceByAdcode`, `fitForRegion`, and `ChinaMap`'s `zoomRegion` prop — the
+exact components PR2 exists to rewrite. Foundation-with-removals cannot
+typecheck without dragging UI work into PR1.
 
-Steps 1–3 are independent of the UI work and can proceed in parallel with
-nothing blocked behind them.
+The cut line that does work is **additive first, removals last.**
 
-Steps 4–7 each carry their §7 contract: the shell establishes the single nav
-source and takes ownership of the bottom edge, the planner removes the pinned
-wizard footer, and the day builder separates state from layout.
+### PR1 — Foundations (strictly additive; old UI untouched and green)
+
+1. Token set added **alongside** the existing `@theme` block; theme and accent
+   providers wired; the theme toggle ships light-only or hidden, because the old
+   components use fixed light palette utilities and `ChinaMap` hardcodes hex
+   literals in its SVG. A dark toggle over the old UI would restyle half of it.
+2. `lib/countries`, `lib/accent` (role-pinned lightness, gamut-clamped chroma),
+   `lib/countryProfile` with China populated and a neutral default — plus tests.
+   Pure modules, no UI dependency.
+3. Additive type changes only: `country` optional with a read-boundary `"CN"`
+   default; `localName` added *alongside* `chineseName`; `lat`/`lon` widened to
+   nullable. The `Region` union stays, mechanically aliased to `ChinaRegion`.
+4. **Extract the trip-payload accessor** (contract C4), absorbing the polling,
+   out-of-order guard, version-monotonic apply and optimistic-update logic that
+   currently lives in `TripView`. This must land before the tab collapse, not
+   as a side effect of it.
+5. `ScheduledItem` timing fields and the `setTiming` `PlanOp` per §5.3 — added,
+   nullable, not yet used by any UI.
+
+### PR2 — Redesign
+
+6. App shell — rail, header, trip switcher, crew, Share
+7. Trip page — collapse 7 tabs into Plan / Today / Money / Kit
+8. Planner — wizard reorder, merged search, feasibility counter
+9. Day builder — shelf, target day, reflow, drag layer
+10. World map + country map generalisation
+11. Country imagery with scrim and fallback
+
+Consumers migrate to `localName` and `country` here. Steps 6–9 each carry a §7
+contract: the shell establishes the single nav source and takes ownership of the
+bottom edge, the planner removes the pinned wizard footer, and the day builder
+separates state from layout.
+
+### PR3 — Cleanup
+
+12. Delete `chineseName`, retire the `Region` union, remove the superseded
+    `@theme` block, enable the dark toggle.
+
+Only safe once PR2 has replaced every consumer. Keeping it separate is what
+lets PR1 and PR2 each land green.
 
 ---
 
 ## 11. Open risks
 
+- **The catalog pipeline is China-scoped at the Wikidata class level, not just
+  by a country filter.** This is the most significant constraint on the
+  all-countries ambition and it is not solved by this spec.
+  `scripts/ingest-destinations.mjs` enumerates *PRC-specific administrative
+  classes* (direct-administered municipality, sub-provincial, prefecture-level,
+  county-level) and *Chinese tourism rating classes* (AAAAA/AAAA), and its
+  sanity checks hard-fail unless Beijing, Shanghai, Chengdu and the Forbidden
+  City appear, within a 300–700 city band. There is no universal "city class" on
+  Wikidata — **every new country needs its own class research, its own quality
+  sources, and its own expected-record ranges.** "Adding a country is data, not
+  a release" is true of the *app*; it is not yet true of the *pipeline*. Making
+  it true is its own piece of work and should be specced separately before the
+  second country is attempted.
 - **Catalog coverage outside China is unknown.** The off-map place mechanism is
   the mitigation, but the first non-China trip will expose how thin it is.
+- **Generated trip content is snapshotted, not rendered.** Tips, travel-item
+  titles and packing lists are written into `TripData` at creation. Existing
+  trips keep their China-specific text permanently, and country context must be
+  applied at *generation* time — theming the render layer will not reach it.
+- **Timezone is assumed UTC+8.** `lib/tracker.ts:48` computes "today" from the
+  device clock, with a comment noting the whole party is assumed to be in
+  China's timezone. The day tracker will roll over at the wrong hour abroad.
+  Out of scope here; recorded so it is not mistaken for a regression later.
 - **Natural Earth ISO codes need reconciling** with the catalog's country codes;
   disputed and small territories are the usual source of mismatch.
 - **Wikimedia image quality is uneven.** Some country P18 images are maps or
