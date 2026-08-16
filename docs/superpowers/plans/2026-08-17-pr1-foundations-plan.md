@@ -108,8 +108,9 @@ export interface Country {
 - **Shape:** `accentColor("CN", "light", "ink")` matches `/^oklch\(\d+(\.\d+)?% 0(\.\d+)? \d+(\.\d+)?\)$/`.
 - **Determinism:** same input twice → identical string; `"jp"` and `"JP"` identical.
 - **Role-pinned lightness (spec §4.2 table):** light/ink → L 50%; light/fill → L 72%; dark/ink and dark/fill → L 80%. Assert the L component parses to exactly those values.
-- **Curated hue honoured:** hue component for `"CN"` equals the curated `accentHue` from `lib/countries` (not the hash-derived hue).
-- **Distribution sanity:** across `["JP","FR","BR","AU","ZA","PE"]` at least 4 distinct hues.
+- **Resolution order (three layers, spec §4.2):** a user override hue wins over the curated hue, which wins over derivation. Assert all three with `"CN"`: override 200 → hue 200; no override → curated `accentHue` from `lib/countries`; a code with neither → the derived hue.
+- **Separation, not merely distinction — this is a regression test.** A plain `hash(iso2) → hue` was tried first and measured badly: `CN` 324°, `TH` 321°, `VN` 325° (three countries that routinely share a trip list, all the same pink) and `IT` 48° beside `FR` 49°. Assert that **every pair in `["CN","VN","TH","JP","KR"]` differs by ≥ 20° on the hue circle**, and likewise for `["IT","FR","ES","GB","DE"]`. Circular distance — `min(d, 360 - d)`.
+- **Adding a country does not reshuffle:** the hue for `"JP"` is unchanged when a code later in the ISO list is added to `lib/countries`. Pin `"JP"`'s hue as a literal so any change to the derivation is caught.
 - **Gamut clamp:** exported `ACCENT_CHROMA` ≤ 0.12, and for every hue 0…359 at each pinned L (50, 72, 80), `oklchToSrgb(L, ACCENT_CHROMA, hue)` lands inside [0,1]³ (no channel clipped) — this is the "clamped to sRGB gamut maximum across all hues" requirement made executable.
 - **Contrast by construction (spec §9):** iterate all 676 two-letter codes (superset of the 195 real ISO codes):
   - light theme, ink role: WCAG contrast vs white `#ffffff` ≥ 4.5.
@@ -119,10 +120,11 @@ export interface Country {
 RED (module missing).
 
 **Implement** — create `lib/accent.ts` (pure, no imports beyond `lib/countries`):
-- `hashIso2(code: string): number` — FNV-1a over the two uppercase chars → hue 0–359.
+- `derivedHue(code: string): number` — **golden-angle over the ISO list, not a hash.** `ISO_CODES` is a sorted, frozen array of ISO 3166-1 alpha-2 codes; `hue = (indexOf(code) × 137.508) mod 360`, rounded. Consecutive indices land ~137° apart, so neighbours cannot collide. A code absent from the list (defensive only) falls back to appending its position by lexical insertion point, so it is still deterministic. Because the ISO list is a stable standard and the index comes from the code's position in it, adding a country never moves an existing one.
 - `export const ACCENT_CHROMA = 0.12` (lower it if the gamut test forces it — the test is the authority, per spec: "the test is the guarantee").
 - `export type AccentRole = "ink" | "fill"; export type AccentTheme = "light" | "dark";`
-- `export function accentColor(iso2: string, theme: AccentTheme, role: AccentRole): string` — hue from curated `accentHue` else hash; L per the §4.2 table; returns `oklch(L% C H)`.
+- `export function accentHue(iso2: string, overrideHue?: number): number` — the three-layer resolution: `overrideHue ?? curated accentHue ?? derivedHue(iso2)`. Exported separately so the Task 14 prefs picker and the Task 15 provider resolve hue through exactly this path rather than reimplementing precedence.
+- `export function accentColor(iso2: string, theme: AccentTheme, role: AccentRole, overrideHue?: number): string` — L per the §4.2 table, hue from `accentHue`; returns `oklch(L% C H)`. Because L and C are pinned here, **a user-supplied hue cannot produce an illegible colour** — which is why the picker in Task 14 offers a hue wheel and not a colour field.
 - `export function oklchToSrgb(l: number, c: number, h: number): [number, number, number]` — standard OKLab → linear sRGB → sRGB conversion (needed by the tests and later by any canvas/SVG consumer; ~30 lines, no dependency).
 - `export const DARK_PAPER = "..."` — the dark-theme paper colour (pick ≈ `oklch(18% 0.015 250)`-equivalent hex) used by both the test and Task 12's CSS.
 - Also export a plain `relativeLuminance([r,g,b])` + `contrastRatio(a, b)` used by the test (kept in `lib/accent.ts` so PR2's visual checks can reuse them).
@@ -437,8 +439,14 @@ RED (functions missing).
 **Implement:**
 - Shared type — create `lib/prefs.ts` (started here, finished in Task 14):
   ```ts
-  export interface UserPrefs { theme: "light" | "dark" | "system"; accent: string; } // accent: "country" | fixed CSS colour
-  export const DEFAULT_PREFS: UserPrefs = { theme: "light", accent: "country" };
+  export interface UserPrefs {
+    theme: "light" | "dark" | "system";
+    /** "country" = derive per country; a number = one fixed hue everywhere. */
+    accent: "country" | number;
+    /** Sparse per-country hue overrides, ISO alpha-2 → hue 0-359. */
+    accentHues: Record<string, number>;
+  }
+  export const DEFAULT_PREFS: UserPrefs = { theme: "light", accent: "country", accentHues: {} };
   ```
 - `lib/server/db.ts` — append to `SCHEMA` (CREATE TABLE IF NOT EXISTS — additive, existing DBs pick it up on next open):
   ```sql
@@ -464,15 +472,28 @@ RED (functions missing).
 - Finish `lib/prefs.ts` and create `lib/prefs.test.ts`:
   - `parsePrefsCookie(undefined)` → `DEFAULT_PREFS`.
   - `parsePrefsCookie("theme=dark&accent=country")` (or JSON form — pick URL-encoded `key=value` pairs; simplest to parse allowlist-safely in an inline script) → `{ theme: "dark", accent: "country" }`.
-  - Garbage / unknown theme / oversized accent string → `DEFAULT_PREFS` (strict allowlist: theme ∈ {light,dark,system}; accent = `"country"` or `#rrggbb` only).
+  - Garbage / unknown theme / out-of-range accent → `DEFAULT_PREFS` (strict allowlist: theme ∈ {light,dark,system}; accent = `"country"` or an integer 0–359; `accentHues` entries dropped individually unless the key matches `^[A-Z]{2}$` and the value is an integer 0–359).
   - `serializePrefsCookie(prefs)` round-trips through `parsePrefsCookie`.
-- Extend `lib/server/schemas.test.ts`: `PrefsSchema` accepts `{ theme: "dark", accent: "country" }` and `{ theme: "light", accent: "#1d5c9e" }`; rejects `theme: "purple"`, `accent: "javascript:x"`, missing fields → defaults applied (`.default("light")` / `.default("country")`).
+- Extend `lib/server/schemas.test.ts`: `PrefsSchema` accepts `{ theme: "dark", accent: "country" }`, `{ theme: "light", accent: 210 }` and `{ accentHues: { CN: 200, JP: 40 } }`; rejects `theme: "purple"`, `accent: 400`, `accent: "#1d5c9e"` (hex is no longer a valid accent), `accentHues: { china: 10 }` (bad key) and `accentHues: { CN: 999 }`; missing fields → defaults applied (`.default("light")` / `.default("country")` / `.default({})`).
 
 RED.
 
 **Implement:**
 - `lib/prefs.ts` — `PREFS_COOKIE = "cip-prefs"`, `parsePrefsCookie`, `serializePrefsCookie` (pure; usable server- and client-side).
-- `lib/server/schemas.ts` — `export const PrefsSchema = z.object({ theme: z.enum(["light","dark","system"]).default("light"), accent: z.union([z.literal("country"), z.string().regex(/^#[0-9a-fA-F]{6}$/)]).default("country") });`
+- `lib/server/schemas.ts`:
+  ```ts
+  const HueSchema = z.number().int().min(0).max(359);
+  export const PrefsSchema = z.object({
+    theme: z.enum(["light", "dark", "system"]).default("light"),
+    accent: z.union([z.literal("country"), HueSchema]).default("country"),
+    accentHues: z.record(z.string().regex(/^[A-Z]{2}$/), HueSchema).default({}),
+  });
+  ```
+  **Hues, not hex, everywhere** — both the fixed accent and the per-country
+  overrides. A hex would bypass the role-pinned lightness in Task 3 and void the
+  contrast guarantee; a hue cannot. This is also why no `javascript:`-style
+  injection test is needed on the accent value: it is a bounded integer, not a
+  string. Keep the injection test on `theme`.
 - Create `app/api/me/prefs/route.ts`:
   - `GET`: `getSessionUser(req)` (from `lib/server/session.ts`); 401 `{ error }` when null; else `getUserPrefs(user.id) ?? DEFAULT_PREFS`; if `storeMode() === "unavailable"` → 503 `DB_UNAVAILABLE` (same guard as every route).
   - `PUT`: session-gated; `PrefsSchema.safeParse` → 400 on failure; `setUserPrefs`; respond with the prefs **and** `Set-Cookie: cip-prefs=<serialized>; Path=/; Max-Age=31536000; SameSite=Lax` — **not** HttpOnly, deliberately: the first-paint inline script must read it (contents are non-sensitive, allowlist-validated on every read; see J8).
@@ -487,7 +508,13 @@ RED.
 **Goal:** providers wired into the layout; theme applied before first paint via cookie + inline script. Theme toggle ships **hidden** (PR1: old components hardcode the light palette; a dark toggle would restyle half the app — spec §10.1).
 
 **Test first:** two layers, both RED before implementation.
-- Pure: add to `lib/prefs.test.ts` (node project) the pure function introduced here: `resolveAccentVars(prefs, countryCode)` → `{ "--accent-ink": string; "--accent-fill": string }` — asserts: `accent: "country"` + `"CN"` yields Task 3's `accentColor("CN", "light", …)` values; a fixed `#rrggbb` accent yields that hex for both vars. Implement `resolveAccentVars` in `lib/prefs.ts` (imports `lib/accent`).
+- Pure: add to `lib/prefs.test.ts` (node project) the pure function introduced here: `resolveAccentVars(prefs, countryCode, theme)` → `{ "--accent-ink": string; "--accent-fill": string }`. Assert the full precedence chain from spec §4.2:
+  - `accent: "country"`, no override → Task 3's `accentColor("CN", theme, role)`.
+  - `accentHues: { CN: 200 }` → hue 200 for both vars, **beating the curated hue** for CN.
+  - `accent: 40` (fixed mode) → hue 40 regardless of country, and `accentHues` is ignored in fixed mode.
+  - Both roles keep their pinned lightness in every case above — the guarantee must survive a user-chosen hue, which is the whole reason the picker is a hue wheel.
+
+  Implement `resolveAccentVars` in `lib/prefs.ts`, delegating precedence to Task 3's `accentHue()` rather than reimplementing it.
 - Component (Task 1's jsdom project): create `components/shell/PrefsProvider.test.tsx` — renders children; pins `data-theme="light"` on `document.documentElement` regardless of a `cip-prefs=theme=dark…` cookie (the PR1 pinning behaviour); `usePrefs()` exposes the parsed cookie prefs; a `setPrefs` call writes the cookie (mock `fetch` for the fire-and-forget PUT).
 
 **Implement:**
@@ -623,7 +650,9 @@ Absorbed from `TripView` (verbatim behaviour, expressed through the core):
 - **J2 — Component test infrastructure (RESOLVED — was: hook testing without jsdom).** Originally flagged: vitest was node-only (`vitest.config.ts`: `lib/**/*.test.ts`, `environment: "node"`) with no React testing library, and this plan declined to add dependencies silently. The decision came back approving them: Task 1 adds `jsdom` + `@testing-library/react` + `@testing-library/jest-dom` and restructures vitest into two projects (node for `lib/**/*.test.ts`, untouched; jsdom for `*.test.tsx`). The accessor hook is therefore tested directly (Task 17) and `PrefsProvider` gets a component test (Task 15), rather than relying only on pure cores. The pure-core extraction (Task 16) is deliberately retained: framework-free logic with node tests is good design independent of testability, and the jsdom tests cover only the wiring the core cannot. jest-dom was a judgement within the mandate — dev-only, and its matchers keep component assertions readable.
 - **J3 — Timing fields are `?: number | null`, not `: number | null`.** Spec §5.3 writes `startMinutes: number | null`. Legacy persisted items have **no** key at all, so a required-nullable field would make every existing blob type-lying. Optional-and-nullable matches the persisted reality and the existing `time?`/`note?` convention; zod ops use `.nullable()` where "explicit clear" semantics are needed.
 - **J4 — `lat`/`lon` widening is not literally additive.** Widening a required property breaks assignability at exactly two verified call sites (`components/map/MapExplorer.tsx:84`, `components/trip/TrackerTab.tsx:121`); PR1 adds narrowing guards there. `RoutePlace` keeps required coordinates — the "untimed transfer / no estimate" behaviour of §5.6 is PR2. The tree is intentionally red *within* Task 6 between the widen and the guards; one commit.
-- **J5 — Curated accent override is a hue, not a hex.** Spec §5.1 declares `Country.accent?: string`. A free-form hex override would bypass the role-pinned lightness that makes §9's contrast test pass by construction (the exact failure §4.2 documents). PR1 implements the curated override as `accentHue?: number` (hue only; L and C stay pinned). The user-facing *fixed accent* preference (§4.3) is a separate concept and stays a validated `#rrggbb` string in prefs. If a curated full-colour override is truly wanted later, it must carry its own contrast proof.
+- **J5 — Curated accent override is a hue, not a hex.** Spec §5.1 declares `Country.accent?: string`. A free-form hex override would bypass the role-pinned lightness that makes §9's contrast test pass by construction (the exact failure §4.2 documents). PR1 implements the curated override as `accentHue?: number` (hue only; L and C stay pinned). **Superseded in part:** the user-facing accent preference is now also hue-based, not hex — see J13. If a full-colour override is truly wanted later, it must carry its own contrast proof.
+
+- **J13 — Accent is a hue at every layer, and users can override per country.** Decided after the plan was written, on seeing measured derivation output. Two changes. (a) Derivation is golden-angle over the ISO list rather than a hash: the hash put `CN` 324° / `TH` 321° / `VN` 325° and `IT` 48° / `FR` 49°, so countries that share a trip list rendered identically; Task 3 now carries a ≥20° separation regression test. (b) `UserPrefs` gains `accentHues`, a sparse ISO→hue map, and the fixed `accent` becomes a hue too. Everything the user can choose is a hue, so the role-pinned lightness in Task 3 applies uniformly and **no user selection can produce an illegible colour** — which is what lets the picker be a hue wheel with no validation beyond a range check. Overrides are per user, not per trip: shared trips may look different to different members, accepted deliberately to avoid shared-state conflict resolution.
 - **J6 — Spec type names that don't exist in the code.** §5.2 references `PackingDocument` and `CurrencyCode` types and a `NATIONAL_CROWD`-behind-interface move; the codebase has `PackingGroup[]` (the actual persisted packing shape) and plain `string` currency codes. The profile interface uses the real types. The neutral profile's `currency` is `"USD"` as a documented placeholder pivot (spec gives no neutral value; `null` would violate the non-optional `currency` field and push undefined-handling onto PR2, which the money code (§5.5) resolves properly with per-trip pivots). Also: the spec's §5.2 note "`REGION_MONTHS` … throws" on unknown keys is accurate at the type level; `climateFor` wraps it with a null-degrade as specced.
 - **J7 — Tokens are plain `:root` custom properties, not Tailwind `@theme` entries, in PR1.** Mapping them into `@theme` would generate utility classes nothing uses yet and risks colliding with the retiring block. PR2 (which builds the shell that consumes them) owns the Tailwind wiring; PR1 guarantees the variables exist with correct values in both ramps.
 - **J8 — Prefs cookie is deliberately not HttpOnly.** The first-paint inline script must read it before React hydrates. Contents are a theme enum + an allowlisted accent token, validated on every parse (`parsePrefsCookie` rejects anything outside the allowlist); nothing sensitive. The inline script itself is a constant string with zero interpolation.
