@@ -64,9 +64,13 @@ export interface Destination {
   region: Region;
   /** ISO alpha-2. Absent on the curated data, which is all China. */
   country?: CountryCode;
-  /** City-centre coordinates for the map view. */
-  lat: number;
-  lon: number;
+  /**
+   * City-centre coordinates for the map view. null = an off-map place, one
+   * hand-typed with no location attached: it still takes days, nights and
+   * budget, but contributes no distance. All curated data has coordinates.
+   */
+  lat: number | null;
+  lon: number | null;
   emoji: string;
   tagline: string;
   /** What this place is famous for — shown on selection cards. */

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { latLonOf } from "./geo";
 import type { DayPlan } from "./itinerary";
 import { itemCheckKey } from "./tripShared";
 import {
@@ -141,5 +142,31 @@ describe("railKmSoFar", () => {
     const days = [day(1, "beijing", []), day(2, "xian", [])];
     expect(railKmSoFar(days, 1, coords)).toBe(0);
     expect(railKmSoFar(days, 2, () => null)).toBe(0);
+  });
+});
+
+describe("railKmSoFar with off-map places", () => {
+  test("a leg through a place with no coordinates adds no distance", () => {
+    // Spec: a leg with a coordinate-less endpoint yields no estimate rather
+    // than a fabricated one. The resolver returns null for such a place, and
+    // the surrounding legs still count normally.
+    const located: Record<string, { lat: number | null; lon: number | null }> = {
+      beijing: { lat: 39.9, lon: 116.4 },
+      "hand-typed": { lat: null, lon: null },
+      xian: { lat: 34.26, lon: 108.94 },
+    };
+    const coords = (id: string) => latLonOf(located[id] ?? { lat: null, lon: null });
+
+    const withGap = railKmSoFar(
+      [day(1, "beijing", []), day(2, "hand-typed", []), day(3, "xian", [])],
+      3,
+      coords
+    );
+    const direct = railKmSoFar([day(1, "beijing", []), day(2, "xian", [])], 2, coords);
+
+    // Both legs touching the off-map place drop out, leaving nothing.
+    expect(withGap).toBe(0);
+    // The same resolver still measures a leg between two located places.
+    expect(direct).toBeGreaterThan(800);
   });
 });

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Topology } from "topojson-specification";
 import { DESTINATIONS } from "@/lib/data";
+import { latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import type { Region } from "@/lib/types";
@@ -73,24 +74,33 @@ export function MapExplorer({
   }, [retryKey]);
 
   const places = useMemo<MapPlace[]>(() => {
-    const curated = DESTINATIONS.filter((d) => !visited.includes(d.id)).map(
-      (d): MapPlace => ({
-        id: d.id,
-        kind: "curated",
-        name: d.name,
-        chineseName: d.chineseName,
-        province: null,
-        region: d.region,
-        lat: d.lat,
-        lon: d.lon,
-        population: null,
-        level: "curated",
-        attractionCount: d.activities.length,
-        blurb: d.tagline,
-        emoji: d.emoji,
-        bestSeasons: d.bestSeasons,
-        seasonNotes: d.seasonNotes,
-      })
+    const curated = DESTINATIONS.filter((d) => !visited.includes(d.id)).flatMap(
+      (d): MapPlace[] => {
+        // A place with no coordinates cannot be drawn on a map or routed
+        // through, so it is dropped here rather than given a fake pin. Every
+        // curated destination has real coordinates, so nothing is lost today.
+        const at = latLonOf(d);
+        if (!at) return [];
+        return [
+          {
+            id: d.id,
+            kind: "curated",
+            name: d.name,
+            chineseName: d.chineseName,
+            province: null,
+            region: d.region,
+            lat: at.lat,
+            lon: at.lon,
+            population: null,
+            level: "curated",
+            attractionCount: d.activities.length,
+            blurb: d.tagline,
+            emoji: d.emoji,
+            bestSeasons: d.bestSeasons,
+            seasonNotes: d.seasonNotes,
+          },
+        ];
+      }
     );
     const catalog = cities.map(
       (c): MapPlace => ({
