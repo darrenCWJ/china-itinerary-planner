@@ -31,6 +31,19 @@ const RAIL_BUFFER_H = 0.75;
 const FLIGHT_KMH = 700;
 const FLIGHT_BUFFER_H = 2.5;
 
+/**
+ * The estimator's constants, readable from outside without duplicating them.
+ * The private consts above stay the single definition — this is a view of
+ * them, so a country profile can report what the estimates assume.
+ */
+export const TRANSPORT = {
+  railKmh: RAIL_KMH,
+  flightThresholdKm: FLIGHT_THRESHOLD_KM,
+  flightKmh: FLIGHT_KMH,
+  railBufferH: RAIL_BUFFER_H,
+  flightBufferH: FLIGHT_BUFFER_H,
+} as const;
+
 function roundHalf(n: number): number {
   return Math.round(n * 2) / 2;
 }

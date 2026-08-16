@@ -44,7 +44,7 @@ export interface TripPlan {
 /** Scores below this are treated as "do not schedule" (e.g. wrong season). */
 const EXCLUDED = -50;
 
-const GENERAL_TIPS = [
+export const GENERAL_TIPS = [
   "Set up Alipay and WeChat Pay with your home bank card before flying — most of China is cashless.",
   "Install and test a VPN before arrival if you need Google, WhatsApp or Instagram.",
   "Book high-speed rail seats on Trip.com or the official 12306 app up to 15 days ahead.",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { DESTINATIONS, getDestination } from "./data";
-import { allocateDays, buildItinerary, type TripInput } from "./itinerary";
+import { allocateDays, buildItinerary, GENERAL_TIPS, type TripInput } from "./itinerary";
 
 function input(overrides: Partial<TripInput> = {}): TripInput {
   return {
@@ -128,5 +128,15 @@ describe("buildItinerary", () => {
   test("includes seasonal tips for each destination", () => {
     const plan = buildItinerary(input({ destinationIds: ["beijing"], season: "autumn" }), DESTINATIONS);
     expect(plan.tips.some((t) => t.startsWith("Beijing in autumn"))).toBe(true);
+  });
+});
+
+describe("GENERAL_TIPS", () => {
+  test("is exported and leads every generated tip list", () => {
+    expect(GENERAL_TIPS.length).toBeGreaterThanOrEqual(3);
+    // Locks the export to the value generation actually uses, so a country
+    // profile can reference it instead of keeping a second copy in step.
+    const plan = buildItinerary(input(), DESTINATIONS);
+    expect(plan.tips.slice(0, GENERAL_TIPS.length)).toEqual([...GENERAL_TIPS]);
   });
 });

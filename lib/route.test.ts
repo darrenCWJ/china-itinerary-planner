@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { estimateLeg, suggestRoute, type RoutePlace } from "./route";
+import { estimateLeg, suggestRoute, TRANSPORT, type RoutePlace } from "./route";
 
 const beijing: RoutePlace = { id: "beijing", name: "Beijing", lat: 39.904, lon: 116.407 };
 const xian: RoutePlace = { id: "xian", name: "Xi'an", lat: 34.342, lon: 108.94 };
@@ -21,6 +21,33 @@ describe("estimateLeg", () => {
     const leg = estimateLeg(beijing, urumqi);
     expect(leg.km).toBeGreaterThan(2000);
     expect(leg.mode).toBe("flight");
+  });
+});
+
+describe("TRANSPORT", () => {
+  test("exposes the constants the estimator is built on", () => {
+    expect(TRANSPORT.railKmh).toBe(230);
+    expect(TRANSPORT.flightThresholdKm).toBe(1200);
+    expect(TRANSPORT.flightKmh).toBe(700);
+    expect(TRANSPORT.railBufferH).toBe(0.75);
+    expect(TRANSPORT.flightBufferH).toBe(2.5);
+  });
+
+  test("estimateLeg flips mode either side of the exported threshold", () => {
+    // Along a meridian the great-circle distance is linear in latitude, so a
+    // leg of an exact length can be constructed from the exported threshold
+    // rather than from a copied-out number.
+    const kmPerDegree = (6371 * Math.PI) / 180;
+    const northOf = (km: number): RoutePlace => ({
+      id: `p${km}`,
+      name: `${km} km north`,
+      lat: km / kmPerDegree,
+      lon: 0,
+    });
+    const origin: RoutePlace = { id: "origin", name: "Origin", lat: 0, lon: 0 };
+
+    expect(estimateLeg(origin, northOf(TRANSPORT.flightThresholdKm - 5)).mode).toBe("rail");
+    expect(estimateLeg(origin, northOf(TRANSPORT.flightThresholdKm + 5)).mode).toBe("flight");
   });
 });
 
