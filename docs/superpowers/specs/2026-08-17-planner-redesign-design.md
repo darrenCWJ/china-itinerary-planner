@@ -46,6 +46,9 @@ Stated explicitly so they are not discovered as gaps later:
 - No change to the auth, session, or trip-ownership model.
 - No change to the expense-splitting or settlement logic.
 - The briefing/share output is relocated in the UI but its content is unchanged.
+- **Mobile layouts and offline support are specified separately** — see the
+  follow-up mobile spec. This spec carries only the *constraints* that work must
+  honour (§7), not its design.
 
 ---
 
@@ -291,7 +294,48 @@ Loaded lazily — the world topology is only fetched when the picker opens.
 
 ---
 
-## 7. Module boundaries
+## 7. Mobile contract
+
+Mobile layouts and offline support are a separate spec, scheduled to follow this
+one. Its agreed scope is full: responsive layouts throughout, a four-item bottom
+bar, a bottom-sheet day builder, touch maps, card layouts below `sm`, camera
+capture, polling backoff, and **offline Kit** — tickets and packing readable
+with no signal.
+
+Because that spec is written after this work is built, this section records the
+constraints the desktop build must honour so mobile is an addition rather than a
+retrofit. Each is cheap now and expensive later.
+
+**C1 — One nav source.** The rail and the bottom bar render from a single nav
+configuration, not two hardcoded lists. Adding or reordering an item must be a
+one-place change.
+
+**C2 — No `position: fixed` bottom elements outside the shell.** The wizard
+footer at `app/plan/page.tsx:183` is resolved as part of this work, not
+deferred: the shell owns the bottom edge. Two pinned bottom elements cannot
+coexist.
+
+**C3 — Layout-independent builder state.** The day builder's state — shelf
+contents, target day, block ordering and reflow — lives in a hook with no layout
+knowledge. The desktop split-pane and the mobile bottom sheet are then two views
+over one state machine rather than two implementations.
+
+**C4 — One trip-payload accessor.** All reads of the trip payload route through
+a single accessor. A cache layer can then be inserted beneath it without
+touching components. Components must not call `fetch` for trip data directly.
+
+**C5 — Safe-area and touch-target tokens exist from the start.**
+`env(safe-area-inset-*)` and a minimum 44px interactive target are part of the
+token set in §4.1, applied even where desktop does not need them.
+
+**C6 — Server-driven trip payload stays serialisable.** No non-serialisable
+state in the payload, so it can be persisted to a cache and rehydrated
+unchanged.
+
+**C7 — Nav labels stay short.** Every rail label must fit a bottom-bar tab at
+375px. This is the constraint that keeps the four-item collapse from eroding.
+
+## 8. Module boundaries
 
 Each unit below has one purpose, a defined interface, and can be tested
 independently.
@@ -312,7 +356,7 @@ is where the highest-risk logic lives.
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 - **Unit:** accent derivation (contrast bounds hold across all 195 ISO codes in
   both themes); `seasonOfMonth` for both hemispheres; timeline reflow and push
@@ -326,9 +370,14 @@ is where the highest-risk logic lives.
 
 Coverage target 80%, per project standard.
 
+Contract checks from §7 are asserted here too, since they are the cheap failures
+to catch early: one nav source (C1), no fixed bottom element outside the shell
+(C2), builder state importable without any layout component (C3), and no direct
+trip-data `fetch` outside the accessor (C4).
+
 ---
 
-## 9. Build order
+## 10. Build order
 
 1. Token system + theme/accent providers and toggles (unblocks everything visual)
 2. `lib/countries`, `lib/accent`, `lib/countryProfile` + tests
@@ -343,9 +392,13 @@ Coverage target 80%, per project standard.
 Steps 1–3 are independent of the UI work and can proceed in parallel with
 nothing blocked behind them.
 
+Steps 4–7 each carry their §7 contract: the shell establishes the single nav
+source and takes ownership of the bottom edge, the planner removes the pinned
+wizard footer, and the day builder separates state from layout.
+
 ---
 
-## 10. Open risks
+## 11. Open risks
 
 - **Catalog coverage outside China is unknown.** The off-map place mechanism is
   the mitigation, but the first non-China trip will expose how thin it is.
@@ -353,3 +406,12 @@ nothing blocked behind them.
   disputed and small territories are the usual source of mismatch.
 - **Wikimedia image quality is uneven.** Some country P18 images are maps or
   flags rather than scenery. A curated override per country is the escape hatch.
+- **Mobile is specified after it is partly built.** The §7 contract is the
+  mitigation, but a contract is a prediction. The likeliest miss is the day
+  builder: if its state and layout are not cleanly separated, the mobile bottom
+  sheet becomes a rewrite rather than a second view. C3 is the constraint most
+  worth enforcing in review.
+- **Offline Kit interacts with auth.** A session expiring while offline has no
+  defined behaviour today. That decision belongs to the mobile spec, but it
+  constrains this one: the trip payload must remain serialisable and cacheable
+  (C6), which rules out embedding live session objects in it.
