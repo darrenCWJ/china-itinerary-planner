@@ -24,13 +24,34 @@ export interface Country {
  * supported countries. Adding a country to the app is data elsewhere.
  */
 const CURATED: Record<string, Omit<Country, "code" | "hemisphere">> = {
-  CN: {
-    name: "China",
-    localName: "中国",
-    // Matches the vermilion seal (#c93b2e) the app already uses.
-    accentHue: 29,
-    mark: "同行",
-  },
+  // Hues are hand-assigned one per palette slot, so the countries people
+  // actually travel to are all distinguishable from each other. Derivation
+  // alone put four of these on the same hue — see lib/accent.
+  VN: { name: "Vietnam", localName: "Việt Nam", accentHue: 0 },
+  MA: { name: "Morocco", localName: "المغرب", accentHue: 15 },
+  // 30 sits on the vermilion seal (#c93b2e) the app already uses for China.
+  CN: { name: "China", localName: "中国", accentHue: 30, mark: "同行" },
+  EG: { name: "Egypt", localName: "مصر", accentHue: 45 },
+  ES: { name: "Spain", localName: "España", accentHue: 60 },
+  MX: { name: "Mexico", localName: "México", accentHue: 75 },
+  TR: { name: "Türkiye", localName: "Türkiye", accentHue: 90 },
+  TH: { name: "Thailand", localName: "ไทย", accentHue: 105 },
+  DE: { name: "Germany", localName: "Deutschland", accentHue: 120 },
+  KR: { name: "South Korea", localName: "한국", accentHue: 135 },
+  SG: { name: "Singapore", localName: null, accentHue: 150 },
+  PT: { name: "Portugal", localName: "Portugal", accentHue: 165 },
+  GR: { name: "Greece", localName: "Ελλάδα", accentHue: 180 },
+  US: { name: "United States", localName: null, accentHue: 195 },
+  FR: { name: "France", localName: "France", accentHue: 210 },
+  IN: { name: "India", localName: "भारत", accentHue: 225 },
+  GB: { name: "United Kingdom", localName: null, accentHue: 240 },
+  AU: { name: "Australia", localName: null, accentHue: 255 },
+  ZA: { name: "South Africa", localName: null, accentHue: 270 },
+  IT: { name: "Italy", localName: "Italia", accentHue: 285 },
+  NZ: { name: "New Zealand", localName: "Aotearoa", accentHue: 300 },
+  ID: { name: "Indonesia", localName: "Indonesia", accentHue: 315 },
+  BR: { name: "Brazil", localName: "Brasil", accentHue: 330 },
+  JP: { name: "Japan", localName: "日本", accentHue: 345 },
 };
 
 /**
