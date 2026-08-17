@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { geoMercator, geoPath } from "d3-geo";
+import { useMemo, useRef } from "react";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
+import { getCountry } from "@/lib/countries";
+import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
 import type { Region } from "@/lib/types";
+import {
+  buildFitProjection,
+  createHoverReporter,
+  makeProjector,
+  transformForFeatures,
+  useMarkersVisible,
+  MAP_VIEW_H,
+  MAP_VIEW_W,
+  ZOOM_MS,
+  type HoverPos,
+} from "./mapShared";
 import {
   FIT_COLORS,
   FIT_FILL_OPACITY,
@@ -14,9 +26,28 @@ import {
   type MapPlace,
 } from "./mapTypes";
 
-const VIEW_W = 860;
-const VIEW_H = 620;
-const ZOOM_MS = 650;
+/**
+ * Country level of the two-level picker (spec §6). China renders the
+ * province/region/city map it always has; every other country renders the
+ * list fallback in the same shell, because a detail level needs curated region
+ * data and China is the only country that has any.
+ *
+ * This is the former `ChinaMap` with a `country` prop in front of it. The China
+ * branch is a verbatim move — the world level is an addition *in front of* that
+ * flow, not a change to it.
+ */
+
+/** The one country with a populated detail level. */
+export const DETAILED_COUNTRY = "CN";
+
+/**
+ * Whether a country has a drawable detail map. The caller needs this too — it
+ * is what decides whether the China topology is worth fetching — so it lives
+ * here rather than being re-derived from a string comparison at each site.
+ */
+export function hasDetailLevel(country: string): boolean {
+  return (typeof country === "string" ? country.trim().toUpperCase() : "") === DETAILED_COUNTRY;
+}
 
 interface ProvinceProps {
   adcode: number;
@@ -25,19 +56,108 @@ interface ProvinceProps {
 
 type ProvinceFeature = GeoJSON.Feature<GeoJSON.Geometry, ProvinceProps>;
 
-interface Props {
-  topology: Topology;
+interface LevelProps {
   places: MapPlace[];
   selected: string[];
   month: number;
+  /**
+   * Still the China region union: the other countries have no regions to zoom
+   * into, so a wider type would be a promise this level cannot keep. PR3
+   * generalises it alongside the data.
+   */
   zoomRegion: Region | null;
   routeIds: string[];
   onZoomRegion: (region: Region | null) => void;
   onTogglePlace: (place: MapPlace) => void;
-  onHoverPlace: (place: MapPlace | null, pos: { x: number; y: number } | null) => void;
+  onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
 
-export function ChinaMap({
+export interface CountryMapProps extends LevelProps {
+  /** ISO alpha-2 of the country being planned. */
+  country: string;
+  /** China's province topology. Nothing else uses it. */
+  topology: Topology | null;
+}
+
+export function CountryMap({ country, topology, ...level }: CountryMapProps) {
+  if (hasDetailLevel(country)) {
+    // The caller owns the topology fetch and its loading state, so a level
+    // waiting on the asset draws nothing rather than flashing a fallback that
+    // claims the country has no map.
+    return topology ? <ChinaLevel topology={topology} {...level} /> : null;
+  }
+  return (
+    <CountryPlaceList
+      country={country}
+      places={level.places}
+      selected={level.selected}
+      onTogglePlace={level.onTogglePlace}
+    />
+  );
+}
+
+/**
+ * The fallback level: no geometry, so the places themselves are the map.
+ *
+ * Search — the input the destination step keeps above this pane, scoped to the
+ * same country — is the guaranteed path to every place (spec §6), so this panel
+ * says so rather than growing a second search box that could disagree with it.
+ */
+function CountryPlaceList({
+  country,
+  places,
+  selected,
+  onTogglePlace,
+}: {
+  country: string;
+  places: MapPlace[];
+  selected: string[];
+  onTogglePlace: (place: MapPlace) => void;
+}) {
+  const { name, code } = getCountry(country);
+  // `getCountry` is total: an unrecognised code comes back with an empty name,
+  // and naming nothing is better than printing a bare two-letter code.
+  const label = name || code || "this country";
+
+  return (
+    <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--surf-1)]/50 p-5">
+      <h4 className="font-display text-base font-bold">{label}</h4>
+      <p className="mt-1 text-sm text-[var(--ink-2)]">
+        {places.length > 0
+          ? `Tap a place to add it, or search above for anywhere else in ${label}.`
+          : `No map for ${label} yet — search above to add places, and they'll show up in your plan the same way.`}
+      </p>
+      {places.length > 0 && (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {places.map((place) => {
+            const isSelected = selected.includes(place.id);
+            return (
+              <li key={place.id}>
+                <button
+                  type="button"
+                  onClick={() => onTogglePlace(place)}
+                  aria-pressed={isSelected}
+                  className={`min-h-[var(--tap-min)] rounded-full border px-3.5 text-sm transition-colors ${
+                    isSelected
+                      ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-white"
+                      : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+                  }`}
+                >
+                  {place.name}
+                  {place.localName && (
+                    <span className="ml-1.5 font-kai opacity-80">{place.localName}</span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ChinaLevel({
   topology,
   places,
   selected,
@@ -47,11 +167,9 @@ export function ChinaMap({
   onZoomRegion,
   onTogglePlace,
   onHoverPlace,
-}: Props) {
+}: LevelProps & { topology: Topology }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Markers hide during the zoom transition and fade back in at the target
-  // scale, so they never render mid-transition at the wrong size.
-  const [markersVisible, setMarkersVisible] = useState(true);
+  const markersVisible = useMarkersVisible(zoomRegion);
 
   const { provinces, ninedash, projection, pathGen } = useMemo(() => {
     const objectName = Object.keys(topology.objects)[0];
@@ -62,48 +180,25 @@ export function ChinaMap({
     const all = collection.features as ProvinceFeature[];
     const provinceFeatures = all.filter((f) => provinceByAdcode(f.properties.adcode));
     const ninedashFeature = all.find((f) => !provinceByAdcode(f.properties.adcode)) ?? null;
-    const proj = geoMercator().fitExtent(
-      [
-        [10, 10],
-        [VIEW_W - 10, VIEW_H - 10],
-      ],
-      { type: "FeatureCollection", features: provinceFeatures }
-    );
+    // Fitted to the provinces only — the nine-dash line would otherwise drag
+    // the extent south and shrink the mainland.
+    const { projection: proj, pathGen: path } = buildFitProjection(provinceFeatures);
     return {
       provinces: provinceFeatures,
       ninedash: ninedashFeature,
       projection: proj,
-      pathGen: geoPath(proj),
+      pathGen: path,
     };
   }, [topology]);
 
   // Zoom transform for the active region (identity at country level).
   const transform = useMemo(() => {
-    if (!zoomRegion) return { k: 1, tx: 0, ty: 0 };
+    if (!zoomRegion) return IDENTITY_TRANSFORM;
     const regionFeatures = provinces.filter(
       (f) => provinceByAdcode(f.properties.adcode)?.region === zoomRegion
     );
-    const bounds = pathGen.bounds({
-      type: "FeatureCollection",
-      features: regionFeatures,
-    });
-    const [[x0, y0], [x1, y1]] = bounds;
-    const k = Math.min(
-      5,
-      0.88 * Math.min(VIEW_W / (x1 - x0), VIEW_H / (y1 - y0))
-    );
-    return {
-      k,
-      tx: VIEW_W / 2 - (k * (x0 + x1)) / 2,
-      ty: VIEW_H / 2 - (k * (y0 + y1)) / 2,
-    };
+    return transformForFeatures(pathGen, regionFeatures);
   }, [zoomRegion, provinces, pathGen]);
-
-  useEffect(() => {
-    setMarkersVisible(false);
-    const id = setTimeout(() => setMarkersVisible(true), ZOOM_MS);
-    return () => clearTimeout(id);
-  }, [zoomRegion]);
 
   const { k, tx, ty } = transform;
 
@@ -112,8 +207,7 @@ export function ChinaMap({
     return places.filter((p) => p.region === zoomRegion);
   }, [places, zoomRegion]);
 
-  const project = (lon: number, lat: number): [number, number] =>
-    projection([lon, lat]) ?? [0, 0];
+  const project = makeProjector(projection);
 
   const routePoints = useMemo(
     () =>
@@ -125,15 +219,7 @@ export function ChinaMap({
     [routeIds, places, projection]
   );
 
-  const reportHover = (place: MapPlace | null, evt?: React.MouseEvent) => {
-    if (!place || !evt) {
-      onHoverPlace(null, null);
-      return;
-    }
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    onHoverPlace(place, { x: evt.clientX - rect.left, y: evt.clientY - rect.top });
-  };
+  const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
   const labelFor = (p: MapPlace): boolean =>
     p.kind === "curated" ||
@@ -150,7 +236,7 @@ export function ChinaMap({
   return (
     <div ref={containerRef} className="relative">
       <svg
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+        viewBox={`0 0 ${MAP_VIEW_W} ${MAP_VIEW_H}`}
         className="h-auto w-full select-none"
         role="img"
         aria-label={
