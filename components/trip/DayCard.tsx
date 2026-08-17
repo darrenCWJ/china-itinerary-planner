@@ -172,7 +172,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
                 setError(null);
                 setAdding(true);
               }}
-              className="rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
+              className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-3 text-xs font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
             >
               + Add item
             </button>
@@ -227,7 +227,11 @@ function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="h-6 w-6 rounded text-xs text-[var(--ink-2)] transition-colors hover:bg-[var(--line-1)] hover:text-[var(--accent-ink)] disabled:opacity-30"
+      // C5 wants a 44px target even where desktop does not need one. The glyph
+      // stays small; only the hit area grows, so the row reads the same. Measured
+      // at 24x24 across every day item at both 375px and 1440px before this —
+      // 59 controls on the surface members use most.
+      className="flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] items-center justify-center rounded text-xs text-[var(--ink-2)] transition-colors hover:bg-[var(--line-1)] hover:text-[var(--accent-ink)] disabled:opacity-30"
     >
       {children}
     </button>
