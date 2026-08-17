@@ -6,7 +6,8 @@ export interface MapPlace {
   id: string;
   kind: "curated" | "catalog";
   name: string;
-  chineseName: string | null;
+  /** Name in the local language; renamed from `chineseName` for all-countries. */
+  localName: string | null;
   province: string | null;
   region: Region;
   lat: number;
