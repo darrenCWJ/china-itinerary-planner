@@ -11,7 +11,8 @@
  * Attribution is the point of the Commons half. A country whose file has no
  * usable author or licence is *dropped*, never emitted with a guessed credit:
  * lib/countryImagery falls back to an accent gradient, which is a designed
- * state, whereas a wrong credit is a licence breach.
+ * state, whereas a wrong credit is a licence breach. "Usable" includes short
+ * enough to render — see MAX_CREDIT_TEXT_LENGTH below.
  *
  * Usage:
  *   node scripts/ingest-country-images.mjs                 # every ISO country
@@ -58,6 +59,22 @@ const PHOTO_EXTENSIONS = /\.(jpe?g|png|webp)$/i;
 // "carte"/"mapa"/"karte" are here because Commons filenames are in the
 // uploader's language, and a map does not stop being a map in French.
 const NOT_SCENERY = /\b(map|maps|mapa|carte|karte|locator|topograph\w*|flag|coat of arms|emblem|satellite|orthographic|globe)\b/i;
+
+/**
+ * Longest credit text this ingest will emit. Must equal MAX_CREDIT_TEXT_LENGTH
+ * in lib/countryImagery.ts, which drops anything longer at the boundary — a
+ * mismatch would only produce records the app silently refuses. A test in
+ * lib/countryImagery.test.ts asserts the two numbers are equal.
+ *
+ * The cap exists because Commons `Artist` is HTML-derived free text with no
+ * length contract: a composite image can list every source file and uploader in
+ * it (Indonesia's P18 measured 984 characters, 18x the next-longest in the
+ * file), which behind the hero scrim renders a dozen wrapped lines of filenames
+ * where the spec asks for a small credit line. Over-long credits are dropped,
+ * never truncated: an ellipsis removes the names the licence requires while
+ * still looking like attribution.
+ */
+const MAX_CREDIT_TEXT_LENGTH = 120;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -164,6 +181,12 @@ function stripHtml(value) {
 
 const metaValue = (extmetadata, key) => stripHtml(extmetadata?.[key]?.value);
 
+/** A credit candidate, or null when it is absent or too long to render as one. */
+const shortCredit = (value) =>
+  typeof value === 'string' && value.length > 0 && value.length <= MAX_CREDIT_TEXT_LENGTH
+    ? value
+    : null;
+
 // ---------------------------------------------------------------------------
 // Step 1: P18 per ISO country code
 // ---------------------------------------------------------------------------
@@ -201,6 +224,7 @@ async function fetchCountryImages(codeFilter) {
 
 async function fetchCredits(titles) {
   const credits = new Map();
+  const tooLong = [];
   const batches = chunk(titles, TITLES_PER_REQUEST);
   console.log(`Fetching Commons licence metadata for ${titles.length} files (${batches.length} calls)…`);
 
@@ -237,16 +261,27 @@ async function fetchCredits(titles) {
       // Artist first: it is the author's name, which is what a one-line credit
       // has room for. Attribution is the licensor's requested wording and is
       // often a sentence; Credit is usually "own work". Any of the three still
-      // beats no credit at all.
-      const artist = metaValue(meta, 'Artist') ?? metaValue(meta, 'Attribution') ?? metaValue(meta, 'Credit');
-      const license = metaValue(meta, 'LicenseShortName');
+      // beats no credit at all — but each candidate has to fit the credit line,
+      // so an over-long Artist falls through to a shorter field rather than
+      // being emitted, and a file with no usable candidate is dropped.
+      const candidates = ['Artist', 'Attribution', 'Credit'].map((key) => metaValue(meta, key));
+      const artist = candidates.reduce((chosen, value) => chosen ?? shortCredit(value), null);
+      const license = shortCredit(metaValue(meta, 'LicenseShortName'));
       const sourceUrl = typeof info.descriptionurl === 'string' ? info.descriptionurl : null;
+      // Distinguish "no credit at all" from "a credit nothing can render": the
+      // second is the one a curated override fixes, so it earns its own line.
+      if (!artist && candidates.some((value) => value)) tooLong.push(title.replace(/^File:/, ''));
       if (!artist || !license || !sourceUrl) continue;
       credits.set(title, { artist, license, licenseUrl: metaValue(meta, 'LicenseUrl'), sourceUrl });
     }
     await sleep(COMMONS_POLITENESS_DELAY_MS);
   }
   console.log(`  ${credits.size}/${titles.length} files carry a usable author + licence`);
+  if (tooLong.length > 0) {
+    console.log(
+      `  no candidate credit under ${MAX_CREDIT_TEXT_LENGTH} chars (dropped): ${tooLong.join(', ')}`,
+    );
+  }
   return credits;
 }
 
@@ -316,7 +351,7 @@ async function main() {
   const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
   console.log(`Wrote ${OUTPUT_PATH} (${Object.keys(ordered).length} countries, ${isPartialRun ? 'merged' : 'replaced'}) in ${elapsedSeconds}s`);
   if (uncredited.length > 0) {
-    console.log(`Dropped for missing author/licence: ${uncredited.join(', ')}`);
+    console.log(`Dropped for a missing or unrenderable author/licence: ${uncredited.join(', ')}`);
   }
   if (notScenery.length > 0) {
     console.log(`Dropped as not scenery: ${notScenery.join(', ')}`);

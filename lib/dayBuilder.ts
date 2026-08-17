@@ -85,6 +85,10 @@ export type DayBuilderAction =
   | { type: "beginInteraction" }
   | { type: "endInteraction" }
   | { type: "serverPayload"; payload: TripPayload; force?: boolean }
+  | {
+      type: "setActivities";
+      activitiesByDestination: Readonly<Record<string, readonly Activity[]>>;
+    }
   | { type: "opSettled"; opId: string }
   | { type: "opFailed"; opId: string; message: string };
 
@@ -110,6 +114,34 @@ function isTimed(item: ScheduledItem): item is ScheduledItem & {
     typeof item.durationMinutes === "number" &&
     item.durationMinutes > 0
   );
+}
+
+/**
+ * Whether two injected maps carry the same activities.
+ *
+ * `setActivities` is dispatched from an effect keyed on a caller-owned prop, so
+ * an equivalent map must be a genuine no-op: without this the reducer would
+ * return a new state on every dispatch, the effect would see a new render, and a
+ * caller that rebuilt the object each render would spin. Reference equality
+ * alone is not enough — the map is recomputed whenever `plan.days` changes, which
+ * is every poll that touches an item — so keys are compared and each list is
+ * compared element-by-element by identity (curated `Activity` records are shared
+ * module-level literals, so identity holds for an unchanged destination).
+ */
+function sameActivities(
+  a: Readonly<Record<string, readonly Activity[]>>,
+  b: Readonly<Record<string, readonly Activity[]>>
+): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => {
+    const left = a[key];
+    const right = b[key] as readonly Activity[] | undefined;
+    if (left === right) return true;
+    if (right === undefined || left.length !== right.length) return false;
+    return left.every((activity, index) => activity === right[index]);
+  });
 }
 
 /** 1-based day clamped into range. Empty plans clamp to 1 rather than 0. */
@@ -426,6 +458,25 @@ export function dayBuilderReducer(
         state.buffered.payload.version >= action.payload.version;
       if (keepExisting) return state;
       return { ...state, buffered: { payload: action.payload, force } };
+    }
+
+    case "setActivities": {
+      // The map is injected, not resolved here, and it is a live value rather
+      // than a mount-time constant: a whole-plan rebuild can introduce a
+      // destination that was absent when the builder mounted, and a frozen map
+      // would show that day an empty shelf forever — reading as "everything is
+      // already on the plan" when in fact nothing of it is.
+      //
+      // Deliberately NOT gated behind `interaction`. The gate exists to stop
+      // server truth from replacing member edits to `days` mid-drag; this map is
+      // not member state, carries no version, and for every destination already
+      // in the gated `days` it resolves to the identical activity list — so the
+      // target day's shelf cannot change under a drag. Buffering it would only
+      // delay the fix for the day whose shelf is wrong.
+      if (sameActivities(state.activitiesByDestination, action.activitiesByDestination)) {
+        return state;
+      }
+      return withShelf({ ...state, activitiesByDestination: action.activitiesByDestination });
     }
 
     case "opSettled":

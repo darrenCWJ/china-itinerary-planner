@@ -419,6 +419,88 @@ describe("target day and shelf", () => {
   });
 });
 
+describe("injected activity map", () => {
+  it("adopts a destination that entered the plan after mount", () => {
+    // The map is a snapshot at `useReducer` init. PATCH /api/trips/:id replaces
+    // the whole plan, so a day can arrive for a destination the map has never
+    // seen — and a frozen map leaves that day's shelf empty forever, which the UI
+    // reads as "everything for this destination is already on the plan".
+    const mounted = { beijing: [activity("Great Wall")] };
+    const state = run(
+      createDayBuilderState(mounted),
+      {
+        type: "serverPayload",
+        payload: payloadOf(11, [day(1, "beijing", []), day(2, "xian", [])]),
+      },
+      { type: "setTargetDay", day: 2 }
+    );
+    // Only the custom row: xian is in the plan but not in the mount-time map.
+    expect(state.shelf.map((row) => row.title)).toEqual([""]);
+
+    const after = dayBuilderReducer(state, {
+      type: "setActivities",
+      activitiesByDestination: { ...mounted, xian: [activity("Terracotta Army")] },
+    });
+
+    expect(after.shelf.map((row) => row.title)).toEqual(["Terracotta Army", ""]);
+    expect(after.activitiesByDestination.xian).toHaveLength(1);
+  });
+
+  it("still hides activities already scheduled after the map is replaced", () => {
+    // Replacing the map re-derives the shelf; it must not bypass the
+    // destination-scoped unscheduled rule and re-offer a placed activity.
+    const after = dayBuilderReducer(seeded(), {
+      type: "setActivities",
+      activitiesByDestination: {
+        beijing: [activity("Great Wall"), activity("Summer Palace")],
+      },
+    });
+
+    expect(after.shelf.map((row) => row.title)).toEqual(["Summer Palace", ""]);
+  });
+
+  it("treats an equivalent map as a no-op, so an unmemoised prop cannot spin", () => {
+    // The dispatch comes from an effect keyed on the prop, and the caller
+    // recomputes the map on every `plan.days` change — most of which do not
+    // change a single activity.
+    const before = seeded();
+    const rebuilt = {
+      beijing: before.activitiesByDestination.beijing,
+      xian: [...before.activitiesByDestination.xian],
+    };
+
+    expect(
+      dayBuilderReducer(before, { type: "setActivities", activitiesByDestination: rebuilt })
+    ).toBe(before);
+  });
+
+  it("adopts a new map mid-interaction without disturbing the gate", () => {
+    // Not gated: the map is not member state and cannot change the target day's
+    // shelf, so there is nothing for the gate to protect here.
+    const before = run(
+      seeded(),
+      { type: "setTargetDay", day: 2 },
+      { type: "adjustTiming", itemId: "b", deltaMinutes: 15, opId: "op1" },
+      { type: "beginInteraction" }
+    );
+
+    const after = dayBuilderReducer(before, {
+      type: "setActivities",
+      activitiesByDestination: {
+        ...before.activitiesByDestination,
+        chengdu: [activity("Panda base")],
+      },
+    });
+
+    expect(after.days).toBe(before.days);
+    expect(after.pendingOps).toBe(before.pendingOps);
+    expect(after.interaction).toBe(true);
+    expect(after.buffered).toBeNull();
+    // The gated target day is Beijing's, so its shelf is unchanged.
+    expect(after.shelf.map((row) => row.title)).toEqual(before.shelf.map((row) => row.title));
+  });
+});
+
 describe("pending ops", () => {
   it("acknowledges by identity, not position", () => {
     const state = run(

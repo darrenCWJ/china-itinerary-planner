@@ -215,6 +215,62 @@ describe("WorldMap", () => {
     expect(await screen.findByRole("button", { name: "France" })).toBeInTheDocument();
   });
 
+  /**
+   * The point circle is r=9 in an 860-unit viewBox: ~22 CSS px across where
+   * `/plan` renders the map and ~6.5 px at 375px, both under WCAG 2.2 AA 2.5.8.
+   * It cannot grow — San Marino and Vatican City are ~6 units apart — so the
+   * compliant target is this second control, and these tests hold it to being a
+   * real one: full tap size, every country, and one tab stop.
+   */
+  test("offers a full-size list control that selects a point-layer country", async () => {
+    const onSelect = vi.fn();
+    render(<WorldMap onSelectCountry={onSelect} />);
+
+    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
+    expect(picker).toHaveClass("min-h-[var(--tap-min)]");
+
+    // Malta's polygon is inert and its circle is the sub-24px target; the list is
+    // how a pointer reaches it at all.
+    fireEvent.change(picker, { target: { value: "MT" } });
+
+    expect(onSelect).toHaveBeenCalledWith("MT");
+  });
+
+  test("the list reaches every country the map drew, in name order", async () => {
+    render(<WorldMap onSelectCountry={() => {}} />);
+
+    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
+    const codes = [...picker.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+
+    // Placeholder, then France, Japan, Malta, Singapore — polygon and point
+    // countries alike, so the map is never the only route to a selection.
+    expect(codes).toEqual(["", "FR", "JP", "MT", "SG"]);
+  });
+
+  test("the list mirrors the selection without adding 235 tab stops", async () => {
+    render(<WorldMap selectedCountry="sg" onSelectCountry={() => {}} />);
+
+    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
+    expect(picker).toHaveValue("SG");
+    // One native control, so the roving tabindex over the countries is untouched
+    // and the map costs one extra Tab rather than one per country.
+    expect(picker).not.toHaveAttribute("tabindex");
+    expect(screen.getByRole("button", { name: "Singapore (selected)" })).toHaveAttribute(
+      "tabindex",
+      "0"
+    );
+  });
+
+  test("the list shows no country when the chosen one is not on the map", async () => {
+    render(<WorldMap selectedCountry="ZZ" onSelectCountry={() => {}} />);
+
+    await screen.findByRole("button", { name: "France" });
+
+    // Same rule as the hero card: a code the map never drew selects nothing,
+    // rather than silently presenting the first country as chosen.
+    expect(screen.getByRole("combobox", { name: /pick from the list/i })).toHaveValue("");
+  });
+
   test("reports hover with a position relative to the map", async () => {
     const onHover = vi.fn();
     render(<WorldMap onSelectCountry={() => {}} onHoverCountry={onHover} />);

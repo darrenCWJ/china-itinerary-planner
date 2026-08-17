@@ -86,7 +86,16 @@ export function BalancesCard({
             {balances.map((b) => (
               <li key={b.member} className="flex justify-between">
                 <span>{b.member}</span>
-                <span className={b.net > 0 ? "font-medium text-[var(--accent-ink)]" : "font-medium text-seal"}>
+                {/*
+                 * Two spans of identical role and weight where colour is the
+                 * encoding, so both halves must be hue-fixed. `--accent-ink` is
+                 * the country-identity colour (spec §4.2) and is hue-variable by
+                 * design — on China it lands one degree from the seal vermilion
+                 * the negative half uses, and on any country it means "China" or
+                 * "Japan", never "settled". Neutral-vs-red is the standard
+                 * accounting pair and neither side moves with the country.
+                 */}
+                <span className={b.net > 0 ? "font-medium text-[var(--ink-0)]" : "font-medium text-seal"}>
                   {b.net > 0 ? "is owed " : "owes "}
                   {formatMinor(Math.abs(b.net), currency)}
                 </span>

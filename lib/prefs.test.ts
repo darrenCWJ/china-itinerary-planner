@@ -1,10 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { accentColor, lightnessFor } from "./accent";
 import { getCountry } from "./countries";
+import { type Hero, pickHero } from "./countryImagery";
 import {
   DEFAULT_PREFS,
   PREFS_COOKIE,
   parsePrefsCookie,
+  resolveAccentOverride,
   resolveAccentVars,
   sanitizePrefs,
   serializePrefsCookie,
@@ -180,6 +182,17 @@ describe("resolveAccentVars", () => {
     expect(hueOf(resolveAccentVars(prefs, "cn", "light")["--accent-ink"])).toBe(200);
   });
 
+  test("the two vars are exactly the override resolver's answer, not a second copy of it", () => {
+    // resolveAccentVars must not re-derive the prefs half; if it ever does, the
+    // page's tokens and every surface that resolves the hue itself drift apart.
+    const prefs: UserPrefs = { theme: "light", accent: 40, accentHues: { CN: 200 } };
+
+    expect(resolveAccentVars(prefs, "CN", "light")).toEqual({
+      "--accent-ink": accentColor("CN", "light", "ink", resolveAccentOverride(prefs, "CN")),
+      "--accent-fill": accentColor("CN", "light", "fill", resolveAccentOverride(prefs, "CN")),
+    });
+  });
+
   test("both roles keep their pinned lightness whatever the user chose", () => {
     // The point of storing a hue rather than a colour: no selection a user can
     // make moves lightness, so the contrast guarantee survives the picker.
@@ -197,5 +210,78 @@ describe("resolveAccentVars", () => {
         expect(lightnessOf(vars["--accent-fill"])).toBe(lightnessFor(theme, "fill"));
       }
     }
+  });
+});
+
+/**
+ * `CountryHero`'s gradient fallback is the accent surface that needs the hue
+ * rather than the two custom properties, so it is the surface most able to
+ * disagree with the rest of the page. What it computes is
+ * `pickHero(country, { theme, accentHue: resolveAccentOverride(prefs, code) })`
+ * — reproduced here, in the node project, because the precedence is the part
+ * worth pinning and it is pure. The band's structure (scrim, credit, stacking)
+ * is asserted where it renders, in components/shell/CountryHero.test.tsx.
+ *
+ * `JP` is the case the whole block turns on: it has a curated hue (345), it has
+ * no photograph in data/country-images.json, and so it is a country where the
+ * gradient path runs and all three candidate hues — fixed, per-country, curated
+ * — are different numbers. If Japan is ever given a hero photograph these tests
+ * fail at the `kind` guard rather than passing vacuously.
+ */
+describe("the accent gradient a hero paints", () => {
+  const hueOf = (css: string): number => Number(/ (\d+(?:\.\d+)?)\)$/.exec(css)![1]);
+
+  const heroFor = (prefs: UserPrefs, code: string): Hero =>
+    pickHero(getCountry(code), { theme: "light", accentHue: resolveAccentOverride(prefs, code) });
+
+  const gradient = (prefs: UserPrefs, code: string) => {
+    const hero = heroFor(prefs, code);
+    if (hero.kind !== "gradient") throw new Error(`${code} now has a photograph, not a gradient`);
+    return hero;
+  };
+
+  test("a fixed accent is what the gradient paints, over a per-country override", () => {
+    // The defect this replaces: the hero read accentHues directly, so it painted
+    // 300 while every token on the page was at 210.
+    const prefs: UserPrefs = { theme: "light", accent: 210, accentHues: { JP: 300 } };
+    const hero = gradient(prefs, "JP");
+
+    expect(hueOf(hero.fromColor)).toBe(210);
+    expect(hueOf(hero.toColor)).toBe(210);
+  });
+
+  test("a fixed accent is what the gradient paints, over the curated hue", () => {
+    expect(getCountry("JP").accentHue).toBe(345);
+    const prefs: UserPrefs = { theme: "light", accent: 210, accentHues: {} };
+
+    expect(hueOf(gradient(prefs, "JP").fromColor)).toBe(210);
+  });
+
+  test("the gradient stops are the same two colours as the accent tokens", () => {
+    // The band sits under `--accent-ink` content and beside `--accent-ink`
+    // chrome, so "the hero agrees with the page" is the actual requirement —
+    // stronger than any single hue assertion, and it holds in every mode.
+    const cases: UserPrefs[] = [
+      DEFAULT_PREFS,
+      { theme: "light", accent: 210, accentHues: { JP: 300 } },
+      { theme: "light", accent: 210, accentHues: {} },
+      { theme: "light", accent: "country", accentHues: { JP: 300 } },
+      { theme: "light", accent: 0, accentHues: {} },
+    ];
+    for (const prefs of cases) {
+      const hero = gradient(prefs, "JP");
+      const vars = resolveAccentVars(prefs, "JP", "light");
+
+      expect(hero.fromColor).toBe(vars["--accent-fill"]);
+      expect(hero.toColor).toBe(vars["--accent-ink"]);
+    }
+  });
+
+  test("per-country mode still lets a recoloured country show its own hue", () => {
+    // Fixed mode winning must not cost the override its meaning where the user
+    // has not pinned one hue everywhere.
+    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { JP: 300 } };
+
+    expect(hueOf(gradient(prefs, "JP").fromColor)).toBe(300);
   });
 });
