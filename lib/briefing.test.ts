@@ -150,19 +150,19 @@ describe("buildBriefing — overview", () => {
   test("groups cities in visit order with their day numbers", () => {
     const b = buildBriefing(payload(), FULL);
     expect(b.cities).toEqual([
-      { id: "beijing", name: "Beijing", chineseName: "北京", days: [1, 2] },
-      { id: "chengdu", name: "Chengdu", chineseName: "成都", days: [3] },
+      { id: "beijing", name: "Beijing", localName: "北京", days: [1, 2] },
+      { id: "chengdu", name: "Chengdu", localName: "成都", days: [3] },
     ]);
   });
 
-  test("leaves chineseName null for cities outside the curated set", () => {
+  test("leaves localName null for cities outside the curated set", () => {
     const p = payload();
     p.data.plan.days[2].destinationId = "Q1234";
     p.data.plan.days[2].destinationName = "Quanzhou";
     expect(buildBriefing(p, FULL).cities[1]).toEqual({
       id: "Q1234",
       name: "Quanzhou",
-      chineseName: null,
+      localName: null,
       days: [3],
     });
   });

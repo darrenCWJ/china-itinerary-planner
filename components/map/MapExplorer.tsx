@@ -86,7 +86,7 @@ export function MapExplorer({
             id: d.id,
             kind: "curated",
             name: d.name,
-            chineseName: d.chineseName,
+            localName: d.localName ?? d.chineseName,
             province: null,
             region: d.region,
             lat: at.lat,
@@ -107,7 +107,9 @@ export function MapExplorer({
         id: c.qid,
         kind: "catalog",
         name: c.name,
-        chineseName: c.chineseName,
+        // The catalog payload still carries `chineseName` — that is a server
+        // contract, unchanged here. Only the client-side MapPlace is renamed.
+        localName: c.chineseName,
         province: c.province,
         region: regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central",
         lat: c.lat,
