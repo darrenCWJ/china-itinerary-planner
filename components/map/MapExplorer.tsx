@@ -295,24 +295,36 @@ export function MapExplorer({
             </button>
           </div>
           <ol className="mt-2 flex flex-wrap items-center gap-1 text-sm">
-            {route.order.map((p, i) => (
-              <li key={p.id} className="flex items-center gap-1">
-                {i > 0 && (
-                  <span
-                    className="mx-0.5 text-xs text-ink-soft"
-                    title={`${route.legs[i - 1].km.toLocaleString()} km · ~${route.legs[i - 1].hours}h`}
-                  >
-                    {route.legs[i - 1].mode === "flight" ? "✈️" : "🚄"}
-                    <span className="ml-0.5 font-mono text-[10px]">
-                      {route.legs[i - 1].hours}h
+            {route.order.map((p, i) => {
+              const leg = i > 0 ? route.legs[i - 1] : null;
+              return (
+                <li key={p.id} className="flex items-center gap-1">
+                  {leg?.kind === "estimated" && (
+                    <span
+                      className="mx-0.5 text-xs text-ink-soft"
+                      title={`${leg.km.toLocaleString()} km · ~${leg.hours}h`}
+                    >
+                      {leg.mode === "flight" ? "✈️" : "🚄"}
+                      <span className="ml-0.5 font-mono text-[10px]">{leg.hours}h</span>
                     </span>
+                  )}
+                  {/*
+                    A leg into a hand-typed place has no distance or duration
+                    (spec §5.6). Rendered as an untimed transfer rather than a
+                    fabricated estimate — inventing "0 km · ~0.5h" for a place
+                    with no location would be a guess dressed as data.
+                  */}
+                  {leg?.kind === "unknown" && (
+                    <span className="mx-0.5 text-xs text-ink-soft" title="No location set for this place">
+                      · transfer
+                    </span>
+                  )}
+                  <span className="rounded-full bg-paper px-2.5 py-0.5 font-medium">
+                    {i + 1}. {p.name}
                   </span>
-                )}
-                <span className="rounded-full bg-paper px-2.5 py-0.5 font-medium">
-                  {i + 1}. {p.name}
-                </span>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ol>
           {route.notes.map((note) => (
             <p key={note} className="mt-2 text-xs text-ink-soft">
