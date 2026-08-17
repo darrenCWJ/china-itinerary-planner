@@ -232,10 +232,14 @@ function applyPayload(
   const live = new Set(days.flatMap((day) => day.items.map((item) => item.id)));
   // An op naming an item the server no longer has is dropped, not retried: the
   // item is gone and the server wins. Adds have no item id yet, so they survive.
-  const pendingOps = state.pendingOps.filter((pending) => {
+  const kept = state.pendingOps.filter((pending) => {
     const id = "itemId" in pending.op ? pending.op.itemId : null;
     return id === null || live.has(id);
   });
+  // Identity preserved when nothing was dropped: the hook's send effect keys on
+  // this array, and a fresh one on every poll would re-run it four times a
+  // minute for nothing.
+  const pendingOps = kept.length === state.pendingOps.length ? state.pendingOps : kept;
 
   return withShelf({
     ...state,

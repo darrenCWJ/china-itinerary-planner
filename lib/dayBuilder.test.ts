@@ -496,3 +496,40 @@ describe("C3 — no layout knowledge", () => {
     expect(opsOf(state)[0]).not.toHaveProperty("time");
   });
 });
+
+describe("state identity", () => {
+  it("keeps the pendingOps array identity when a payload drops nothing", () => {
+    // The hook's send effect keys on this array; a fresh one every poll would
+    // re-run it four times a minute for nothing.
+    const state = run(seeded(), { type: "setTargetDay", day: 2 }, {
+      type: "adjustTiming",
+      itemId: "b",
+      deltaMinutes: 15,
+      opId: "op1",
+    });
+
+    const after = dayBuilderReducer(state, {
+      type: "serverPayload",
+      payload: payloadOf(11, state.days),
+    });
+
+    expect(after.pendingOps).toBe(state.pendingOps);
+  });
+
+  it("returns a fresh pendingOps array when it does drop one", () => {
+    const state = run(seeded(), { type: "setTargetDay", day: 2 }, {
+      type: "adjustTiming",
+      itemId: "b",
+      deltaMinutes: 15,
+      opId: "op1",
+    });
+
+    const after = dayBuilderReducer(state, {
+      type: "serverPayload",
+      payload: payloadOf(11, [day(1, "beijing", []), day(2, "beijing", [])]),
+    });
+
+    expect(after.pendingOps).not.toBe(state.pendingOps);
+    expect(after.pendingOps).toEqual([]);
+  });
+});
