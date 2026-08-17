@@ -83,6 +83,11 @@ export function PlaceSearch({
   }, [query]);
 
   const selectedIds = useMemo(() => selected.map((p) => p.id), [selected]);
+  // Off-map rows are matched by name, not id — see RankOptions.
+  const selectedOffMapNames = useMemo(
+    () => selected.filter((p) => p.kind === "off-map").map((p) => p.name),
+    [selected]
+  );
 
   const results = useMemo(
     () =>
@@ -97,9 +102,9 @@ export function PlaceSearch({
           localName: h.chineseName,
           province: h.province,
         })),
-        { selectedIds }
+        { selectedIds, selectedOffMapNames }
       ),
-    [query, curated, hits, selectedIds]
+    [query, curated, hits, selectedIds, selectedOffMapNames]
   );
 
   // Clamp rather than reset: the list reshuffles as results arrive, and jumping
@@ -235,11 +240,16 @@ export function PlaceSearch({
                   ○
                 </span>
               )}
+              {/*
+                A real tap target (C5), not a bare glyph. The chip row is 32px
+                so the button drives its height; -my-1 lets it reach 44px
+                without the chip growing to match.
+              */}
               <button
                 type="button"
                 onClick={() => onRemove(place.id)}
                 aria-label={`Remove ${place.name}`}
-                className="ml-0.5 rounded-full px-1 font-semibold"
+                className="-my-1 ml-0.5 flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] items-center justify-center rounded-full font-semibold"
               >
                 ×
               </button>

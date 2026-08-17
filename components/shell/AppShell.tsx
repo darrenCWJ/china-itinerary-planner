@@ -57,7 +57,24 @@ export function AppShell({
   // publishes its trip after mounting, so a context-driven rail would flicker in
   // one render late on every navigation. The route is known immediately (J1).
   const onTripRoute = pathname.startsWith("/trip/");
-  const name = trip?.payload?.data.tripName;
+  const data = trip?.payload?.data;
+  const name = data?.tripName;
+  /**
+   * Spec §2.3 lists the header as "trip name and dates". Day count always, start
+   * date when the trip has one — `startDate` is nullable and a trip planned
+   * without dates is a normal state, not a missing value to apologise for.
+   *
+   * Desktop only: §2.3 collapses the mobile header to the trip name, so this is
+   * the first thing to go when space runs out.
+   */
+  const dates = data
+    ? [
+        `${data.input.days} day${data.input.days === 1 ? "" : "s"}`,
+        data.startDate === null ? null : `from ${data.startDate}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
 
   return (
     <div
@@ -107,6 +124,14 @@ export function AppShell({
               {name !== undefined && (
                 <span className="truncate font-display text-sm font-semibold" title={name}>
                   {name}
+                </span>
+              )}
+              {dates !== undefined && (
+                <span
+                  className="hidden shrink-0 whitespace-nowrap text-xs sm:inline"
+                  style={{ color: "var(--ink-3)" }}
+                >
+                  {dates}
                 </span>
               )}
               {crew}

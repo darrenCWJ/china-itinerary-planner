@@ -38,6 +38,16 @@ export interface RankedPlace {
 
 export interface RankOptions {
   selectedIds?: readonly string[];
+  /**
+   * Names of hand-typed places already on the trip.
+   *
+   * Separate from `selectedIds` because an off-map row has no stable id to match
+   * on — this module gives it the raw query, while the caller stores it under
+   * whatever key it likes (the wizard uses `offmap:<slug>`). Matching on the
+   * normalised name is what actually identifies a hand-typed place, and it keeps
+   * this module ignorant of the caller's id convention.
+   */
+  selectedOffMapNames?: readonly string[];
   /** Catalog results shown at most. The curated set is small; the catalog is not. */
   catalogLimit?: number;
 }
@@ -152,13 +162,16 @@ export function rankPlaces(
   // the list, and a second row for the same name only makes a duplicate.
   const hasExact = results.some((r) => norm(r.name) === q);
   if (!hasExact) {
+    const alreadyAdded = (options.selectedOffMapNames ?? []).some((n) => norm(n) === q);
     results.push({
       id: query.trim(),
       kind: "off-map",
       name: query.trim(),
       localName: null,
       province: null,
-      isSelected: false,
+      // Flagged rather than hidden, same as the other two kinds: a place the
+      // user typed a minute ago must not be re-offered as if it were new.
+      isSelected: alreadyAdded,
     });
   }
 

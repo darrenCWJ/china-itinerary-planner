@@ -17,17 +17,32 @@ import { TRIP_NAV } from "./nav";
  * declaration fail loudly in CI on the commit that introduces it.
  */
 
-const ROOTS = ["components", "app", "lib"] as const;
+const ROOTS = ["components", "app", "lib", "scripts"] as const;
 
 interface SourceFile {
   /** Repo-relative, forward-slashed, so assertions read the same on Windows. */
   path: string;
   text: string;
+  /** Comments and string-free — see `stripComments`. Used where prose would lie. */
+  code: string;
+}
+
+/**
+ * Blanks out line and block comments, preserving length-agnostic structure.
+ *
+ * The C2 scan is substring co-occurrence, so a file *describing* a forbidden
+ * pattern in a comment scanned identically to one containing it — an audit found
+ * that AppShell's own explanatory comment was what decided the check's verdict on
+ * that file. Prose must not be able to fail or pass a contract.
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 }
 
 function collect(): SourceFile[] {
   const out: SourceFile[] = [];
   const walk = (dir: string) => {
+    if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
       if (statSync(full).isDirectory()) {
@@ -36,10 +51,14 @@ function collect(): SourceFile[] {
       }
       // Tests are excluded: they legitimately name the things the contracts
       // forbid elsewhere, and a test asserting on test files is noise.
-      if (!/\.tsx?$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
+      // .css is included because a contract about layout that cannot see
+      // stylesheets is trivially bypassed by writing the rule in CSS.
+      if (!/\.(tsx?|css)$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
+      const text = readFileSync(full, "utf8");
       out.push({
         path: relative(process.cwd(), full).split(sep).join("/"),
-        text: readFileSync(full, "utf8"),
+        text,
+        code: stripComments(text),
       });
     }
   };
@@ -186,36 +205,85 @@ describe("C2 — the shell owns the bottom edge", () => {
    * only in files that also position something fixed, so `sticky` headers and an
    * unrelated `bottom:` in a transform are not swept up.
    */
-  const pinsBottom = (text: string) =>
-    /\bfixed\b/.test(text) && /\bbottom-0\b|\binset-x-0 bottom|bottom:\s*0/.test(text);
+  /**
+   * Widened after an audit found three escapes in the first version: it read no
+   * .css at all, it accepted only `bottom-0` (so `fixed bottom-4` walked
+   * straight through), and being whole-file substring co-occurrence it could be
+   * satisfied by a comment. It now runs on comment-stripped text and matches any
+   * bottom offset.
+   */
+  const pinsBottom = (code: string) =>
+    /\bfixed\b/.test(code) &&
+    /\bbottom-(?:\d+|\[|full|auto)|\binset-y-0\b|bottom:\s*[^;]/.test(code);
 
   it("has no fixed bottom element outside components/shell", () => {
     const offenders = FILES.filter(
-      (f) => !f.path.startsWith("components/shell/") && pinsBottom(f.text)
+      (f) => !f.path.startsWith("components/shell/") && pinsBottom(f.code)
     ).map((f) => f.path);
     expect(offenders).toEqual([]);
   });
 
+  it("scans stylesheets, not only components", () => {
+    // A layout contract that cannot see CSS is bypassed by writing the rule in
+    // CSS. Guards the collector, not the predicate.
+    expect(FILES.map((f) => f.path)).toContain("app/globals.css");
+  });
+
   it("still recognises a fixed bottom element when it sees one", () => {
-    // The scan is two independent substring tests, so it is worth proving it
-    // fires at all rather than trusting an empty result.
+    // Two independent substring tests, so an empty result proves nothing on its
+    // own — these pin that it fires.
     expect(pinsBottom('className="fixed inset-x-0 bottom-0 border-t"')).toBe(true);
     expect(pinsBottom('className="fixed bottom-0"')).toBe(true);
-    expect(pinsBottom('style={{ position: "fixed", bottom: 0 }}')).toBe(true);
-    // And that it does not fire on the things it must tolerate.
+    // The escape the audit found.
+    expect(pinsBottom('className="fixed bottom-4 left-0 right-0"')).toBe(true);
+    expect(pinsBottom('className="fixed bottom-[env(safe-area-inset-bottom)]"')).toBe(true);
+    expect(pinsBottom(".bar { position: fixed; bottom: 0; }")).toBe(true);
+    // And that it tolerates what it must.
     expect(pinsBottom('className="sticky bottom-0"')).toBe(false);
     expect(pinsBottom('className="fixed inset-0"')).toBe(false);
+  });
+
+  it("cannot be tripped or satisfied by prose", () => {
+    // The audit's sharpest catch: AppShell's own comment explaining that nothing
+    // may be `position: fixed` at `bottom-0` was itself matching the scan.
+    const proseOnly = stripComments(
+      '// nothing may be position: fixed at bottom-0 outside the shell\nconst x = 1;'
+    );
+    expect(pinsBottom(proseOnly)).toBe(false);
   });
 });
 
 describe("C3 — the day-builder core stays free of React", () => {
-  const DAY_BUILDER = join(process.cwd(), "lib", "dayBuilder.ts");
+  /**
+   * Matched by name pattern, not one hardcoded path.
+   *
+   * The first version keyed on exactly `lib/dayBuilder.ts`, which an audit
+   * pointed out turns into a permanent silent skip the moment the module lands as
+   * `lib/dayBuilder/index.ts` or `lib/useDayBuilder.ts` — the suite would report
+   * a skip forever and nobody would notice the contract had stopped applying.
+   */
+  const builders = FILES.filter(
+    (f) => /(^|\/)(use)?[dD]ayBuilder(\/index)?\.tsx?$/.test(f.path) && f.path.startsWith("lib/")
+  );
 
   // Armed now, enforced from Task 21. Written ahead of the module so the
   // constraint is in place before the code that has to satisfy it, rather than
   // being retrofitted after the first React import has already landed.
-  it.skipIf(!existsSync(DAY_BUILDER))("has no react import", () => {
-    const text = readFileSync(DAY_BUILDER, "utf8");
-    expect(/from\s+["']react["']/.test(text)).toBe(false);
+  it.skipIf(builders.length === 0)("has no react import", () => {
+    for (const builder of builders) {
+      expect(/from\s+["']react["']/.test(builder.code), `${builder.path} imports react`).toBe(false);
+    }
+  });
+
+  it("matches the module wherever Task 21 puts it", () => {
+    // Pins the pattern itself, so the skip above stays honest even while the
+    // module does not exist. Guards against the hardcoded-path regression.
+    const matches = (path: string) =>
+      /(^|\/)(use)?[dD]ayBuilder(\/index)?\.tsx?$/.test(path) && path.startsWith("lib/");
+    expect(matches("lib/dayBuilder.ts")).toBe(true);
+    expect(matches("lib/dayBuilder/index.ts")).toBe(true);
+    expect(matches("lib/useDayBuilder.ts")).toBe(true);
+    expect(matches("lib/dayBuilder.tsx")).toBe(true);
+    expect(matches("components/trip/DayBuilder.tsx")).toBe(false);
   });
 });
