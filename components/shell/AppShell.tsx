@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { AccountChip } from "@/components/auth/AccountChip";
 import { RailNav } from "./RailNav";
 import { useShellTrip } from "./ShellTripContext";
+import { ThemeToggle } from "./ThemeToggle";
+import { TripSwitcher } from "./TripSwitcher";
 
 /**
  * The application frame (spec §2.3): persistent header, 76px desktop rail, and
@@ -22,9 +24,10 @@ import { useShellTrip } from "./ShellTripContext";
 interface Props {
   children: React.ReactNode;
   /**
-   * Header slots, left to right per §2.3. Optional so this component compiles
-   * and renders correctly before the pieces exist — Task 4 fills `tripSwitcher`
-   * and `themeToggle`, Tasks 10 and 11 fill `crew` and `share`.
+   * Header slots, left to right per §2.3. `tripSwitcher` and `themeToggle`
+   * default to the real pieces (Task 4); `crew` and `share` stay empty until
+   * Tasks 10 and 11. Kept as props rather than hardcoded so a test can render
+   * the frame without dragging in the auth client or a fetch.
    */
   tripSwitcher?: React.ReactNode;
   crew?: React.ReactNode;
@@ -37,7 +40,13 @@ function isBare(pathname: string): boolean {
   return pathname === "/login" || pathname === "/signup" || pathname.startsWith("/b/");
 }
 
-export function AppShell({ children, tripSwitcher, crew, share, themeToggle }: Props) {
+export function AppShell({
+  children,
+  tripSwitcher = <TripSwitcher />,
+  crew,
+  share,
+  themeToggle = <ThemeToggle />,
+}: Props) {
   const pathname = usePathname();
   const trip = useShellTrip();
 
