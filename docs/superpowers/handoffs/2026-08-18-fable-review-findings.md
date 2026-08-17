@@ -3,7 +3,8 @@
 **Date:** 2026-08-18
 **Branch:** `redesign/planner-shell` at `2881aee`
 **Scope:** the whole of PR2 (Tasks 1-33) against spec and plan — not the recent diff
-**Status:** six distinct findings confirmed. **PR2 is not mergeable as it stands.**
+**Status:** six confirmed, **all six now fixed** (§5). A corrected second pass then
+verified all 31 findings rather than the top 9 — **20 remain open** (§6).
 
 This is the §5g review. Six Fable lenses (spec conformance, cross-step drift,
 contract scans, state correctness, a11y/surface, write boundary) produced 31 raw
@@ -246,3 +247,96 @@ how the workflow was written rather than in the reviewers:
 The hand re-review in §1 is what actually caught something: H2's trigger as
 written does not reproduce, because React batches same-turn taps. The refuter
 accepted the failure narrative without running it.
+
+---
+
+## 5. Resolution — all six fixed (2026-08-18)
+
+801 tests across 56 files, tsc clean, production build clean.
+
+| | Fix | Commit |
+|---|---|---|
+| H1 | `opFailed` restores the days the op was queued against; later-queued ops drop with it; the accessor gained a `forcedAt` counter so a forced reconciliation reaches the reducer even at the same version | `33b5d9f` |
+| H2 | The send effect holds until the in-flight op settles and takes the queue head, so ops go out FIFO | `fa42bd9` |
+| H3 | Active rail tab draws in `--ink-0` (5.82:1 worst case across all hues) instead of `--paper` (2.62:1 best) | `5f55195` |
+| H4 | `RouteMap` renders `CountryMap` read-only over the plan's stops in day order | `28beb05` |
+| H5 | A `FocusPlan` names where focus goes after each self-destroying control | `de199d4` |
+| M1 | The pin uses `callsFetch(view!.code)`, the predicate defined 19 lines above it | `eae52bc` |
+
+Three things worth carrying forward, all found while fixing rather than while
+reviewing:
+
+- **H1's rollback tests had to use a timing op, not `addFromShelf`.** An add
+  queues without patching `days` — the item appears only when the payload lands
+  — so it is the one action with nothing to unwind. It was also the only action
+  the pre-existing rejection test used, which is precisely how the phantom-edit
+  bug stayed behind a green suite.
+- **`refetch` never caught network errors**, and every caller is
+  `void refetch(…)` including the 4s poll — so any blip was already an unhandled
+  rejection. Pre-existing; surfaced because H1's fix calls it from `mutate`'s
+  catch. Fixed in the same commit.
+- **H2's real trigger is narrower than reported.** Two taps in one React batch
+  were always safe: one render, one effect run, one POST. Only a tap that gets
+  its own render while a request is open races, so the new tests stagger their
+  `act` calls deliberately. A test written to the finding's wording would have
+  passed against the broken code.
+
+## 6. Second pass — 31 findings verified, 20 still open
+
+The first run capped verification at 9 and keyed dedupe on a title stem, so one
+defect ate three verify slots and 22 findings went unexamined (§4). Re-run with
+dedupe on `file:line` and no cap: **31 raw → 27 deduped → 24 confirmed, 3
+refuted**.
+
+⚠ **Two of those three refutations are artifacts, not refutations.** Both
+refuters wrote that the technical claim was *correct*, then killed the finding
+under the brief's "already recorded in the prior-findings document" rule —
+against this very document, which was committed before the re-run. They are H1
+and H2, both since fixed. Only the third is a real kill: the rail rendering
+active tabs for guests and the private gate, which the refuter showed is J1 as
+actually written ("the rail renders only when a trip context exists
+(`/trip/[id]`)" — a route condition), documented in AppShell's docblock, and
+tested. **Do not re-open it.**
+
+Read that as: re-running a review after committing its own output teaches the
+refuters to reject it. Either re-run before writing anything down, or drop the
+prior-findings rule from the refuter brief.
+
+### Still open — 2 high, 12 medium, 6 low
+
+Confirmed by a lens and survived refutation, but **not** re-verified by hand the
+way §1's six were. Treat the severities as the reviewers' own.
+
+**High**
+- `lib/server/pgStore.ts:321` — `updateTripDataIf`'s guard and version bump are
+  two autocommit statements, so concurrent writes can lose an op. Pre-PR2 code
+  and pg-only (memory records the pg path as inspection-verified only), but the
+  day builder makes concurrent plan POSTs routine.
+- `lib/contracts.test.ts:237` — C2 misses Tailwind v4's `var` shorthand and CSS
+  `inset` shorthand, which are the idioms the mobile PR will reach for. Same
+  class as M1: a scan whose gap reads as a guarantee.
+
+**Medium** — five more contract-scan gaps (`:204` C1 blind to JSX text children,
+`:39` `stripComments` blanking string literals so a URL's `//` hides trip paths,
+`:294` C3 blind on a directory split, `:169` C4's allowlist keying on the path
+string rather than on fetching, `:20` the collector never seeing repo-root
+files); `lib/server/schemas.ts:144` a half-timed pair still storable via
+`addItem`/`updateItem`; `lib/server/catalog.ts:138` the catalog leg not folding
+apostrophes, so Xi'an-class cities stay unfindable through the server path (the
+same bug §5d fixed client-side — if real, that fix was half a fix);
+`ThemeToggle.tsx:91`/`:104` spec §4.3's per-country hue override shipped with no
+UI and no TODO; `TripView.tsx:203` the 同行 chop hardcoded while `Country.mark`
+is consumed nowhere; `CountryMap.tsx:241` `role="img"` over descendant buttons,
+the pattern WorldMap's own docblock calls wrong; `MapExplorer.tsx:299` controls
+below the C5 44px token their siblings apply; `PlanTab.tsx:192` add-day and
+wizard-resolve failures with no live region.
+
+**Low** — `DayBuilder.tsx:521` spec §5.3's slot lanes dropped with no recorded
+decision; `:171` unmounting the builder silently discards queued-but-unsent ops;
+`:383` target-day chips with no visible focus ring; `lib/nav.ts:34` Kit's
+accessible name omitting its visible label (label-in-name); `lib/redactTrip.ts:15`
+the guest header's day count reading `input.days`, which disagrees with the plan
+after an `addDay`.
+
+Full text, including each refuter's reasoning, is in the workflow output at
+`tasks/wi2gxfruv.output`.
