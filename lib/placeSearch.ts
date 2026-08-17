@@ -47,7 +47,25 @@ const DEFAULT_CATALOG_LIMIT = 10;
 /** Higher wins. Gaps left so a field can be inserted without renumbering. */
 const SCORE = { namePrefix: 100, nameSubstring: 80, localName: 60, knownFor: 40 } as const;
 
-const norm = (value: string) => value.trim().toLowerCase();
+/**
+ * Lowercased, trimmed, and stripped of the punctuation and accents nobody types
+ * into a search box.
+ *
+ * Found in the browser: typing "xian" matched the catalog's Xiangyang and missed
+ * the curated Xi'an entirely, because the apostrophe broke the substring test.
+ * The same gap hid Ürümqi from "urumqi". Romanised place names are full of marks
+ * that are optional to the person searching and mandatory in the data.
+ */
+const norm = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    // Strips the combining marks NFD leaves behind: "ü" becomes "u", "é"
+    // becomes "e". The range is U+0300–U+036F, written literally because it is
+    // invisible here — the tests below are what pin it.
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/['’ʼ`]/g, "");
 
 /**
  * Why a curated place matched, as a score. Null means it did not match, which

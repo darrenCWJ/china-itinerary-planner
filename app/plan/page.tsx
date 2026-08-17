@@ -6,11 +6,11 @@ import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
 import { DESTINATIONS } from "@/lib/data";
 import { seasonOfMonth } from "@/lib/months";
+import { WIZARD_STEPS, canAdvance } from "@/lib/wizard";
 import type { TripInput } from "@/lib/itinerary";
 import type { CatalogHit } from "@/lib/tripShared";
 import type { Destination, Interest, Season } from "@/lib/types";
 
-const STEPS = ["Destinations", "Trip details", "Your plan"] as const;
 const VISITED_KEY = "cip-visited-v1";
 const MAX_DAYS = 21;
 
@@ -19,12 +19,26 @@ export default function PlanPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [visited, setVisited] = useState<string[]>([]);
   const [season, setSeason] = useState<Season>("autumn");
+  /**
+   * The month the user picked on the destinations map, when they picked one.
+   * Season stays alongside it rather than being derived here: Task 20 moves that
+   * derivation server-side behind the country profile, where a southern-
+   * hemisphere trip gets the right answer.
+   */
+  const [month, setMonth] = useState<number | null>(null);
   const [days, setDays] = useState(5);
   const [adults, setAdults] = useState(2);
   const [kids, setKids] = useState(0);
   const [interests, setInterests] = useState<Interest[]>([]);
   const [extras, setExtras] = useState<Record<string, CatalogHit>>({});
   const [extraDestinations, setExtraDestinations] = useState<Destination[]>([]);
+  /**
+   * Hand-typed places (spec §3.2.7). Held separately from `extras` because those
+   * are catalog hits that `goToPlan` resolves through the API, and these have
+   * nothing to resolve — they exist only here, so they are merged into the
+   * generator's input directly.
+   */
+  const [offMap, setOffMap] = useState<Destination[]>([]);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -73,13 +87,55 @@ export default function PlanPage() {
 
   const removeCatalog = (qid: string) => {
     setSelected((prev) => prev.filter((x) => x !== qid));
+    setOffMap((prev) => prev.filter((d) => d.id !== qid));
+  };
+
+  /**
+   * A place the user typed that no dataset knows. It gets no coordinates, the
+   * off-map default range (spec §5.6), and no activities — the generator gives
+   * it days without inventing things to do there.
+   */
+  const addOffMap = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const id = `offmap:${trimmed.toLowerCase().replace(/\s+/g, "-")}`;
+    if (selected.includes(id)) return;
+    const place: Destination = {
+      id,
+      name: trimmed,
+      // chineseName is required until PR3 deletes it; a hand-typed place has no
+      // local-language name, and inventing one would be worse than empty.
+      chineseName: "",
+      localName: null,
+      // Region is required and PR3 retires the union. Nothing reads it for a
+      // place with no coordinates, so this is a placeholder, not a claim.
+      region: "Central",
+      country: "CN",
+      lat: null,
+      lon: null,
+      emoji: "📍",
+      tagline: "Added by hand — no map pin.",
+      knownFor: [],
+      bestSeasons: [],
+      seasonNotes: {},
+      foods: [],
+      suggestedDays: [1, 2],
+      activities: [],
+    };
+    setOffMap((prev) => [...prev, place]);
+    setSelected((prev) => [...prev, id]);
   };
 
   /** Catalog picks need their full activity data fetched before planning. */
   const goToPlan = async () => {
-    const qids = selected.filter((id) => !DESTINATIONS.some((d) => d.id === id));
+    // Off-map picks are already complete objects — only catalog qids need the
+    // resolve call, so they are excluded from it and re-attached after.
+    const offMapIds = new Set(offMap.map((d) => d.id));
+    const qids = selected.filter(
+      (id) => !DESTINATIONS.some((d) => d.id === id) && !offMapIds.has(id)
+    );
     if (qids.length === 0) {
-      setExtraDestinations([]);
+      setExtraDestinations([...offMap]);
       setStep(2);
       return;
     }
@@ -89,7 +145,7 @@ export default function PlanPage() {
       const res = await fetch(`/api/destinations/resolve?ids=${qids.join(",")}`);
       if (!res.ok) throw new Error(`Resolve failed (${res.status})`);
       const json: { destinations: Destination[] } = await res.json();
-      setExtraDestinations(json.destinations);
+      setExtraDestinations([...json.destinations, ...offMap]);
       setStep(2);
     } catch {
       setResolveError("Couldn't load catalog destinations — try again.");
@@ -103,7 +159,7 @@ export default function PlanPage() {
     [selected, days, season, adults, kids, interests]
   );
 
-  const canNext = step === 0 ? selected.length > 0 : step === 1;
+  const canNext = canAdvance(step, { selectedCount: selected.length, days });
 
   const restart = () => {
     setStep(0);
@@ -112,13 +168,16 @@ export default function PlanPage() {
     setExtras({});
     setExtraDestinations([]);
     setResolveError(null);
+    setMonth(null);
+    setOffMap([]);
   };
 
   return (
-    <div className="min-h-screen pb-24">
+    /* pb-24 removed with the fixed footer — nothing overlays the content now. */
+    <div className="min-h-screen">
       <nav aria-label="Progress" className="mx-auto max-w-6xl px-4 pt-6 print:hidden">
         <ol className="flex items-center gap-1 sm:gap-2">
-          {STEPS.map((label, i) => {
+          {WIZARD_STEPS.map((label, i) => {
             const isDone = i < step;
             const isCurrent = i === step;
             return (
@@ -139,7 +198,7 @@ export default function PlanPage() {
                   <span className="font-mono text-xs">{isDone ? "✓" : i + 1}</span>
                   {label}
                 </button>
-                {i < STEPS.length - 1 && (
+                {i < WIZARD_STEPS.length - 1 && (
                   <span aria-hidden className="h-px w-6 bg-sky sm:w-10" />
                 )}
               </li>
@@ -149,20 +208,11 @@ export default function PlanPage() {
       </nav>
 
       <main className="mx-auto max-w-6xl px-4 pt-6">
+        {/*
+          Details first (spec §3.2.1): the feasibility counter on the next step
+          cannot say whether five cities fit until the trip has a day count.
+        */}
         {step === 0 && (
-          <DestinationStep
-            selected={selected}
-            visited={visited}
-            extras={extras}
-            onToggleSelect={toggleSelect}
-            onToggleVisited={toggleVisited}
-            onAddCatalog={addCatalog}
-            onRemoveCatalog={removeCatalog}
-            onReorder={setSelected}
-            onMonthPicked={(m) => setSeason(seasonOfMonth(m))}
-          />
-        )}
-        {step === 1 && (
           <DetailsStep
             season={season}
             onSeason={setSeason}
@@ -177,11 +227,44 @@ export default function PlanPage() {
             onToggleInterest={toggleInterest}
           />
         )}
+        {step === 1 && (
+          <DestinationStep
+            selected={selected}
+            visited={visited}
+            extras={extras}
+            days={days}
+            onToggleSelect={toggleSelect}
+            onToggleVisited={toggleVisited}
+            onAddCatalog={addCatalog}
+            onRemoveCatalog={removeCatalog}
+            onReorder={setSelected}
+            onAddOffMap={addOffMap}
+            offMap={offMap}
+            /*
+              Dragging the month slider now happens *after* the season control on
+              step 0, so it wins. That is deliberate: moving the slider is an
+              explicit act, and a user who sets it to January means January. The
+              month is kept too, for Task 20 to derive season server-side where
+              the hemisphere is known.
+            */
+            onMonthPicked={(m) => {
+              setMonth(m);
+              setSeason(seasonOfMonth(m));
+            }}
+          />
+        )}
         {step === 2 && <PlanStep input={tripInput} extraDestinations={extraDestinations} />}
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 border-t border-sky bg-paper/95 backdrop-blur print:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      {/*
+        C2: not `fixed`. The shell owns the bottom edge, and two pinned bottom
+        elements cannot coexist — the mobile bottom bar lands where this used to
+        sit. In normal flow it also stops covering the last row of a long
+        destination list, which the pinned version did at short viewport heights.
+        lib/contracts.test.ts scans for any reintroduction.
+      */}
+      <footer className="mx-auto mt-8 max-w-6xl border-t border-sky px-4 py-3 print:hidden">
+        <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => (step === 0 ? undefined : setStep(step - 1))}
@@ -192,10 +275,11 @@ export default function PlanPage() {
           </button>
           <p className="hidden text-sm text-ink-soft sm:block">
             {step === 0 &&
+              `${days} day${days > 1 ? "s" : ""} · ${adults + kids} traveller${adults + kids > 1 ? "s" : ""}`}
+            {step === 1 &&
               (selected.length === 0
                 ? "Select at least one destination to continue"
                 : `${selected.length} destination${selected.length > 1 ? "s" : ""} selected`)}
-            {step === 1 && `${days} day${days > 1 ? "s" : ""} · ${adults + kids} traveller${adults + kids > 1 ? "s" : ""}`}
             {step === 2 && "Print it or go back to tweak the trip"}
           </p>
           {step < 2 ? (

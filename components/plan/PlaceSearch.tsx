@@ -224,7 +224,13 @@ export function PlaceSearch({
               className="flex min-h-8 items-center gap-1 rounded-full bg-sky px-3 text-sm text-rail-deep"
             >
               {place.name}
-              {place.lat === null && (
+              {/*
+                Keyed on kind, not on lat === null. A catalog pick also arrives
+                without coordinates — CatalogHit carries none until goToPlan
+                resolves it — so testing for null coordinates marked real cities
+                as hand-typed.
+              */}
+              {place.kind === "off-map" && (
                 <span className="text-[10px] text-rail" title="Hand-typed — no map pin">
                   ○
                 </span>
