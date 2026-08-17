@@ -241,6 +241,9 @@ export function TripView({ tripId }: { tripId: string }) {
           todayIndex={todayIndex}
           onToggle={onToggleCheck}
           onPlanOp={planOp}
+          tripId={tripId}
+          payload={payload}
+          mutate={mutate}
         />
       )}
 
