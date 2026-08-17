@@ -26,6 +26,14 @@ export default function PlanPage() {
    * hemisphere trip gets the right answer.
    */
   const [month, setMonth] = useState<number | null>(null);
+  /**
+   * The country being planned. Lifted out of DestinationStep, where it was local
+   * state that never left the component — so the world picker's choice was
+   * discarded at the write boundary and TripInputSchema defaulted every trip to
+   * "CN". That silently reverted the season derivation to China's hemisphere and
+   * pinned the accent and hero to China. Found by review, not by a test.
+   */
+  const [country, setCountry] = useState("CN");
   const [days, setDays] = useState(5);
   const [adults, setAdults] = useState(2);
   const [kids, setKids] = useState(0);
@@ -155,8 +163,8 @@ export default function PlanPage() {
   };
 
   const tripInput = useMemo<TripInput>(
-    () => ({ destinationIds: selected, days, season, adults, kids, interests }),
-    [selected, days, season, adults, kids, interests]
+    () => ({ destinationIds: selected, days, season, adults, kids, interests, country }),
+    [selected, days, season, adults, kids, interests, country]
   );
 
   const canNext = canAdvance(step, { selectedCount: selected.length, days });
@@ -170,6 +178,7 @@ export default function PlanPage() {
     setResolveError(null);
     setMonth(null);
     setOffMap([]);
+    setCountry("CN");
   };
 
   return (
@@ -238,6 +247,8 @@ export default function PlanPage() {
             onAddCatalog={addCatalog}
             onRemoveCatalog={removeCatalog}
             onReorder={setSelected}
+            country={country}
+            onCountryChange={setCountry}
             onAddOffMap={addOffMap}
             offMap={offMap}
             /*

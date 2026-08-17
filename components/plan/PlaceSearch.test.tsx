@@ -188,3 +188,60 @@ describe("PlaceSearch keyboard path", () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 });
+
+describe("PlaceSearch country scoping", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ available: true, results: [{ qid: "Q16666", name: "Nanjing", chineseName: "南京", province: "Jiangsu" }] }),
+      })
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  test("queries the catalog while planning China", async () => {
+    render(
+      <PlaceSearch
+        curated={[]}
+        coordsFor={() => null}
+        selected={[]}
+        country="CN"
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(globalThis.fetch).toHaveBeenCalled();
+  });
+
+  test("does not offer Chinese cities while planning another country", async () => {
+    // Found by review: the catalog is China-only and carries no country, so
+    // querying it under a Japan scope offered Nanjing for a Japan trip — against
+    // the scoping this component and CountryMap both claim in comments.
+    render(
+      <PlaceSearch
+        curated={[]}
+        coordsFor={() => null}
+        selected={[]}
+        country="JP"
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    // The off-map row is still there, so a place in Japan remains reachable.
+    expect(screen.getByRole("option")).toHaveTextContent("as its own place");
+  });
+});
