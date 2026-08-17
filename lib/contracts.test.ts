@@ -148,7 +148,13 @@ describe("C4 — one module fetches trip data", () => {
     const view = FILES.find((f) => f.path === "components/TripView.tsx");
     expect(view).toBeDefined();
     expect(view!.text).toContain(`mutate(\`${TRIP_PATH}`);
-    expect(view!.text.includes("fetch(")).toBe(false);
+    // `callsFetch` on `.code`, matching `fetchesTripData` above — NOT
+    // `text.includes("fetch(")`. That looser form is the false positive this
+    // block documents 19 lines up: it matches `refetch(`, which the accessor
+    // prescribes as the failure path, so it would fail CI the moment TripView
+    // adds the retry it is entitled to. It also ran on raw text, so a comment
+    // saying "fetch()" failed it too. One contract, one definition.
+    expect(callsFetch(view!.code)).toBe(false);
   });
 
   it("does not mistake the accessor's own refetch for a fetch", () => {
