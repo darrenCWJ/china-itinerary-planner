@@ -33,7 +33,7 @@ export default async function BriefingPage({ params }: Props) {
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <BriefingView briefing={briefing} />
-      <footer className="mt-12 border-t border-sky pt-4 text-xs text-ink-soft">
+      <footer className="mt-12 border-t border-[var(--line-1)] pt-4 text-xs text-[var(--ink-2)]">
         A read-only trip briefing. Ask whoever shared this link if you need the booking details.
       </footer>
     </main>

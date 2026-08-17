@@ -71,28 +71,28 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
       {next && (
         <Link
           href={`/trip/${next.id}`}
-          className="group mt-3 block overflow-hidden rounded-2xl border-2 border-seal bg-paper shadow-sm transition-shadow hover:shadow-md"
+          className="group mt-3 block overflow-hidden rounded-2xl border-2 border-seal bg-[var(--paper)] shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="flex items-stretch">
             <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-seal py-5 text-white">
               <span aria-hidden className="font-kai text-2xl">游</span>
               <span className="font-mono text-[9px] uppercase tracking-widest">Next</span>
             </div>
-            <div className="min-w-0 flex-1 border-l-2 border-dashed border-sky px-4 py-3">
+            <div className="min-w-0 flex-1 border-l-2 border-dashed border-[var(--line-1)] px-4 py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className="font-display text-lg font-bold [text-wrap:balance] group-hover:text-rail-deep">
+                <p className="font-display text-lg font-bold [text-wrap:balance] group-hover:text-[var(--accent-ink)]">
                   {next.name}
                 </p>
                 <p className="font-mono text-xs font-semibold tabular-nums text-seal">
                   {phaseLabel(tripPhase(next, today), next.days)}
                 </p>
               </div>
-              <p className="mt-0.5 truncate font-mono text-sm uppercase tracking-wide text-ink-soft">
+              <p className="mt-0.5 truncate font-mono text-sm uppercase tracking-wide text-[var(--ink-2)]">
                 {next.destinations.join(" → ")}
               </p>
-              <p className="mt-1.5 text-xs tabular-nums text-ink-soft">
+              <p className="mt-1.5 text-xs tabular-nums text-[var(--ink-2)]">
                 {dateRange(next) ?? `${next.days} days — set a start date on the trip page`}
-                <span className="ml-2 font-semibold text-rail">Open trip →</span>
+                <span className="ml-2 font-semibold text-[var(--accent-ink)]">Open trip →</span>
               </p>
             </div>
           </div>
@@ -106,11 +106,11 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
             return (
               <li
                 key={t.id}
-                className="flex items-center gap-2 rounded-lg border border-sky bg-paper px-3 py-2"
+                className="flex items-center gap-2 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-2"
               >
-                <Link href={`/trip/${t.id}`} className="min-w-0 flex-1 hover:text-rail-deep">
+                <Link href={`/trip/${t.id}`} className="min-w-0 flex-1 hover:text-[var(--accent-ink)]">
                   <p className="truncate text-sm font-semibold">{t.name}</p>
-                  <p className="truncate text-[11px] tabular-nums text-ink-soft">
+                  <p className="truncate text-[11px] tabular-nums text-[var(--ink-2)]">
                     {phaseLabel(phase, t.days)}
                     {dateRange(t) ? ` · ${dateRange(t)}` : ""}
                   </p>
@@ -137,11 +137,11 @@ function EmptyTripsCard({
   ctaLabel?: string;
 }) {
   return (
-    <div className="mt-8 rounded-2xl border-2 border-dashed border-sky bg-paper px-6 py-10 text-center">
+    <div className="mt-8 rounded-2xl border-2 border-dashed border-[var(--line-1)] bg-[var(--paper)] px-6 py-10 text-center">
       <p className="font-display text-xl font-bold [text-wrap:balance]">{heading}</p>
-      <p className="mt-1 text-sm [text-wrap:pretty] text-ink-soft">{body}</p>
+      <p className="mt-1 text-sm [text-wrap:pretty] text-[var(--ink-2)]">{body}</p>
       <Link href={ctaHref}
-        className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-rail px-5 text-sm font-semibold text-white transition-colors hover:bg-rail-deep">
+        className="mt-4 inline-flex min-h-[var(--tap-min)] items-center rounded-lg bg-[var(--accent-ink)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
         {ctaLabel}
       </Link>
     </div>
@@ -229,12 +229,12 @@ export function TripsDashboard() {
   if (status === "error") {
     return (
       <section aria-label="Your trips" className="mb-8">
-        <p role="status" className="text-sm text-ink-soft">
+        <p role="status" className="text-sm text-[var(--ink-2)]">
           Couldn&apos;t load your trips —{" "}
           <button
             type="button"
             onClick={() => setRetryToken((k) => k + 1)}
-            className="font-semibold text-rail hover:underline"
+            className="font-semibold text-[var(--accent-ink)] hover:underline"
           >
             retry
           </button>

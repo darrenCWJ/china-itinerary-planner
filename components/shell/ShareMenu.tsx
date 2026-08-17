@@ -101,7 +101,7 @@ export function ShareMenu() {
           ref={panelRef}
           role="dialog"
           aria-label="Share this trip"
-          className="absolute right-0 z-20 mt-1 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-sky bg-paper p-3 shadow-lg"
+          className="absolute right-0 z-20 mt-1 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-3 shadow-lg"
         >
           {joinCode && (
             <section>
@@ -109,11 +109,11 @@ export function ShareMenu() {
               <button
                 type="button"
                 onClick={() => void copyInvite()}
-                className="mt-1 flex min-h-[var(--tap-min)] w-full items-center justify-center rounded-lg border border-dashed border-rail/50 px-3 text-sm font-semibold text-rail transition-colors hover:bg-sky"
+                className="mt-1 flex min-h-[var(--tap-min)] w-full items-center justify-center rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-3 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
               >
                 {copied ? "✓ Link copied" : "🔗 Copy invite link"}
               </button>
-              <p className="mt-1 text-xs text-ink-soft">
+              <p className="mt-1 text-xs text-[var(--ink-2)]">
                 Or have them enter code{" "}
                 <span className="font-mono font-semibold tracking-widest text-seal">
                   {joinCode}
@@ -124,12 +124,12 @@ export function ShareMenu() {
           )}
 
           {myName !== undefined && (
-            <section className="mt-3 border-t border-sky pt-2">
+            <section className="mt-3 border-t border-[var(--line-1)] pt-2">
               <BriefingShare tripId={trip.tripId} memberName={myName} />
             </section>
           )}
 
-          <section className="mt-3 border-t border-sky pt-2">
+          <section className="mt-3 border-t border-[var(--line-1)] pt-2">
             <button
               type="button"
               aria-expanded={showBriefing}

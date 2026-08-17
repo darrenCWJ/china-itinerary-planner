@@ -4,18 +4,18 @@ import type { GuestTripPayload } from "@/lib/tripShared";
 export function GuestTripView({ view }: { view: GuestTripPayload }) {
   return (
     <div className="mt-5 space-y-5">
-      <p className="rounded-lg border border-dashed border-rail/40 bg-paper px-4 py-2 text-xs text-ink-soft">
+      <p className="rounded-lg border border-dashed border-[var(--accent-ink)]/40 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
         You&apos;re viewing as a guest — sign in and join to tick things off and see the rest.
       </p>
       {view.planDays.map((day) => (
-        <div key={day.day} className="rounded-xl border border-sky bg-paper p-4">
-          <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">
+        <div key={day.day} className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
+          <p className="font-mono text-xs uppercase tracking-widest text-[var(--ink-2)]">
             Day {String(day.day).padStart(2, "0")} · {day.destinationName}
           </p>
           <ul className="mt-2 space-y-1.5 text-sm">
             {day.items.map((item) => (
               <li key={item.id} className="flex gap-2">
-                <span className="font-mono text-[10px] uppercase text-ink-soft">{item.slot}</span>
+                <span className="font-mono text-[10px] uppercase text-[var(--ink-2)]">{item.slot}</span>
                 <span>{item.title}</span>
               </li>
             ))}
@@ -24,11 +24,11 @@ export function GuestTripView({ view }: { view: GuestTripPayload }) {
       ))}
       <div className="grid gap-4 sm:grid-cols-2">
         {view.packing.map((group) => (
-          <div key={group.title} className="rounded-xl border border-sky bg-paper p-4">
+          <div key={group.title} className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
             <p className="font-semibold">
               <span aria-hidden>{group.emoji}</span> {group.title}
             </p>
-            <ul className="mt-2 space-y-1 text-sm text-ink-soft">
+            <ul className="mt-2 space-y-1 text-sm text-[var(--ink-2)]">
               {group.items.map((item) => (
                 <li key={item}>{item}</li>
               ))}

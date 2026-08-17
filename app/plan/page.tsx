@@ -187,19 +187,19 @@ export default function PlanPage() {
                   onClick={() => isDone && setStep(i)}
                   disabled={!isDone && !isCurrent}
                   aria-current={isCurrent ? "step" : undefined}
-                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail sm:gap-2 sm:px-3.5 ${
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)] sm:gap-2 sm:px-3.5 ${
                     isCurrent
-                      ? "bg-rail text-white"
+                      ? "bg-[var(--accent-ink)] text-white"
                       : isDone
-                        ? "bg-sky text-rail-deep hover:bg-sky/70"
-                        : "bg-paper text-ink-soft"
+                        ? "bg-[var(--line-1)] text-[var(--accent-ink)] hover:bg-[var(--line-1)]/70"
+                        : "bg-[var(--paper)] text-[var(--ink-2)]"
                   }`}
                 >
                   <span className="font-mono text-xs">{isDone ? "✓" : i + 1}</span>
                   {label}
                 </button>
                 {i < WIZARD_STEPS.length - 1 && (
-                  <span aria-hidden className="h-px w-6 bg-sky sm:w-10" />
+                  <span aria-hidden className="h-px w-6 bg-[var(--line-1)] sm:w-10" />
                 )}
               </li>
             );
@@ -265,17 +265,17 @@ export default function PlanPage() {
         destination list, which the pinned version did at short viewport heights.
         lib/contracts.test.ts scans for any reintroduction.
       */}
-      <footer className="mx-auto mt-8 max-w-6xl border-t border-sky px-4 py-3 print:hidden">
+      <footer className="mx-auto mt-8 max-w-6xl border-t border-[var(--line-1)] px-4 py-3 print:hidden">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => (step === 0 ? undefined : setStep(step - 1))}
             disabled={step === 0}
-            className="rounded-lg border border-sky px-4 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-rail hover:text-rail disabled:opacity-40 disabled:hover:border-sky disabled:hover:text-ink-soft"
+            className="rounded-lg border border-[var(--line-1)] px-4 py-2 text-sm font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)] disabled:opacity-40 disabled:hover:border-[var(--line-1)] disabled:hover:text-[var(--ink-2)]"
           >
             ← Back
           </button>
-          <p className="hidden text-sm text-ink-soft sm:block">
+          <p className="hidden text-sm text-[var(--ink-2)] sm:block">
             {step === 0 &&
               `${days} day${days > 1 ? "s" : ""} · ${adults + kids} traveller${adults + kids > 1 ? "s" : ""}`}
             {step === 1 &&
@@ -295,7 +295,7 @@ export default function PlanPage() {
                   else setStep(step + 1);
                 }}
                 disabled={!canNext || resolving}
-                className="rounded-lg bg-rail px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-40 disabled:hover:bg-rail"
+                className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40 disabled:hover:bg-[var(--accent-ink)]"
               >
                 {step === 1 ? (resolving ? "Loading…" : "Build my plan →") : "Next →"}
               </button>

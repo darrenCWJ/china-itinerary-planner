@@ -180,7 +180,7 @@ export function PlaceSearch({
         }}
         onKeyDown={onKeyDown}
         placeholder="Search a city, or type any place"
-        className="mt-1 min-h-[var(--tap-min)] w-full rounded-lg border border-sky bg-paper px-3 text-sm"
+        className="mt-1 min-h-[var(--tap-min)] w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 text-sm"
       />
 
       {results.length > 0 && (
@@ -192,7 +192,7 @@ export function PlaceSearch({
               role="option"
               aria-selected={index === activeIndex}
               className={`flex min-h-[var(--tap-min)] cursor-pointer items-center gap-2 rounded-lg px-2 text-sm ${
-                index === activeIndex ? "bg-sky" : ""
+                index === activeIndex ? "bg-[var(--line-1)]" : ""
               }`}
               // Mouse and keyboard land in the same place() so the two paths
               // cannot drift apart.
@@ -206,15 +206,15 @@ export function PlaceSearch({
               </span>
               {place.localName && <span className="font-kai text-xs text-seal">{place.localName}</span>}
               {place.province && (
-                <span className="text-xs text-ink-soft">{place.province}</span>
+                <span className="text-xs text-[var(--ink-2)]">{place.province}</span>
               )}
               {place.kind === "off-map" && (
-                <span className="ml-auto shrink-0 rounded bg-mist px-1.5 py-0.5 text-[10px] text-ink-soft">
+                <span className="ml-auto shrink-0 rounded bg-[var(--surf-1)] px-1.5 py-0.5 text-[10px] text-[var(--ink-2)]">
                   no map pin
                 </span>
               )}
               {place.isSelected && (
-                <span className="ml-auto shrink-0 text-xs font-semibold text-rail">added</span>
+                <span className="ml-auto shrink-0 text-xs font-semibold text-[var(--accent-ink)]">added</span>
               )}
             </li>
           ))}
@@ -226,7 +226,7 @@ export function PlaceSearch({
           {selected.map((place) => (
             <li
               key={place.id}
-              className="flex min-h-8 items-center gap-1 rounded-full bg-sky px-3 text-sm text-rail-deep"
+              className="flex min-h-8 items-center gap-1 rounded-full bg-[var(--line-1)] px-3 text-sm text-[var(--accent-ink)]"
             >
               {place.name}
               {/*
@@ -236,7 +236,7 @@ export function PlaceSearch({
                 as hand-typed.
               */}
               {place.kind === "off-map" && (
-                <span className="text-[10px] text-rail" title="Hand-typed — no map pin">
+                <span className="text-[10px] text-[var(--accent-ink)]" title="Hand-typed — no map pin">
                   ○
                 </span>
               )}

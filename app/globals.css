@@ -89,7 +89,15 @@
   font-family: "Kaiti SC", "STKaiti", "KaiTi", "DFKai-SB", "SimSun", serif;
 }
 
-/* Vermilion chop mark, like a visa stamp in a passport. */
+/*
+ * Vermilion chop mark, like a visa stamp in a passport.
+ *
+ * Re-pointed at the PR1 tokens by Task 33 wherever a token exists — the paper
+ * wash is now `--paper`, so the stamp follows the theme instead of the retiring
+ * palette. `--color-seal` stays: the brand vermilion is the one colour in the
+ * `@theme` block with no token counterpart, and inventing one here would put a
+ * second definition of the brand in the tree. PR3's removal task owns it.
+ */
 .stamp {
   display: inline-flex;
   align-items: center;
@@ -105,7 +113,7 @@
   transform: rotate(-8deg);
   opacity: 0.9;
   pointer-events: none;
-  background: color-mix(in srgb, var(--color-paper) 82%, transparent);
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
 }
 
 .seal-round {

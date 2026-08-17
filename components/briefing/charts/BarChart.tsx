@@ -12,8 +12,8 @@ export function BarChart({ title, slices, unit }: Props) {
   const max = Math.max(...slices.map((s) => s.value), 1);
 
   return (
-    <figure className="rounded-xl border border-sky bg-paper p-4">
-      <figcaption className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+    <figure className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
+      <figcaption className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-2)]">
         {title}
       </figcaption>
       <ul className="mt-3 space-y-2">
@@ -22,16 +22,16 @@ export function BarChart({ title, slices, unit }: Props) {
             key={s.label}
             className="grid grid-cols-[6rem_1fr_2rem] items-center gap-2 text-sm sm:grid-cols-[9rem_1fr_2rem]"
           >
-            <span className="truncate text-ink-soft" title={s.label}>
+            <span className="truncate text-[var(--ink-2)]" title={s.label}>
               {s.label}
             </span>
-            <span className="h-2.5 rounded-full bg-sky" aria-hidden="true">
+            <span className="h-2.5 rounded-full bg-[var(--line-1)]" aria-hidden="true">
               <span
-                className="block h-full rounded-full bg-rail"
+                className="block h-full rounded-full bg-[var(--accent-ink)]"
                 style={{ width: `${(s.value / max) * 100}%` }}
               />
             </span>
-            <span className="text-right tabular-nums font-medium text-ink">{s.value}</span>
+            <span className="text-right tabular-nums font-medium text-[var(--ink-0)]">{s.value}</span>
           </li>
         ))}
       </ul>

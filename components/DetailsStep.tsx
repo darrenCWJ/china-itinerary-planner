@@ -36,7 +36,7 @@ export function DetailsStep({
     <section className="space-y-8">
       <div>
         <h2 className="font-display text-2xl font-bold">Shape the trip</h2>
-        <p className="mt-1 text-sm text-ink-soft">
+        <p className="mt-1 text-sm text-[var(--ink-2)]">
           Season and interests steer which activities make the schedule.
         </p>
       </div>
@@ -50,15 +50,15 @@ export function DetailsStep({
               type="button"
               onClick={() => onSeason(s.id)}
               aria-pressed={season === s.id}
-              className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail ${
+              className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)] ${
                 season === s.id
-                  ? "border-rail bg-sky/50 shadow-sm"
-                  : "border-sky bg-paper hover:border-rail/50"
+                  ? "border-[var(--accent-ink)] bg-[var(--line-1)]/50 shadow-sm"
+                  : "border-[var(--line-1)] bg-[var(--paper)] hover:border-[var(--accent-ink)]/50"
               }`}
             >
               <span aria-hidden className="text-2xl">{s.emoji}</span>
               <p className="mt-1 font-semibold">{s.label}</p>
-              <p className="font-mono text-xs text-ink-soft">{s.months}</p>
+              <p className="font-mono text-xs text-[var(--ink-2)]">{s.months}</p>
             </button>
           ))}
         </div>
@@ -74,13 +74,13 @@ export function DetailsStep({
               onClick={() => onDays(d)}
               aria-pressed={days === d}
               className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                days === d ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+                days === d ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}
             >
               {d} days
             </button>
           ))}
-          <label className="ml-2 flex items-center gap-2 text-sm text-ink-soft">
+          <label className="ml-2 flex items-center gap-2 text-sm text-[var(--ink-2)]">
             Custom
             <input
               type="number"
@@ -88,7 +88,7 @@ export function DetailsStep({
               max={maxDays}
               value={days}
               onChange={(e) => onDays(Number(e.target.value) || 1)}
-              className="w-20 rounded-lg border border-sky bg-paper px-3 py-1.5 font-mono text-ink focus-visible:outline-2 focus-visible:outline-rail"
+              className="w-20 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 font-mono text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
             />
           </label>
         </div>
@@ -106,7 +106,7 @@ export function DetailsStep({
         <legend className="font-display text-base font-semibold">
           What do you love doing?
         </legend>
-        <p className="mt-1 text-xs text-ink-soft">
+        <p className="mt-1 text-xs text-[var(--ink-2)]">
           Optional — leave everything off and we&apos;ll build around the must-sees.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -118,10 +118,10 @@ export function DetailsStep({
                 type="button"
                 onClick={() => onToggleInterest(i.id)}
                 aria-pressed={on}
-                className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail ${
+                className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)] ${
                   on
-                    ? "border-rail bg-rail text-white"
-                    : "border-sky bg-paper text-ink hover:border-rail/50"
+                    ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-white"
+                    : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-0)] hover:border-[var(--accent-ink)]/50"
                 }`}
               >
                 <span aria-hidden>{i.emoji}</span>
@@ -147,7 +147,7 @@ function Counter({
   onChange: (n: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-sky bg-paper px-4 py-2.5">
+    <div className="flex items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] px-4 py-2.5">
       <span className="text-sm font-medium">{label}</span>
       <div className="flex items-center gap-2">
         <button
@@ -155,7 +155,7 @@ function Counter({
           onClick={() => onChange(value - 1)}
           disabled={value <= min}
           aria-label={`Fewer ${label.toLowerCase()}`}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-sky font-mono text-rail-deep transition-colors hover:bg-rail hover:text-white disabled:opacity-40 disabled:hover:bg-sky disabled:hover:text-rail-deep"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-white disabled:opacity-40 disabled:hover:bg-[var(--line-1)] disabled:hover:text-[var(--accent-ink)]"
         >
           −
         </button>
@@ -164,7 +164,7 @@ function Counter({
           type="button"
           onClick={() => onChange(value + 1)}
           aria-label={`More ${label.toLowerCase()}`}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-sky font-mono text-rail-deep transition-colors hover:bg-rail hover:text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-white"
         >
           +
         </button>

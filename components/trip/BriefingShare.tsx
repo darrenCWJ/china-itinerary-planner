@@ -60,7 +60,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
 
   if (!memberName) {
     return (
-      <p className="rounded-xl border border-dashed border-rail/40 bg-paper px-4 py-3 text-sm text-ink-soft">
+      <p className="rounded-xl border border-dashed border-[var(--accent-ink)]/40 bg-[var(--paper)] px-4 py-3 text-sm text-[var(--ink-2)]">
         Join the trip to share this briefing.
       </p>
     );
@@ -69,17 +69,17 @@ export function BriefingShare({ tripId, memberName }: Props) {
   const url = state.code ? `${window.location.origin}/b/${state.code}` : null;
 
   return (
-    <div className="rounded-xl border border-sky bg-mist p-4 print:hidden">
+    <div className="rounded-xl border border-[var(--line-1)] bg-[var(--surf-1)] p-4 print:hidden">
       {!state.code ? (
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-ink-soft">
+          <p className="text-sm text-[var(--ink-2)]">
             Share a read-only copy with people who are not joining the trip.
           </p>
           <button
             type="button"
             disabled={busy}
             onClick={() => send(true, false)}
-            className="rounded-lg bg-rail px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-50"
+            className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50"
           >
             {busy ? "Creating…" : "Create share link"}
           </button>
@@ -87,7 +87,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <code className="flex-1 truncate rounded-lg bg-paper px-3 py-2 font-mono text-xs text-ink">
+            <code className="flex-1 truncate rounded-lg bg-[var(--paper)] px-3 py-2 font-mono text-xs text-[var(--ink-0)]">
               {url}
             </code>
             <button
@@ -102,12 +102,12 @@ export function BriefingShare({ tripId, memberName }: Props) {
                   () => setError("Copy failed — select the link and copy it manually")
                 );
               }}
-              className="rounded-lg bg-rail px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-rail-deep"
+              className="rounded-lg bg-[var(--accent-ink)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
             >
               {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <label className="flex items-center gap-2 text-sm text-ink-soft">
+          <label className="flex items-center gap-2 text-sm text-[var(--ink-2)]">
             <input
               type="checkbox"
               checked={state.includeBookings}
@@ -116,7 +116,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
             />
             Include confirmation numbers, prices and ticket notes
           </label>
-          <p className="text-xs text-ink-soft">
+          <p className="text-xs text-[var(--ink-2)]">
             Names and tick-offs are never shown on the shared link.
           </p>
           <button

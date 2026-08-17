@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CountryHero } from "@/components/shell/CountryHero";
 import { useSetShellTrip } from "@/components/shell/ShellTripContext";
 import type { SettlementDraft } from "@/components/trip/BalancesCard";
 import type { ExpenseDraft } from "@/components/trip/ExpenseForm";
@@ -20,7 +21,7 @@ import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip } from "@/lib/myTrips";
 import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
-import type { GuestTripPayload } from "@/lib/tripShared";
+import { tripCountry, type GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
 
 export function TripView({ tripId }: { tripId: string }) {
@@ -113,7 +114,7 @@ export function TripView({ tripId }: { tripId: string }) {
   if (loadState === "loading") {
     return (
       <PageMain>
-        <p className="mt-16 text-center text-sm text-ink-soft">Loading trip…</p>
+        <p className="mt-16 text-center text-sm text-[var(--ink-2)]">Loading trip…</p>
       </PageMain>
     );
   }
@@ -143,15 +144,15 @@ export function TripView({ tripId }: { tripId: string }) {
           </button>
         )}
         {!sessionPending && !session && (
-          <p className="mt-6 text-sm text-ink-soft">
-            <Link href={`/login?next=/trip/${tripId}`} className="text-rail hover:underline">
+          <p className="mt-6 text-sm text-[var(--ink-2)]">
+            <Link href={`/login?next=/trip/${tripId}`} className="text-[var(--accent-ink)] hover:underline">
               Sign in
             </Link>{" "}
             to join and edit this trip.
           </p>
         )}
         {legacyName && (
-          <p className="mt-2 rounded-lg border border-dashed border-seal/50 bg-paper px-4 py-2 text-xs text-ink-soft">
+          <p className="mt-2 rounded-lg border border-dashed border-seal/50 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
             This device used to edit as <b>{legacyName}</b> — create an account and claim
             that name to keep editing.
           </p>
@@ -164,12 +165,12 @@ export function TripView({ tripId }: { tripId: string }) {
   if (loadState === "not-found" || !payload) {
     return (
       <PageMain>
-        <div className="mx-auto mt-16 max-w-md rounded-xl border border-sky bg-paper p-8 text-center">
+        <div className="mx-auto mt-16 max-w-md rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-8 text-center">
           <p className="font-display text-xl font-bold">Trip not found</p>
-          <p className="mt-2 text-sm text-ink-soft">
+          <p className="mt-2 text-sm text-[var(--ink-2)]">
             This trip may have been created on another machine or the link is wrong.
           </p>
-          <Link href="/" className="mt-4 inline-block rounded-lg bg-rail px-5 py-2 text-sm font-semibold text-white">
+          <Link href="/" className="mt-4 inline-block rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white">
             Plan a new trip
           </Link>
         </div>
@@ -188,14 +189,22 @@ export function TripView({ tripId }: { tripId: string }) {
         Slimmer than before: the crew count, invite button and join-code strip
         moved to the header's crew and share menus, so the hero states what the
         trip *is* and stops carrying actions.
+
+        The accent band survives as the hero's ground, which is what a photograph
+        falls back to (see CountryHero) — it is not decoration to be dropped.
+        `eager`: this is the first thing on the page, so it is the LCP.
       */}
-      <div className="relative overflow-hidden rounded-2xl bg-rail-deep p-6 text-white sm:p-8">
+      <CountryHero
+        countryCode={tripCountry(data)}
+        eager
+        className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8"
+      >
         <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
           同行
         </span>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-sky">Shared trip</p>
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Shared trip</p>
         <h1 className="mt-2 font-display text-3xl font-bold">{data.tripName}</h1>
-        <p className="mt-3 font-mono text-sm tracking-wider text-sky">
+        <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
           {data.destinationNames.map((n) => n.toUpperCase()).join(" → ")}
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
@@ -207,7 +216,7 @@ export function TripView({ tripId }: { tripId: string }) {
             <span className="rounded-full bg-white/15 px-3 py-1">🚩 from {data.startDate}</span>
           )}
         </div>
-      </div>
+      </CountryHero>
 
       {/*
         Below md only: the shell's rail is the desktop nav, and the mobile bottom
@@ -223,7 +232,7 @@ export function TripView({ tripId }: { tripId: string }) {
             aria-pressed={tab === item.id}
             aria-label={item.ariaLabel}
             className={`min-h-[var(--tap-min)] rounded-full px-4 text-sm font-medium transition-colors ${
-              tab === item.id ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+              tab === item.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
             }`}
           >
             {item.label}
@@ -306,17 +315,25 @@ function PageMain({ children }: { children: React.ReactNode }) {
   return <main className="mx-auto max-w-4xl px-4 pb-16 pt-6">{children}</main>;
 }
 
-/** Trimmed header for join-code guests: no invite chrome, no join code. */
+/**
+ * Trimmed header for join-code guests: no invite chrome, no join code.
+ *
+ * No `CountryHero` either, and not by oversight: `GuestTripPayload` carries no
+ * country, so the only country this could name is a guessed one. Defaulting to
+ * CN would put the Great Wall behind a Japan trip, which is worse than a plain
+ * band. Adding the field to the guest payload is a server change and outside
+ * this task's file set.
+ */
 function GuestHeader({ view }: { view: GuestTripPayload }) {
   const seasonMeta = SEASONS.find((s) => s.id === view.season);
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-rail-deep p-6 text-white sm:p-8">
+    <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8">
       <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
         同行
       </span>
-      <p className="font-mono text-xs uppercase tracking-[0.3em] text-sky">Shared trip</p>
+      <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Shared trip</p>
       <h1 className="mt-2 font-display text-3xl font-bold">{view.tripName}</h1>
-      <p className="mt-3 font-mono text-sm tracking-wider text-sky">
+      <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
         {view.destinationNames.map((n) => n.toUpperCase()).join(" → ")}
       </p>
       <div className="mt-4 flex flex-wrap gap-2 text-sm">

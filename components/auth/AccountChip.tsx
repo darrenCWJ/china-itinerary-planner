@@ -43,7 +43,7 @@ export function AccountChip() {
   if (!session) {
     return (
       <Link href={`/login${nextSuffix}`}
-        className="flex min-h-10 items-center rounded-lg border border-sky bg-paper px-3 text-sm font-medium text-rail transition-colors hover:bg-sky">
+        className="flex min-h-10 items-center rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 text-sm font-medium text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]">
         Sign in
       </Link>
     );
@@ -55,22 +55,22 @@ export function AccountChip() {
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Account menu for ${session.user.name}`}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-rail font-semibold text-white">
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-ink)] font-semibold text-white">
         {initial}
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-sky bg-paper p-1.5 text-sm shadow-lg">
-          <p className="truncate px-2.5 py-1.5 text-xs text-ink-soft">{session.user.email}</p>
-          <Link href="/" role="menuitem" className="flex min-h-10 items-center rounded-lg px-2.5 transition-colors hover:bg-mist"
+        <div role="menu" className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-1.5 text-sm shadow-lg">
+          <p className="truncate px-2.5 py-1.5 text-xs text-[var(--ink-2)]">{session.user.email}</p>
+          <Link href="/" role="menuitem" className="flex min-h-10 items-center rounded-lg px-2.5 transition-colors hover:bg-[var(--surf-1)]"
             onClick={() => setOpen(false)}>
             My trips
           </Link>
-          <Link href="/account" role="menuitem" className="flex min-h-10 items-center rounded-lg px-2.5 transition-colors hover:bg-mist"
+          <Link href="/account" role="menuitem" className="flex min-h-10 items-center rounded-lg px-2.5 transition-colors hover:bg-[var(--surf-1)]"
             onClick={() => setOpen(false)}>
             Account
           </Link>
           <button type="button" role="menuitem" disabled={signingOut}
-            className="flex min-h-10 w-full items-center rounded-lg px-2.5 text-left text-seal transition-colors hover:bg-mist disabled:opacity-50"
+            className="flex min-h-10 w-full items-center rounded-lg px-2.5 text-left text-seal transition-colors hover:bg-[var(--surf-1)] disabled:opacity-50"
             onClick={() => {
               setSigningOut(true);
               void authClient.signOut().then(() => {

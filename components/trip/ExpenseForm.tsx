@@ -92,29 +92,29 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
   };
 
   const inputCls =
-    "mt-1 block w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail";
+    "mt-1 block w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]";
 
   return (
-    <div className="rounded-xl border border-sky bg-paper p-4">
+    <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           What was it?
           <input type="text" value={title} maxLength={80} className={inputCls}
             onChange={(e) => setTitle(e.target.value)} placeholder="Hotpot dinner" />
         </label>
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           Date
           <input type="date" value={date} className={inputCls}
             onChange={(e) => setDate(e.target.value)} />
         </label>
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           Amount
           <div className="mt-1 flex gap-2">
             <input type="text" inputMode="decimal" value={amount} placeholder="128.50"
-              className="block w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
+              className="block w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
               onChange={(e) => setAmount(e.target.value)} />
             <select value={currencyPick} aria-label="Currency"
-              className="rounded-lg border border-sky bg-paper px-2 py-1.5 text-sm text-ink"
+              className="rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 text-sm text-[var(--ink-0)]"
               onChange={(e) => setCurrencyPick(e.target.value)}>
               {QUICK_CURRENCIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -124,12 +124,12 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
             {currencyPick === "other" && (
               <input type="text" value={customCurrency} maxLength={3} placeholder="USD"
                 aria-label="Custom currency code"
-                className="w-20 rounded-lg border border-sky bg-mist px-2 py-2 font-mono text-sm uppercase text-ink"
+                className="w-20 rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-2 py-2 font-mono text-sm uppercase text-[var(--ink-0)]"
                 onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())} />
             )}
           </div>
         </label>
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           Paid by
           <select value={paidBy} className={inputCls} onChange={(e) => setPaidBy(e.target.value)}>
             {members.map((m) => (
@@ -140,13 +140,13 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
       </div>
 
       <div className="mt-3">
-        <p className="text-xs font-medium text-ink-soft">Category</p>
+        <p className="text-xs font-medium text-[var(--ink-2)]">Category</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {CATEGORIES.map((c) => (
             <button key={c.id} type="button" onClick={() => setCategory(c.id)}
               aria-pressed={category === c.id}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                category === c.id ? "bg-rail text-white" : "bg-mist text-ink-soft hover:bg-sky"
+                category === c.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}>
               {c.emoji} {c.label}
             </button>
@@ -155,13 +155,13 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
       </div>
 
       <div className="mt-3">
-        <p className="text-xs font-medium text-ink-soft">Split among</p>
+        <p className="text-xs font-medium text-[var(--ink-2)]">Split among</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {members.map((m) => (
             <button key={m} type="button" onClick={() => toggleSplit(m)}
               aria-pressed={splitAmong.includes(m)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                splitAmong.includes(m) ? "bg-rail text-white" : "bg-mist text-ink-soft hover:bg-sky"
+                splitAmong.includes(m) ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}>
               {m}
             </button>
@@ -169,7 +169,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
         </div>
       </div>
 
-      <label className="mt-3 block text-xs font-medium text-ink-soft">
+      <label className="mt-3 block text-xs font-medium text-[var(--ink-2)]">
         Notes (optional)
         <input type="text" value={notes} maxLength={300} className={inputCls}
           onChange={(e) => setNotes(e.target.value)} />
@@ -177,12 +177,12 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
 
       <div className="mt-4 flex items-center gap-3">
         <button type="button" onClick={() => void submit()} disabled={saving}
-          className="rounded-lg bg-rail px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
           {saving ? "Saving…" : submitLabel}
         </button>
         {onCancel && (
           <button type="button" onClick={onCancel}
-            className="text-sm text-ink-soft hover:text-ink">
+            className="text-sm text-[var(--ink-2)] hover:text-[var(--ink-0)]">
             Cancel
           </button>
         )}
