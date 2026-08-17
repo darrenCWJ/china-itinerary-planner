@@ -30,6 +30,12 @@ export interface TripPayloadAccessor {
   payload: TripPayload | null;
   guestView: GuestTripPayload | null;
   loadState: TripLoadState;
+  /**
+   * Increments on every forced apply. A consumer keeping its own copy of the
+   * plan watches this alongside `payload`: a forced reconciliation often
+   * carries the same version, so `payload` alone cannot reveal it.
+   */
+  forcedAt: number;
   /** Re-read the trip. `force` applies the response even if it is not newer. */
   refetch(force?: boolean): Promise<void>;
   /** POST/PATCH/DELETE returning a fresh TripPayload; error string for forms, null on success. */
@@ -62,6 +68,17 @@ export function useTripPayload(tripId: string): TripPayloadAccessor {
   const [payload, setPayload] = useState<TripPayload | null>(null);
   const [guestView, setGuestView] = useState<GuestTripPayload | null>(null);
   const [loadState, setLoadState] = useState<TripLoadState>("loading");
+  /**
+   * Bumped every time a payload is applied with `force`.
+   *
+   * A forced apply exists precisely because an optimistic edit deliberately
+   * keeps the old version, so the reconciling payload is frequently *not*
+   * newer — and `reducePayload` returns `prev` by identity when it drops one.
+   * Consumers holding their own copy of the plan therefore cannot detect a
+   * forced reconciliation from `payload` alone; this counter is the channel
+   * that tells them (the invariants doc's `force-survives-the-buffer`).
+   */
+  const [forcedAt, setForcedAt] = useState(0);
   const [guestCode, setGuestCode] = useState<string>(() => initialGuestCode(tripId));
 
   // One guard for the lifetime of the hook (React's documented way to avoid
@@ -72,13 +89,23 @@ export function useTripPayload(tripId: string): TripPayloadAccessor {
 
   const applyPayload = useCallback((fresh: TripPayload, force = false) => {
     setPayload((prev) => reducePayload(prev, fresh, force));
+    if (force) setForcedAt((n) => n + 1);
   }, []);
 
   const refetch = useCallback(
     async (force = false) => {
       const token = seq.issue();
       const query = guestCode ? `?code=${encodeURIComponent(guestCode)}` : "";
-      const res = await fetch(`/api/trips/${tripId}${query}`, { cache: "no-store" });
+      let res: Response;
+      try {
+        res = await fetch(`/api/trips/${tripId}${query}`, { cache: "no-store" });
+      } catch {
+        // Offline, or the tab is being torn down. Leave state untouched and let
+        // the next poll try again — every caller is `void refetch(…)`, including
+        // the 4s interval, so throwing here is an unhandled rejection rather
+        // than something anyone can act on.
+        return;
+      }
       if (!seq.isCurrent(token)) return;
       const body: unknown = res.ok ? await res.json() : null;
       if (!seq.isCurrent(token)) return;
@@ -142,6 +169,10 @@ export function useTripPayload(tripId: string): TripPayloadAccessor {
         applyPayload(json as TripPayload);
         return null;
       } catch {
+        // Reconcile here too. This branch used to return the message and stop,
+        // which left any optimistic edit on screen with nothing at all that
+        // would correct it — the HTTP branch above at least forces a refetch.
+        void refetch(true);
         return "Couldn't reach the server — try again.";
       }
     },
@@ -211,6 +242,7 @@ export function useTripPayload(tripId: string): TripPayloadAccessor {
     payload,
     guestView,
     loadState,
+    forcedAt,
     refetch,
     mutate,
     toggleCheck,

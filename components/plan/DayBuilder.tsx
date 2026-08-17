@@ -32,6 +32,8 @@ import { useDayBuilder, type DayBuilderApi } from "./useDayBuilder";
 interface Props {
   tripId: string;
   payload: TripPayload;
+  /** The accessor's forced-apply counter, threaded through to the hook. */
+  forcedAt: number;
   mutate(url: string, init: RequestInit): Promise<string | null>;
   activitiesByDestination: Readonly<Record<string, readonly Activity[]>>;
 }
@@ -97,8 +99,8 @@ const sameTarget = (a: DropTarget | null, b: DropTarget | null) =>
         ? a.day === b.day
         : false;
 
-export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }: Props) {
-  const api = useDayBuilder({ tripId, payload, mutate, activitiesByDestination });
+export function DayBuilder({ tripId, payload, forcedAt, mutate, activitiesByDestination }: Props) {
+  const api = useDayBuilder({ tripId, payload, forcedAt, mutate, activitiesByDestination });
   const { state } = api;
 
   const target = state.days[state.targetDay - 1];

@@ -34,6 +34,8 @@ interface Props {
   /** Present for members only — the day builder needs the whole payload. */
   tripId?: string;
   payload?: TripPayload;
+  /** The accessor's forced-apply counter — see useDayBuilder's payload effect. */
+  forcedAt?: number;
   mutate?: (url: string, init: RequestInit) => Promise<string | null>;
 }
 
@@ -57,6 +59,7 @@ export function PlanTab({
   onPlanOp,
   tripId,
   payload,
+  forcedAt = 0,
   mutate,
 }: Props) {
   const [view, setView] = useState<View>("list");
@@ -127,6 +130,7 @@ export function PlanTab({
         <DayBuilder
           tripId={tripId}
           payload={payload}
+          forcedAt={forcedAt}
           mutate={mutate}
           activitiesByDestination={activitiesByDestination}
         />

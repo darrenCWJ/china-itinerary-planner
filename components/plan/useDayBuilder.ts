@@ -27,6 +27,8 @@ interface Options {
   tripId: string;
   /** The accessor's payload. Its identity is stable across dropped polls. */
   payload: TripPayload | null;
+  /** The accessor's forced-apply counter — see the payload effect below. */
+  forcedAt?: number;
   /** The accessor's mutation path — never `fetch` from here (C4). */
   mutate(url: string, init: RequestInit): Promise<string | null>;
   /** Activities per destination id, resolved by the caller from the trip's data. */
@@ -56,6 +58,7 @@ const jsonInit = (body: unknown): RequestInit => ({
 export function useDayBuilder({
   tripId,
   payload,
+  forcedAt = 0,
   mutate,
   activitiesByDestination,
 }: Options): DayBuilderApi {
@@ -80,9 +83,19 @@ export function useDayBuilder({
   // stale poll, so this effect does not re-fire on one. That is why the gate's
   // flush lives in the reducer's own buffer and not here: after
   // endInteraction no new payload identity is guaranteed to arrive.
+  //
+  // `forcedAt` is the other half of the dependency. A forced refetch is the
+  // accessor's post-error reconciliation path and it frequently returns the
+  // *same* version — a rejected op writes nothing — so an unforced dispatch
+  // would be dropped by the reducer's `baselineVersion >= payload.version`
+  // rule, which is exactly the payload that can heal the state.
+  const lastForced = useRef(forcedAt);
   useEffect(() => {
-    if (payload) dispatch({ type: "serverPayload", payload });
-  }, [payload]);
+    if (!payload) return;
+    const force = forcedAt !== lastForced.current;
+    lastForced.current = forcedAt;
+    dispatch({ type: "serverPayload", payload, force });
+  }, [payload, forcedAt]);
 
   // One op per request: PlanEditSchema takes a single op and the route applies
   // exactly one under a version guard, so there is nothing to batch into.

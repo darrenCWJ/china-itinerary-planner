@@ -28,7 +28,7 @@ export function TripView({ tripId }: { tripId: string }) {
   // Every read and write of the trip payload goes through this one accessor
   // (spec §7 C4) — this component does not fetch trip data itself. URLs are
   // handed to mutate(); constructing one here is not a fetch.
-  const { payload, guestView, loadState, mutate, toggleCheck, joinTrip, loadClaimable, probeCode } =
+  const { payload, guestView, loadState, forcedAt, mutate, toggleCheck, joinTrip, loadClaimable, probeCode } =
     useTripPayload(tripId);
   const [claimable, setClaimable] = useState<string[] | null>(null);
   const { data: session, isPending: sessionPending } = authClient.useSession();
@@ -252,6 +252,7 @@ export function TripView({ tripId }: { tripId: string }) {
           onPlanOp={planOp}
           tripId={tripId}
           payload={payload}
+          forcedAt={forcedAt}
           mutate={mutate}
         />
       )}

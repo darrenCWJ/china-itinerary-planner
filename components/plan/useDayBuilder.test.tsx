@@ -101,8 +101,8 @@ describe("useDayBuilder op sending", () => {
     expect(sent[1]).toMatchObject({ op: "addItem", title: "Summer Palace" });
   });
 
-  test("a rejected op does not wedge the queue", async () => {
-    const { result, sent, pending, mutate } = setup();
+  test("a rejection clears the queue behind it rather than replaying it", async () => {
+    const { result, pending, mutate } = setup();
     const keys = result.current.state.shelf
       .filter((row) => !row.isCustom)
       .map((row) => row.key);
@@ -114,9 +114,12 @@ describe("useDayBuilder op sending", () => {
 
     act(() => { pending[0]("That item no longer exists"); });
 
-    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
-    expect(sent[1]).toMatchObject({ title: "Summer Palace" });
-    expect(result.current.state.error).toBe("That item no longer exists");
+    // op2 was built on a state the server rejected, so it is dropped with op1
+    // rather than sent on top of the rolled-back days. Nothing is left queued
+    // and the message reaches the surface.
+    await waitFor(() => expect(result.current.state.error).toBe("That item no longer exists"));
+    expect(result.current.state.pendingOps).toEqual([]);
+    expect(mutate).toHaveBeenCalledTimes(1);
   });
 
   /**
