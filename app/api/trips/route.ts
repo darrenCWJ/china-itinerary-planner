@@ -4,6 +4,7 @@ import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
 import { getSessionUser } from "@/lib/server/session";
 import { createTrip, DB_UNAVAILABLE, linkMemberAccount, storeMode } from "@/lib/server/store";
+import { resolveTripSeason } from "@/lib/tripSeason";
 
 export async function POST(req: NextRequest) {
   if (storeMode() === "unavailable") {
@@ -30,9 +31,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { tripName, startDate, input } = parsed.data;
+  const { tripName, startDate, input, month } = parsed.data;
+  // Spec §5.2: the month is the fact; the season the client derived from it with
+  // a northern-hemisphere table is not trusted when the month is available.
+  const season = resolveTripSeason(input.season, month, input.country);
   await ensureCatalogLoaded();
-  const data = buildTripData({ tripName, startDate: startDate ?? null, input });
+  const data = buildTripData({
+    tripName,
+    startDate: startDate ?? null,
+    input: { ...input, season },
+  });
   if (data.plan.days.length === 0) {
     return NextResponse.json(
       { error: "No plannable destinations in the selection" },

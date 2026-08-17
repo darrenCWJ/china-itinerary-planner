@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   AddExpenseSchema,
+  CreateTripSchema,
   AddJournalSchema,
   AddSettlementSchema,
   CurrencySettingsSchema,
@@ -298,5 +299,25 @@ describe("PrefsSchema", () => {
     expect(PrefsSchema.safeParse({ accentHues: { china: 10 } }).success).toBe(false);
     expect(PrefsSchema.safeParse({ accentHues: { CN: 999 } }).success).toBe(false);
     expect(PrefsSchema.safeParse({ accentHues: { CN: "200" } }).success).toBe(false);
+  });
+});
+
+describe("CreateTripSchema month", () => {
+  const base = { tripName: "Spring trip", input: tripInput };
+
+  test("accepts a trip with no month at all", () => {
+    // Clients predating spec §5.2 send only input.season. Rejecting them over a
+    // field that did not exist would break every one of them.
+    expect(CreateTripSchema.safeParse(base).success).toBe(true);
+  });
+
+  test("accepts every real month", () => {
+    for (let month = 1; month <= 12; month++) {
+      expect(CreateTripSchema.safeParse({ ...base, month }).success).toBe(true);
+    }
+  });
+
+  test.each([0, 13, -1, 1.5, "7", null])("rejects %p as a month", (month) => {
+    expect(CreateTripSchema.safeParse({ ...base, month }).success).toBe(false);
   });
 });

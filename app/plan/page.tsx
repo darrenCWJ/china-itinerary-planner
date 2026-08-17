@@ -253,7 +253,9 @@ export default function PlanPage() {
             }}
           />
         )}
-        {step === 2 && <PlanStep input={tripInput} extraDestinations={extraDestinations} />}
+        {step === 2 && (
+          <PlanStep input={tripInput} extraDestinations={extraDestinations} month={month} />
+        )}
       </main>
 
       {/*

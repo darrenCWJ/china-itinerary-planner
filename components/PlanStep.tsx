@@ -13,9 +13,16 @@ interface PlanStepProps {
   input: TripInput;
   /** Catalog-derived destinations resolved via /api/destinations/resolve. */
   extraDestinations: Destination[];
+  /**
+   * The month the traveller picked, when they picked one (spec §5.2). Sent to
+   * the server so it can derive the season through the country profile rather
+   * than trusting `input.season`, which this client computes with a
+   * northern-hemisphere table.
+   */
+  month?: number | null;
 }
 
-export function PlanStep({ input, extraDestinations }: PlanStepProps) {
+export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
   const allDestinations = useMemo(
     () => [...DESTINATIONS, ...extraDestinations],
     [extraDestinations]
@@ -72,7 +79,11 @@ export function PlanStep({ input, extraDestinations }: PlanStepProps) {
         </button>
       </div>
 
-      <ShareTripCard input={input} destinationNames={destinations.map((d) => d.name)} />
+      <ShareTripCard
+        input={input}
+        destinationNames={destinations.map((d) => d.name)}
+        month={month}
+      />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-3 print:block">
         <div className="space-y-5 lg:col-span-2">
@@ -172,9 +183,11 @@ export function PlanStep({ input, extraDestinations }: PlanStepProps) {
 function ShareTripCard({
   input,
   destinationNames,
+  month,
 }: {
   input: TripInput;
   destinationNames: string[];
+  month?: number | null;
 }) {
   const router = useRouter();
   const [tripName, setTripName] = useState(`${destinationNames[0] ?? "China"} trip`);
@@ -195,6 +208,9 @@ function ShareTripCard({
           tripName: tripName.trim() || "China trip",
           startDate: startDate || null,
           input,
+          // Omitted rather than sent as null when unset: the schema makes it
+          // optional, and null would fail validation.
+          ...(month ? { month } : {}),
         }),
       });
       if (res.status === 401) {
