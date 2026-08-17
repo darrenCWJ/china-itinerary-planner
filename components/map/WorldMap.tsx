@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
 import type { GeometryCollection } from "topojson-specification";
 import { accentColor, type AccentTheme } from "@/lib/accent";
@@ -25,7 +25,7 @@ import {
  * World level of the two-level picker (spec §6): every country as a selectable
  * feature, tinted by its own accent.
  *
- * Three things are load-bearing here.
+ * Four things are load-bearing here.
  *
  * **The topology is fetched on mount, and nowhere else.** Spec §6 requires the
  * 730KB asset to load only once the picker opens, which this satisfies by
@@ -43,6 +43,17 @@ import {
  * A country below the area threshold is one pixel of polygon at world zoom, so
  * `smallCountries` carries a centroid and it gets a circle. Its polygon still
  * draws, but inert — one country must not be two competing hit targets.
+ *
+ * **The A–Z list, not the circle, is the target that meets `--tap-min`.**
+ * `POINT_HIT_R` cannot be raised to reach it. A 44px-equivalent circle is
+ * r ≈ 17.5 viewBox units at the width `/plan` renders, and San Marino and
+ * Vatican City sit ~6 units apart at this fit — so the circle would swallow its
+ * neighbours, and around Singapore it would swallow Johor, because the point
+ * layer draws on top of every polygon. The compliant target therefore has to be
+ * a *second* control rather than a bigger one, which is also what spec §6 asks
+ * for: "search remains the guaranteed path to every country". `PlaceSearch`
+ * searches within the country already chosen and cannot change it, so the
+ * picker below the map is that path. It costs one tab stop, not 235.
  */
 
 /** The only property `scripts/build-world-topology.mjs` keeps per feature. */
@@ -120,6 +131,7 @@ export function WorldMap({
 }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef(new Map<string, SVGGElement>());
+  const pickerId = useId();
   const { prefs } = usePrefs();
 
   const [world, setWorld] = useState<WorldTopology | null>(null);
@@ -419,6 +431,44 @@ export function WorldMap({
           </g>
         ))}
       </svg>
+
+      {/*
+        The pointer target that meets `--tap-min` for the 76 countries whose only
+        shape on the map is a ~22px circle at desktop and ~6px at 375px — see the
+        docblock for why the circle itself cannot grow. Every country the map drew
+        is here, so this is the equivalent control WCAG 2.2 AA 2.5.8 allows and
+        the guaranteed path spec §6 requires, not a shortcut for small ones only.
+
+        Below the SVG, for the same reason `CountryHero` is: `createHoverReporter`
+        measures against this container's top-left, so anything above the map
+        offsets every hover popup the parent draws.
+      */}
+      <div className="mt-3">
+        <label
+          htmlFor={pickerId}
+          className="block font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--ink-2)]"
+        >
+          Or pick from the list
+        </label>
+        <select
+          id={pickerId}
+          // Empty when the chosen country is not one the map drew, which is the
+          // same condition that withholds its hero card.
+          value={selectedEntry?.code ?? ""}
+          onChange={(event) => {
+            const code = event.target.value;
+            if (code) onSelectCountry(code);
+          }}
+          className="mt-1 min-h-[var(--tap-min)] w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 text-sm text-[var(--ink-0)]"
+        >
+          <option value="">Every country, A–Z…</option>
+          {entries.map((entry) => (
+            <option key={entry.code} value={entry.code}>
+              {entry.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/*
         The chosen country's imagery (spec §4.4). Below the SVG, not above it:

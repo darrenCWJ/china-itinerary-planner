@@ -3,6 +3,7 @@
 import type { AccentTheme } from "@/lib/accent";
 import { getCountry } from "@/lib/countries";
 import { type ImageCredit, pickHero } from "@/lib/countryImagery";
+import { resolveAccentOverride } from "@/lib/prefs";
 import { usePrefs } from "./PrefsProvider";
 
 /**
@@ -67,9 +68,12 @@ export function CountryHero({
 }: CountryHeroProps) {
   const { prefs } = usePrefs();
   const country = getCountry(countryCode);
-  // Per-country hue overrides are honoured; the gradient fallback has to look
-  // deliberate, and a user who has recoloured a country expects to see it.
-  const hero = pickHero(country, { theme, accentHue: prefs.accentHues[country.code] });
+  // The gradient is an accent surface, so it resolves the user's accent the one
+  // way every accent surface does: through lib/prefs. Reading accentHues here
+  // instead would honour a per-country override but drop a fixed accent, and the
+  // band would then disagree with the `--accent-ink` tokens it sits under — the
+  // hue the user pinned everywhere being the one hue the hero ignored.
+  const hero = pickHero(country, { theme, accentHue: resolveAccentOverride(prefs, country.code) });
   const photo = hero.kind === "image" ? httpUrl(hero.url) : undefined;
 
   return (

@@ -65,6 +65,17 @@ export function useDayBuilder({
     createDayBuilderState
   );
 
+  // `useReducer`'s third argument runs on the first render only, so the init
+  // above is a snapshot, not a subscription. The prop is live — the caller
+  // recomputes it from `plan.days` — and a plan rebuild can introduce a
+  // destination that was not in the plan at mount, whose shelf would otherwise
+  // stay empty for as long as the builder is open. The reducer ignores an
+  // equivalent map, so this mount dispatch and every poll that changes only
+  // items cost nothing.
+  useEffect(() => {
+    dispatch({ type: "setActivities", activitiesByDestination });
+  }, [activitiesByDestination]);
+
   // The accessor returns the previous payload *by identity* when it drops a
   // stale poll, so this effect does not re-fire on one. That is why the gate's
   // flush lives in the reducer's own buffer and not here: after

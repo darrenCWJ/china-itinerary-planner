@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
+import countryImagesJson from "../data/country-images.json";
 import { accentColor } from "./accent";
 import { getCountry } from "./countries";
 import {
   COUNTRY_IMAGES,
   type CountryImageIndex,
   type Hero,
+  MAX_CREDIT_TEXT_LENGTH,
   pickHero,
   readCountryImageIndex,
 } from "./countryImagery";
@@ -130,6 +133,96 @@ describe("pickHero — attribution is not optional", () => {
     };
 
     expect(forged.kind).toBe("image");
+  });
+});
+
+describe("credit length is bounded, and over-long credits are refused", () => {
+  // Commons `Artist` is HTML-derived free text with no length contract — one
+  // real entry ran to 984 characters of source filenames. The band renders the
+  // credit verbatim, so the choice is between rejecting the photo and
+  // truncating the credit; truncation drops the names the licence requires
+  // while still looking like attribution, so the boundary rejects. A CSS clamp
+  // would be the same defect one layer down and is deliberately not the fix.
+  const atLimit = "a".repeat(MAX_CREDIT_TEXT_LENGTH);
+  const overLimit = "a".repeat(MAX_CREDIT_TEXT_LENGTH + 1);
+
+  test("the parser keeps a credit exactly at the limit", () => {
+    const index = readCountryImageIndex({ CN: { ...CREDITED_ENTRY, artist: atLimit } });
+
+    expect(index.CN?.artist).toBe(atLimit);
+  });
+
+  for (const field of ["artist", "license"] as const) {
+    test(`the parser drops an entry whose ${field} exceeds the limit`, () => {
+      expect(readCountryImageIndex({ CN: { ...CREDITED_ENTRY, [field]: overLimit } }).CN)
+        .toBeUndefined();
+    });
+
+    test(`pickHero refuses an unparsed entry whose ${field} exceeds the limit`, () => {
+      const hero = pickHero(getCountry("CN"), {
+        curated: {},
+        images: forge({ CN: { ...CREDITED_ENTRY, [field]: overLimit } }),
+      });
+
+      expect(hero.kind).toBe("gradient");
+    });
+  }
+
+  test("an over-long credit is rejected, never truncated or ellipsised", () => {
+    // The failure mode this guards is a "helpful" repair: a shortened credit
+    // would satisfy the type while breaching the licence.
+    const hero = pickHero(getCountry("CN"), {
+      curated: {},
+      images: forge({ CN: { ...CREDITED_ENTRY, artist: overLimit } }),
+      // A second, well-credited source must not be needed to reach safety.
+    });
+
+    expect(hero.kind).toBe("gradient");
+    expect(JSON.stringify(hero)).not.toContain("…");
+    expect(JSON.stringify(hero)).not.toContain("aaa");
+  });
+
+  test("an over-long curated credit does not shadow a usable ingested one", () => {
+    // Precedence is over *usable* heroes, so the length gate degrades one
+    // source rather than blanking the country.
+    const hero = pickHero(getCountry("CN"), {
+      curated: forge({ CN: { ...CURATED_ENTRY, artist: overLimit } }),
+      images: indexOf({ CN: CREDITED_ENTRY }),
+    });
+
+    expect(hero.kind).toBe("image");
+    if (hero.kind !== "image") return;
+    expect(hero.url).toBe(CREDITED_ENTRY.url);
+  });
+
+  test("the committed data file exposes no credit over the limit", () => {
+    for (const [code, entry] of Object.entries(COUNTRY_IMAGES)) {
+      expect(entry.artist.length, `${code} artist`).toBeLessThanOrEqual(MAX_CREDIT_TEXT_LENGTH);
+      expect(entry.license.length, `${code} license`).toBeLessThanOrEqual(MAX_CREDIT_TEXT_LENGTH);
+    }
+  });
+
+  test("a raw record with an over-long credit is dropped rather than rendered", () => {
+    // The data file is generated and still carries one such record (ID, 984
+    // characters), so this asserts the boundary actually withholds it — the
+    // country renders the accent gradient instead.
+    const raw: Record<string, { artist: string }> = countryImagesJson.countries;
+    const overLong = Object.keys(raw).filter((code) => raw[code].artist.length > MAX_CREDIT_TEXT_LENGTH);
+
+    for (const code of overLong) {
+      expect(COUNTRY_IMAGES[code], code).toBeUndefined();
+      expect(pickHero(getCountry(code)).kind, code).toBe("gradient");
+    }
+  });
+
+  test("the ingest script caps credits at the same length as this boundary", () => {
+    // Drift here recreates the original defect: the ingest emitting a record
+    // the app silently refuses, so a country loses its photo with no signal.
+    const source = readFileSync(new URL("../scripts/ingest-country-images.mjs", import.meta.url), "utf8");
+    const declared = /MAX_CREDIT_TEXT_LENGTH\s*=\s*(\d+)/.exec(source);
+
+    expect(declared, "ingest script declares MAX_CREDIT_TEXT_LENGTH").not.toBeNull();
+    expect(Number(declared?.[1])).toBe(MAX_CREDIT_TEXT_LENGTH);
   });
 });
 

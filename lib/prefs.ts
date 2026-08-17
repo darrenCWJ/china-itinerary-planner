@@ -110,13 +110,40 @@ export function serializePrefsCookie(prefs: UserPrefs): string {
 }
 
 /**
+ * The hue a user's prefs impose on one country, or undefined when they impose
+ * none and lib/accent should answer from curated-then-derived.
+ *
+ * This is the one definition of the *prefs* half of accent precedence, and it
+ * is exported because not every accent surface consumes the two custom
+ * properties: `CountryHero`'s gradient fallback needs the hue itself, to hand
+ * to `pickHero`. A surface that reads `prefs.accentHues[code]` instead
+ * reimplements the order and gets it wrong the same way every time — it
+ * silently drops fixed mode, so it disagrees with the `--accent-*` tokens on
+ * the page around it.
+ *
+ * Fixed mode ignores accentHues by construction — "one accent everywhere" and
+ * "this country is different" cannot both be honoured, and the explicit choice
+ * wins. `WorldMap`'s choropleth is the one intended exception and documents
+ * itself as one: a fixed accent there would paint every country the same
+ * colour and erase what the tint says. An exception has to be argued at its own
+ * call site; the default is this function.
+ *
+ * Note what is deliberately *not* here: the curated and derived hues, which
+ * stay in lib/accent behind `accentHue`. Returning undefined rather than a hue
+ * is how that ownership is kept.
+ */
+export function resolveAccentOverride(prefs: UserPrefs, countryCode: string): number | undefined {
+  if (typeof prefs.accent === "number") return prefs.accent;
+  return prefs.accentHues[countryCode.trim().toUpperCase()];
+}
+
+/**
  * The two accent custom properties for one country under one theme.
  *
- * Precedence is not reimplemented here. A fixed accent short-circuits to its
- * own hue; everything else hands the resolution to lib/accent's accentHue,
- * which owns the user-override / curated / derived order. Fixed mode ignores
- * accentHues by construction — "one accent everywhere" and "this country is
- * different" cannot both be honoured, and the explicit choice wins.
+ * Precedence is not reimplemented here. The prefs half comes from
+ * `resolveAccentOverride` above; everything else hands the resolution to
+ * lib/accent's accentHue, which owns the user-override / curated / derived
+ * order.
  *
  * Lightness and chroma never appear here at all, which is the guarantee: they
  * come from lib/accent's ramp whatever the user picked.
@@ -127,7 +154,7 @@ export function resolveAccentVars(
   theme: AccentTheme
 ): { "--accent-ink": string; "--accent-fill": string } {
   const code = countryCode.trim().toUpperCase();
-  const override = typeof prefs.accent === "number" ? prefs.accent : prefs.accentHues[code];
+  const override = resolveAccentOverride(prefs, code);
 
   return {
     "--accent-ink": accentColor(code, theme, "ink", override),

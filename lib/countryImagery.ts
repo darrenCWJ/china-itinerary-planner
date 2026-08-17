@@ -13,9 +13,9 @@ import type { Country } from "./countries";
 declare const CREDITED: unique symbol;
 
 export interface ImageCredit {
-  /** Plain-text author, as the credit line renders it. */
+  /** Plain-text author, as the credit line renders it. At most MAX_CREDIT_TEXT_LENGTH. */
   readonly artist: string;
-  /** Short licence name, e.g. "CC BY-SA 4.0". */
+  /** Short licence name, e.g. "CC BY-SA 4.0". At most MAX_CREDIT_TEXT_LENGTH. */
   readonly license: string;
   /** Canonical licence deed; null when Commons did not supply one. */
   readonly licenseUrl: string | null;
@@ -43,7 +43,13 @@ export type CountryImageIndex = Readonly<Record<string, CountryImage>>;
 export interface PickHeroOptions {
   /** Which accent ramp the gradient fallback draws from. Default light. */
   readonly theme?: AccentTheme;
-  /** User accent override (a hue, 0–359), resolved by lib/accent. */
+  /**
+   * User accent override (a hue, 0–359); undefined lets lib/accent answer from
+   * curated-then-derived. Callers holding a `UserPrefs` must derive this with
+   * lib/prefs' `resolveAccentOverride` rather than reading `accentHues`
+   * themselves — a fixed accent has to reach the gradient too, or the band
+   * disagrees with the accent tokens around it.
+   */
   readonly accentHue?: number;
   /** Ingested heroes. Defaults to the committed data file. */
   readonly images?: CountryImageIndex;
@@ -73,6 +79,42 @@ const text = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+/**
+ * Longest credit text a hero band can carry.
+ *
+ * `Credit` in components/shell/CountryHero.tsx sets the author and licence
+ * inline in a 10px/16px monospace paragraph, inside a band whose own content is
+ * two short lines. Commons `Artist` fields are HTML-derived and occasionally
+ * enormous — a composite image can list every source file and its uploader —
+ * and at that length the credit stops annotating the hero and becomes it.
+ *
+ * 120 is deliberately generous rather than tight: the longest real credit the
+ * ingest has produced is 56 characters, and the longest plausible Commons
+ * `LicenseShortName` ("Creative Commons Attribution-ShareAlike 4.0
+ * International") is 57, so nothing legitimate is near the ceiling.
+ *
+ * Kept in step with the same constant in scripts/ingest-country-images.mjs —
+ * the ingest must not emit records this boundary will refuse. A test asserts
+ * the two numbers are equal.
+ */
+export const MAX_CREDIT_TEXT_LENGTH = 120;
+
+/**
+ * Credit text: present, non-blank, and short enough to render as one.
+ *
+ * Over-long credits are **rejected, never truncated**. An ellipsised credit
+ * drops the very names the licence requires while still looking like
+ * compliance, so it is worse than not publishing the photograph at all; a CSS
+ * clamp is the same defect one layer down. Rejecting takes the whole entry with
+ * it and the country renders the accent gradient — a designed state that
+ * carries no attribution obligation. The remedy for a specific country is a
+ * curated hero with a short, honest credit, not a longer ceiling.
+ */
+const creditText = (value: unknown): string | null => {
+  const trimmed = text(value);
+  return trimmed !== null && trimmed.length <= MAX_CREDIT_TEXT_LENGTH ? trimmed : null;
+};
+
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -80,14 +122,15 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 
 /**
  * The only mint for `ImageCredit`. Returns null unless every field the licence
- * needs is actually present, so an incomplete record cannot become an image.
+ * needs is actually present *and renderable*, so neither an incomplete record
+ * nor one with an unusably long credit can become an image.
  */
 function credited(entry: unknown): ImageCredit | null {
   const record = asRecord(entry);
   if (!record) return null;
 
-  const artist = text(record.artist);
-  const license = text(record.license);
+  const artist = creditText(record.artist);
+  const license = creditText(record.license);
   const sourceUrl = text(record.sourceUrl);
   if (!artist || !license || !sourceUrl) return null;
 
@@ -102,7 +145,10 @@ function credited(entry: unknown): ImageCredit | null {
 /**
  * Validate the ingest output at the boundary. Anything short of a complete,
  * credited record is dropped rather than repaired — a hero that cannot be
- * attributed is not publishable, and the gradient path is a good outcome.
+ * attributed is not publishable, and the gradient path is a good outcome. That
+ * includes a credit longer than MAX_CREDIT_TEXT_LENGTH: the data file is
+ * generated, so this boundary is the only thing standing between a freak
+ * Commons `Artist` field and the hero band.
  */
 export function readCountryImageIndex(raw: unknown): CountryImageIndex {
   const wrapper = asRecord(raw);
