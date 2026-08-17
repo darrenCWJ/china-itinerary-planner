@@ -119,8 +119,19 @@ describe("C4 — one module fetches trip data", () => {
    * an allowlist line; that is one line with a reason attached, which is the
    * cheaper failure.
    */
-  const fetchesTripData = (f: SourceFile) =>
-    f.text.includes(TRIP_PATH) && f.text.includes("fetch(");
+  /**
+   * `\bfetch\(` and not `includes("fetch(")`.
+   *
+   * The substring form matched `refetch(` — verified: `"void
+   * refetch(true)".includes("fetch(")` is true. The accessor *prescribes*
+   * `refetch(force)` as the failure path, and Task 23's hook has to build a
+   * `/api/trips/:id/plan` URL and call `refetch` in the same file, so the loose
+   * form would have failed CI on compliant code that follows the plan exactly.
+   * There is no word boundary between the `e` and the `f`, so `\b` excludes it.
+   */
+  const callsFetch = (code: string) => /\bfetch\s*\(/.test(code);
+
+  const fetchesTripData = (f: SourceFile) => f.code.includes(TRIP_PATH) && callsFetch(f.code);
 
   it("no module outside the accessor fetches a trip payload", () => {
     const offenders = FILES.filter(
@@ -138,6 +149,15 @@ describe("C4 — one module fetches trip data", () => {
     expect(view).toBeDefined();
     expect(view!.text).toContain(`mutate(\`${TRIP_PATH}`);
     expect(view!.text.includes("fetch(")).toBe(false);
+  });
+
+  it("does not mistake the accessor's own refetch for a fetch", () => {
+    // The exact false positive: it would have failed Task 23's hook, which the
+    // plan requires to call refetch(force) on a failed mutate.
+    expect(callsFetch("void refetch(true);")).toBe(false);
+    expect(callsFetch("const r = await this.refetch();")).toBe(false);
+    expect(callsFetch('await fetch("/api/trips/1")')).toBe(true);
+    expect(callsFetch("await fetch (url)")).toBe(true);
   });
 
   it("keeps its own allowlist honest", () => {
@@ -262,9 +282,18 @@ describe("C3 — the day-builder core stays free of React", () => {
    * `lib/dayBuilder/index.ts` or `lib/useDayBuilder.ts` — the suite would report
    * a skip forever and nobody would notice the contract had stopped applying.
    */
-  const builders = FILES.filter(
-    (f) => /(^|\/)(use)?[dD]ayBuilder(\/index)?\.tsx?$/.test(f.path) && f.path.startsWith("lib/")
-  );
+  /**
+   * The core module only — deliberately *not* matching a `use`-prefixed name.
+   *
+   * The first version matched `lib/useDayBuilder.ts` too, which made the
+   * contract unsatisfiable for anything put there: a `useReducer` hook cannot be
+   * React-free. The honest rule is two rules, so the second one is stated
+   * separately below.
+   */
+  const isCore = (path: string) =>
+    path.startsWith("lib/") && /(^|\/)dayBuilder(\/index)?\.tsx?$/.test(path);
+
+  const builders = FILES.filter((f) => isCore(f.path));
 
   // Armed now, enforced from Task 21. Written ahead of the module so the
   // constraint is in place before the code that has to satisfy it, rather than
@@ -275,15 +304,25 @@ describe("C3 — the day-builder core stays free of React", () => {
     }
   });
 
-  it("matches the module wherever Task 21 puts it", () => {
-    // Pins the pattern itself, so the skip above stays honest even while the
-    // module does not exist. Guards against the hardcoded-path regression.
-    const matches = (path: string) =>
-      /(^|\/)(use)?[dD]ayBuilder(\/index)?\.tsx?$/.test(path) && path.startsWith("lib/");
-    expect(matches("lib/dayBuilder.ts")).toBe(true);
-    expect(matches("lib/dayBuilder/index.ts")).toBe(true);
-    expect(matches("lib/useDayBuilder.ts")).toBe(true);
-    expect(matches("lib/dayBuilder.tsx")).toBe(true);
-    expect(matches("components/trip/DayBuilder.tsx")).toBe(false);
+  it("matches the core module wherever Task 22 puts it", () => {
+    // Pins the pattern itself, so the skip above stays honest while the module
+    // does not exist yet. Guards against the hardcoded-path regression.
+    expect(isCore("lib/dayBuilder.ts")).toBe(true);
+    expect(isCore("lib/dayBuilder/index.ts")).toBe(true);
+    expect(isCore("lib/dayBuilder.tsx")).toBe(true);
+    // The hook is a separate rule, not a core module — see below.
+    expect(isCore("lib/useDayBuilder.ts")).toBe(false);
+    expect(isCore("components/plan/useDayBuilder.ts")).toBe(false);
+  });
+
+  it("keeps the day-builder hook out of lib entirely", () => {
+    // C3 separates state from layout; a React hook is neither pure state nor
+    // layout-free, so lib/ is the wrong home for it and the plan puts it at
+    // components/plan/useDayBuilder.ts. Stated as its own rule because folding
+    // it into the React-free scan above made that scan unsatisfiable.
+    const hooksInLib = FILES.filter((f) => /^lib\/.*use[dD]ayBuilder/.test(f.path)).map(
+      (f) => f.path
+    );
+    expect(hooksInLib).toEqual([]);
   });
 });

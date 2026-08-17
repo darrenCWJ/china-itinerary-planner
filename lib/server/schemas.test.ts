@@ -321,3 +321,42 @@ describe("CreateTripSchema month", () => {
     expect(CreateTripSchema.safeParse({ ...base, month }).success).toBe(false);
   });
 });
+
+describe("setTiming timing-pair agreement", () => {
+  const base = { op: "setTiming" as const, day: 1, itemId: "a" };
+
+  test("accepts a block set as a whole", () => {
+    expect(
+      PlanOpSchema.safeParse({ ...base, startMinutes: 540, durationMinutes: 60 }).success
+    ).toBe(true);
+  });
+
+  test("accepts a block cleared as a whole", () => {
+    expect(
+      PlanOpSchema.safeParse({ ...base, startMinutes: null, durationMinutes: null }).success
+    ).toBe(true);
+  });
+
+  test.each([
+    ["start with no duration", { startMinutes: 540, durationMinutes: null }],
+    ["duration with no start", { startMinutes: null, durationMinutes: 60 }],
+  ])("rejects a half block: %s", (_label, timing) => {
+    // Previously accepted, and the consequence was silent: applyPlanOp stored
+    // `{ startMinutes: 540 }` with no duration, every reader treats a
+    // half-timed item as untimed (lib/timeline.ts), so the block disappeared
+    // from the timeline and counted zero minutes in the day-load readout.
+    expect(PlanOpSchema.safeParse({ ...base, ...timing }).success).toBe(false);
+  });
+
+  test("still requires both keys to be present", () => {
+    expect(PlanOpSchema.safeParse({ ...base, startMinutes: 540 }).success).toBe(false);
+    expect(PlanOpSchema.safeParse({ ...base, durationMinutes: 60 }).success).toBe(false);
+  });
+
+  test("leaves partial updateItem edits alone", () => {
+    // updateItem is a patch — changing only a title must not require timing.
+    expect(PlanOpSchema.safeParse({ op: "updateItem", day: 1, itemId: "a", title: "New" }).success).toBe(
+      true
+    );
+  });
+});
