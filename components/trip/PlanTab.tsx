@@ -7,8 +7,9 @@ import type { TripPlan } from "@/lib/itinerary";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import type { Ticket, TripPayload } from "@/lib/tripShared";
-import type { Activity } from "@/lib/types";
+import type { Activity, Season } from "@/lib/types";
 import { DayCard } from "./DayCard";
+import { RouteMap } from "./RouteMap";
 
 /**
  * Plan (spec §2.1): the day-by-day itinerary, with the route map as a *view*
@@ -24,6 +25,9 @@ import { DayCard } from "./DayCard";
 interface Props {
   plan: TripPlan;
   startDate: string | null;
+  /** ISO alpha-2 of the country being travelled — the Route map needs it. */
+  country: string;
+  season: Season;
   tickets: Ticket[];
   checkedBy: Map<string, string>;
   isMember: boolean;
@@ -51,6 +55,8 @@ type View = "list" | "map" | "build";
 export function PlanTab({
   plan,
   startDate,
+  country,
+  season,
   tickets,
   checkedBy,
   isMember,
@@ -135,15 +141,10 @@ export function PlanTab({
           activitiesByDestination={activitiesByDestination}
         />
       ) : view === "map" ? (
-        // Placeholder until Task 30 supplies CountryMap. Deliberately not a
-        // spinner or an empty box: a panel that says what it will be is honest,
-        // where a loading state would imply something is on its way.
-        <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--paper)] p-8 text-center">
-          <p className="font-display text-base font-semibold">Route map</p>
-          <p className="mt-1 text-sm text-[var(--ink-2)]">
-            The map view arrives with the country map. Use Days for now.
-          </p>
-        </div>
+        // Spec §2.1's "map ⇄ list toggle *inside* Plan", which is the whole
+        // justification for Route not being a nav tab. Read-only: the plan
+        // already exists, so this draws it rather than offering a picker.
+        <RouteMap plan={plan} country={country} startDate={startDate} season={season} />
       ) : (
         <>
           {!startDate && tickets.some((t) => t.date) && (

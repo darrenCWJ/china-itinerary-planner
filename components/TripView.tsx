@@ -244,6 +244,8 @@ export function TripView({ tripId }: { tripId: string }) {
         <PlanTab
           plan={data.plan}
           startDate={data.startDate}
+          country={tripCountry(data)}
+          season={data.input.season}
           tickets={payload.tickets}
           checkedBy={checkedBy}
           isMember={isMember}
