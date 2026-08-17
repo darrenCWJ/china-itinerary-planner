@@ -56,6 +56,15 @@ type DragSource =
  */
 type DropTarget = { zone: "list"; index: number } | { zone: "chip"; day: number };
 
+/**
+ * "After the next render, focus the first of these that exists and is enabled."
+ * Passed down beside `api` rather than folded into it: the hook is state and the
+ * reducer is layout-free (C3), and where focus lands is layout.
+ */
+interface FocusPlan {
+  after(...keys: string[]): void;
+}
+
 interface DragController {
   source: DragSource | null;
   over: DropTarget | null;
@@ -105,6 +114,23 @@ export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }:
   } | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const chipsRef = useRef<HTMLFieldSetElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Where focus should land after the next render.
+   *
+   * Every control here destroys itself when used: activating a shelf `+` hides
+   * that row (the in-flight key leaves the shelf), "Set a time" swaps itself for
+   * ±15m/Untime, and moving a block to an end disables the very button that was
+   * pressed. Each leaves focus on `<body>`, so a keyboard user is thrown back to
+   * the top of the page after every single operation — each action works, every
+   * *sequence* strands them. Task 16 solved the same problem in PlaceSearch
+   * ("Focus is never surrendered"); this is that promise kept here.
+   *
+   * A list, tried in order, because the natural target is sometimes gone or
+   * disabled — the fallback is what makes "move to the top" survivable.
+   */
+  const focusAfter = useRef<readonly string[]>([]);
+  const focus: FocusPlan = { after: (...keys) => void (focusAfter.current = keys) };
   const capturedRef = useRef<{ node: Element; pointerId: number } | null>(null);
   // Esc has to be a window listener because the handle never takes focus. The
   // ref keeps that listener subscribed once per drag instead of once per move.
@@ -237,6 +263,28 @@ export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }:
     cancelRef.current = cancelDrag;
   });
 
+  // No dependency array on purpose: the intent is set during an event handler
+  // and has to be consumed by the very next commit, whichever state change
+  // caused it. It clears itself, so a render with no intent costs one ref read.
+  useEffect(() => {
+    const wanted = focusAfter.current;
+    if (wanted.length === 0) return;
+    focusAfter.current = [];
+    const found = new Map<string, HTMLElement>();
+    // Matched by dataset rather than an attribute selector: shelf keys are built
+    // from activity names and can contain quotes.
+    for (const node of rootRef.current?.querySelectorAll<HTMLElement>("[data-fk]") ?? []) {
+      if (node.dataset.fk !== undefined) found.set(node.dataset.fk, node);
+    }
+    for (const key of wanted) {
+      const el = found.get(key);
+      if (!el) continue;
+      if (el instanceof HTMLButtonElement && el.disabled) continue;
+      el.focus();
+      return;
+    }
+  });
+
   const isDragging = drag !== null;
   useEffect(() => {
     if (!isDragging) return;
@@ -278,7 +326,7 @@ export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }:
   const overList = insertAt !== null && controller.source?.kind === "shelf";
 
   return (
-    <div className="mt-4">
+    <div className="mt-4" ref={rootRef}>
       {state.error !== null && (
         <p role="alert" className="mb-3 rounded-lg border border-seal/50 bg-seal/5 px-3 py-2 text-sm">
           {state.error}
@@ -288,7 +336,7 @@ export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }:
       <TargetDayChip api={api} drag={controller} chipsRef={chipsRef} />
 
       <div className="mt-3 grid gap-4 md:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <ShelfPanel api={api} drag={controller} />
+        <ShelfPanel api={api} drag={controller} focus={focus} />
 
         <section aria-labelledby="day-blocks">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -320,6 +368,7 @@ export function DayBuilder({ tripId, payload, mutate, activitiesByDestination }:
                       index={index}
                       api={api}
                       drag={controller}
+                      focus={focus}
                       isFirst={index === 0}
                       isLast={index === view.length - 1}
                     />
@@ -393,11 +442,31 @@ function TargetDayChip({
 }
 
 /** The shelf: unscheduled activities for the target day's destination, plus a custom row. */
-function ShelfPanel({ api, drag }: { api: DayBuilderApi; drag: DragController }) {
+function ShelfPanel({
+  api,
+  drag,
+  focus,
+}: {
+  api: DayBuilderApi;
+  drag: DragController;
+  focus: FocusPlan;
+}) {
   const { state } = api;
   const rows = state.shelf.filter((row) => !row.isCustom);
   const custom = state.shelf.find((row) => row.isCustom);
   const draggingKey = drag.source?.kind === "shelf" ? drag.source.shelfKey : null;
+
+  /**
+   * Adding removes the row, so aim at the one that takes its place — the next
+   * row, or the previous one when the last row goes. The custom input is the
+   * final fallback: the shelf can empty completely, and it is the only control
+   * in this panel that always exists.
+   */
+  const addAndKeepFocus = (index: number) => {
+    const after = rows[index + 1] ?? rows[index - 1];
+    focus.after(...(after ? [`shelf:${after.key}`] : []), "shelf:custom-input");
+    api.addFromShelf(rows[index].key);
+  };
 
   return (
     <section aria-labelledby="shelf-heading" className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-3">
@@ -411,7 +480,7 @@ function ShelfPanel({ api, drag }: { api: DayBuilderApi; drag: DragController })
         </p>
       ) : (
         <ul className="mt-2 space-y-1">
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <li key={row.key} className="flex items-center gap-2">
               {/* The drag handle is the label, not the row: a pointerdown on the
                   `+` button must stay a tap. */}
@@ -427,7 +496,8 @@ function ShelfPanel({ api, drag }: { api: DayBuilderApi; drag: DragController })
               {/* The primary add: one tap, no modal, no navigation (§3.2.4). */}
               <button
                 type="button"
-                onClick={() => api.addFromShelf(row.key)}
+                data-fk={`shelf:${row.key}`}
+                onClick={() => addAndKeepFocus(index)}
                 aria-label={`Add ${row.title} to day ${state.targetDay}`}
                 className="flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] shrink-0 items-center justify-center rounded-lg border border-dashed border-[var(--accent-ink)]/50 text-lg font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
               >
@@ -446,12 +516,16 @@ function ShelfPanel({ api, drag }: { api: DayBuilderApi; drag: DragController })
           <div className="mt-1 flex items-center gap-2">
             <input
               id="shelf-custom"
+              data-fk="shelf:custom-input"
               type="text"
               value={state.customDraft}
               onChange={(event) => api.setCustomDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return;
                 event.preventDefault();
+                // Adding clears the draft, which disables the `+` beside it —
+                // so without this the input loses focus mid-typing-session.
+                focus.after("shelf:custom-input");
                 api.addFromShelf("custom");
               }}
               placeholder="Anything you like"
@@ -459,7 +533,10 @@ function ShelfPanel({ api, drag }: { api: DayBuilderApi; drag: DragController })
             />
             <button
               type="button"
-              onClick={() => api.addFromShelf("custom")}
+              onClick={() => {
+                focus.after("shelf:custom-input");
+                api.addFromShelf("custom");
+              }}
               disabled={custom.title === ""}
               aria-label={`Add your own place to day ${state.targetDay}`}
               className="flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] shrink-0 items-center justify-center rounded-lg border border-dashed border-[var(--accent-ink)]/50 text-lg font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
@@ -485,6 +562,7 @@ function TimeBlock({
   index,
   api,
   drag,
+  focus,
   isFirst,
   isLast,
 }: {
@@ -492,6 +570,7 @@ function TimeBlock({
   index: number;
   api: DayBuilderApi;
   drag: DragController;
+  focus: FocusPlan;
   isFirst: boolean;
   isLast: boolean;
 }) {
@@ -546,6 +625,7 @@ function TimeBlock({
               {formatSpan(entry.durationMinutes as number)}
             </span>
             <BlockButton
+              fk={`minus:${entry.id}`}
               label={`Shorten ${entry.title} by 15 minutes`}
               onClick={() => api.adjustTiming(entry.id, -DURATION_STEP)}
             >
@@ -559,7 +639,12 @@ function TimeBlock({
             </BlockButton>
             <BlockButton
               label={`Remove the time from ${entry.title}`}
-              onClick={() => api.clearBlock(entry.id)}
+              // Untiming swaps this row's controls for "Set a time", so aim
+              // there — it is the same control in its other state.
+              onClick={() => {
+                focus.after(`time:${entry.id}`);
+                api.clearBlock(entry.id);
+              }}
             >
               Untime
             </BlockButton>
@@ -568,8 +653,14 @@ function TimeBlock({
           // The affordance every existing trip needs: nothing is timed yet, so
           // this is how a block comes into being at all.
           <BlockButton
+            fk={`time:${entry.id}`}
             label={`Give ${entry.title} a time`}
-            onClick={() => api.setBlock(entry.id, FIRST_BLOCK_START, FIRST_BLOCK_DURATION)}
+            // This button is replaced by −15m/+15m/Untime the moment it works,
+            // so hand focus to the first of its replacements.
+            onClick={() => {
+              focus.after(`minus:${entry.id}`);
+              api.setBlock(entry.id, FIRST_BLOCK_START, FIRST_BLOCK_DURATION);
+            }}
           >
             Set a time
           </BlockButton>
@@ -577,16 +668,29 @@ function TimeBlock({
 
         <span className="ml-auto flex items-center gap-1">
           <BlockButton
+            fk={`up:${entry.id}`}
             label={`Move ${entry.title} up`}
             disabled={isFirst}
-            onClick={() => api.moveBlock(entry.id, "up")}
+            // Reaching the top disables this button, and a disabled element
+            // cannot hold focus — fall through to its sibling rather than the
+            // document. The block keeps focus either way, which is what lets
+            // someone press ↑ repeatedly without being thrown to the top of the
+            // page on the final press.
+            onClick={() => {
+              focus.after(`up:${entry.id}`, `down:${entry.id}`);
+              api.moveBlock(entry.id, "up");
+            }}
           >
             ↑
           </BlockButton>
           <BlockButton
+            fk={`down:${entry.id}`}
             label={`Move ${entry.title} down`}
             disabled={isLast}
-            onClick={() => api.moveBlock(entry.id, "down")}
+            onClick={() => {
+              focus.after(`down:${entry.id}`, `up:${entry.id}`);
+              api.moveBlock(entry.id, "down");
+            }}
           >
             ↓
           </BlockButton>
@@ -600,16 +704,20 @@ function BlockButton({
   label,
   onClick,
   disabled,
+  fk,
   children,
 }: {
   label: string;
   onClick(): void;
   disabled?: boolean;
+  /** Focus key, so `FocusPlan` can find this button after a re-render. */
+  fk?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
+      data-fk={fk}
       onClick={onClick}
       disabled={disabled}
       aria-label={label}

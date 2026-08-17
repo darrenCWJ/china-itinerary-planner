@@ -273,3 +273,98 @@ describe("DayBuilder keyboard path", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Day not found");
   });
 });
+
+/**
+ * Every control in this surface destroys itself when used, so without explicit
+ * management focus lands on `<body>` and the keyboard user is thrown to the top
+ * of the page after each operation. Each action worked; every *sequence* was
+ * unusable, which is why the single-action tests above never caught it.
+ *
+ * These assert the thing spec §3.2.5 actually promises — that the keyboard path
+ * is a usable equivalent of dragging, not merely a reachable one.
+ */
+describe("DayBuilder focus retention", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  test("adding from the shelf moves focus to the next row, not to the body", () => {
+    setup([day(1, [])]);
+
+    const first = screen.getByRole("button", { name: "Add Great Wall to day 1" });
+    first.focus();
+    fireEvent.click(first);
+
+    // Great Wall's row is gone — its key is in flight — so the next one takes
+    // the focus rather than the document.
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Add Summer Palace to day 1" })
+    );
+  });
+
+  test("emptying the shelf falls back to the custom input", () => {
+    setup([day(1, [])]);
+
+    for (const name of ["Great Wall", "Summer Palace", "Night market"]) {
+      fireEvent.click(screen.getByRole("button", { name: `Add ${name} to day 1` }));
+    }
+
+    expect(document.activeElement).toBe(screen.getByLabelText("Something else"));
+  });
+
+  test("giving a block a time focuses its replacement controls", () => {
+    setup([day(1, [item("x", "Summer Palace")])]);
+
+    const setTime = screen.getByRole("button", { name: "Give Summer Palace a time" });
+    setTime.focus();
+    fireEvent.click(setTime);
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Shorten Summer Palace by 15 minutes" })
+    );
+  });
+
+  test("untiming a block focuses the control that replaces it", () => {
+    setup([day(1, [item("x", "Summer Palace", { startMinutes: 540, durationMinutes: 60 })])]);
+
+    const untime = screen.getByRole("button", { name: "Remove the time from Summer Palace" });
+    untime.focus();
+    fireEvent.click(untime);
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Give Summer Palace a time" })
+    );
+  });
+
+  test("moving a block to the top keeps focus on the block, not the body", () => {
+    setup([day(1, [item("a", "Arrive"), item("b", "Summer Palace")])]);
+
+    const up = screen.getByRole("button", { name: "Move Summer Palace up" });
+    up.focus();
+    fireEvent.click(up);
+
+    // ↑ is now disabled — Summer Palace is first — so focus falls to ↓ on the
+    // same block. The regression put it on <body>.
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Move Summer Palace down" })
+    );
+    expect(screen.getByRole("button", { name: "Move Summer Palace up" })).toBeDisabled();
+  });
+
+  test("a move that leaves the button enabled keeps focus on that button", () => {
+    setup([
+      day(1, [item("a", "Arrive"), item("b", "Summer Palace"), item("c", "Great Wall")]),
+    ]);
+
+    const up = screen.getByRole("button", { name: "Move Great Wall up" });
+    up.focus();
+    fireEvent.click(up);
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Great Wall up" }));
+  });
+});
