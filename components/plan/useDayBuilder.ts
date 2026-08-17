@@ -86,14 +86,27 @@ export function useDayBuilder({
 
   // One op per request: PlanEditSchema takes a single op and the route applies
   // exactly one under a version guard, so there is nothing to batch into.
-  const inFlight = useRef<Set<string>>(new Set());
+  //
+  // One op *in flight* at a time, too, which is a separate promise and the one
+  // this used to break. The old guard skipped ops already sent but never waited
+  // for them, so a second tap landing in its own render — 5-30ms is enough —
+  // put two POSTs on the wire together. That is unsafe here specifically because
+  // `setTiming` carries absolute values computed from optimistic state: if the
+  // older op loses the version race, the route's CAS retry re-applies its stale
+  // pair on top of the newer write and returns 200, so mashing +15m can settle
+  // on any of the intermediate durations with no error anywhere.
+  //
+  // A single id rather than a Set: with strict serialisation there is only ever
+  // one, and `pendingOps` is append-ordered, so taking the head sends them FIFO.
+  const inFlight = useRef<string | null>(null);
   useEffect(() => {
-    const next = state.pendingOps.find((pending) => !inFlight.current.has(pending.id));
+    if (inFlight.current !== null) return;
+    const next = state.pendingOps[0];
     if (!next) return;
-    inFlight.current.add(next.id);
+    inFlight.current = next.id;
     void (async () => {
       const error = await mutate(`/api/trips/${tripId}/plan`, jsonInit({ op: next.op }));
-      inFlight.current.delete(next.id);
+      inFlight.current = null;
       if (error === null) {
         dispatch({ type: "opSettled", opId: next.id });
         return;
