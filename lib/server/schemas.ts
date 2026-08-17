@@ -41,6 +41,14 @@ export const CreateTripSchema = z.object({
   tripName: z.string().trim().min(1).max(60),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   input: TripInputSchema,
+  /**
+   * The month the traveller picked, 1–12 (spec §5.2). Optional because clients
+   * predating it send only `input.season`, which they derive with a northern-
+   * hemisphere table. When the month is present the server derives the season
+   * from it through the country profile and ignores what it was told — see
+   * lib/tripSeason.ts.
+   */
+  month: z.number().int().min(1).max(12).optional(),
 });
 
 export const JoinTripSchema = z.object({
