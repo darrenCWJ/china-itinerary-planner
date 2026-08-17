@@ -72,3 +72,38 @@ export function moveStepsFor(
   const direction = distance < 0 ? "up" : "down";
   return Array.from({ length: Math.abs(distance) }, () => direction);
 }
+
+/**
+ * Per-point hit radii that never overlap.
+ *
+ * The world map's small-country dots share one radius, and at world scale some
+ * micro-states are closer together than that radius: San Marino and Vatican City
+ * sit ~6 units apart with r=9 circles, so their transparent hit areas cover each
+ * other and paint order silently decides which country a click selects — the
+ * wrong country, half the time, with no feedback.
+ *
+ * Each point is capped at half the distance to its nearest neighbour, so two
+ * circles can touch but never overlap. Points with no close neighbour keep the
+ * full radius. This deliberately makes the clustered ones *smaller*, which is the
+ * right trade only because the map is no longer the sole way to select a country:
+ * WorldMap's country list reaches every one of them at full size. A wrong
+ * selection is worse than a hard one.
+ */
+export function nonOverlappingRadii(
+  points: readonly { x: number; y: number }[],
+  maxRadius: number
+): number[] {
+  return points.map((point, index) => {
+    let nearest = Infinity;
+    for (let other = 0; other < points.length; other++) {
+      if (other === index) continue;
+      const dx = point.x - points[other].x;
+      const dy = point.y - points[other].y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < nearest) nearest = distance;
+    }
+    if (!Number.isFinite(nearest)) return maxRadius;
+    // Half the gap, so touching is the worst case. Never negative.
+    return Math.max(0, Math.min(maxRadius, nearest / 2));
+  });
+}

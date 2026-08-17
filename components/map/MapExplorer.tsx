@@ -235,8 +235,11 @@ export function MapExplorer({
           <div>
             <h3 className="font-display text-lg font-bold">Where in the world?</h3>
             <p className="mt-0.5 text-xs text-[var(--ink-2)]">
-              Pick a country to plan in it — or search above, which reaches every
-              country whether the map draws it or not.
+              {/* Was "search above": review proved that false — PlaceSearch is
+                  scoped to the country already chosen and cannot change it. The
+                  control that can is the list beneath the map. */}
+              Pick a country to plan in it — or use the list below the map, which
+              reaches every country whether the map draws it as a shape or a dot.
             </p>
           </div>
           <button
