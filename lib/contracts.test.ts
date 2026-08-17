@@ -144,20 +144,16 @@ describe("C4 — one module fetches trip data", () => {
 });
 
 describe("C1 — one source of truth for the trip tabs", () => {
-  /** The seven-tab vocabulary the redesign replaces (components/TripView.tsx:26). */
+  /** The seven-tab vocabulary the redesign replaced. */
   const LEGACY_TAB = '"Itinerary"';
 
-  /**
-   * Only TripView may still carry the old vocabulary, and only until Task 12
-   * collapses it. Asserted as a subset rather than a count so the test passes
-   * unchanged when that file drops to zero — while still failing if any *other*
-   * file picks the old vocabulary up.
-   */
-  const LEGACY_ALLOWED = ["components/TripView.tsx"];
-
-  it("confines the legacy tab vocabulary to the file being replaced", () => {
+  it("has retired the legacy tab vocabulary entirely", () => {
+    // Tightened at Task 12, which collapsed TripView's seven tabs to four. Until
+    // then this allowed exactly one carrier, TripView itself. Zero now, and the
+    // assertion is a flat count so nothing can reintroduce the old vocabulary
+    // under cover of an allowlist entry.
     const carriers = FILES.filter((f) => f.text.includes(LEGACY_TAB)).map((f) => f.path);
-    expect(carriers.filter((p) => !LEGACY_ALLOWED.includes(p))).toEqual([]);
+    expect(carriers).toEqual([]);
   });
 
   it("routes every tab-label renderer through lib/nav", () => {

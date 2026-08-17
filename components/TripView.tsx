@@ -1,35 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { BriefingShare } from "@/components/trip/BriefingShare";
-import { BriefingView } from "@/components/trip/BriefingView";
-import { DayCard } from "@/components/trip/DayCard";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSetShellTrip } from "@/components/shell/ShellTripContext";
+import type { SettlementDraft } from "@/components/trip/BalancesCard";
+import type { ExpenseDraft } from "@/components/trip/ExpenseForm";
 import { GuestTripView } from "@/components/trip/GuestTripView";
 import { JoinClaimDialog } from "@/components/trip/JoinClaimDialog";
-import { PackingSection } from "@/components/trip/PackingSection";
-import { PrivateGate } from "@/components/trip/PrivateGate";
-import { TicketsTab, type TicketDraft } from "@/components/trip/TicketsTab";
-import { MoneyTab } from "@/components/trip/MoneyTab";
-import type { ExpenseDraft } from "@/components/trip/ExpenseForm";
-import type { SettlementDraft } from "@/components/trip/BalancesCard";
-import { TrackerTab } from "@/components/trip/TrackerTab";
 import type { JournalDraft } from "@/components/trip/JournalSection";
+import { KitTab } from "@/components/trip/KitTab";
+import { MoneyTab } from "@/components/trip/MoneyTab";
+import { PlanTab } from "@/components/trip/PlanTab";
+import { PrivateGate } from "@/components/trip/PrivateGate";
+import type { TicketDraft } from "@/components/trip/TicketsTab";
+import { TodayTab } from "@/components/trip/TodayTab";
 import { authClient } from "@/lib/authClient";
-import { buildBriefing } from "@/lib/briefing";
 import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip } from "@/lib/myTrips";
+import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
-import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import type { GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
 
-const TABS = ["Itinerary", "Tracker", "Money", "Tickets", "Packing", "Crew", "Briefing"] as const;
-type Tab = (typeof TABS)[number];
-
 export function TripView({ tripId }: { tripId: string }) {
   // Every read and write of the trip payload goes through this one accessor
-  // (spec §7 C4) — this component does not fetch trip data itself.
+  // (spec §7 C4) — this component does not fetch trip data itself. URLs are
+  // handed to mutate(); constructing one here is not a fetch.
   const { payload, guestView, loadState, mutate, toggleCheck, joinTrip, loadClaimable, probeCode } =
     useTripPayload(tripId);
   const [claimable, setClaimable] = useState<string[] | null>(null);
@@ -38,13 +35,23 @@ export function TripView({ tripId }: { tripId: string }) {
   /** Pre-accounts identity on this device — powers the claim preselect + banner. */
   const legacyName =
     typeof window !== "undefined" ? localStorage.getItem(`cip-member-${tripId}`) : null;
-  const [tab, setTab] = useState<Tab>("Itinerary");
-  const [copied, setCopied] = useState(false);
 
-  // Add-day control state
-  const [newDayDest, setNewDayDest] = useState("");
-  const [addingDay, setAddingDay] = useState(false);
-  const [addDayError, setAddDayError] = useState<string | null>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  /**
+   * Tab state lives in `?tab=` (J2), not component state: deep-linkable,
+   * survives a refresh, and the rail, this strip and a future bottom bar all
+   * read the same value. `toTripTabId` narrows anything unrecognised to Plan.
+   */
+  const tab = toTripTabId(searchParams.get("tab"));
+  const setTab = useCallback(
+    (next: TripTabId) => {
+      // push, not replace, to match the rail's <Link> — Back should walk tabs.
+      router.push(`${pathname}?tab=${next}`, { scroll: false });
+    },
+    [pathname, router]
+  );
 
   const isMember = useMemo(
     () => Boolean(payload?.members.some((m) => m.name === myName)),
@@ -54,6 +61,17 @@ export function TripView({ tripId }: { tripId: string }) {
   useEffect(() => {
     if (loadState === "not-found") forgetMyTrip(tripId);
   }, [loadState, tripId]);
+
+  // Publish the open trip so the shell header's crew, share and trip name light
+  // up from this page's single accessor call rather than fetching again (J3).
+  const setShellTrip = useSetShellTrip();
+  useEffect(() => {
+    setShellTrip(payload ? { tripId, payload, mutate } : null);
+  }, [setShellTrip, tripId, payload, mutate]);
+  // Unmount only — deliberately separate from the effect above, which re-runs on
+  // every poll. Returning this as that effect's cleanup would blank the header
+  // and repopulate it on each payload change.
+  useEffect(() => () => setShellTrip(null), [setShellTrip]);
 
   const onToggleCheck = (key: string, checked: boolean) => void toggleCheck(key, checked, myName);
 
@@ -92,37 +110,25 @@ export function TripView({ tripId }: { tripId: string }) {
   const deleteJournal = (entryId: string) =>
     mutate(`/api/trips/${tripId}/journal/${entryId}`, { method: "DELETE" });
 
-  const copyShareLink = async () => {
-    if (!payload?.joinCode) return;
-    const url = `${window.location.origin}/trip/${tripId}?code=${payload.joinCode}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard unavailable — the code is displayed anyway.
-    }
-  };
-
   if (loadState === "loading") {
     return (
-      <Shell>
+      <PageMain>
         <p className="mt-16 text-center text-sm text-ink-soft">Loading trip…</p>
-      </Shell>
+      </PageMain>
     );
   }
 
   if (loadState === "private") {
     return (
-      <Shell>
+      <PageMain>
         <PrivateGate onSubmitCode={probeCode} />
-      </Shell>
+      </PageMain>
     );
   }
 
   if (loadState === "guest" && guestView) {
     return (
-      <Shell>
+      <PageMain>
         <GuestHeader view={guestView} />
         {!sessionPending && session && claimable !== null && (
           <JoinClaimDialog claimable={claimable} legacyName={legacyName} onJoin={joinTrip} />
@@ -151,13 +157,13 @@ export function TripView({ tripId }: { tripId: string }) {
           </p>
         )}
         <GuestTripView view={guestView} />
-      </Shell>
+      </PageMain>
     );
   }
 
   if (loadState === "not-found" || !payload) {
     return (
-      <Shell>
+      <PageMain>
         <div className="mx-auto mt-16 max-w-md rounded-xl border border-sky bg-paper p-8 text-center">
           <p className="font-display text-xl font-bold">Trip not found</p>
           <p className="mt-2 text-sm text-ink-soft">
@@ -167,7 +173,7 @@ export function TripView({ tripId }: { tripId: string }) {
             Plan a new trip
           </Link>
         </div>
-      </Shell>
+      </PageMain>
     );
   }
 
@@ -176,26 +182,13 @@ export function TripView({ tripId }: { tripId: string }) {
   const checkedBy = new Map(payload.checks.map((c) => [c.key, c.by]));
   const todayIndex = currentDayIndex(data.startDate, data.plan.days.length);
 
-  const destinationOptions = (() => {
-    const seen = new Map<string, string>();
-    data.plan.days.forEach((d) => seen.set(d.destinationId, d.destinationName));
-    return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  })();
-
-  const addDay = async () => {
-    if (addingDay) return;
-    setAddingDay(true);
-    setAddDayError(null);
-    const err = await planOp({
-      op: "addDay",
-      destinationId: newDayDest || undefined,
-    });
-    setAddingDay(false);
-    if (err) setAddDayError(err);
-  };
-
   return (
-    <Shell>
+    <PageMain>
+      {/*
+        Slimmer than before: the crew count, invite button and join-code strip
+        moved to the header's crew and share menus, so the hero states what the
+        trip *is* and stops carrying actions.
+      */}
       <div className="relative overflow-hidden rounded-2xl bg-rail-deep p-6 text-white sm:p-8">
         <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
           同行
@@ -213,99 +206,46 @@ export function TripView({ tripId }: { tripId: string }) {
           {data.startDate && (
             <span className="rounded-full bg-white/15 px-3 py-1">🚩 from {data.startDate}</span>
           )}
-          <span className="rounded-full bg-white/15 px-3 py-1">
-            👥 {payload.members.length} member{payload.members.length > 1 ? "s" : ""}
-          </span>
         </div>
-        {isMember && payload.joinCode && (
-          <div className="mt-5 flex flex-wrap items-center gap-3 print:hidden">
-            <button
-              type="button"
-              onClick={() => void copyShareLink()}
-              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-rail-deep transition-colors hover:bg-sky"
-            >
-              {copied ? "✓ Link copied" : "🔗 Copy invite link"}
-            </button>
-            <span className="font-mono text-sm tracking-[0.25em] text-sky">
-              CODE {payload.joinCode}
-            </span>
-          </div>
-        )}
       </div>
 
-      <nav className="mt-6 flex flex-wrap gap-2 print:hidden" aria-label="Trip sections">
-        {TABS.map((t) => (
+      {/*
+        Below md only: the shell's rail is the desktop nav, and the mobile bottom
+        bar replaces this strip in the follow-up spec. Renders from TRIP_NAV, so
+        this is a second *view*, not a second list (C1).
+      */}
+      <nav className="mt-6 flex flex-wrap gap-2 md:hidden print:hidden" aria-label="Trip sections">
+        {TRIP_NAV.map((item) => (
           <button
-            key={t}
+            key={item.id}
             type="button"
-            onClick={() => setTab(t)}
-            aria-pressed={tab === t}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              tab === t ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+            onClick={() => setTab(item.id)}
+            aria-pressed={tab === item.id}
+            aria-label={item.ariaLabel}
+            className={`min-h-[var(--tap-min)] rounded-full px-4 text-sm font-medium transition-colors ${
+              tab === item.id ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
             }`}
           >
-            {t}
+            {item.label}
           </button>
         ))}
       </nav>
 
-      {tab === "Itinerary" && (
-        <div className="mt-5 space-y-5">
-          {!data.startDate && payload.tickets.some((t) => t.date) && (
-            <p className="rounded-lg border border-dashed border-rail/40 bg-paper px-4 py-2 text-xs text-ink-soft">
-              💡 Set a trip start date to see tickets pinned to their days.
-            </p>
-          )}
-          {data.plan.days.map((day) => {
-            const date = dayDate(data.startDate, day.day);
-            const dayTickets = date
-              ? sortTickets(payload.tickets.filter((t) => ticketOnDate(t, date)))
-              : [];
-            return (
-              <DayCard
-                key={day.day}
-                day={day}
-                isToday={todayIndex === day.day}
-                tickets={dayTickets}
-                checkedBy={checkedBy}
-                isMember={isMember}
-                onToggle={onToggleCheck}
-                onOp={planOp}
-              />
-            );
-          })}
-          {isMember && (
-            <div className="flex flex-wrap items-center gap-2 print:hidden">
-              <button
-                type="button"
-                onClick={() => void addDay()}
-                disabled={addingDay}
-                className="rounded-lg border border-dashed border-rail/50 px-4 py-2 text-sm font-semibold text-rail transition-colors hover:bg-sky disabled:opacity-40"
-              >
-                {addingDay ? "Adding…" : "+ Add day"}
-              </button>
-              <span className="text-xs text-ink-soft">in</span>
-              <select
-                value={newDayDest}
-                onChange={(e) => setNewDayDest(e.target.value)}
-                aria-label="Destination for the new day"
-                className="rounded-lg border border-sky bg-paper px-2 py-1.5 text-sm text-ink"
-              >
-                <option value="">Same as last day</option>
-                {destinationOptions.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-              {addDayError && <span className="text-xs text-seal">{addDayError}</span>}
-            </div>
-          )}
-        </div>
+      {tab === "plan" && (
+        <PlanTab
+          plan={data.plan}
+          startDate={data.startDate}
+          tickets={payload.tickets}
+          checkedBy={checkedBy}
+          isMember={isMember}
+          todayIndex={todayIndex}
+          onToggle={onToggleCheck}
+          onPlanOp={planOp}
+        />
       )}
 
-      {tab === "Tracker" && (
-        <TrackerTab
+      {tab === "today" && (
+        <TodayTab
           payload={payload}
           myName={myName}
           isMember={isMember}
@@ -313,11 +253,11 @@ export function TripView({ tripId }: { tripId: string }) {
           onAddJournal={addJournal}
           onUpdateJournal={updateJournal}
           onDeleteJournal={deleteJournal}
-          onOpenMoney={() => setTab("Money")}
+          onOpenTab={setTab}
         />
       )}
 
-      {tab === "Money" && (
+      {tab === "money" && (
         <MoneyTab
           expenses={payload.expenses}
           settlements={payload.settlements}
@@ -334,109 +274,33 @@ export function TripView({ tripId }: { tripId: string }) {
         />
       )}
 
-      {tab === "Tickets" && (
-        <TicketsTab
+      {tab === "kit" && (
+        <KitTab
           tickets={payload.tickets}
-          isMember={isMember}
           hasStartDate={Boolean(data.startDate)}
-          onAdd={addTicket}
-          onUpdate={updateTicket}
-          onDelete={deleteTicket}
-        />
-      )}
-
-      {tab === "Packing" && (
-        <PackingSection
+          onAddTicket={addTicket}
+          onUpdateTicket={updateTicket}
+          onDeleteTicket={deleteTicket}
           packing={data.packing}
           checkedBy={checkedBy}
+          onToggleCheck={onToggleCheck}
           isMember={isMember}
-          onToggle={onToggleCheck}
         />
       )}
-
-      {tab === "Crew" && (
-        <div className="mt-5 space-y-4">
-          <div className="rounded-xl border border-sky bg-paper p-5">
-            <h2 className="font-display text-lg font-semibold">
-              Crew ({payload.members.length})
-            </h2>
-            <ul className="mt-3 space-y-2">
-              {payload.members.map((m) => (
-                <li key={m.name} className="flex items-center gap-3 text-sm">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky font-semibold text-rail-deep">
-                    {m.name[0]?.toUpperCase()}
-                  </span>
-                  <span className="font-medium">{m.name}</span>
-                  {m.name === myName && (
-                    <span className="rounded bg-sky px-1.5 py-0.5 text-[10px] font-mono text-rail-deep">
-                      YOU
-                    </span>
-                  )}
-                  <span className="ml-auto text-xs text-ink-soft">
-                    joined {new Date(m.joinedAt).toLocaleDateString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {isMember && payload.joinCode && (
-            <div className="rounded-xl border border-sky bg-paper p-5 text-sm">
-              <p className="font-semibold">Invite more people</p>
-              <p className="mt-1 text-ink-soft">
-                Share the invite link, or tell them to open this page and enter code{" "}
-                <span className="font-mono font-semibold tracking-widest text-seal">
-                  {payload.joinCode}
-                </span>
-                .
-              </p>
-            </div>
-          )}
-          <div className="rounded-xl border border-sky bg-paper p-5 text-sm">
-            <p className="font-semibold">Good to know</p>
-            <ul className="mt-2 space-y-1.5">
-              {data.plan.tips.map((tip) => (
-                <li key={tip} className="flex gap-2">
-                  <span aria-hidden className="text-seal">※</span>
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {tab === "Briefing" && (
-        <div className="mt-5 space-y-6">
-          <BriefingShare tripId={tripId} memberName={myName} />
-          <BriefingView
-            briefing={buildBriefing(payload, { redacted: false, includeBookings: true })}
-          />
-        </div>
-      )}
-    </Shell>
+    </PageMain>
   );
 }
 
 /**
- * Trip-specific chrome only — the brand row (logo, product name) lives in
- * the global `AppShell` already rendered above this in the layout, so
- * repeating it here doubled up on every trip page. The one piece worth
- * keeping is the "shared trip" state, trimmed to a slim eyebrow strip.
+ * The page's own `<main>`. AppShell deliberately does not render one — every
+ * page supplies its own, and two would nest a landmark the spec allows one of.
  *
- * Task 12 deletes this: the shell header now carries the trip name and crew,
- * which is what the eyebrow was standing in for (J5).
+ * The eyebrow strip that used to live here is gone (J5): the shell header now
+ * carries the trip name and crew, which is what "shared trip mode" was standing
+ * in for.
  */
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen pb-16">
-      <div className="border-b border-sky bg-paper px-4 py-2 print:hidden">
-        <p className="mx-auto max-w-4xl font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-          Shared trip mode — live for every member
-        </p>
-      </div>
-      <main className="mx-auto max-w-4xl px-4 pt-6">{children}</main>
-    </div>
-  );
+function PageMain({ children }: { children: React.ReactNode }) {
+  return <main className="mx-auto max-w-4xl px-4 pb-16 pt-6">{children}</main>;
 }
 
 /** Trimmed header for join-code guests: no invite chrome, no join code. */
