@@ -87,7 +87,11 @@ export function CrewMenu() {
         aria-haspopup="dialog"
         aria-label={`Crew — ${members.length} member${members.length === 1 ? "" : "s"}`}
         onClick={() => setOpen((wasOpen) => !wasOpen)}
-        className="flex min-h-[var(--tap-min)] items-center rounded-lg px-1"
+        // min-w as well as min-h: with one member the trigger is a single 28px
+        // avatar plus padding — about 36px, under C5's 44px — and a trip has
+        // exactly one member the moment it is created. The other two icon
+        // triggers (ThemeToggle, TripSwitcher) already set both.
+        className="flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] items-center justify-center rounded-lg px-1"
       >
         <span className="flex items-center">
           {shown.map((member, index) => (

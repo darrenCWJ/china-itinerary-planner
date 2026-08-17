@@ -184,3 +184,39 @@ describe("rankPlaces query normalisation", () => {
     expect(results.filter((r) => r.kind === "curated")).toHaveLength(0);
   });
 });
+
+describe("rankPlaces off-map selection flag", () => {
+  // Found by audit: the off-map row hardcoded isSelected:false, and its id is
+  // the raw query while callers store hand-typed places under their own key
+  // (the wizard uses `offmap:<slug>`), so an id-based lookup could never match.
+  // A place typed a minute ago was re-offered as if it were new.
+  it("flags a hand-typed place already on the trip", () => {
+    const results = rankPlaces("Uncle farm", [], [], {
+      selectedOffMapNames: ["Uncle farm"],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].kind).toBe("off-map");
+    expect(results[0].isSelected).toBe(true);
+  });
+
+  it("matches the name regardless of case and spacing", () => {
+    const results = rankPlaces("  uncle FARM ", [], [], {
+      selectedOffMapNames: ["Uncle farm"],
+    });
+
+    expect(results[0].isSelected).toBe(true);
+  });
+
+  it("leaves an unrelated query unflagged", () => {
+    const results = rankPlaces("Aunt house", [], [], {
+      selectedOffMapNames: ["Uncle farm"],
+    });
+
+    expect(results[0].isSelected).toBe(false);
+  });
+
+  it("does not flag when no off-map names are given", () => {
+    expect(rankPlaces("Uncle farm", [], [])[0].isSelected).toBe(false);
+  });
+});
