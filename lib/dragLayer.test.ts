@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { containsPoint, dropIndexFor, moveStepsFor, type Box } from "./dragLayer";
+import {
+  containsPoint,
+  dropIndexFor,
+  moveStepsFor,
+  nonOverlappingRadii,
+  type Box,
+} from "./dragLayer";
 
 /**
  * The drag *feel* is verified by hand — the plan says so and a jsdom pointer
@@ -104,5 +110,50 @@ describe("containsPoint", () => {
     expect(containsPoint(rect, 111, 40)).toBe(false);
     expect(containsPoint(rect, 60, 19)).toBe(false);
     expect(containsPoint(rect, 60, 71)).toBe(false);
+  });
+});
+
+describe("nonOverlappingRadii", () => {
+  test("keeps the full radius for an isolated point", () => {
+    expect(nonOverlappingRadii([{ x: 0, y: 0 }], 9)).toEqual([9]);
+    expect(nonOverlappingRadii([{ x: 0, y: 0 }, { x: 100, y: 0 }], 9)).toEqual([9, 9]);
+  });
+
+  test("caps a close pair at half their separation so they cannot overlap", () => {
+    // The real case: San Marino and Vatican City ~6 units apart with r=9 circles
+    // covering each other, so paint order decided which one a click reached.
+    const radii = nonOverlappingRadii([{ x: 0, y: 0 }, { x: 6, y: 0 }], 9);
+
+    expect(radii).toEqual([3, 3]);
+    // Touching is the worst case, never overlapping.
+    expect(radii[0] + radii[1]).toBeLessThanOrEqual(6);
+  });
+
+  test("measures each point against its own nearest neighbour", () => {
+    // The middle point is crowded; the far one is not.
+    const radii = nonOverlappingRadii(
+      [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 200, y: 0 }],
+      9
+    );
+
+    expect(radii[0]).toBe(2);
+    expect(radii[1]).toBe(2);
+    expect(radii[2]).toBe(9);
+  });
+
+  test("measures diagonally, not just on one axis", () => {
+    const radii = nonOverlappingRadii([{ x: 0, y: 0 }, { x: 3, y: 4 }], 9);
+
+    expect(radii).toEqual([2.5, 2.5]);
+  });
+
+  test("never returns a negative radius for coincident points", () => {
+    const radii = nonOverlappingRadii([{ x: 5, y: 5 }, { x: 5, y: 5 }], 9);
+
+    expect(radii).toEqual([0, 0]);
+  });
+
+  test("handles an empty set", () => {
+    expect(nonOverlappingRadii([], 9)).toEqual([]);
   });
 });

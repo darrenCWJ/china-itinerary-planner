@@ -11,6 +11,7 @@ import {
   type WorldTopology,
 } from "@/lib/isoTopology";
 import { CountryHero } from "@/components/shell/CountryHero";
+import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import {
   MAP_VIEW_H,
@@ -94,6 +95,8 @@ interface PointMark {
   name: string;
   x: number;
   y: number;
+  /** Hit radius, capped so it cannot overlap a neighbouring point's. */
+  hitR: number;
 }
 
 /** One keyboard stop per country, whichever layer it is selected through. */
@@ -189,10 +192,21 @@ export function WorldMap({
       });
     }
 
-    const points: PointMark[] = world.smallCountries.map((c) => {
+    const placed = world.smallCountries.map((c) => {
       const [x, y] = project(c.lon, c.lat);
       return { code: c.code, name: countryLabel(c.code, c.name), x, y };
     });
+    /**
+     * Per-point hit radii, capped so no two overlap. At world scale some
+     * micro-states are closer together than POINT_HIT_R — San Marino and Vatican
+     * City sit ~6 units apart — so a shared radius made their transparent hit
+     * areas cover each other and paint order decided which country a click
+     * selected. Shrinking the crowded ones is only acceptable because the country
+     * list below reaches every one of them at full size: a wrong selection is
+     * worse than a hard one.
+     */
+    const hitRadii = nonOverlappingRadii(placed, POINT_HIT_R);
+    const points: PointMark[] = placed.map((p, i) => ({ ...p, hitR: hitRadii[i] }));
 
     // One stop per country, in name order: arrow keys then walk the world
     // predictably instead of following whatever order the asset happens to hold.
@@ -418,7 +432,7 @@ export function WorldMap({
         {view.points.map((point) => (
           <g key={point.code} {...interactionProps(point.code, point.name)}>
             {/* Hit area first so the visible dot is never the target's edge. */}
-            <circle cx={point.x} cy={point.y} r={POINT_HIT_R} fill="transparent" />
+            <circle cx={point.x} cy={point.y} r={point.hitR} fill="transparent" />
             <circle
               cx={point.x}
               cy={point.y}
