@@ -23,6 +23,9 @@ interface Props {
   onRemoveCatalog: (qid: string) => void;
   onReorder: (ids: string[]) => void;
   onMonthPicked: (month: number) => void;
+  /** Controlled by the page, so the picked country reaches the write boundary. */
+  country: string;
+  onCountryChange: (code: string) => void;
   /** A hand-typed place with no coordinates (spec §3.2.7). */
   onAddOffMap: (name: string) => void;
   offMap: readonly Destination[];
@@ -39,6 +42,8 @@ export function DestinationStep({
   onRemoveCatalog,
   onReorder,
   onMonthPicked,
+  country,
+  onCountryChange,
   onAddOffMap,
   offMap,
 }: Props) {
@@ -50,7 +55,6 @@ export function DestinationStep({
    * because search is scoped by it too — the map is one of two ways into a
    * country, and both have to agree on which one is open.
    */
-  const [country, setCountry] = useState("CN");
   const [mapLevel, setMapLevel] = useState<MapLevel>("country");
   const activeCountry = getCountry(country);
   const countryLabel = activeCountry.name || activeCountry.code || "this country";
@@ -77,7 +81,7 @@ export function DestinationStep({
   const visitedDests = countryDestinations.filter((d) => visited.includes(d.id));
 
   const changeCountry = (code: string) => {
-    setCountry(code);
+    onCountryChange(code);
     // A region filter belongs to the country it was chosen in — carrying
     // "North" into another country would filter its cards down to nothing.
     setRegion("All");

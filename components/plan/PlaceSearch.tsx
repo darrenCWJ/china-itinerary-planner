@@ -40,6 +40,8 @@ interface Props {
 
 /** Below this the catalog is not worth a request; one letter matches everything. */
 const MIN_QUERY = 2;
+/** Countries the catalog actually covers. One, for now. */
+const CATALOG_COUNTRIES = new Set(["CN"]);
 const DEBOUNCE_MS = 300;
 
 export function PlaceSearch({
@@ -64,6 +66,18 @@ export function PlaceSearch({
       setHits([]);
       return;
     }
+    /**
+     * The catalog is China-only — lib/server/catalog.ts calls it "the full
+     * all-China dataset" and its rows carry no country. Querying it while the
+     * step is scoped to another country offered Chinese cities for a Japan trip,
+     * directly contradicting the scoping this component and CountryMap both
+     * claim in comments. Off CN the off-map row is the honest path, and it still
+     * works, so nothing is lost but the wrong answers.
+     */
+    if (!CATALOG_COUNTRIES.has(country.trim().toUpperCase())) {
+      setHits([]);
+      return;
+    }
     const controller = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
@@ -80,7 +94,7 @@ export function PlaceSearch({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       controller.abort();
     };
-  }, [query]);
+  }, [query, country]);
 
   const selectedIds = useMemo(() => selected.map((p) => p.id), [selected]);
   // Off-map rows are matched by name, not id — see RankOptions.
