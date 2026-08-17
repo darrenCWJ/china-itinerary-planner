@@ -386,6 +386,67 @@ describe("target day and shelf", () => {
     expect(next.error).toBe("Nope");
   });
 
+  /**
+   * The optimistic patch has to be unwound *here*, not left for a payload to
+   * correct. A rejected op writes nothing, so the accessor's forced refetch
+   * returns the same version and `applyPayload`'s `>=` rule drops it — and a
+   * network failure produced no refetch at all. Both left the member looking at
+   * an edit that was never saved, on a single-member trip forever.
+   */
+  /**
+   * ⚠ These use a *timing* op, not `addFromShelf`. An add queues its op without
+   * touching `days` — the item appears when the server payload lands — so it is
+   * the one action with no optimistic patch to unwind, and testing rollback
+   * through it proves nothing. That is exactly why the phantom-edit bug lived
+   * behind a green suite: the only rejection test in the file used an add.
+   */
+  it("puts the days back when a rejected op had patched them", () => {
+    const state = run(seeded(), { type: "setTargetDay", day: 2 });
+    const before = state.days;
+
+    const edited = run(state, { type: "adjustTiming", itemId: "b", deltaMinutes: 15, opId: "op1" });
+    expect(edited.days).not.toEqual(before);
+
+    const failed = run(edited, { type: "opFailed", opId: "op1", message: "Nope" });
+    expect(failed.days).toEqual(before);
+    expect(failed.pendingOps).toEqual([]);
+    expect(failed.error).toBe("Nope");
+  });
+
+  it("drops ops queued after the one that failed", () => {
+    const state = run(seeded(), { type: "setTargetDay", day: 2 });
+    const before = state.days;
+
+    const queued = run(
+      state,
+      { type: "adjustTiming", itemId: "b", deltaMinutes: 15, opId: "op1" },
+      { type: "adjustTiming", itemId: "d", deltaMinutes: 15, opId: "op2" }
+    );
+    expect(queued.pendingOps).toHaveLength(2);
+
+    // op2 was computed on top of a state the server rejected, so replaying it
+    // would reapply the very edit being undone. Server wins.
+    const failed = run(queued, { type: "opFailed", opId: "op1", message: "Nope" });
+    expect(failed.days).toEqual(before);
+    expect(failed.pendingOps).toEqual([]);
+  });
+
+  it("keeps ops queued before the one that failed", () => {
+    const state = run(seeded(), { type: "setTargetDay", day: 2 });
+
+    const queued = run(
+      state,
+      { type: "adjustTiming", itemId: "b", deltaMinutes: 15, opId: "op1" },
+      { type: "adjustTiming", itemId: "d", deltaMinutes: 15, opId: "op2" }
+    );
+    const afterOp1 = queued.pendingOps[1].daysBefore;
+
+    const failed = run(queued, { type: "opFailed", opId: "op2", message: "Nope" });
+    expect(failed.pendingOps.map((p) => p.id)).toEqual(["op1"]);
+    // Rolled back to op2's baseline, which still holds op1's optimistic edit.
+    expect(failed.days).toEqual(afterOp1);
+  });
+
   it("derives a real slot for a day-long or unconstrained activity", () => {
     // 'day' and 'any' are common in the curated data, addItem demands a real
     // slot, and §3.2.4 forbids asking.

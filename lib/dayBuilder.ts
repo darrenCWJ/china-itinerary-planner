@@ -53,6 +53,11 @@ export interface PendingOp {
   op: PlanOp;
   /** Set when the op came from a shelf row, so that row can hide while in flight. */
   shelfKey?: string;
+  /**
+   * The days this op's optimistic patch was applied on top of. Stamped by the
+   * reducer wrapper, and the only thing that lets a rejection be undone.
+   */
+  daysBefore?: DayPlan[];
 }
 
 export interface DayBuilderState {
@@ -283,10 +288,30 @@ function applyPayload(
   });
 }
 
+/**
+ * Stamps every newly queued op with the days it was built on, so `opFailed` can
+ * put them back.
+ *
+ * Done here rather than in each handler because the handlers patch `days` and
+ * call `queue` in one expression — there is no point inside them that still
+ * holds the pre-patch value, and threading one through each would be five
+ * chances to forget.
+ */
 export function dayBuilderReducer(
   state: DayBuilderState,
   action: DayBuilderAction
 ): DayBuilderState {
+  const next = reduce(state, action);
+  if (next.pendingOps.length <= state.pendingOps.length) return next;
+  const queued = next.pendingOps[next.pendingOps.length - 1];
+  if (queued.daysBefore !== undefined) return next;
+  return {
+    ...next,
+    pendingOps: [...next.pendingOps.slice(0, -1), { ...queued, daysBefore: state.days }],
+  };
+}
+
+function reduce(state: DayBuilderState, action: DayBuilderAction): DayBuilderState {
   switch (action.type) {
     case "setTargetDay":
       return withShelf({ ...state, targetDay: clampDay(action.day, state.days.length) });
@@ -486,14 +511,31 @@ export function dayBuilderReducer(
       });
 
     case "opFailed": {
-      const failed = state.pendingOps.find((pending) => pending.id === action.opId);
-      if (!failed) return state;
-      // The op leaves the queue and the message surfaces. The local optimistic
-      // effect is not hand-unwound — the hook force-refetches on failure, exactly
-      // as the accessor prescribes, and that payload is the truth.
+      const index = state.pendingOps.findIndex((pending) => pending.id === action.opId);
+      if (index === -1) return state;
+      const failed = state.pendingOps[index];
+      /**
+       * Unwind the optimistic patch here, rather than waiting for a payload to
+       * correct it.
+       *
+       * This used to trust the accessor to force-refetch and let the truth
+       * arrive that way. It cannot: a rejected op writes nothing, so the forced
+       * refetch returns the *same* version and `applyPayload`'s `>=` rule drops
+       * it — and on a network failure `mutate` returns a string without
+       * refetching at all. Both paths left the member looking at an edit that
+       * was never saved, with nothing that would ever correct it on a
+       * single-member trip.
+       *
+       * Everything queued *after* the failure goes too: those ops were computed
+       * against a state the server rejected, so replaying them on the restored
+       * days would reapply the edit we are undoing. Server wins, which is the
+       * same rule payload reconciliation follows.
+       */
+      const survivors = state.pendingOps.slice(0, index);
       return withShelf({
         ...state,
-        pendingOps: state.pendingOps.filter((pending) => pending.id !== action.opId),
+        days: failed.daysBefore ?? state.days,
+        pendingOps: survivors,
         error: action.message,
       });
     }

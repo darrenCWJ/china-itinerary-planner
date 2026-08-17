@@ -50,6 +50,7 @@ function setup(days: DayPlan[]) {
     <DayBuilder
       tripId="t1"
       payload={payload(days)}
+      forcedAt={0}
       mutate={mutate}
       activitiesByDestination={{
         beijing: [activity("Great Wall"), activity("Summer Palace"), activity("Night market", "any")],
@@ -263,6 +264,7 @@ describe("DayBuilder keyboard path", () => {
       <DayBuilder
         tripId="t1"
         payload={payload([day(1, [])])}
+        forcedAt={0}
         mutate={failing}
         activitiesByDestination={{ beijing: [activity("Great Wall")] }}
       />
