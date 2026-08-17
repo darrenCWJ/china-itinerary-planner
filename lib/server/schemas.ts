@@ -80,7 +80,7 @@ const ItemNoteSchema = z.string().trim().max(200);
 const StartMinutesSchema = z.number().int().min(0).max(1439);
 const DurationMinutesSchema = z.number().int().min(1).max(1440);
 
-export const PlanOpSchema = z.discriminatedUnion("op", [
+const PlanOpVariants = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("addItem"),
     day: DayNumberSchema,
@@ -107,8 +107,15 @@ export const PlanOpSchema = z.discriminatedUnion("op", [
     op: z.literal("setTiming"),
     day: DayNumberSchema,
     itemId: ItemIdSchema,
-    // Both required, so a block is always set or cleared as a whole and a half
-    // a block can never reach storage.
+    /**
+     * Both keys are required — omitting either fails parse. Whether they may
+     * *disagree* in nullness is enforced below, not here: this comment used to
+     * claim the pair could never split, and that was false. Independently
+     * `.nullable()` fields accepted `{ startMinutes: 540, durationMinutes: null }`,
+     * which stored a start with no duration; every reader treats that as untimed
+     * (`lib/timeline.ts`'s both-halves test, `dayLoad`), so the member's block
+     * silently vanished and counted zero minutes. A lost edit with no error.
+     */
     startMinutes: StartMinutesSchema.nullable(),
     durationMinutes: DurationMinutesSchema.nullable(),
   }),
@@ -121,6 +128,27 @@ export const PlanOpSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("addDay"), destinationId: z.string().min(1).max(60).optional() }),
 ]);
+
+/**
+ * A timing pair is set or cleared as a whole — never half.
+ *
+ * The two fields are independently `.nullable()`, so the union alone accepted a
+ * start with a null duration. Nothing downstream treats that as a block:
+ * `lib/timeline.ts` requires both halves, so the item reads as untimed, renders
+ * outside the timeline and contributes zero to the day-load readout. The write
+ * succeeded and the edit was gone. Enforced here rather than by widening the
+ * field types, because both keys really are required and only their agreement
+ * needed a rule.
+ */
+export const PlanOpSchema = PlanOpVariants.superRefine((op, ctx) => {
+  if (op.op !== "setTiming") return;
+  if ((op.startMinutes === null) === (op.durationMinutes === null)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["durationMinutes"],
+    message: "startMinutes and durationMinutes must be set or cleared together",
+  });
+});
 
 export const PlanEditSchema = z.object({
   op: PlanOpSchema,
