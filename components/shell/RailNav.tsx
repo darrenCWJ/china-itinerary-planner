@@ -80,7 +80,9 @@ export function RailNav() {
       className="hidden w-[76px] shrink-0 flex-col gap-1 border-r px-2 py-3 md:flex print:hidden"
       style={{
         borderColor: "var(--line-1)",
-        background: "var(--surf-1)",
+        // Paper, like the header: the rail is chrome, and sharing the header's
+        // fill is what makes the two read as one frame around the content.
+        background: "var(--paper)",
         paddingBottom: "calc(0.75rem + var(--safe-bottom))",
         paddingLeft: "calc(0.5rem + var(--safe-left))",
       }}
