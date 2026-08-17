@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ScheduledItem } from "./itinerary";
-import { DURATION_STEP, MIN_DURATION, adjustDuration, dayLoad, reflow } from "./timeline";
+import {
+  DURATION_STEP,
+  MIN_DURATION,
+  adjustDuration,
+  dayLoad,
+  formatClock,
+  formatSpan,
+  reflow,
+} from "./timeline";
 
 /**
  * The reflow engine (spec §3.2.6): when a block grows or moves, later *timed*
@@ -285,5 +293,32 @@ describe("dayLoad", () => {
     const { gaps } = dayLoad(reflow([timed("a", 540, 120), timed("b", 600, 60)]));
 
     expect(gaps).toBe(0);
+  });
+});
+
+describe("formatClock", () => {
+  it("pads to a 24-hour clock", () => {
+    expect(formatClock(540)).toBe("09:00");
+    expect(formatClock(0)).toBe("00:00");
+    expect(formatClock(605)).toBe("10:05");
+    expect(formatClock(1439)).toBe("23:59");
+  });
+});
+
+describe("formatSpan", () => {
+  it("reads the way a person would say it", () => {
+    expect(formatSpan(45)).toBe("45m");
+    expect(formatSpan(60)).toBe("1h");
+    expect(formatSpan(90)).toBe("1h 30m");
+    // The readout in spec §3.2.6.
+    expect(formatSpan(580)).toBe("9h 40m");
+  });
+
+  it("drops a zero minute part rather than printing 1h 0m", () => {
+    expect(formatSpan(120)).toBe("2h");
+  });
+
+  it("handles nothing planned", () => {
+    expect(formatSpan(0)).toBe("0m");
   });
 });

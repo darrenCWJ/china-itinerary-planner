@@ -133,3 +133,23 @@ export function dayLoad(items: readonly ScheduledItem[]): DayLoad {
 
   return { plannedMinutes, gaps };
 }
+
+/** Minutes from midnight as a 24-hour clock, e.g. 540 → "09:00". */
+export function formatClock(startMinutes: number): string {
+  const hours = Math.floor(startMinutes / 60);
+  const minutes = startMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+/**
+ * A span as humans say it: 90 → "1h 30m", 60 → "1h", 45 → "45m".
+ *
+ * Drops the zero minute part rather than printing "1h 0m", and drops the hour
+ * part below an hour, so the day-load readout stays scannable.
+ */
+export function formatSpan(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}

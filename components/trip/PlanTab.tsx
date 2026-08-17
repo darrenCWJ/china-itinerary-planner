@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { DayBuilder } from "@/components/plan/DayBuilder";
+import { DESTINATIONS } from "@/lib/data";
 import type { TripPlan } from "@/lib/itinerary";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
-import type { Ticket } from "@/lib/tripShared";
+import type { Ticket, TripPayload } from "@/lib/tripShared";
+import type { Activity } from "@/lib/types";
 import { DayCard } from "./DayCard";
 
 /**
@@ -28,9 +31,20 @@ interface Props {
   todayIndex: number | null;
   onToggle(key: string, checked: boolean): void;
   onPlanOp(op: PlanOp): Promise<string | null>;
+  /** Present for members only — the day builder needs the whole payload. */
+  tripId?: string;
+  payload?: TripPayload;
+  mutate?: (url: string, init: RequestInit) => Promise<string | null>;
 }
 
-type View = "list" | "map";
+/**
+ * "build" is the member editing surface (Task 24). It is a third view rather
+ * than a replacement for "list": the DayCard list carries per-day tickets and
+ * the add-day controls, which the builder does not, so swapping it out would
+ * lose them. Guests never see this option, and DayCard stays their renderer
+ * and the print one (J13).
+ */
+type View = "list" | "map" | "build";
 
 export function PlanTab({
   plan,
@@ -41,6 +55,9 @@ export function PlanTab({
   todayIndex,
   onToggle,
   onPlanOp,
+  tripId,
+  payload,
+  mutate,
 }: Props) {
   const [view, setView] = useState<View>("list");
   const [newDayDest, setNewDayDest] = useState("");
@@ -55,6 +72,26 @@ export function PlanTab({
     return [...seen.entries()].map(([id, name]) => ({ id, name }));
   })();
 
+  // The builder needs the whole payload and the accessor's mutate, which only a
+  // member's TripView passes. Guests never get the option.
+  const canBuild = isMember && tripId !== undefined && payload !== undefined && mutate !== undefined;
+
+  /**
+   * Activities per destination id, for the shelf. Curated destinations only —
+   * a catalog city's activities were baked into its plan items at generation and
+   * the Destination object is not stored, so its shelf holds just the custom row.
+   * J6 puts catalog attractions for arbitrary cities out of scope for this PR.
+   */
+  const activitiesByDestination = useMemo(() => {
+    const map: Record<string, readonly Activity[]> = {};
+    for (const day of plan.days) {
+      if (map[day.destinationId]) continue;
+      const curated = DESTINATIONS.find((d) => d.id === day.destinationId);
+      if (curated) map[day.destinationId] = curated.activities;
+    }
+    return map;
+  }, [plan.days]);
+
   const addDay = async () => {
     if (addingDay) return;
     setAddingDay(true);
@@ -68,10 +105,10 @@ export function PlanTab({
     <div className="mt-5 space-y-5">
       <div
         role="group"
-        aria-label="Switch between the day list and the route map"
+        aria-label="Switch between the day list, the route map and the day builder"
         className="flex gap-1 print:hidden"
       >
-        {(["list", "map"] as const).map((option) => (
+        {(canBuild ? (["list", "build", "map"] as const) : (["list", "map"] as const)).map((option) => (
           <button
             key={option}
             type="button"
@@ -81,12 +118,19 @@ export function PlanTab({
               view === option ? "bg-sky text-rail-deep" : "text-ink-soft hover:bg-mist"
             }`}
           >
-            {option === "list" ? "📋 Days" : "🗺️ Route"}
+            {option === "list" ? "📋 Days" : option === "build" ? "🧱 Build" : "🗺️ Route"}
           </button>
         ))}
       </div>
 
-      {view === "map" ? (
+      {view === "build" && canBuild ? (
+        <DayBuilder
+          tripId={tripId}
+          payload={payload}
+          mutate={mutate}
+          activitiesByDestination={activitiesByDestination}
+        />
+      ) : view === "map" ? (
         // Placeholder until Task 30 supplies CountryMap. Deliberately not a
         // spinner or an empty box: a panel that says what it will be is honest,
         // where a loading state would imply something is on its way.
