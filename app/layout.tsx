@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { AppShell } from "@/components/shell/AppShell";
-import { PrefsProvider } from "@/components/shell/PrefsProvider";
 import { ShellTripProvider } from "@/components/shell/ShellTripContext";
+import { TripAccentProvider } from "@/components/shell/TripAccentProvider";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({
@@ -58,16 +58,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: FIRST_PAINT }} />
       </head>
       <body className="bg-[var(--surf-1)] font-sans text-[var(--ink-0)] antialiased">
-        <PrefsProvider>
-          {/*
-            ShellTripProvider sits above AppShell, not inside the trip page: the
-            header reads the open trip and the page publishes it, so the store
-            has to be an ancestor of both. See ShellTripContext.
-          */}
-          <ShellTripProvider>
+        {/*
+          ShellTripProvider is outermost so the accent bridge below can read the
+          open trip. It sits above AppShell either way: the header reads the trip
+          and the page publishes it, so the store has to be an ancestor of both.
+          See ShellTripContext.
+
+          TripAccentProvider then feeds that trip's country into PrefsProvider,
+          which is what makes the per-country accent move at all — prefs used to
+          be the outer provider and could not see the trip, so every trip
+          rendered China's hue.
+        */}
+        <ShellTripProvider>
+          <TripAccentProvider>
             <AppShell>{children}</AppShell>
-          </ShellTripProvider>
-        </PrefsProvider>
+          </TripAccentProvider>
+        </ShellTripProvider>
       </body>
     </html>
   );
