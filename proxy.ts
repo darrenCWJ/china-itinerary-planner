@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
+import { checkAuthSecret } from "@/lib/authSecret";
 import { wallDecision } from "@/lib/wall";
 
 let warnedLockLoss = false;
@@ -21,13 +22,28 @@ export async function proxy(req: NextRequest) {
     );
   }
 
+  const secret = checkAuthSecret(process.env.BETTER_AUTH_SECRET, Boolean(process.env.VERCEL));
+
   const decision = wallDecision({
     pathname: req.nextUrl.pathname,
     hasCode: Boolean(req.nextUrl.searchParams.get("code")),
     hasSessionCookie: getSessionCookie(req) !== null,
     accountsConfigured: Boolean(process.env.BETTER_AUTH_SECRET),
+    secretFatal: !secret.ok && secret.fatal,
   });
   if (decision === "pass") return NextResponse.next();
+
+  // Misconfigured deployment: serve nothing, loudly, rather than serve the
+  // whole site to the public. 503 (not 500) says "come back later" to
+  // crawlers, and no-store keeps a CDN from caching the outage past the fix.
+  // The fix needs a redeploy either way — env vars are read at build.
+  if (decision === "refuse") {
+    console.error(secret.ok ? "wall refused" : secret.message);
+    return new NextResponse("Service unavailable — this deployment is misconfigured.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
 
   const url = req.nextUrl.clone();
   url.pathname = "/login";
@@ -42,8 +58,13 @@ export async function proxy(req: NextRequest) {
 // asset from an exempt surface. Any future asset referenced from /b/* or
 // a guest view will need its own exemption added to this matcher, or it
 // will 404-via-redirect for signed-out visitors instead of loading.
+//
+// api/, b/, login and signup used to be excluded here too. They aren't any
+// more, because a path the proxy never sees is a path the refusal above
+// can't take down — and "the whole thing" has to mean the whole thing.
+// Nothing changes for the wall itself: wallDecision already passes all four
+// by name, so they were exempt twice over and now are exempt once, in the
+// file that spells out why.
 export const config = {
-  // b/ stays exempt (briefing links are their own bearer secret); api/ routes
-  // self-enforce auth; login/signup are the wall's own destination.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/|b/|login|signup).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
