@@ -176,6 +176,38 @@ describe("C1 — one source of truth for the trip tabs", () => {
   });
 });
 
+describe("C2 — the shell owns the bottom edge", () => {
+  /**
+   * No allowlist, by design. Two pinned bottom elements cannot coexist, so the
+   * mobile bottom bar needs the edge to itself — and the wizard footer that used
+   * to sit there was removed in Task 19 rather than deferred.
+   *
+   * Matches Tailwind's `bottom-0`/`inset-x-0 bottom-…` and raw CSS `bottom:`
+   * only in files that also position something fixed, so `sticky` headers and an
+   * unrelated `bottom:` in a transform are not swept up.
+   */
+  const pinsBottom = (text: string) =>
+    /\bfixed\b/.test(text) && /\bbottom-0\b|\binset-x-0 bottom|bottom:\s*0/.test(text);
+
+  it("has no fixed bottom element outside components/shell", () => {
+    const offenders = FILES.filter(
+      (f) => !f.path.startsWith("components/shell/") && pinsBottom(f.text)
+    ).map((f) => f.path);
+    expect(offenders).toEqual([]);
+  });
+
+  it("still recognises a fixed bottom element when it sees one", () => {
+    // The scan is two independent substring tests, so it is worth proving it
+    // fires at all rather than trusting an empty result.
+    expect(pinsBottom('className="fixed inset-x-0 bottom-0 border-t"')).toBe(true);
+    expect(pinsBottom('className="fixed bottom-0"')).toBe(true);
+    expect(pinsBottom('style={{ position: "fixed", bottom: 0 }}')).toBe(true);
+    // And that it does not fire on the things it must tolerate.
+    expect(pinsBottom('className="sticky bottom-0"')).toBe(false);
+    expect(pinsBottom('className="fixed inset-0"')).toBe(false);
+  });
+});
+
 describe("C3 — the day-builder core stays free of React", () => {
   const DAY_BUILDER = join(process.cwd(), "lib", "dayBuilder.ts");
 

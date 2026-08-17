@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CatalogSearch } from "@/components/CatalogSearch";
 import { MapExplorer } from "@/components/map/MapExplorer";
+import { FeasibilityCounter } from "@/components/plan/FeasibilityCounter";
+import { PlaceSearch, type PickedPlace } from "@/components/plan/PlaceSearch";
 import { DESTINATIONS } from "@/lib/data";
+import type { FeasibilityPlace } from "@/lib/feasibility";
 import { SEASON_EMOJI } from "@/lib/meta";
 import type { CatalogHit } from "@/lib/tripShared";
 import type { Destination } from "@/lib/types";
@@ -12,24 +14,32 @@ interface Props {
   selected: string[];
   visited: string[];
   extras: Record<string, CatalogHit>;
+  /** From the details step, now ahead of this one — feeds the counter. */
+  days: number;
   onToggleSelect: (id: string) => void;
   onToggleVisited: (id: string) => void;
   onAddCatalog: (hit: CatalogHit) => void;
   onRemoveCatalog: (qid: string) => void;
   onReorder: (ids: string[]) => void;
   onMonthPicked: (month: number) => void;
+  /** A hand-typed place with no coordinates (spec §3.2.7). */
+  onAddOffMap: (name: string) => void;
+  offMap: readonly Destination[];
 }
 
 export function DestinationStep({
   selected,
   visited,
   extras,
+  days,
   onToggleSelect,
   onToggleVisited,
   onAddCatalog,
   onRemoveCatalog,
   onReorder,
   onMonthPicked,
+  onAddOffMap,
+  offMap,
 }: Props) {
   const [view, setView] = useState<"map" | "cards">("map");
   const [region, setRegion] = useState("All");
@@ -54,6 +64,77 @@ export function DestinationStep({
         : `${dest.name} restored to the destination list`
     );
     onToggleVisited(dest.id);
+  };
+
+  /** Everything picked so far, whatever source it came from. */
+  const picked = useMemo<PickedPlace[]>(
+    () =>
+      selected.flatMap((id): PickedPlace[] => {
+        const curatedHit = DESTINATIONS.find((d) => d.id === id);
+        if (curatedHit) {
+          return [{
+            id,
+            name: curatedHit.name,
+            kind: "curated" as const,
+            lat: curatedHit.lat,
+            lon: curatedHit.lon,
+            country: curatedHit.country ?? "CN",
+          }];
+        }
+        const off = offMap.find((d) => d.id === id);
+        if (off) {
+          return [{ id, name: off.name, kind: "off-map" as const, lat: null, lon: null, country: off.country ?? "CN" }];
+        }
+        const hit = extras[id];
+        if (hit) {
+          return [{ id, name: hit.name, kind: "catalog" as const, lat: null, lon: null, country: "CN" }];
+        }
+        return [];
+      }),
+    [selected, extras, offMap]
+  );
+
+  /**
+   * What the counter measures. Curated entries carry researched ranges; catalog
+   * and off-map ones are flagged so lib/feasibility applies its floor and its
+   * default rather than trusting a synthetic 1.
+   */
+  const feasibilityPlaces = useMemo<FeasibilityPlace[]>(
+    () =>
+      picked.map((place) => {
+        const curatedHit = DESTINATIONS.find((d) => d.id === place.id);
+        if (curatedHit) return { id: place.id, suggestedDays: curatedHit.suggestedDays };
+        if (place.kind === "off-map") return { id: place.id, offMap: true };
+        return { id: place.id, fromCatalog: true, suggestedDays: [1, 3] as [number, number] };
+      }),
+    [picked]
+  );
+
+  const addPlace = (place: PickedPlace) => {
+    if (place.kind === "curated") {
+      onToggleSelect(place.id);
+      return;
+    }
+    if (place.kind === "off-map") {
+      onAddOffMap(place.name);
+      return;
+    }
+    // A catalog pick from search carries only what the ranked row held; the page
+    // keeps the full hit, and goToPlan resolves activities before generating.
+    onAddCatalog({
+      qid: place.id,
+      name: place.name,
+      chineseName: null,
+      province: null,
+      description: null,
+      population: null,
+      attractionCount: 0,
+    });
+  };
+
+  const removePlace = (id: string) => {
+    if (DESTINATIONS.some((d) => d.id === id)) onToggleSelect(id);
+    else onRemoveCatalog(id);
   };
 
   return (
@@ -112,6 +193,31 @@ export function DestinationStep({
         </div>
       </div>
 
+      {/*
+        The primary input (spec §3.2.2). A browsable grid stops working once the
+        app covers every country, so search leads and the map is the secondary
+        discovery pane below it.
+      */}
+      <div className="mt-4 space-y-3">
+        <PlaceSearch
+          curated={DESTINATIONS.filter((d) => !visited.includes(d.id)).map((d) => ({
+            id: d.id,
+            name: d.name,
+            localName: d.localName ?? d.chineseName,
+            knownFor: d.knownFor,
+          }))}
+          coordsFor={(id) => {
+            const d = DESTINATIONS.find((x) => x.id === id);
+            return d && d.lat !== null && d.lon !== null ? { lat: d.lat, lon: d.lon } : null;
+          }}
+          selected={picked}
+          country="CN"
+          onAdd={addPlace}
+          onRemove={removePlace}
+        />
+        <FeasibilityCounter places={feasibilityPlaces} daysSet={days} />
+      </div>
+
       {view === "map" && (
         <MapExplorer
           selected={selected}
@@ -124,6 +230,12 @@ export function DestinationStep({
         />
       )}
 
+      {/*
+        The curated cards stay as a browse-the-highlights view, but they are no
+        longer the way in and no longer carry their own catalog search — search
+        above covers both sources, and two search boxes on one step is a way to
+        make them disagree.
+      */}
       {view === "cards" && (
         <>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -143,13 +255,6 @@ export function DestinationStep({
               or restore a visited place below.
             </p>
           )}
-
-          <CatalogSearch
-            selectedIds={selected}
-            extras={extras}
-            onAdd={onAddCatalog}
-            onRemove={onRemoveCatalog}
-          />
         </>
       )}
 

@@ -154,3 +154,33 @@ describe("rankPlaces", () => {
     expect(results.filter((r) => r.kind === "catalog").length).toBeLessThanOrEqual(10);
   });
 });
+
+describe("rankPlaces query normalisation", () => {
+  // Found in the browser: typing "xian" matched the catalog's Xiangyang and
+  // missed the curated Xi'an entirely, because the apostrophe broke the
+  // substring test. Romanised names carry marks the searcher does not type.
+  it("matches a name containing an apostrophe", () => {
+    const results = rankPlaces("xian", [curated("xian", "Xi'an")], []);
+
+    expect(results[0].id).toBe("xian");
+    expect(results.some((r) => r.kind === "off-map")).toBe(false);
+  });
+
+  it("matches a name carrying diacritics", () => {
+    const results = rankPlaces("urumqi", [curated("urumqi", "Ürümqi")], []);
+
+    expect(results[0].id).toBe("urumqi");
+  });
+
+  it("still treats an accented exact name as exact", () => {
+    const results = rankPlaces("Ürümqi", [curated("urumqi", "Ürümqi")], []);
+
+    expect(results.some((r) => r.kind === "off-map")).toBe(false);
+  });
+
+  it("does not collapse genuinely different names", () => {
+    const results = rankPlaces("xian", [curated("xiamen", "Xiamen")], []);
+
+    expect(results.filter((r) => r.kind === "curated")).toHaveLength(0);
+  });
+});
