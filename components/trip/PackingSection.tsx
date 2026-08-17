@@ -22,7 +22,7 @@ export function PackingSection({ packing, checkedBy, isMember, onToggle }: Props
   return (
     <div className="mt-5 grid gap-4 sm:grid-cols-2">
       {packing.map((group) => (
-        <div key={group.title} className="rounded-xl border border-sky bg-paper p-4">
+        <div key={group.title} className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
           <p className="font-semibold">
             <span aria-hidden>{group.emoji}</span> {group.title}
           </p>
@@ -38,11 +38,11 @@ export function PackingSection({ packing, checkedBy, isMember, onToggle }: Props
                       checked={by !== undefined}
                       disabled={!isMember}
                       onChange={(e) => onToggle(key, e.target.checked)}
-                      className="mt-0.5 h-4 w-4 accent-rail"
+                      className="mt-0.5 h-4 w-4 accent-[var(--accent-ink)]"
                     />
-                    <span className={by ? "text-ink-soft line-through" : ""}>
+                    <span className={by ? "text-[var(--ink-2)] line-through" : ""}>
                       {item}
-                      {by && <span className="ml-1 text-[11px] text-rail no-underline"> · {by}</span>}
+                      {by && <span className="ml-1 text-[11px] text-[var(--accent-ink)] no-underline"> · {by}</span>}
                     </span>
                   </label>
                 </li>

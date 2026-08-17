@@ -19,18 +19,18 @@ export function PrivateGate({ onSubmitCode }: Props) {
   };
 
   return (
-    <div className="mx-auto mt-16 max-w-md rounded-xl border border-sky bg-paper p-8 text-center">
+    <div className="mx-auto mt-16 max-w-md rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-8 text-center">
       <p className="font-display text-xl font-bold">This trip is private</p>
-      <p className="mt-2 text-sm text-ink-soft">
+      <p className="mt-2 text-sm text-[var(--ink-2)]">
         Enter its join code to view the plan. Members sign in to edit.
       </p>
       <div className="mt-4 flex items-center justify-center gap-2">
         <input type="text" value={code} maxLength={12} aria-label="Join code"
-          className="w-40 rounded-lg border border-sky bg-mist px-3 py-2 text-center font-mono text-sm tracking-widest uppercase"
+          className="w-40 rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-center font-mono text-sm tracking-widest uppercase"
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
         <button type="button" onClick={() => void submit()} disabled={busy}
-          className="rounded-lg bg-rail px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? "…" : "View trip"}
         </button>
       </div>

@@ -59,13 +59,13 @@ export function TicketsTab({
   return (
     <div className="mt-5 space-y-4">
       {!hasStartDate && sorted.some((t) => t.date) && (
-        <p className="rounded-lg border border-dashed border-rail/40 bg-paper px-4 py-2 text-xs text-ink-soft">
+        <p className="rounded-lg border border-dashed border-[var(--accent-ink)]/40 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
           💡 Set a trip start date to see tickets pinned to their itinerary days.
         </p>
       )}
 
       {sorted.length === 0 && !adding && (
-        <div className="rounded-xl border-2 border-dashed border-sky bg-paper p-8 text-center text-sm text-ink-soft">
+        <div className="rounded-xl border-2 border-dashed border-[var(--line-1)] bg-[var(--paper)] p-8 text-center text-sm text-[var(--ink-2)]">
           No tickets yet. Add your flights, trains, hotels and bookings so the whole crew can see
           them.
         </div>
@@ -105,7 +105,7 @@ export function TicketsTab({
             setError(null);
             setAdding(true);
           }}
-          className="rounded-lg border border-dashed border-rail/50 px-4 py-2 text-sm font-semibold text-rail transition-colors hover:bg-sky print:hidden"
+          className="rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] print:hidden"
         >
           + Add ticket
         </button>
@@ -148,40 +148,40 @@ function TicketCard({
     : "Date TBC";
 
   return (
-    <article className="overflow-hidden rounded-xl border border-sky bg-paper shadow-sm">
+    <article className="overflow-hidden rounded-xl border border-[var(--line-1)] bg-[var(--paper)] shadow-sm">
       <div className="flex items-stretch">
-        <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-rail-deep py-4 text-white">
+        <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] py-4 text-white">
           <span aria-hidden className="text-xl">
             {meta.emoji}
           </span>
           <span className="font-mono text-[9px] uppercase tracking-widest">{meta.label}</span>
         </div>
-        <div className="min-w-0 flex-1 border-l-2 border-dashed border-sky px-4 py-3">
+        <div className="min-w-0 flex-1 border-l-2 border-dashed border-[var(--line-1)] px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <p className="font-display text-base font-bold">{ticket.title}</p>
-            <p className="font-mono text-xs text-rail">
+            <p className="font-mono text-xs text-[var(--accent-ink)]">
               {dateLabel}
               {ticket.time && ` · ${ticket.time}`}
             </p>
           </div>
-          {route && <p className="mt-0.5 font-mono text-sm tracking-wide text-ink-soft">{route}</p>}
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
+          {route && <p className="mt-0.5 font-mono text-sm tracking-wide text-[var(--ink-2)]">{route}</p>}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-2)]">
             {ticket.confirmation && (
               <span>
-                Conf. <span className="font-mono font-semibold text-ink">{ticket.confirmation}</span>
+                Conf. <span className="font-mono font-semibold text-[var(--ink-0)]">{ticket.confirmation}</span>
               </span>
             )}
             {ticket.price && <span>💰 {ticket.price}</span>}
             <span className="ml-auto">added by {ticket.addedBy}</span>
           </div>
-          {ticket.notes && <p className="mt-1.5 text-xs text-ink-soft">{ticket.notes}</p>}
+          {ticket.notes && <p className="mt-1.5 text-xs text-[var(--ink-2)]">{ticket.notes}</p>}
           {canEdit && (
             <div className="mt-2 flex gap-2 print:hidden">
               <button
                 type="button"
                 disabled={pending}
                 onClick={onEdit}
-                className="rounded px-2 py-0.5 text-xs font-semibold text-rail transition-colors hover:bg-sky disabled:opacity-40"
+                className="rounded px-2 py-0.5 text-xs font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
               >
                 ✎ Edit
               </button>
@@ -189,7 +189,7 @@ function TicketCard({
                 type="button"
                 disabled={pending}
                 onClick={onDelete}
-                className="rounded px-2 py-0.5 text-xs font-semibold text-seal transition-colors hover:bg-sky disabled:opacity-40"
+                className="rounded px-2 py-0.5 text-xs font-semibold text-seal transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
               >
                 ✕ Remove
               </button>
@@ -262,11 +262,11 @@ function TicketForm({
   const set = (patch: Partial<FormFields>) => setFields((f) => ({ ...f, ...patch }));
   const canSave = fields.title.trim().length > 0 && !saving;
   const input =
-    "mt-1 w-full rounded-lg border border-sky bg-paper px-3 py-1.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail";
-  const label = "text-xs font-medium text-ink-soft";
+    "mt-1 w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]";
+  const label = "text-xs font-medium text-[var(--ink-2)]";
 
   return (
-    <div className="rounded-xl border border-rail/40 bg-mist p-4 print:hidden">
+    <div className="rounded-xl border border-[var(--accent-ink)]/40 bg-[var(--surf-1)] p-4 print:hidden">
       <div className="flex flex-wrap gap-2">
         {TICKET_KINDS.map((k) => (
           <button
@@ -275,7 +275,7 @@ function TicketForm({
             onClick={() => set({ kind: k.id })}
             aria-pressed={fields.kind === k.id}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              fields.kind === k.id ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+              fields.kind === k.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
             }`}
           >
             {k.emoji} {k.label}
@@ -333,14 +333,14 @@ function TicketForm({
           type="button"
           disabled={!canSave}
           onClick={() => onSave(toDraft(fields))}
-          className="rounded-lg bg-rail px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
         >
           {saving ? "Saving…" : saveLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-sky px-5 py-2 text-sm font-semibold text-ink-soft transition-colors hover:bg-sky"
+          className="rounded-lg border border-[var(--line-1)] px-5 py-2 text-sm font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--line-1)]"
         >
           Cancel
         </button>

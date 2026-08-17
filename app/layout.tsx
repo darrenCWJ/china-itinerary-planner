@@ -57,7 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: FIRST_PAINT }} />
       </head>
-      <body className="bg-mist font-sans text-ink antialiased">
+      <body className="bg-[var(--surf-1)] font-sans text-[var(--ink-0)] antialiased">
         <PrefsProvider>
           {/*
             ShellTripProvider sits above AppShell, not inside the trip page: the

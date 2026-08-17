@@ -25,11 +25,11 @@ export function JoinClaimDialog({ claimable, legacyName, onJoin }: Props) {
   };
 
   return (
-    <div className="mt-6 rounded-xl border-2 border-dashed border-seal/50 bg-paper p-5">
+    <div className="mt-6 rounded-xl border-2 border-dashed border-seal/50 bg-[var(--paper)] p-5">
       <h2 className="font-display text-lg font-semibold">Join this trip</h2>
       {claimable.length > 0 && (
         <>
-          <p className="mt-1 text-sm text-ink-soft">
+          <p className="mt-1 text-sm text-[var(--ink-2)]">
             Were you already on this trip before accounts? Claim your old name to keep
             everything you ticked, spent and wrote.
           </p>
@@ -37,13 +37,13 @@ export function JoinClaimDialog({ claimable, legacyName, onJoin }: Props) {
             {claimable.map((name) => (
               <label key={name} className="flex cursor-pointer items-center gap-2 text-sm">
                 <input type="radio" name="claim" checked={choice === name}
-                  onChange={() => setChoice(name)} className="accent-rail" />
+                  onChange={() => setChoice(name)} className="accent-[var(--accent-ink)]" />
                 I am <span className="font-semibold">{name}</span>
               </label>
             ))}
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input type="radio" name="claim" checked={choice === "NEW"}
-                onChange={() => setChoice("NEW")} className="accent-rail" />
+                onChange={() => setChoice("NEW")} className="accent-[var(--accent-ink)]" />
               I&apos;m new — join under my account name
             </label>
           </div>

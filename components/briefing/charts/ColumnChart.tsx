@@ -15,8 +15,8 @@ export function ColumnChart({ title, points }: Props) {
   const barW = (VIEW_W - GAP * (points.length - 1)) / points.length;
 
   return (
-    <figure className="rounded-xl border border-sky bg-paper p-4">
-      <figcaption className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+    <figure className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
+      <figcaption className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-2)]">
         {title}
       </figcaption>
       <svg
@@ -35,12 +35,12 @@ export function ColumnChart({ title, points }: Props) {
               y={VIEW_H - h}
               width={barW}
               height={h}
-              className="fill-rail"
+              className="fill-[var(--accent-ink)]"
             />
           );
         })}
       </svg>
-      <p className="mt-1 flex justify-between text-[0.65rem] text-ink-soft">
+      <p className="mt-1 flex justify-between text-[0.65rem] text-[var(--ink-2)]">
         <span>Day {points[0].day}</span>
         <span>Day {points[points.length - 1].day}</span>
       </p>

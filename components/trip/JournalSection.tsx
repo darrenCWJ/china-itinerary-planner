@@ -108,22 +108,22 @@ export function JournalSection({
   };
 
   return (
-    <div className="rounded-xl border border-sky bg-paper p-5">
+    <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
       <h3 className="font-display text-lg font-semibold">Trip journal</h3>
 
       {isMember && (
-        <div className="mt-3 rounded-lg bg-mist p-3">
+        <div className="mt-3 rounded-lg bg-[var(--surf-1)] p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs font-medium text-ink-soft">
+            <label className="text-xs font-medium text-[var(--ink-2)]">
               Day
               <input type="date" value={date}
-                className="ml-2 rounded-lg border border-sky bg-paper px-2 py-1 text-sm text-ink"
+                className="ml-2 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink-0)]"
                 onChange={(e) => setDate(e.target.value)} />
             </label>
           </div>
           <textarea value={text} rows={3} maxLength={5000}
             placeholder="What happened today?"
-            className="mt-2 block w-full rounded-lg border border-sky bg-paper px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
+            className="mt-2 block w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
             onChange={(e) => setText(e.target.value)} />
           {photos.length > 0 && (
             <ul className="mt-2 flex flex-wrap gap-2">
@@ -133,7 +133,7 @@ export function JournalSection({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={photoUrl(tripId, p)} alt="" className="h-16 w-16 rounded-lg object-cover" />
                   ) : (
-                    <span className="inline-block max-w-40 truncate rounded-lg bg-paper px-2 py-1 text-xs">
+                    <span className="inline-block max-w-40 truncate rounded-lg bg-[var(--paper)] px-2 py-1 text-xs">
                       🔗 {p.ref}
                     </span>
                   )}
@@ -148,7 +148,7 @@ export function JournalSection({
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {photoUploads && (
-              <label className="cursor-pointer rounded-lg border border-sky bg-paper px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-sky">
+              <label className="cursor-pointer rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-xs font-medium text-[var(--ink-2)] hover:bg-[var(--line-1)]">
                 📷 Add photo
                 <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
                   onChange={(e) => {
@@ -159,14 +159,14 @@ export function JournalSection({
               </label>
             )}
             <input type="url" value={link} placeholder="https:// photo link"
-              className="w-48 rounded-lg border border-sky bg-paper px-2 py-1.5 text-xs text-ink"
+              className="w-48 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 text-xs text-[var(--ink-0)]"
               onChange={(e) => setLink(e.target.value)} />
             <button type="button" onClick={addLink}
-              className="rounded-lg border border-sky bg-paper px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-sky">
+              className="rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-xs font-medium text-[var(--ink-2)] hover:bg-[var(--line-1)]">
               Attach link
             </button>
             <button type="button" onClick={() => void submit()} disabled={busy}
-              className="ml-auto rounded-lg bg-rail px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+              className="ml-auto rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
               {busy ? "Saving…" : "Add entry"}
             </button>
           </div>
@@ -175,29 +175,29 @@ export function JournalSection({
       )}
 
       {byDate.length === 0 && (
-        <p className="mt-3 text-sm text-ink-soft">No entries yet — the diary starts with you.</p>
+        <p className="mt-3 text-sm text-[var(--ink-2)]">No entries yet — the diary starts with you.</p>
       )}
 
       <div className="mt-4 space-y-4">
         {byDate.map(([day, entries]) => (
           <div key={day}>
-            <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">{day}</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-[var(--ink-2)]">{day}</p>
             <ul className="mt-1.5 space-y-2">
               {entries.map((e) => (
-                <li key={e.id} className="rounded-lg border border-sky bg-mist/40 p-3 text-sm">
-                  <p className="text-xs font-medium text-rail">{e.by}</p>
+                <li key={e.id} className="rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)]/40 p-3 text-sm">
+                  <p className="text-xs font-medium text-[var(--accent-ink)]">{e.by}</p>
                   {editingId === e.id ? (
                     <div className="mt-1">
                       <textarea value={editText} rows={3} maxLength={5000}
-                        className="block w-full rounded-lg border border-sky bg-paper px-3 py-2 text-sm text-ink"
+                        className="block w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink-0)]"
                         onChange={(ev) => setEditText(ev.target.value)} />
                       <div className="mt-1.5 flex gap-2">
                         <button type="button" disabled={busy} onClick={() => void saveEdit(e.id)}
-                          className="rounded-lg bg-rail px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
                           Save
                         </button>
                         <button type="button" onClick={() => setEditingId(null)}
-                          className="text-xs text-ink-soft hover:text-ink">
+                          className="text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]">
                           Cancel
                         </button>
                       </div>
@@ -215,7 +215,7 @@ export function JournalSection({
                               className="h-24 w-24 rounded-lg object-cover" />
                           ) : (
                             <a href={p.ref} target="_blank" rel="noopener noreferrer"
-                              className="inline-block max-w-48 truncate rounded-lg bg-paper px-2 py-1 text-xs text-rail hover:underline">
+                              className="inline-block max-w-48 truncate rounded-lg bg-[var(--paper)] px-2 py-1 text-xs text-[var(--accent-ink)] hover:underline">
                               🔗 photo link
                             </a>
                           )}
@@ -230,11 +230,11 @@ export function JournalSection({
                           setEditingId(e.id);
                           setEditText(e.text);
                         }}
-                        className="text-xs text-ink-soft hover:text-ink">
+                        className="text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]">
                         Edit
                       </button>
                       <button type="button" onClick={() => void onDelete(e.id)}
-                        className="text-xs text-ink-soft hover:text-seal">
+                        className="text-xs text-[var(--ink-2)] hover:text-seal">
                         Delete
                       </button>
                     </div>

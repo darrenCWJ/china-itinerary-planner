@@ -78,8 +78,8 @@ export function AppShell({
 
   return (
     <div
-      // --surf-1 is #f1f5fa, the same value as the retiring `bg-mist` the body
-      // carries today, and --paper is the white the old header used. Assigning
+      // --surf-1 is #f1f5fa, the same value the retiring mist palette gave the
+      // body, and --paper is the white the old header used. Assigning
       // them this way round is what keeps the cutover invisible to every page:
       // content keeps its backdrop and the header keeps its contrast. The
       // reverse — which reads more naturally from the token names — would flip
@@ -89,7 +89,7 @@ export function AppShell({
     >
       <header
         // border-b-2 border-dashed reproduces the boarding-pass strip from the
-        // old header (--line-1 is the same #d9e7f4 as `border-sky`). The spec
+        // old header (--line-1 is the same #d9e7f4 the retired sky border was). The spec
         // redesigns the header's contents, not the project's ticket motif.
         className="flex items-center gap-3 border-b-2 border-dashed px-4 py-2 print:hidden"
         style={{

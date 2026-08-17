@@ -26,11 +26,11 @@ export default function AccountPage() {
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
 
-  if (isPending) return <main className="p-8 text-sm text-ink-soft">Loading…</main>;
+  if (isPending) return <main className="p-8 text-sm text-[var(--ink-2)]">Loading…</main>;
   if (!session) {
     return (
       <main className="p-8">
-        <Link href={`/login${nextSuffix}`} className="text-rail hover:underline">Sign in</Link> to manage your account.
+        <Link href={`/login${nextSuffix}`} className="text-[var(--accent-ink)] hover:underline">Sign in</Link> to manage your account.
       </main>
     );
   }
@@ -78,60 +78,60 @@ export default function AccountPage() {
   };
 
   const inputCls =
-    "mt-1 block w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink";
+    "mt-1 block w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--ink-0)]";
 
   return (
     <main className="mx-auto max-w-md px-4 py-10">
       <h1 className="font-display text-2xl font-bold">Account</h1>
-      <p className="mt-1 text-sm text-ink-soft">
+      <p className="mt-1 text-sm text-[var(--ink-2)]">
         {session.user.name} · {session.user.email}
       </p>
-      <p className="mt-1 font-mono text-[11px] text-ink-soft">id: {session.user.id}</p>
+      <p className="mt-1 font-mono text-[11px] text-[var(--ink-2)]">id: {session.user.id}</p>
 
-      <section className="mt-6 rounded-xl border border-sky bg-paper p-5">
+      <section className="mt-6 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
         <h2 className="font-display text-lg font-semibold">Change password</h2>
-        <label className="mt-3 block text-xs font-medium text-ink-soft">
+        <label className="mt-3 block text-xs font-medium text-[var(--ink-2)]">
           Current password
           <input type="password" value={currentPassword} className={inputCls}
             autoComplete="current-password"
             onChange={(e) => setCurrentPassword(e.target.value)} />
         </label>
-        <label className="mt-3 block text-xs font-medium text-ink-soft">
+        <label className="mt-3 block text-xs font-medium text-[var(--ink-2)]">
           New password
           <input type="password" value={newPassword} className={inputCls}
             autoComplete="new-password"
             onChange={(e) => setNewPassword(e.target.value)} />
         </label>
         <button type="button" onClick={() => void changePassword()} disabled={busy}
-          className="mt-4 rounded-lg bg-rail px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          className="mt-4 rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? "…" : "Change password"}
         </button>
         {message && <p role="status" className="mt-2 text-xs text-seal">{message}</p>}
       </section>
 
-      <section className="mt-4 rounded-xl border border-sky bg-paper p-5">
+      <section className="mt-4 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
         <h2 className="font-display text-lg font-semibold">Admin · reset a member&apos;s password</h2>
-        <p className="mt-1 text-xs text-ink-soft">
+        <p className="mt-1 text-xs text-[var(--ink-2)]">
           Only works when your account id is listed in ADMIN_USER_IDS.
         </p>
         {users === null ? (
           <button type="button" onClick={() => void loadUsers()} disabled={adminBusy}
-            className="mt-3 rounded-lg border border-sky px-3 py-1.5 text-sm text-rail hover:bg-sky disabled:opacity-50">
+            className="mt-3 rounded-lg border border-[var(--line-1)] px-3 py-1.5 text-sm text-[var(--accent-ink)] hover:bg-[var(--line-1)] disabled:opacity-50">
             Load members
           </button>
         ) : (
           <ul className="mt-3 space-y-2">
             {users.map((u) => (
               <li key={u.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="min-w-32 truncate">{u.name} <span className="text-xs text-ink-soft">{u.email}</span></span>
+                <span className="min-w-32 truncate">{u.name} <span className="text-xs text-[var(--ink-2)]">{u.email}</span></span>
                 <input type="password" placeholder="new password" aria-label={`New password for ${u.email}`}
                   value={resetPasswords[u.id] ?? ""}
-                  className="w-36 rounded-lg border border-sky bg-mist px-2 py-1 text-xs"
+                  className="w-36 rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-2 py-1 text-xs"
                   onChange={(e) =>
                     setResetPasswords((prev) => ({ ...prev, [u.id]: e.target.value }))
                   } />
                 <button type="button" onClick={() => void resetFor(u.id)} disabled={adminBusy}
-                  className="rounded-lg bg-rail px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                  className="rounded-lg bg-[var(--accent-ink)] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50">
                   Reset
                 </button>
               </li>

@@ -54,9 +54,9 @@ export function CatalogSearch({ selectedIds, extras, onAdd, onRemove }: Props) {
   const chosen = Object.values(extras).filter((e) => selectedIds.includes(e.qid));
 
   return (
-    <div className="mt-8 rounded-xl border border-sky bg-paper p-5">
+    <div className="mt-8 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
       <h3 className="font-display text-lg font-semibold">Somewhere else in China?</h3>
-      <p className="mt-1 text-xs text-ink-soft">
+      <p className="mt-1 text-xs text-[var(--ink-2)]">
         Search every city in the country — powered by the all-China catalog (Wikidata).
       </p>
       <input
@@ -65,20 +65,20 @@ export function CatalogSearch({ selectedIds, extras, onAdd, onRemove }: Props) {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Try Luoyang, Datong, Dunhuang, Kashgar…"
         aria-label="Search all cities in China"
-        className="mt-3 w-full rounded-lg border border-sky bg-mist px-4 py-2.5 text-sm focus-visible:outline-2 focus-visible:outline-rail"
+        className="mt-3 w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-4 py-2.5 text-sm focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
       />
 
       {state.available === false && (
-        <p className="mt-3 rounded-lg bg-sky/40 p-3 text-xs text-ink-soft">
+        <p className="mt-3 rounded-lg bg-[var(--line-1)]/40 p-3 text-xs text-[var(--ink-2)]">
           The all-China catalog hasn&apos;t been generated yet. Run{" "}
           <code className="font-mono">node scripts/ingest-destinations.mjs</code> (or POST{" "}
           <code className="font-mono">/api/destinations/refresh</code>) to fetch it.
         </p>
       )}
-      {state.loading && <p className="mt-3 text-xs text-ink-soft">Searching…</p>}
+      {state.loading && <p className="mt-3 text-xs text-[var(--ink-2)]">Searching…</p>}
 
       {state.results.length > 0 && (
-        <ul className="mt-3 divide-y divide-sky/60 rounded-lg border border-sky">
+        <ul className="mt-3 divide-y divide-[var(--line-1)]/60 rounded-lg border border-[var(--line-1)]">
           {state.results.slice(0, 8).map((hit) => {
             const isChosen = selectedIds.includes(hit.qid);
             return (
@@ -90,15 +90,15 @@ export function CatalogSearch({ selectedIds, extras, onAdd, onRemove }: Props) {
                       <span className="ml-2 font-kai text-seal">{hit.chineseName}</span>
                     )}
                     {hit.province && (
-                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-ink-soft">
+                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-[var(--ink-2)]">
                         {hit.province}
                       </span>
                     )}
                   </p>
                   {hit.description && (
-                    <p className="truncate text-xs text-ink-soft">{hit.description}</p>
+                    <p className="truncate text-xs text-[var(--ink-2)]">{hit.description}</p>
                   )}
-                  <p className="text-[11px] text-ink-soft">
+                  <p className="text-[11px] text-[var(--ink-2)]">
                     {hit.attractionCount > 0
                       ? `${hit.attractionCount} known attraction${hit.attractionCount > 1 ? "s" : ""}`
                       : "General exploration plan"}
@@ -109,8 +109,8 @@ export function CatalogSearch({ selectedIds, extras, onAdd, onRemove }: Props) {
                   onClick={() => (isChosen ? onRemove(hit.qid) : onAdd(hit))}
                   className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
                     isChosen
-                      ? "bg-sky text-rail-deep hover:bg-sky/70"
-                      : "bg-rail text-white hover:bg-rail-deep"
+                      ? "bg-[var(--line-1)] text-[var(--accent-ink)] hover:bg-[var(--line-1)]/70"
+                      : "bg-[var(--accent-ink)] text-white hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
                   }`}
                 >
                   {isChosen ? "Remove" : "Add"}
@@ -123,19 +123,19 @@ export function CatalogSearch({ selectedIds, extras, onAdd, onRemove }: Props) {
 
       {chosen.length > 0 && (
         <div className="mt-4">
-          <p className="text-xs font-medium text-ink-soft">Added from the catalog:</p>
+          <p className="text-xs font-medium text-[var(--ink-2)]">Added from the catalog:</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {chosen.map((hit) => (
               <span
                 key={hit.qid}
-                className="flex items-center gap-1.5 rounded-full border border-rail bg-sky/50 px-3 py-1 text-xs font-medium"
+                className="flex items-center gap-1.5 rounded-full border border-[var(--accent-ink)] bg-[var(--line-1)]/50 px-3 py-1 text-xs font-medium"
               >
                 📍 {hit.name}
                 <button
                   type="button"
                   onClick={() => onRemove(hit.qid)}
                   aria-label={`Remove ${hit.name}`}
-                  className="text-rail-deep hover:text-seal"
+                  className="text-[var(--accent-ink)] hover:text-seal"
                 >
                   ✕
                 </button>

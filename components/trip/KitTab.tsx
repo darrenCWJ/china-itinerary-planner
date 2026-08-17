@@ -49,7 +49,7 @@ export function KitTab({
         <h2 id="kit-bookings" className="font-display text-lg font-semibold">
           Bookings
         </h2>
-        <p className="mt-0.5 text-sm text-ink-soft">
+        <p className="mt-0.5 text-sm text-[var(--ink-2)]">
           Tickets, trains and stays — everything with a confirmation number.
         </p>
         {/* TicketsTab renders its own top margin, so no wrapper spacing here. */}
@@ -67,7 +67,7 @@ export function KitTab({
         <h2 id="kit-bag" className="font-display text-lg font-semibold">
           Your bag
         </h2>
-        <p className="mt-0.5 text-sm text-ink-soft">
+        <p className="mt-0.5 text-sm text-[var(--ink-2)]">
           Tick items off as you pack. Everyone sees who packed what.
         </p>
         <PackingSection

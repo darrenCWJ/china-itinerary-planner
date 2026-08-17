@@ -115,7 +115,7 @@ export function PlanTab({
             onClick={() => setView(option)}
             aria-pressed={view === option}
             className={`min-h-[var(--tap-min)] rounded-lg px-3 text-sm font-semibold transition-colors ${
-              view === option ? "bg-sky text-rail-deep" : "text-ink-soft hover:bg-mist"
+              view === option ? "bg-[var(--line-1)] text-[var(--accent-ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surf-1)]"
             }`}
           >
             {option === "list" ? "📋 Days" : option === "build" ? "🧱 Build" : "🗺️ Route"}
@@ -134,16 +134,16 @@ export function PlanTab({
         // Placeholder until Task 30 supplies CountryMap. Deliberately not a
         // spinner or an empty box: a panel that says what it will be is honest,
         // where a loading state would imply something is on its way.
-        <div className="rounded-xl border border-dashed border-sky bg-paper p-8 text-center">
+        <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--paper)] p-8 text-center">
           <p className="font-display text-base font-semibold">Route map</p>
-          <p className="mt-1 text-sm text-ink-soft">
+          <p className="mt-1 text-sm text-[var(--ink-2)]">
             The map view arrives with the country map. Use Days for now.
           </p>
         </div>
       ) : (
         <>
           {!startDate && tickets.some((t) => t.date) && (
-            <p className="rounded-lg border border-dashed border-rail/40 bg-paper px-4 py-2 text-xs text-ink-soft">
+            <p className="rounded-lg border border-dashed border-[var(--accent-ink)]/40 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
               💡 Set a trip start date to see tickets pinned to their days.
             </p>
           )}
@@ -171,16 +171,16 @@ export function PlanTab({
                 type="button"
                 onClick={() => void addDay()}
                 disabled={addingDay}
-                className="rounded-lg border border-dashed border-rail/50 px-4 py-2 text-sm font-semibold text-rail transition-colors hover:bg-sky disabled:opacity-40"
+                className="rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
               >
                 {addingDay ? "Adding…" : "+ Add day"}
               </button>
-              <span className="text-xs text-ink-soft">in</span>
+              <span className="text-xs text-[var(--ink-2)]">in</span>
               <select
                 value={newDayDest}
                 onChange={(e) => setNewDayDest(e.target.value)}
                 aria-label="Destination for the new day"
-                className="rounded-lg border border-sky bg-paper px-2 py-1.5 text-sm text-ink"
+                className="rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 text-sm text-[var(--ink-0)]"
               >
                 <option value="">Same as last day</option>
                 {destinationOptions.map((d) => (
@@ -196,7 +196,7 @@ export function PlanTab({
       )}
 
       {plan.tips.length > 0 && (
-        <div className="rounded-xl border border-sky bg-paper p-5 text-sm">
+        <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5 text-sm">
           <p className="font-semibold">Good to know</p>
           <ul className="mt-2 space-y-1.5">
             {plan.tips.map((tip) => (

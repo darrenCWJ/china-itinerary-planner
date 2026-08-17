@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MapExplorer } from "@/components/map/MapExplorer";
+import { MapExplorer, type MapLevel } from "@/components/map/MapExplorer";
 import { FeasibilityCounter } from "@/components/plan/FeasibilityCounter";
 import { PlaceSearch, type PickedPlace } from "@/components/plan/PlaceSearch";
+import { getCountry } from "@/lib/countries";
 import { DESTINATIONS } from "@/lib/data";
 import type { FeasibilityPlace } from "@/lib/feasibility";
 import { SEASON_EMOJI } from "@/lib/meta";
@@ -44,15 +45,50 @@ export function DestinationStep({
   const [view, setView] = useState<"map" | "cards">("map");
   const [region, setRegion] = useState("All");
   const [announcement, setAnnouncement] = useState("");
-  const regions = useMemo(
-    () => ["All", ...Array.from(new Set(DESTINATIONS.map((d) => d.region)))],
-    []
+  /**
+   * The country being planned. It lives here rather than inside `MapExplorer`
+   * because search is scoped by it too — the map is one of two ways into a
+   * country, and both have to agree on which one is open.
+   */
+  const [country, setCountry] = useState("CN");
+  const [mapLevel, setMapLevel] = useState<MapLevel>("country");
+  const activeCountry = getCountry(country);
+  const countryLabel = activeCountry.name || activeCountry.code || "this country";
+
+  /**
+   * Curated data carries no country until PR4's pivot, so an absent one means
+   * China. Offers are scoped: browsing Japan must not offer Chinese cities.
+   * Resolution of *already picked* ids still reads the whole set below, so
+   * switching country never orphans a chip.
+   */
+  const countryDestinations = useMemo(
+    () => DESTINATIONS.filter((d) => (d.country ?? "CN") === activeCountry.code),
+    [activeCountry.code]
   );
 
-  const available = DESTINATIONS.filter(
+  const regions = useMemo(
+    () => ["All", ...Array.from(new Set(countryDestinations.map((d) => d.region)))],
+    [countryDestinations]
+  );
+
+  const available = countryDestinations.filter(
     (d) => !visited.includes(d.id) && (region === "All" || d.region === region)
   );
-  const visitedDests = DESTINATIONS.filter((d) => visited.includes(d.id));
+  const visitedDests = countryDestinations.filter((d) => visited.includes(d.id));
+
+  const changeCountry = (code: string) => {
+    setCountry(code);
+    // A region filter belongs to the country it was chosen in — carrying
+    // "North" into another country would filter its cards down to nothing.
+    setRegion("All");
+  };
+
+  const openCountryPicker = () => {
+    // The picker is the map pane's world level, so the entry point has to bring
+    // that pane into view as well as switch which level it shows.
+    setView("map");
+    setMapLevel("world");
+  };
 
   // The clicked card unmounts when a destination moves between the available
   // and visited lists, so announce the change for screen-reader users.
@@ -145,15 +181,25 @@ export function DestinationStep({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-bold">Where to this time?</h2>
-          <p className="mt-1 text-sm text-ink-soft">
+          <p className="mt-1 text-sm text-[var(--ink-2)]">
             {view === "map"
               ? "Zoom the map, drag the timeline to your month, and tap places to add them."
               : "Pick one or more destinations. Mark places you've already been and they'll drop out of the running."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {/* The way into the world map (spec §6) — reachable from either view. */}
+          <button
+            type="button"
+            onClick={openCountryPicker}
+            aria-label={`Change country — planning in ${countryLabel}`}
+            className="flex min-h-[var(--tap-min)] items-center gap-1.5 rounded-full border border-[var(--line-1)] bg-[var(--paper)] px-3.5 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+          >
+            <span aria-hidden>🌍</span>
+            {countryLabel}
+          </button>
           <div
-            className="flex overflow-hidden rounded-full border border-sky"
+            className="flex overflow-hidden rounded-full border border-[var(--line-1)]"
             role="group"
             aria-label="Switch between map and card view"
           >
@@ -164,7 +210,7 @@ export function DestinationStep({
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
                 className={`px-3.5 py-1 text-xs font-medium transition-colors ${
-                  view === v ? "bg-rail text-white" : "bg-paper text-ink-soft hover:bg-sky"
+                  view === v ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
                 }`}
               >
                 {v === "map" ? "🗺️ Map" : "🎴 Cards"}
@@ -181,8 +227,8 @@ export function DestinationStep({
                   aria-pressed={region === r}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                     region === r
-                      ? "bg-rail text-white"
-                      : "bg-paper text-ink-soft hover:bg-sky"
+                      ? "bg-[var(--accent-ink)] text-white"
+                      : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
                   }`}
                 >
                   {r}
@@ -200,7 +246,7 @@ export function DestinationStep({
       */}
       <div className="mt-4 space-y-3">
         <PlaceSearch
-          curated={DESTINATIONS.filter((d) => !visited.includes(d.id)).map((d) => ({
+          curated={countryDestinations.filter((d) => !visited.includes(d.id)).map((d) => ({
             id: d.id,
             name: d.name,
             localName: d.localName ?? d.chineseName,
@@ -211,7 +257,7 @@ export function DestinationStep({
             return d && d.lat !== null && d.lon !== null ? { lat: d.lat, lon: d.lon } : null;
           }}
           selected={picked}
-          country="CN"
+          country={country}
           onAdd={addPlace}
           onRemove={removePlace}
         />
@@ -222,6 +268,10 @@ export function DestinationStep({
         <MapExplorer
           selected={selected}
           visited={visited}
+          country={country}
+          level={mapLevel}
+          onCountryChange={changeCountry}
+          onLevelChange={setMapLevel}
           onToggleSelect={onToggleSelect}
           onAddCatalog={onAddCatalog}
           onRemoveCatalog={onRemoveCatalog}
@@ -250,9 +300,12 @@ export function DestinationStep({
             ))}
           </div>
           {available.length === 0 && (
-            <p className="mt-6 rounded-xl border border-sky bg-paper p-6 text-sm text-ink-soft">
-              Nothing left in this region — you&apos;ve been everywhere here! Switch region
-              or restore a visited place below.
+            <p className="mt-6 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-6 text-sm text-[var(--ink-2)]">
+              {countryDestinations.length === 0
+                ? // Not "you've been everywhere" — nobody has been anywhere in a
+                  // country the curated set has never covered.
+                  `No cards for ${countryLabel} yet — search above to add places there.`
+                : "Nothing left in this region — you've been everywhere here! Switch region or restore a visited place below."}
             </p>
           )}
         </>
@@ -260,17 +313,17 @@ export function DestinationStep({
 
       {visitedDests.length > 0 && (
         <div className="mt-10">
-          <h3 className="font-display text-lg font-semibold text-ink-soft">
+          <h3 className="font-display text-lg font-semibold text-[var(--ink-2)]">
             Already been ({visitedDests.length})
           </h3>
-          <p className="mt-1 text-xs text-ink-soft">
+          <p className="mt-1 text-xs text-[var(--ink-2)]">
             These are hidden from selection. Restore one to make it plannable again.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {visitedDests.map((dest) => (
               <div
                 key={dest.id}
-                className="relative flex items-center gap-3 rounded-xl border border-sky bg-paper/60 p-4 opacity-75"
+                className="relative flex items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--paper)]/60 p-4 opacity-75"
               >
                 <span className="stamp absolute -top-2 right-3">去过</span>
                 <span className="text-2xl grayscale">{dest.emoji}</span>
@@ -279,7 +332,7 @@ export function DestinationStep({
                   <button
                     type="button"
                     onClick={() => handleToggleVisited(dest)}
-                    className="text-xs text-rail underline-offset-2 hover:underline"
+                    className="text-xs text-[var(--accent-ink)] underline-offset-2 hover:underline"
                   >
                     Restore
                   </button>
@@ -306,8 +359,8 @@ function DestinationCard({
 }) {
   return (
     <div
-      className={`relative flex flex-col rounded-xl border bg-paper transition-shadow ${
-        isSelected ? "border-rail shadow-md" : "border-sky hover:shadow-md"
+      className={`relative flex flex-col rounded-xl border bg-[var(--paper)] transition-shadow ${
+        isSelected ? "border-[var(--accent-ink)] shadow-md" : "border-[var(--line-1)] hover:shadow-md"
       }`}
     >
       {isSelected && <span className="stamp absolute right-3 top-3 z-10">已选</span>}
@@ -315,7 +368,7 @@ function DestinationCard({
         type="button"
         onClick={onSelect}
         aria-pressed={isSelected}
-        className="flex-1 rounded-t-xl p-5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail"
+        className="flex-1 rounded-t-xl p-5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)]"
       >
         <div className="flex items-start gap-3">
           <span aria-hidden className="text-3xl">
@@ -326,25 +379,25 @@ function DestinationCard({
               <h3 className="font-display text-lg font-bold">{dest.name}</h3>
               <span className="font-kai text-seal">{dest.localName ?? dest.chineseName}</span>
             </div>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--ink-2)]">
               {dest.region} China
             </p>
           </div>
         </div>
-        <p className="mt-3 text-sm text-ink-soft">{dest.tagline}</p>
+        <p className="mt-3 text-sm text-[var(--ink-2)]">{dest.tagline}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {dest.knownFor.slice(0, 4).map((k) => (
-            <span key={k} className="rounded-full bg-sky/60 px-2.5 py-0.5 text-xs">
+            <span key={k} className="rounded-full bg-[var(--line-1)]/60 px-2.5 py-0.5 text-xs">
               {k}
             </span>
           ))}
           {dest.knownFor.length > 4 && (
-            <span className="self-center text-xs text-ink-soft">
+            <span className="self-center text-xs text-[var(--ink-2)]">
               +{dest.knownFor.length - 4} more
             </span>
           )}
         </div>
-        <div className="mt-4 flex items-center justify-between text-xs text-ink-soft">
+        <div className="mt-4 flex items-center justify-between text-xs text-[var(--ink-2)]">
           <span title={`Best seasons: ${dest.bestSeasons.join(", ")}`}>
             Best {dest.bestSeasons.map((s) => SEASON_EMOJI[s]).join(" ")}
           </span>
@@ -353,11 +406,11 @@ function DestinationCard({
           </span>
         </div>
       </button>
-      <div className="flex justify-end border-t border-dashed border-sky px-5 py-2">
+      <div className="flex justify-end border-t border-dashed border-[var(--line-1)] px-5 py-2">
         <button
           type="button"
           onClick={onVisited}
-          className="text-xs text-ink-soft transition-colors hover:text-seal"
+          className="text-xs text-[var(--ink-2)] transition-colors hover:text-seal"
         >
           Been here already? Mark visited
         </button>

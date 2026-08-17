@@ -98,7 +98,7 @@ export function CrewMenu() {
             <span
               key={member.name}
               aria-hidden
-              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-paper bg-sky text-xs font-semibold text-rail-deep"
+              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--paper)] bg-[var(--line-1)] text-xs font-semibold text-[var(--accent-ink)]"
               style={index > 0 ? { marginLeft: "-0.5rem" } : undefined}
             >
               {member.name[0]?.toUpperCase()}
@@ -107,7 +107,7 @@ export function CrewMenu() {
           {overflow > 0 && (
             <span
               aria-hidden
-              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-paper bg-mist text-[10px] font-semibold text-ink-soft"
+              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--paper)] bg-[var(--surf-1)] text-[10px] font-semibold text-[var(--ink-2)]"
               style={{ marginLeft: "-0.5rem" }}
             >
               +{overflow}
@@ -121,22 +121,22 @@ export function CrewMenu() {
           ref={popoverRef}
           role="dialog"
           aria-label="Crew"
-          className="absolute right-0 z-20 mt-1 w-72 rounded-xl border border-sky bg-paper p-3 shadow-lg"
+          className="absolute right-0 z-20 mt-1 w-72 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-3 shadow-lg"
         >
           <p className="font-display text-sm font-semibold">Crew ({members.length})</p>
           <ul className="mt-2 space-y-2">
             {members.map((member) => (
               <li key={member.name} className="flex items-center gap-2 text-sm">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky text-xs font-semibold text-rail-deep">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] text-xs font-semibold text-[var(--accent-ink)]">
                   {member.name[0]?.toUpperCase()}
                 </span>
                 <span className="truncate font-medium">{member.name}</span>
                 {member.name === myName && (
-                  <span className="rounded bg-sky px-1.5 py-0.5 font-mono text-[10px] text-rail-deep">
+                  <span className="rounded bg-[var(--line-1)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--accent-ink)]">
                     YOU
                   </span>
                 )}
-                <span className="ml-auto shrink-0 text-xs text-ink-soft">
+                <span className="ml-auto shrink-0 text-xs text-[var(--ink-2)]">
                   joined {new Date(member.joinedAt).toLocaleDateString()}
                 </span>
               </li>
@@ -144,16 +144,16 @@ export function CrewMenu() {
           </ul>
 
           {joinCode && (
-            <div className="mt-3 border-t border-sky pt-2 text-sm">
+            <div className="mt-3 border-t border-[var(--line-1)] pt-2 text-sm">
               <p className="font-semibold">Invite more people</p>
               <button
                 type="button"
                 onClick={() => void copyInvite()}
-                className="mt-1 flex min-h-[var(--tap-min)] w-full items-center justify-center rounded-lg border border-dashed border-rail/50 px-3 text-sm font-semibold text-rail transition-colors hover:bg-sky"
+                className="mt-1 flex min-h-[var(--tap-min)] w-full items-center justify-center rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-3 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
               >
                 {copied ? "✓ Link copied" : "🔗 Copy invite link"}
               </button>
-              <p className="mt-1 text-xs text-ink-soft">
+              <p className="mt-1 text-xs text-[var(--ink-2)]">
                 Or have them enter code{" "}
                 <span className="font-mono font-semibold tracking-widest text-seal">
                   {joinCode}

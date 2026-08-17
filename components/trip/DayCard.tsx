@@ -48,16 +48,16 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
 
   return (
     <article
-      className={`rounded-xl border bg-paper shadow-sm ${isToday ? "border-seal" : "border-sky"}`}
+      className={`rounded-xl border bg-[var(--paper)] shadow-sm ${isToday ? "border-seal" : "border-[var(--line-1)]"}`}
     >
       <header className="flex items-baseline justify-between px-5 pt-4">
-        <p className="font-mono text-sm font-semibold uppercase tracking-widest text-rail">
+        <p className="font-mono text-sm font-semibold uppercase tracking-widest text-[var(--accent-ink)]">
           Day {String(day.day).padStart(2, "0")}
           {isToday && (
             <span className="ml-2 rounded bg-seal px-1.5 py-0.5 text-[10px] text-white">TODAY</span>
           )}
         </p>
-        <p className="text-sm font-medium text-ink-soft">{day.destinationName}</p>
+        <p className="text-sm font-medium text-[var(--ink-2)]">{day.destinationName}</p>
       </header>
 
       {tickets.length > 0 && (
@@ -65,7 +65,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
           {tickets.map((t) => (
             <span
               key={t.id}
-              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-rail/50 bg-mist px-2 py-1 font-mono text-[11px] text-rail-deep"
+              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-[var(--accent-ink)]/50 bg-[var(--surf-1)] px-2 py-1 font-mono text-[11px] text-[var(--accent-ink)]"
             >
               <span aria-hidden>{ticketKindMeta(t.kind).emoji}</span>
               {t.time && <span>{t.time}</span>}
@@ -75,9 +75,9 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
         </div>
       )}
 
-      <div className="relative mx-5 mt-3 border-t-2 border-dashed border-sky">
-        <span aria-hidden className="absolute -left-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
-        <span aria-hidden className="absolute -right-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
+      <div className="relative mx-5 mt-3 border-t-2 border-dashed border-[var(--line-1)]">
+        <span aria-hidden className="absolute -left-[30px] -top-2 h-4 w-4 rounded-full bg-[var(--surf-1)]" />
+        <span aria-hidden className="absolute -right-[30px] -top-2 h-4 w-4 rounded-full bg-[var(--surf-1)]" />
       </div>
 
       <ul className="space-y-3 px-5 py-4">
@@ -172,7 +172,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
                 setError(null);
                 setAdding(true);
               }}
-              className="rounded-lg border border-dashed border-rail/50 px-3 py-1.5 text-xs font-semibold text-rail transition-colors hover:bg-sky"
+              className="rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]"
             >
               + Add item
             </button>
@@ -227,7 +227,7 @@ function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="h-6 w-6 rounded text-xs text-ink-soft transition-colors hover:bg-sky hover:text-rail-deep disabled:opacity-30"
+      className="h-6 w-6 rounded text-xs text-[var(--ink-2)] transition-colors hover:bg-[var(--line-1)] hover:text-[var(--accent-ink)] disabled:opacity-30"
     >
       {children}
     </button>
@@ -252,7 +252,7 @@ function ItemForm({
   const canSave = fields.title.trim().length > 0 && !saving;
 
   return (
-    <div className="rounded-lg border border-sky bg-mist p-3">
+    <div className="rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] p-3">
       <div className="flex flex-wrap gap-2">
         <input
           type="text"
@@ -261,13 +261,13 @@ function ItemForm({
           placeholder="What are you doing?"
           maxLength={80}
           autoFocus
-          className="min-w-40 flex-1 rounded-lg border border-sky bg-paper px-3 py-1.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
+          className="min-w-40 flex-1 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
         />
         <select
           value={fields.slot}
           onChange={(e) => set({ slot: e.target.value as TimeSlot })}
           aria-label="Time of day"
-          className="rounded-lg border border-sky bg-paper px-2 py-1.5 text-sm text-ink"
+          className="rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 text-sm text-[var(--ink-0)]"
         >
           <option value="morning">🌅 Morning</option>
           <option value="afternoon">☀️ Afternoon</option>
@@ -279,7 +279,7 @@ function ItemForm({
           onChange={(e) => set({ time: e.target.value })}
           placeholder="Time (opt.)"
           maxLength={20}
-          className="w-24 rounded-lg border border-sky bg-paper px-2 py-1.5 font-mono text-sm text-ink"
+          className="w-24 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 font-mono text-sm text-[var(--ink-0)]"
         />
       </div>
       <input
@@ -288,21 +288,21 @@ function ItemForm({
         onChange={(e) => set({ note: e.target.value })}
         placeholder="Note (optional)"
         maxLength={200}
-        className="mt-2 w-full rounded-lg border border-sky bg-paper px-3 py-1.5 text-xs text-ink"
+        className="mt-2 w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-xs text-[var(--ink-0)]"
       />
       <div className="mt-2 flex gap-2">
         <button
           type="button"
           disabled={!canSave}
           onClick={() => onSave(fields)}
-          className="rounded-lg bg-rail px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rail-deep disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
         >
           {saving ? "Saving…" : saveLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-sky px-4 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:bg-sky"
+          className="rounded-lg border border-[var(--line-1)] px-4 py-1.5 text-xs font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--line-1)]"
         >
           Cancel
         </button>
@@ -331,7 +331,7 @@ function ItemRow({
   const kindEmoji = KIND_EMOJI[item.kind];
   return (
     <li className="flex gap-3">
-      <span className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+      <span className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-2)]">
         {slot.emoji} {item.fullDay ? "All day" : slot.label}
       </span>
       <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -342,25 +342,25 @@ function ItemRow({
             disabled={!canCheck}
             onChange={(e) => onToggle(checkKey, e.target.checked)}
             aria-label={`Mark "${item.title}" as done`}
-            className="mt-0.5 h-4 w-4 accent-rail"
+            className="mt-0.5 h-4 w-4 accent-[var(--accent-ink)]"
           />
         )}
         <div className="min-w-0">
           <p
             className={
               item.kind === "free"
-                ? "text-sm italic text-ink-soft"
+                ? "text-sm italic text-[var(--ink-2)]"
                 : by
-                  ? "text-sm font-medium text-ink-soft line-through"
+                  ? "text-sm font-medium text-[var(--ink-2)] line-through"
                   : "text-sm font-medium"
             }
           >
             {kindEmoji && <span aria-hidden>{kindEmoji} </span>}
-            {item.time && <span className="font-mono text-xs text-rail">{item.time} </span>}
+            {item.time && <span className="font-mono text-xs text-[var(--accent-ink)]">{item.time} </span>}
             {item.title}
-            {by && <span className="ml-1 text-[11px] text-rail"> · done by {by}</span>}
+            {by && <span className="ml-1 text-[11px] text-[var(--accent-ink)]"> · done by {by}</span>}
           </p>
-          {item.note && <p className="mt-0.5 text-xs text-ink-soft">{item.note}</p>}
+          {item.note && <p className="mt-0.5 text-xs text-[var(--ink-2)]">{item.note}</p>}
         </div>
         {controls}
       </div>

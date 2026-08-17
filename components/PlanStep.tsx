@@ -51,13 +51,13 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
 
   return (
     <section>
-      <div className="relative overflow-hidden rounded-2xl bg-rail-deep p-6 text-white sm:p-8">
+      <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8">
         <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
           启程
         </span>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-sky">Boarding pass</p>
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Boarding pass</p>
         <h2 className="mt-2 font-display text-3xl font-bold">Your China itinerary</h2>
-        <p className="mt-3 font-mono text-sm tracking-wider text-sky">
+        <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
           {destinations.map((d) => d.name.toUpperCase()).join(" → ")}
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
@@ -73,7 +73,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
         <button
           type="button"
           onClick={() => window.print()}
-          className="mt-5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-rail-deep transition-colors hover:bg-sky print:hidden"
+          className="mt-5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] print:hidden"
         >
           🖨️ Print / save as PDF
         </button>
@@ -91,17 +91,17 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
           {plan.days.map((day) => (
             <article
               key={day.day}
-              className="overflow-visible rounded-xl border border-sky bg-paper shadow-sm"
+              className="overflow-visible rounded-xl border border-[var(--line-1)] bg-[var(--paper)] shadow-sm"
             >
               <header className="flex items-baseline justify-between px-5 pt-4">
-                <p className="font-mono text-sm font-semibold uppercase tracking-widest text-rail">
+                <p className="font-mono text-sm font-semibold uppercase tracking-widest text-[var(--accent-ink)]">
                   Day {String(day.day).padStart(2, "0")}
                 </p>
-                <p className="text-sm font-medium text-ink-soft">{day.destinationName}</p>
+                <p className="text-sm font-medium text-[var(--ink-2)]">{day.destinationName}</p>
               </header>
-              <div className="relative mx-5 mt-3 border-t-2 border-dashed border-sky">
-                <span aria-hidden className="absolute -left-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
-                <span aria-hidden className="absolute -right-[30px] -top-2 h-4 w-4 rounded-full bg-mist" />
+              <div className="relative mx-5 mt-3 border-t-2 border-dashed border-[var(--line-1)]">
+                <span aria-hidden className="absolute -left-[30px] -top-2 h-4 w-4 rounded-full bg-[var(--surf-1)]" />
+                <span aria-hidden className="absolute -right-[30px] -top-2 h-4 w-4 rounded-full bg-[var(--surf-1)]" />
               </div>
               <ul className="space-y-3 px-5 py-4">
                 {day.items.map((item, idx) => (
@@ -117,7 +117,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
             <h3 className="font-display text-xl font-bold">Packing list</h3>
             <div className="mt-3 space-y-4">
               {packing.map((group) => (
-                <div key={group.title} className="rounded-xl border border-sky bg-paper p-4">
+                <div key={group.title} className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
                   <p className="font-semibold">
                     <span aria-hidden>{group.emoji}</span> {group.title}
                   </p>
@@ -129,9 +129,9 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
                             type="checkbox"
                             checked={checked.has(item)}
                             onChange={() => toggleChecked(item)}
-                            className="mt-0.5 h-4 w-4 accent-rail print:hidden"
+                            className="mt-0.5 h-4 w-4 accent-[var(--accent-ink)] print:hidden"
                           />
-                          <span className={checked.has(item) ? "text-ink-soft line-through" : ""}>
+                          <span className={checked.has(item) ? "text-[var(--ink-2)] line-through" : ""}>
                             {item}
                           </span>
                         </label>
@@ -147,13 +147,13 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
             <h3 className="font-display text-xl font-bold">Eat your way through</h3>
             <div className="mt-3 space-y-3">
               {destinations.map((d) => (
-                <div key={d.id} className="rounded-xl border border-sky bg-paper p-4">
+                <div key={d.id} className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4">
                   <p className="font-semibold">
                     {d.emoji} {d.name}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {d.foods.map((f) => (
-                      <span key={f} className="rounded-full bg-sky/60 px-2.5 py-0.5 text-xs">
+                      <span key={f} className="rounded-full bg-[var(--line-1)]/60 px-2.5 py-0.5 text-xs">
                         {f}
                       </span>
                     ))}
@@ -165,7 +165,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
 
           <div>
             <h3 className="font-display text-xl font-bold">Good to know</h3>
-            <ul className="mt-3 space-y-2 rounded-xl border border-sky bg-paper p-4 text-sm">
+            <ul className="mt-3 space-y-2 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 text-sm">
               {plan.tips.map((tip) => (
                 <li key={tip} className="flex gap-2">
                   <span aria-hidden className="text-seal">※</span>
@@ -237,30 +237,30 @@ function ShareTripCard({
   };
 
   return (
-    <div className="mt-6 rounded-xl border-2 border-dashed border-rail/40 bg-paper p-5 print:hidden">
+    <div className="mt-6 rounded-xl border-2 border-dashed border-[var(--accent-ink)]/40 bg-[var(--paper)] p-5 print:hidden">
       <h3 className="font-display text-lg font-semibold">Travelling together? 一起走</h3>
-      <p className="mt-1 text-sm text-ink-soft">
+      <p className="mt-1 text-sm text-[var(--ink-2)]">
         Turn this plan into a shared trip: everyone joins with a code, sees the same live
         itinerary, and ticks off packing and activities together.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           Trip name
           <input
             type="text"
             value={tripName}
             onChange={(e) => setTripName(e.target.value)}
             maxLength={60}
-            className="mt-1 w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
+            className="mt-1 w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
           />
         </label>
-        <label className="text-xs font-medium text-ink-soft">
+        <label className="text-xs font-medium text-[var(--ink-2)]">
           Start date (optional)
           <input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-sky bg-mist px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-rail"
+            className="mt-1 w-full rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]"
           />
         </label>
       </div>
@@ -298,17 +298,17 @@ function PlanItem({ item }: { item: ScheduledItem }) {
   return (
     <li className="flex gap-3">
       <span
-        className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-ink-soft"
+        className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-2)]"
         title={slot.label}
       >
         {slot.emoji} {item.fullDay ? "All day" : slot.label}
       </span>
       <div className="min-w-0">
-        <p className={isFiller ? "text-sm italic text-ink-soft" : "text-sm font-medium"}>
+        <p className={isFiller ? "text-sm italic text-[var(--ink-2)]" : "text-sm font-medium"}>
           {transitEmoji && <span aria-hidden>{transitEmoji} </span>}
           {item.title}
         </p>
-        {item.note && <p className="mt-0.5 text-xs text-ink-soft">{item.note}</p>}
+        {item.note && <p className="mt-0.5 text-xs text-[var(--ink-2)]">{item.note}</p>}
       </div>
     </li>
   );

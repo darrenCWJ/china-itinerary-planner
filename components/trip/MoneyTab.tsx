@@ -90,17 +90,17 @@ export function MoneyTab({
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="rounded-xl border border-sky bg-paper p-5">
+      <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
         <h3 className="font-display text-lg font-semibold">Spend so far</h3>
         {totals.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-soft">
+          <p className="mt-2 text-sm text-[var(--ink-2)]">
             Nothing logged yet — add the first expense below.
           </p>
         ) : (
           <ul className="mt-2 space-y-1 text-sm">
             {totals.map((t) => (
               <li key={t.currency} className="flex justify-between">
-                <span className="font-mono text-xs uppercase tracking-widest text-ink-soft">
+                <span className="font-mono text-xs uppercase tracking-widest text-[var(--ink-2)]">
                   {t.currency}
                 </span>
                 <span className="font-semibold tabular-nums">
@@ -111,21 +111,21 @@ export function MoneyTab({
           </ul>
         )}
         {converted && (
-          <div className="mt-3 border-t border-sky pt-2 text-sm">
+          <div className="mt-3 border-t border-[var(--line-1)] pt-2 text-sm">
             <p className="flex justify-between">
-              <span className="text-ink-soft">Total CNY</span>
+              <span className="text-[var(--ink-2)]">Total CNY</span>
               <span className="font-semibold tabular-nums">{formatMinor(converted.cny, "CNY")}</span>
             </p>
             {converted.home && converted.home.currency !== "CNY" && (
               <p className="flex justify-between">
-                <span className="text-ink-soft">Total {converted.home.currency}</span>
+                <span className="text-[var(--ink-2)]">Total {converted.home.currency}</span>
                 <span className="font-semibold tabular-nums">
                   {formatMinor(converted.home.amount, converted.home.currency)}
                 </span>
               </p>
             )}
             {converted.unconverted.length > 0 && (
-              <p className="mt-1 text-xs text-ink-soft">
+              <p className="mt-1 text-xs text-[var(--ink-2)]">
                 No rate set for{" "}
                 {converted.unconverted.map((u) => u.currency).join(", ")} — shown in the sums
                 above but left out of the converted totals.
@@ -161,7 +161,7 @@ export function MoneyTab({
 
       {isMember && !adding && !editingId && (
         <button type="button" onClick={() => setAdding(true)}
-          className="rounded-lg border border-dashed border-rail/50 px-4 py-2 text-sm font-semibold text-rail transition-colors hover:bg-sky">
+          className="rounded-lg border border-dashed border-[var(--accent-ink)]/50 px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)]">
           + Add expense
         </button>
       )}
@@ -178,7 +178,7 @@ export function MoneyTab({
       <div className="space-y-3">
         {byDate.map(([date, list]) => (
           <div key={date}>
-            <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">{date}</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-[var(--ink-2)]">{date}</p>
             <ul className="mt-1.5 space-y-1.5">
               {list.map((e) =>
                 editingId === e.id ? (
@@ -194,10 +194,10 @@ export function MoneyTab({
                   </li>
                 ) : (
                   <li key={e.id}
-                    className="flex flex-wrap items-center gap-2 rounded-xl border border-sky bg-paper px-4 py-2.5 text-sm">
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] px-4 py-2.5 text-sm">
                     <span aria-hidden>{categoryMeta(e.category).emoji}</span>
                     <span className="font-medium">{e.title}</span>
-                    <span className="text-xs text-ink-soft">
+                    <span className="text-xs text-[var(--ink-2)]">
                       {e.paidBy} paid
                       {e.splitAmong.length > 0 && e.splitAmong.length < members.length
                         ? ` · split ${e.splitAmong.length}-way`
@@ -209,11 +209,11 @@ export function MoneyTab({
                     {isMember && (
                       <span className="flex gap-2">
                         <button type="button" onClick={() => setEditingId(e.id)}
-                          className="text-xs text-ink-soft hover:text-ink">
+                          className="text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]">
                           Edit
                         </button>
                         <button type="button" onClick={() => void removeExpense(e.id)}
-                          className="text-xs text-ink-soft hover:text-seal">
+                          className="text-xs text-[var(--ink-2)] hover:text-seal">
                           Delete
                         </button>
                       </span>
@@ -288,28 +288,28 @@ function CurrencySettingsEditor({
   if (!open) {
     return (
       <button type="button" onClick={() => startOpen()}
-        className="mt-3 text-xs font-medium text-rail hover:underline">
+        className="mt-3 text-xs font-medium text-[var(--accent-ink)] hover:underline">
         {currencySettings.home ? "Edit conversion rates" : "Set up converted totals"}
       </button>
     );
   }
 
   return (
-    <div className="mt-3 rounded-lg bg-mist p-3 text-sm">
-      <label className="text-xs font-medium text-ink-soft">
+    <div className="mt-3 rounded-lg bg-[var(--surf-1)] p-3 text-sm">
+      <label className="text-xs font-medium text-[var(--ink-2)]">
         Home currency (blank = no conversion)
         <input type="text" value={home} maxLength={3} placeholder="SGD"
-          className="mt-1 block w-24 rounded-lg border border-sky bg-paper px-2 py-1.5 font-mono text-sm uppercase text-ink"
+          className="mt-1 block w-24 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 font-mono text-sm uppercase text-[var(--ink-0)]"
           onChange={(e) => setHome(e.target.value.toUpperCase())} />
       </label>
       {rateCurrencies.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {rateCurrencies.map((c) => (
-            <label key={c} className="flex items-center gap-2 text-xs text-ink-soft">
+            <label key={c} className="flex items-center gap-2 text-xs text-[var(--ink-2)]">
               <span className="w-16 font-mono uppercase">1 {c} =</span>
               <input type="text" inputMode="decimal" value={rateInputs[c] ?? ""}
                 placeholder="5.20"
-                className="w-24 rounded-lg border border-sky bg-paper px-2 py-1 text-sm text-ink"
+                className="w-24 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink-0)]"
                 onChange={(e) =>
                   setRateInputs((prev) => ({ ...prev, [c]: e.target.value }))
                 } />
@@ -320,11 +320,11 @@ function CurrencySettingsEditor({
       )}
       <div className="mt-3 flex items-center gap-3">
         <button type="button" onClick={() => void save()} disabled={saving}
-          className="rounded-lg bg-rail px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
           {saving ? "Saving…" : "Save rates"}
         </button>
         <button type="button" onClick={() => setOpen(false)}
-          className="text-xs text-ink-soft hover:text-ink">
+          className="text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]">
           Cancel
         </button>
         {error && <span className="text-xs text-seal">{error}</span>}
