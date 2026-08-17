@@ -42,10 +42,10 @@ export function MonthTimeline({ month, onMonth }: Props) {
       <div className="flex items-baseline justify-between">
         <p className="text-sm font-semibold">
           {SEASON_EMOJI[info.season]} {info.label}
-          <span className="ml-2 font-normal capitalize text-ink-soft">{info.season}</span>
+          <span className="ml-2 font-normal capitalize text-[var(--ink-2)]">{info.season}</span>
         </p>
         <p
-          className="text-xs text-ink-soft"
+          className="text-xs text-[var(--ink-2)]"
           title="Typical national crowd pressure this month"
         >
           Crowds{" "}
@@ -109,16 +109,16 @@ export function MonthTimeline({ month, onMonth }: Props) {
         </div>
 
         {/* Month segments */}
-        <div className="flex overflow-hidden rounded-lg border border-sky bg-mist">
+        <div className="flex overflow-hidden rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)]">
           {MONTHS.map((m) => {
             const isActive = m.id === month;
             return (
               <span
                 key={m.id}
-                className={`flex-1 border-r border-sky/60 py-1.5 text-center font-mono text-[11px] uppercase last:border-r-0 ${
+                className={`flex-1 border-r border-[var(--line-1)]/60 py-1.5 text-center font-mono text-[11px] uppercase last:border-r-0 ${
                   isActive
-                    ? "bg-rail font-bold text-white"
-                    : "text-ink-soft hover:bg-sky/50"
+                    ? "bg-[var(--accent-ink)] font-bold text-white"
+                    : "text-[var(--ink-2)] hover:bg-[var(--line-1)]/50"
                 }`}
               >
                 {m.short}
@@ -131,9 +131,9 @@ export function MonthTimeline({ month, onMonth }: Props) {
       {activeBands.length > 0 && (
         <ul className="mt-2 space-y-1">
           {activeBands.map((b) => (
-            <li key={b.name} className="text-xs text-ink-soft">
+            <li key={b.name} className="text-xs text-[var(--ink-2)]">
               <span className="mr-1">{b.emoji}</span>
-              <span className="font-semibold text-ink">{b.name}:</span> {b.note}
+              <span className="font-semibold text-[var(--ink-0)]">{b.name}:</span> {b.note}
             </li>
           ))}
         </ul>

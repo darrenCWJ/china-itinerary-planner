@@ -40,7 +40,7 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
 
   return (
     <div
-      className="pointer-events-none absolute z-20 rounded-xl border border-sky bg-paper p-3 shadow-lg"
+      className="pointer-events-none absolute z-20 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-3 shadow-lg"
       style={{
         width: POPUP_W,
         left,
@@ -56,7 +56,7 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
           <span className="font-kai text-xs text-seal">{place.localName}</span>
         )}
       </div>
-      <p className="font-mono text-[10px] uppercase tracking-widest text-ink-soft">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
         {place.province ?? `${place.region} China`}
         {place.level !== "curated" && ` · ${place.level}`}
       </p>
@@ -68,25 +68,25 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
           aria-hidden
         />
         <span className="text-xs font-semibold">{FIT_LABELS[fit]}</span>
-        <span className="text-xs text-ink-soft">
+        <span className="text-xs text-[var(--ink-2)]">
           {climate.lo}°–{climate.hi}°C typical
         </span>
       </div>
 
       {climate.note && !seasonNote && (
-        <p className="mt-1 text-xs text-ink-soft">{climate.note}</p>
+        <p className="mt-1 text-xs text-[var(--ink-2)]">{climate.note}</p>
       )}
-      {seasonNote && <p className="mt-1 text-xs text-ink-soft">{seasonNote}</p>}
+      {seasonNote && <p className="mt-1 text-xs text-[var(--ink-2)]">{seasonNote}</p>}
       {highlight && (
         <p className="mt-1 text-xs">
           <span aria-hidden>✨</span> {highlight}
         </p>
       )}
       {place.kind === "catalog" && place.blurb && (
-        <p className="mt-1 line-clamp-3 text-xs text-ink-soft">{place.blurb}</p>
+        <p className="mt-1 line-clamp-3 text-xs text-[var(--ink-2)]">{place.blurb}</p>
       )}
 
-      <div className="mt-2 flex items-center justify-between border-t border-dashed border-sky pt-2 text-[11px] text-ink-soft">
+      <div className="mt-2 flex items-center justify-between border-t border-dashed border-[var(--line-1)] pt-2 text-[11px] text-[var(--ink-2)]">
         <span title={band ? `${band.name} falls in this month` : undefined}>
           Crowds {"●".repeat(crowd)}
           {"○".repeat(5 - crowd)}
@@ -98,7 +98,7 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
           population && <span>{population}</span>
         )}
       </div>
-      <p className="mt-1.5 text-center font-mono text-[10px] uppercase tracking-widest text-rail">
+      <p className="mt-1.5 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--accent-ink)]">
         Click to select
       </p>
     </div>
