@@ -12,8 +12,8 @@ import { TripSwitcher } from "./TripSwitcher";
  * The application frame (spec §2.3): persistent header, 76px desktop rail, and
  * the bottom edge.
  *
- * Additive in this task — nothing mounts it yet. Task 5 puts it in the root
- * layout and deletes `AppHeader`.
+ * Mounted in the root layout as of Task 5, which retired `AppHeader` and moved
+ * its brand mark and `AccountChip` here.
  *
  * Colours come from the PR1 token set (`--surf-*`, `--ink-*`, `--line-*`) via
  * `var()` rather than Tailwind utilities: PR1 deliberately left those tokens out
@@ -60,14 +60,23 @@ export function AppShell({
 
   return (
     <div
+      // --surf-1 is #f1f5fa, the same value as the retiring `bg-mist` the body
+      // carries today, and --paper is the white the old header used. Assigning
+      // them this way round is what keeps the cutover invisible to every page:
+      // content keeps its backdrop and the header keeps its contrast. The
+      // reverse — which reads more naturally from the token names — would flip
+      // every page from mist to white in one commit.
       className="flex min-h-dvh flex-col"
-      style={{ background: "var(--paper)", color: "var(--ink-0)" }}
+      style={{ background: "var(--surf-1)", color: "var(--ink-0)" }}
     >
       <header
-        className="flex items-center gap-3 border-b px-4 py-2 print:hidden"
+        // border-b-2 border-dashed reproduces the boarding-pass strip from the
+        // old header (--line-1 is the same #d9e7f4 as `border-sky`). The spec
+        // redesigns the header's contents, not the project's ticket motif.
+        className="flex items-center gap-3 border-b-2 border-dashed px-4 py-2 print:hidden"
         style={{
           borderColor: "var(--line-1)",
-          background: "var(--surf-1)",
+          background: "var(--paper)",
           paddingTop: "calc(0.5rem + var(--safe-top))",
           paddingRight: "calc(1rem + var(--safe-right))",
           paddingLeft: "calc(1rem + var(--safe-left))",
@@ -113,7 +122,14 @@ export function AppShell({
 
       <div className="flex min-h-0 flex-1">
         {onTripRoute && <RailNav />}
-        <main className="min-w-0 flex-1">{children}</main>
+        {/*
+          A div, not a <main>. Every page already renders its own <main>
+          (app/page.tsx, /plan, /login, /b/[code], TripView, …), and wrapping
+          them in another one nests a landmark that the spec allows exactly one
+          of — verified in the a11y tree as main-inside-main after this shell
+          first mounted.
+        */}
+        <div className="min-w-0 flex-1">{children}</div>
       </div>
 
       {/*

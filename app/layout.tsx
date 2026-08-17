@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
-import { AppHeader } from "@/components/shell/AppHeader";
+import { AppShell } from "@/components/shell/AppShell";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
+import { ShellTripProvider } from "@/components/shell/ShellTripContext";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({
@@ -58,8 +59,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-mist font-sans text-ink antialiased">
         <PrefsProvider>
-          <AppHeader />
-          {children}
+          {/*
+            ShellTripProvider sits above AppShell, not inside the trip page: the
+            header reads the open trip and the page publishes it, so the store
+            has to be an ancestor of both. See ShellTripContext.
+          */}
+          <ShellTripProvider>
+            <AppShell>{children}</AppShell>
+          </ShellTripProvider>
         </PrefsProvider>
       </body>
     </html>

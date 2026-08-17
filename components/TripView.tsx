@@ -444,9 +444,12 @@ export function TripView({ tripId }: { tripId: string }) {
 
 /**
  * Trip-specific chrome only — the brand row (logo, product name) lives in
- * the global `AppHeader` already rendered above this in the layout, so
+ * the global `AppShell` already rendered above this in the layout, so
  * repeating it here doubled up on every trip page. The one piece worth
  * keeping is the "shared trip" state, trimmed to a slim eyebrow strip.
+ *
+ * Task 12 deletes this: the shell header now carries the trip name and crew,
+ * which is what the eyebrow was standing in for (J5).
  */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
