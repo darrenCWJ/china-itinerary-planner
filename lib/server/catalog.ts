@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import bundledCatalogJson from "../../data/catalog.json";
 import { DESTINATIONS } from "../data";
+import { foldPlaceName } from "../foldPlaceName";
 import { regionForProvinceText } from "../provinces";
 import type { CatalogHit, MapCity } from "../tripShared";
 import type { Activity, Destination, Interest, Region } from "../types";
@@ -39,7 +40,10 @@ export interface Catalog {
   attractions: CatalogAttraction[];
 }
 
-const CATALOG_PATH = path.join(process.cwd(), "data", "catalog.json");
+/** Overridable for tests via CIP_CATALOG_PATH, as db.ts does with CIP_DB_PATH. */
+function catalogPath(): string {
+  return process.env.CIP_CATALOG_PATH ?? path.join(process.cwd(), "data", "catalog.json");
+}
 
 /**
  * The catalog is bundled into the build so serverless deployments (read-only
@@ -64,9 +68,9 @@ function setCache(catalog: Catalog, mtimeMs: number): void {
 
 export function loadCatalog(): Catalog | null {
   try {
-    const stat = fs.statSync(CATALOG_PATH);
+    const stat = fs.statSync(catalogPath());
     if (!cache || cache.mtimeMs !== stat.mtimeMs) {
-      setCache(JSON.parse(fs.readFileSync(CATALOG_PATH, "utf8")) as Catalog, stat.mtimeMs);
+      setCache(JSON.parse(fs.readFileSync(catalogPath(), "utf8")) as Catalog, stat.mtimeMs);
     }
   } catch {
     if (!cache) setCache(BUNDLED_CATALOG, -1);
@@ -129,21 +133,21 @@ const CURATED_NAMES = new Set(
     "Dali",
     "Lijiang",
     "Zhangjiajie",
-  ].map((n) => n.toLowerCase())
+  ].map(foldPlaceName)
 );
 
 export function searchCities(query: string, limit = 25): CatalogHit[] {
   const catalog = loadCatalog();
   if (!catalog) return [];
-  const q = query.trim().toLowerCase();
+  const q = foldPlaceName(query);
   if (q.length < 1) return [];
 
   const scored = catalog.cities
-    .filter((c) => !CURATED_NAMES.has(c.name.toLowerCase()))
+    .filter((c) => !CURATED_NAMES.has(foldPlaceName(c.name)))
     .map((c) => {
-      const name = c.name.toLowerCase();
+      const name = foldPlaceName(c.name);
       const zh = c.chineseName ?? "";
-      const province = (c.province ?? "").toLowerCase();
+      const province = foldPlaceName(c.province ?? "");
       let score = -1;
       if (name.startsWith(q) || zh.startsWith(query.trim())) score = 3;
       else if (name.includes(q) || zh.includes(query.trim())) score = 2;
@@ -211,7 +215,7 @@ export function mapCities(): MapCity[] {
   const catalog = loadCatalog();
   if (!catalog) return [];
   return catalog.cities
-    .filter((c) => !CURATED_NAMES.has(c.name.toLowerCase()))
+    .filter((c) => !CURATED_NAMES.has(foldPlaceName(c.name)))
     .map((c): MapCity => ({
       qid: c.qid,
       name: c.name,
