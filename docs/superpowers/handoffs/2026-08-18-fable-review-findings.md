@@ -665,7 +665,10 @@ refuter, and roughly one in six still did not hold.** Hand-verify before fixing.
 
 ---
 
-## 12. Why PR #6's Vercel check is red (2026-08-21)
+## 12. Why PR #6's Vercel check is red (2026-08-21) — ⚠ WRONG, SEE §13
+
+> **This diagnosis is incorrect.** Kept as written because the reasoning is
+> instructive, not because it is right. The real cause is in §13.
 
 **Not the branch.** The Preview environment has no `BETTER_AUTH_SECRET`, and the
 fail-closed wall refuses to start without one — which is the guard working
@@ -723,3 +726,64 @@ a PR check, and no PR was open until 2026-08-21. Nothing else surfaces it. The
 Vercel MCP available here 401s on this team's deployment endpoints and the CLI is
 not installed, so the build log was never readable — the diagnosis is entirely
 from deployment metadata and local reproduction.
+
+---
+
+## 13. §12 was wrong — the real cause, and it is worse (2026-08-21)
+
+**The build log settled it, and it was not the Preview secret.** The project's
+Install Command had been overridden in the Vercel dashboard to:
+
+```
+curl -sL https://codeload.github.com/darrenCWJ/china-itinerary-planner/tar.gz/refs/heads/main \
+  | tar -xz --strip-components=1 && npm install --no-audit --no-fund
+```
+
+It downloads **main** as a tarball and extracts it over the branch Vercel has
+just cloned. `tar -xz` overwrites but never deletes, so every non-main build was
+a chimera — branch-only files survived, and every file that also exists on main
+was silently replaced by main's copy:
+
+| file | on main? | outcome |
+|---|---|---|
+| `app/api/me/prefs/route.ts` | no | survived |
+| `lib/server/schemas.ts` | yes | replaced — no `PrefsSchema` |
+| `lib/server/store.ts` | yes | replaced — no `getUserPrefs` / `setUserPrefs` |
+
+Hence three `Export … doesn't exist in target module` errors against a route
+whose imports are perfectly valid on the branch. The log's `removed 2 packages`
+is the same cause from the other side: npm ran against **main's** `package.json`
+and pruned the branch's devDependencies.
+
+Fixed by `vercel.json`, which takes precedence over the dashboard field.
+**Confirmed green on `b53721e`.**
+
+### Why this is worse than a broken build
+
+A build could have *succeeded* this way and served main's code under a branch
+URL. Every preview anyone reviewed since 2026-08-17 was, at best, not the thing
+they thought they were looking at. The dashboard override should still be
+cleared at source (Settings → General → Install Command); `vercel.json` is now
+the only thing preventing it.
+
+### What §12 got wrong, and why
+
+§12 blamed a missing Preview `BETTER_AUTH_SECRET`. The reasoning was a chain of
+real observations — Preview succeeded before the wall landed, every Preview
+failed after, Production always passed — assembled into a story that fit and was
+false. **The correlation was genuine and the causation invented.** The wall
+landing on 2026-08-17 and the branch's first build happening on 2026-08-17 were
+the same date for unrelated reasons: that is simply when the branch started.
+
+Three wrong turns on one problem, all from the same habit — concluding from
+metadata because the primary source was hard to reach:
+
+1. "Main works, the branch is broken" — Production compared against Preview.
+2. "It failed instantly, so the build never ran" — GitHub records only the final
+   state; the successes resolve in one second too.
+3. "Preview is missing the secret" — §12, above.
+
+The log was available the whole time, from the one person who could open the
+dashboard. **Ask for the primary source an hour earlier.**
+
+The Preview secret is now set regardless, which is correct on its own merits.
