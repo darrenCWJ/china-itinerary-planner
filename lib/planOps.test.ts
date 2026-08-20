@@ -301,3 +301,51 @@ describe("addDay", () => {
     expect(res.ok).toBe(false);
   });
 });
+
+describe("updateItem — the half a schema cannot see", () => {
+  /**
+   * `undefined` means "leave alone", so whether an updateItem leaves a half pair
+   * depends on the stored item. Setting a start on an item that has no duration
+   * is the case: the schema sees one field and no contradiction, the reducer
+   * sees the result. Nothing downstream reads a half pair as timed, so the block
+   * would vanish on a write that reported success.
+   */
+  it("refuses to leave an item with a start and no duration", () => {
+    const result = applyPlanOp(plan(), { op: "updateItem", day: 1, itemId: "a", startMinutes: 540 }, ctx);
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses to leave an item with a duration and no start", () => {
+    const result = applyPlanOp(plan(), { op: "updateItem", day: 1, itemId: "a", durationMinutes: 60 }, ctx);
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows completing the pair, and allows touching a fully timed item", () => {
+    const both = applyPlanOp(
+      plan(),
+      { op: "updateItem", day: 1, itemId: "a", startMinutes: 540, durationMinutes: 60 },
+      ctx
+    );
+    expect(both.ok).toBe(true);
+    if (!both.ok) return;
+    // With the pair now whole, moving one half alone is legitimate.
+    const moved = applyPlanOp(both.plan, { op: "updateItem", day: 1, itemId: "a", startMinutes: 600 }, ctx);
+    expect(moved.ok).toBe(true);
+  });
+
+  it("still lets a legacy half-timed item be edited in other ways", () => {
+    // Data written before this rule can already be half. Refusing every edit to
+    // such an item would punish the member for a bug they did not cause, so the
+    // check is gated on the op actually touching timing. A guard on the shape of
+    // the fix, not a behaviour the fix adds.
+    const half = plan();
+    half.days[0].items[0] = { ...half.days[0].items[0], startMinutes: 540 };
+    const result = applyPlanOp(half, { op: "updateItem", day: 1, itemId: "a", title: "Renamed" }, ctx);
+    expect(result.ok).toBe(true);
+  });
+
+  it("leaves an untimed item alone when the op carries no timing", () => {
+    const result = applyPlanOp(plan(), { op: "updateItem", day: 1, itemId: "a", title: "Renamed" }, ctx);
+    expect(result.ok).toBe(true);
+  });
+});

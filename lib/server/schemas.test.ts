@@ -360,3 +360,48 @@ describe("setTiming timing-pair agreement", () => {
     );
   });
 });
+
+describe("PlanOpSchema — a timing pair is never half, on any op", () => {
+  const ok = (op: unknown) => PlanOpSchema.safeParse(op).success;
+
+  /**
+   * The agreement rule was written for `setTiming` and guarded only that op, so
+   * the two ops that can *also* carry a pair went unchecked. `addItem` copies
+   * both fields straight onto the new item, so `{ startMinutes: 540 }` alone
+   * stores a start with no duration — which every reader treats as untimed
+   * (`lib/timeline.ts` wants both halves, `dayLoad` counts zero). The write
+   * succeeds and the block is gone: the exact failure the setTiming rule exists
+   * to prevent, reachable through a different door.
+   */
+  test("rejects a half pair on addItem", () => {
+    const base = { op: "addItem", day: 1, title: "Lunch", slot: "afternoon" };
+    expect(ok({ ...base, startMinutes: 540 })).toBe(false);
+    expect(ok({ ...base, durationMinutes: 60 })).toBe(false);
+  });
+
+  test("still accepts addItem with both halves, or neither", () => {
+    const base = { op: "addItem", day: 1, title: "Lunch", slot: "afternoon" };
+    expect(ok(base)).toBe(true);
+    expect(ok({ ...base, startMinutes: 540, durationMinutes: 60 })).toBe(true);
+  });
+
+  /**
+   * `updateItem` is only half-detectable here: `undefined` means "leave alone",
+   * so whether the *result* is half depends on the stored item, which the schema
+   * cannot see. What it can see is one half set while the other is explicitly
+   * cleared — that is unambiguous. The state-dependent case is the reducer's,
+   * and is pinned in planOps.test.ts.
+   */
+  test("rejects setting one half while explicitly clearing the other", () => {
+    const base = { op: "updateItem", day: 1, itemId: "i1" };
+    expect(ok({ ...base, startMinutes: 540, durationMinutes: null })).toBe(false);
+    expect(ok({ ...base, startMinutes: null, durationMinutes: 60 })).toBe(false);
+  });
+
+  test("still accepts updateItem that leaves timing alone or moves both", () => {
+    const base = { op: "updateItem", day: 1, itemId: "i1" };
+    expect(ok({ ...base, title: "Renamed" })).toBe(true);
+    expect(ok({ ...base, startMinutes: 540, durationMinutes: 60 })).toBe(true);
+    expect(ok({ ...base, startMinutes: null, durationMinutes: null })).toBe(true);
+  });
+});

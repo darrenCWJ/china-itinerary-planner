@@ -130,7 +130,13 @@ const PlanOpVariants = z.discriminatedUnion("op", [
 ]);
 
 /**
- * A timing pair is set or cleared as a whole — never half.
+ * A timing pair is set or cleared as a whole — never half, on any op that can
+ * carry one.
+ *
+ * Originally guarded `setTiming` alone, which left the other two doors open:
+ * `addItem` stores whatever it is given, so `{ startMinutes: 540 }` created a
+ * half pair directly, and `updateItem` accepted one half against an explicit
+ * clear of the other. Same consequence each time, described below.
  *
  * The two fields are independently `.nullable()`, so the union alone accepted a
  * start with a null duration. Nothing downstream treats that as a block:
@@ -140,9 +146,31 @@ const PlanOpVariants = z.discriminatedUnion("op", [
  * field types, because both keys really are required and only their agreement
  * needed a rule.
  */
+function splitsTimingPair(op: z.infer<typeof PlanOpVariants>): boolean {
+  switch (op.op) {
+    case "setTiming":
+      // Both keys required, either may be null: a split is disagreeing nullness.
+      return (op.startMinutes === null) !== (op.durationMinutes === null);
+    case "addItem":
+      // Optional and never nullable, and the reducer copies both straight onto
+      // the new item — so exactly one present is exactly one stored.
+      return (op.startMinutes === undefined) !== (op.durationMinutes === undefined);
+    case "updateItem":
+      // `undefined` means "leave alone", so whether the *result* is half depends
+      // on the stored item, which a schema cannot see. Only one half set against
+      // the other explicitly cleared is unambiguous here; the state-dependent
+      // case is enforced in planOps.ts, where the existing item is in hand.
+      return (
+        (typeof op.startMinutes === "number" && op.durationMinutes === null) ||
+        (typeof op.durationMinutes === "number" && op.startMinutes === null)
+      );
+    default:
+      return false;
+  }
+}
+
 export const PlanOpSchema = PlanOpVariants.superRefine((op, ctx) => {
-  if (op.op !== "setTiming") return;
-  if ((op.startMinutes === null) === (op.durationMinutes === null)) return;
+  if (!splitsTimingPair(op)) return;
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
     path: ["durationMinutes"],
