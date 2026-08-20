@@ -238,7 +238,13 @@ function ChinaLevel({
       <svg
         viewBox={`0 0 ${MAP_VIEW_W} ${MAP_VIEW_H}`}
         className="h-auto w-full select-none"
-        role="img"
+        // A group, not an image. `role="img"` makes the whole subtree
+        // presentational, which drops every province zoom control and every
+        // place toggle out of the accessibility tree while `tabIndex={0}` keeps
+        // them focusable — a keyboard user lands on controls a screen reader
+        // announces as nothing. WorldMap reached the same conclusion first and
+        // says so in its own docblock; this is that decision, applied here.
+        role="group"
         aria-label={
           zoomRegion
             ? `Map of ${zoomRegion} China with selectable places`
