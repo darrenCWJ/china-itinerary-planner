@@ -72,6 +72,17 @@ export function PlanTab({
   const [newDayDest, setNewDayDest] = useState("");
   const [addingDay, setAddingDay] = useState(false);
   const [addDayError, setAddDayError] = useState<string | null>(null);
+  /**
+   * Once opened the builder stays mounted, hidden rather than destroyed.
+   *
+   * Its queue lives in the hook's reducer, and ops leave one at a time — each
+   * waits for the previous round-trip — so anything queued behind the one in
+   * flight dies with the component. Switching to Days after a burst of edits
+   * dropped them with no error, and the optimistic copy on screen made it look
+   * as though they had landed. `hidden` keeps the effect draining while taking
+   * the whole subtree out of the accessibility tree and the tab order.
+   */
+  const [builderOpened, setBuilderOpened] = useState(false);
 
   // Destinations already in the plan, de-duplicated in first-appearance order —
   // the only sensible choices for "add a day in…".
@@ -121,7 +132,10 @@ export function PlanTab({
           <button
             key={option}
             type="button"
-            onClick={() => setView(option)}
+            onClick={() => {
+              if (option === "build") setBuilderOpened(true);
+              setView(option);
+            }}
             aria-pressed={view === option}
             className={`min-h-[var(--tap-min)] rounded-lg px-3 text-sm font-semibold transition-colors ${
               view === option ? "bg-[var(--line-1)] text-[var(--accent-ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surf-1)]"
@@ -132,15 +146,20 @@ export function PlanTab({
         ))}
       </div>
 
-      {view === "build" && canBuild ? (
-        <DayBuilder
-          tripId={tripId}
-          payload={payload}
-          forcedAt={forcedAt}
-          mutate={mutate}
-          activitiesByDestination={activitiesByDestination}
-        />
-      ) : view === "map" ? (
+      {canBuild && builderOpened && (
+        <div hidden={view !== "build"}>
+          <DayBuilder
+            tripId={tripId}
+            payload={payload}
+            forcedAt={forcedAt}
+            mutate={mutate}
+            activitiesByDestination={activitiesByDestination}
+          />
+        </div>
+      )}
+
+      {/* Build renders nothing here — the block above owns it, mounted or hidden. */}
+      {view === "build" && canBuild ? null : view === "map" ? (
         // Spec §2.1's "map ⇄ list toggle *inside* Plan", which is the whole
         // justification for Route not being a nav tab. Read-only: the plan
         // already exists, so this draws it rather than offering a picker.

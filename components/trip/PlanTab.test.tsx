@@ -17,9 +17,19 @@ const day = (n: number): DayPlan => ({
   items: [],
 });
 
-function renderTab(onPlanOp: (op: PlanOp) => Promise<string | null>) {
+const buildProps = {
+  tripId: "t1",
+  payload: { version: 5, data: { plan: { days: [day(1)], tips: [] } } } as never,
+  mutate: async () => null,
+};
+
+function renderTab(
+  onPlanOp: (op: PlanOp) => Promise<string | null>,
+  extra: Record<string, unknown> = {}
+) {
   return render(
     <PlanTab
+      {...extra}
       plan={{ days: [day(1)], tips: [] }}
       startDate={null}
       country="CN"
@@ -61,5 +71,30 @@ describe("PlanTab — a failed add-day", () => {
       expect(screen.getByRole("button", { name: /Add day/ })).not.toBeDisabled()
     );
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+});
+
+describe("PlanTab — the builder's queue survives a view change", () => {
+  test("keeps the builder mounted once opened, hidden rather than destroyed", () => {
+    renderTab(vi.fn(async () => null), buildProps);
+
+    fireEvent.click(screen.getByRole("button", { name: /Build/ }));
+    expect(screen.getByText("Adding to")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Days/ }));
+
+    // Unmounting takes the reducer with it, and `pendingOps` holds every edit
+    // queued behind the one in flight — those go out one at a time, so a burst
+    // of edits leaves a real window where switching tabs drops them silently.
+    // Still in the DOM, so the queue keeps draining.
+    expect(screen.getByText("Adding to")).toBeInTheDocument();
+    // But out of the accessibility tree and the tab order, which is what
+    // `hidden` buys over an off-screen class.
+    expect(screen.queryByRole("radio", { name: "Day 01" })).toBeNull();
+  });
+
+  test("does not mount the builder before it is asked for", () => {
+    renderTab(vi.fn(async () => null), buildProps);
+    expect(screen.queryByText("Adding to")).toBeNull();
   });
 });
