@@ -71,7 +71,11 @@ describe("guestTripView", () => {
     expect(view.version).toBe(7);
     expect(view.tripName).toBe("Family Trip");
     expect(view.startDate).toBe("2026-12-20");
-    expect(view.days).toBe(3);
+    // The plan's length, not the wizard's original request. These are the same
+    // number only until someone adds a day, after which the header said one
+    // thing and the day list below it showed another — on the same screen.
+    expect(view.days).toBe(1);
+    expect(view.days).toBe(view.planDays.length);
     expect(view.season).toBe("winter");
     expect(view.destinationNames).toEqual(["Beijing"]);
     expect(view.packing).toEqual(payload.data.packing);

@@ -12,7 +12,12 @@ export function guestTripView(payload: TripPayload): GuestTripPayload {
     guest: true,
     tripName: payload.data.tripName,
     startDate: payload.data.startDate,
-    days: payload.data.input.days,
+    // The plan's length, not the wizard's original request. `input.days` is
+    // what was asked for at generation; `plan.days` is what the trip now has,
+    // and an `addDay` moves one without the other. The guest header read the
+    // first while the day list beside it rendered the second, so one screen
+    // disagreed with itself.
+    days: payload.data.plan.days.length,
     season: payload.data.input.season,
     destinationNames: [...payload.data.destinationNames],
     planDays: payload.data.plan.days,

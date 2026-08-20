@@ -211,7 +211,7 @@ export function TripView({ tripId }: { tripId: string }) {
           <span className="rounded-full bg-white/15 px-3 py-1">
             {seasonMeta?.emoji} {seasonMeta?.label}
           </span>
-          <span className="rounded-full bg-white/15 px-3 py-1">📅 {data.input.days} days</span>
+          <span className="rounded-full bg-white/15 px-3 py-1">📅 {data.plan.days.length} days</span>
           {data.startDate && (
             <span className="rounded-full bg-white/15 px-3 py-1">🚩 from {data.startDate}</span>
           )}
