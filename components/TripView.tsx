@@ -21,6 +21,7 @@ import { SEASONS } from "@/lib/meta";
 import { forgetMyTrip } from "@/lib/myTrips";
 import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
+import { getCountry } from "@/lib/countries";
 import { tripCountry, type GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
 
@@ -199,9 +200,17 @@ export function TripView({ tripId }: { tripId: string }) {
         eager
         className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8"
       >
-        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
-          同行
-        </span>
+        {/*
+          The chop is the country's, not China's. `Country.mark` has carried it
+          since lib/countries landed and nothing read it, so every trip wore
+          同行 — a Chinese phrase over a Japan trip. Countries without a mark
+          get no chop rather than a borrowed one.
+        */}
+        {getCountry(tripCountry(data)).mark && (
+          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+            {getCountry(tripCountry(data)).mark}
+          </span>
+        )}
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Shared trip</p>
         <h1 className="mt-2 font-display text-3xl font-bold">{data.tripName}</h1>
         <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
@@ -321,19 +330,22 @@ function PageMain({ children }: { children: React.ReactNode }) {
 /**
  * Trimmed header for join-code guests: no invite chrome, no join code.
  *
- * No `CountryHero` either, and not by oversight: `GuestTripPayload` carries no
- * country, so the only country this could name is a guessed one. Defaulting to
- * CN would put the Great Wall behind a Japan trip, which is worse than a plain
- * band. Adding the field to the guest payload is a server change and outside
- * this task's file set.
+ * No `CountryHero` either, and not by oversight: defaulting to CN would put the
+ * Great Wall behind a Japan trip, which is worse than a plain band. That is
+ * still the call — but the reason given for it, that `GuestTripPayload` carries
+ * no country, no longer holds: the field was added so the chop below could stop
+ * being hardcoded to China's. A guest hero is now a rendering decision rather
+ * than a data one.
  */
 function GuestHeader({ view }: { view: GuestTripPayload }) {
   const seasonMeta = SEASONS.find((s) => s.id === view.season);
   return (
     <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8">
-      <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
-        同行
-      </span>
+      {getCountry(view.country).mark && (
+        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+          {getCountry(view.country).mark}
+        </span>
+      )}
       <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Shared trip</p>
       <h1 className="mt-2 font-display text-3xl font-bold">{view.tripName}</h1>
       <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">

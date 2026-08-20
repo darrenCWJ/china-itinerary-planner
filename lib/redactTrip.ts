@@ -1,4 +1,4 @@
-import type { GuestTripPayload, TripPayload } from "./tripShared";
+import { tripCountry, type GuestTripPayload, type TripPayload } from "./tripShared";
 
 /**
  * Built by construction, never by deletion: every field is explicitly
@@ -11,6 +11,7 @@ export function guestTripView(payload: TripPayload): GuestTripPayload {
     version: payload.version,
     guest: true,
     tripName: payload.data.tripName,
+    country: tripCountry(payload.data),
     startDate: payload.data.startDate,
     // The plan's length, not the wizard's original request. `input.days` is
     // what was asked for at generation; `plan.days` is what the trip now has,

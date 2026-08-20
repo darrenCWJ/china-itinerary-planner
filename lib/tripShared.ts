@@ -155,6 +155,12 @@ export interface GuestTripPayload {
   version: number;
   guest: true;
   tripName: string;
+  /**
+   * The trip's country. Not sensitive — the destination names below already say
+   * where the trip goes — and without it the guest header can only guess, which
+   * is how a Japan trip ended up wearing a Chinese chop.
+   */
+  country: CountryCode;
   startDate: string | null;
   days: number;
   season: Season;

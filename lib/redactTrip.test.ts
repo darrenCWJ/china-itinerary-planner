@@ -51,6 +51,7 @@ describe("guestTripView", () => {
     const view = guestTripView(payload);
     expect(Object.keys(view).sort()).toEqual(
       [
+        "country",
         "days",
         "destinationNames",
         "guest",
@@ -76,6 +77,9 @@ describe("guestTripView", () => {
     // thing and the day list below it showed another — on the same screen.
     expect(view.days).toBe(1);
     expect(view.days).toBe(view.planDays.length);
+    // Carried so the guest header can render the right chop rather than
+    // defaulting to China's.
+    expect(view.country).toBe("CN");
     expect(view.season).toBe("winter");
     expect(view.destinationNames).toEqual(["Beijing"]);
     expect(view.packing).toEqual(payload.data.packing);
