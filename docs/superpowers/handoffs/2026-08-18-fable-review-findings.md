@@ -7,7 +7,13 @@
 verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
 **both highs are now closed** (§7), **all five contract-scan gaps** with them
 (§8), and **the five a11y findings** after that (§9).
-**8 remain open: 4 medium, 4 low.**
+**7 remain open and enumerated: 4 medium, 3 low.**
+
+⚠ The original tally does not add up, and never did. §6 says "2 high, 12
+medium, 6 low" — 20 — but its **Low** paragraph names only five items, so 19 were
+ever written down. One low was counted and never recorded; it is not recoverable
+from this document. Going by the stated numbers the remainder is 8; going by what
+is actually named, 7. The list below is the one to work from.
 
 This is the §5g review. Six Fable lenses (spec conformance, cross-step drift,
 contract scans, state correctness, a11y/surface, write boundary) produced 31 raw
