@@ -54,6 +54,7 @@ function guestBody(): GuestTripPayload {
     id: TRIP_ID,
     version: 3,
     guest: true,
+    country: "CN",
     tripName: "Fujian run",
     startDate: "2026-12-24",
     days: 1,
