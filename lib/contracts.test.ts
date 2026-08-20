@@ -237,10 +237,19 @@ describe("C2 — the shell owns the bottom edge", () => {
    * straight through), and being whole-file substring co-occurrence it could be
    * satisfied by a comment. It now runs on comment-stripped text and matches any
    * bottom offset.
+   *
+   * Widened again after a review found the two idioms the mobile PR will use:
+   * Tailwind v4's `bottom-(--var)` shorthand, which the offset alternation did
+   * not admit, and the CSS `inset` shorthands, which are the same declaration
+   * spelled without the word `bottom`. `inset-y-` now takes any value for the
+   * same reason `bottom-` does — pinning it to `0` was arbitrary. `inset-inline`
+   * is excluded on purpose: it pins the horizontal edges and never the bottom.
    */
   const pinsBottom = (code: string) =>
     /\bfixed\b/.test(code) &&
-    /\bbottom-(?:\d+|\[|full|auto)|\binset-y-0\b|bottom:\s*[^;]/.test(code);
+    (/\bbottom-(?:\d|px|full|auto|\[|\()/.test(code) ||
+      /\binset-y-(?:\d|px|full|auto|\[|\()/.test(code) ||
+      /\b(?:bottom|inset(?:-block(?:-end)?)?):\s*[^;]/.test(code));
 
   it("has no fixed bottom element outside components/shell", () => {
     const offenders = FILES.filter(
@@ -267,6 +276,25 @@ describe("C2 — the shell owns the bottom edge", () => {
     // And that it tolerates what it must.
     expect(pinsBottom('className="sticky bottom-0"')).toBe(false);
     expect(pinsBottom('className="fixed inset-0"')).toBe(false);
+  });
+
+  it("is not evaded by Tailwind v4 var shorthand or CSS inset shorthand", () => {
+    // The idioms the mobile PR will reach for, and the ones a review found
+    // walked straight through the widened-once predicate. Every line here pins
+    // the bottom edge exactly as `bottom-0` does.
+    expect(pinsBottom('className="fixed bottom-(--safe-bottom)"')).toBe(true);
+    expect(pinsBottom(".bar { position: fixed; inset: auto 0 0 0; }")).toBe(true);
+    // Found by trying to evade the widening itself, per the standing lesson that
+    // a scan with a gap reads as a guarantee.
+    expect(pinsBottom('className="fixed bottom-px"')).toBe(true);
+    expect(pinsBottom('className="fixed inset-y-4"')).toBe(true);
+    expect(pinsBottom('className="fixed inset-y-(--gutter)"')).toBe(true);
+    expect(pinsBottom('className="fixed inset-y-[env(safe-area-inset-bottom)]"')).toBe(true);
+    expect(pinsBottom(".bar { position: fixed; inset-block-end: 0; }")).toBe(true);
+    expect(pinsBottom(".bar { position: fixed; inset-block: 0; }")).toBe(true);
+    // The inline axis pins left and right, never the bottom, so it must not be
+    // swept up by a rule written to catch `inset`.
+    expect(pinsBottom(".bar { position: fixed; inset-inline: 0; }")).toBe(false);
   });
 
   it("cannot be tripped or satisfied by prose", () => {
