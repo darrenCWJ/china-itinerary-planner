@@ -310,6 +310,12 @@ export async function updateTripData(tripId: string, data: TripData): Promise<bo
 /**
  * Optimistic-concurrency write: only lands if nobody else has bumped the
  * trip version since it was read. False = conflict, re-read and retry.
+ *
+ * The guard and the bump are deliberately one statement, not a guarded UPDATE
+ * followed by `touch`. As two autocommit statements they lose updates: a second
+ * writer that read the same version clears the identical guard in the window
+ * before the first one's bump lands, overwrites it, and both callers are told
+ * true. `putWallet` has always done it this way; this is the same shape.
  */
 export async function updateTripDataIf(
   tripId: string,
@@ -319,11 +325,10 @@ export async function updateTripDataIf(
   await ensureSchema();
   const s = sql();
   const result = await s`UPDATE trips
-    SET data = ${s.json(JSON.parse(JSON.stringify(data)))}, name = ${data.tripName}
+    SET data = ${s.json(JSON.parse(JSON.stringify(data)))}, name = ${data.tripName},
+        version = version + 1, updated_at = ${Date.now()}
     WHERE id = ${tripId} AND version = ${expectedVersion}`;
-  if (result.count === 0) return false;
-  await touch(tripId);
-  return true;
+  return result.count > 0;
 }
 
 export async function addTicket(tripId: string, ticket: Ticket): Promise<boolean> {
