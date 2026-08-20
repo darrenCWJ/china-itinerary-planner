@@ -5,7 +5,8 @@
 **Scope:** the whole of PR2 (Tasks 1-33) against spec and plan — not the recent diff
 **Status:** six confirmed, **all six now fixed** (§5). A corrected second pass then
 verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
-**both highs are now closed** (§7). **18 remain open: 12 medium, 6 low.**
+**both highs are now closed** (§7) and **all five contract-scan gaps** with them
+(§8). **13 remain open: 7 medium, 6 low.**
 
 This is the §5g review. Six Fable lenses (spec conformance, cross-step drift,
 contract scans, state correctness, a11y/surface, write boundary) produced 31 raw
@@ -310,11 +311,12 @@ way §1's six were. Treat the severities as the reviewers' own.
 
 **High — both closed 2026-08-21, see §7.**
 
-**Medium** — five more contract-scan gaps (`:204` C1 blind to JSX text children,
-`:39` `stripComments` blanking string literals so a URL's `//` hides trip paths,
-`:294` C3 blind on a directory split, `:169` C4's allowlist keying on the path
-string rather than on fetching, `:20` the collector never seeing repo-root
-files); `lib/server/schemas.ts:144` a half-timed pair still storable via
+**Medium** — ~~five more contract-scan gaps~~ **all five closed 2026-08-21, see
+§8** (`:204` C1 blind to JSX text children, `:39` `stripComments` blanking string
+literals so a URL's `//` hides trip paths, `:294` C3 blind on a directory split,
+`:169` C4's allowlist keying on the path string rather than on fetching, `:20`
+the collector never seeing repo-root files); still open:
+`lib/server/schemas.ts:144` a half-timed pair still storable via
 `addItem`/`updateItem`; `lib/server/catalog.ts:138` the catalog leg not folding
 apostrophes, so Xi'an-class cities stay unfindable through the server path (the
 same bug §5d fixed client-side — if real, that fix was half a fix);
@@ -409,3 +411,79 @@ Widened to three branches: any `bottom-` offset including `px` and the v4
 way a second bottom bar does, and the existing suite asserts it deliberately.
 Whole-file co-occurrence also still can't see `fixed` and `bottom-0` split
 across two files — inherent to the scan's shape and already in its docblock.
+
+---
+
+## 8. All five contract-scan gaps closed (2026-08-21)
+
+The largest single cluster in §6, and the one worth taking together: a scan with
+a gap reads as a guarantee, and these five were the guarantees PR3 was going to
+lean on. Each was hand-verified first, then driven red — six failing tests, each
+for its own stated reason — then fixed. 810/810, tsc and build clean.
+
+### The five
+
+**M2 — `stripComments` could not tell a comment from a URL.** The sharpest of
+them, because nobody has to be evading anything: `fetch("https://host/api/trips/1")`
+was blanked from the `//` in `https://` onward, so the trip path vanished from
+`code` and **C4 never saw the call**. Replaced the two regexes with a hand-walked
+scanner that tracks string state. Single and double quotes reset at a newline,
+matching JS — an unterminated one is an apostrophe in JSX text, not a string, and
+letting it run would swallow every comment after it.
+
+**M3 — the collector stopped at four directories.** `ROOTS` never included the
+repo root, so `proxy.ts` and `instrumentation.ts` — both of which run on every
+request and can fetch a trip payload as readily as anything under `app/` — were
+outside every contract. Now walked one level deep at the root (not recursively:
+`node_modules` and `.next` are there too). `.d.ts` is excluded for having no
+runtime code to constrain.
+
+**M4 — C1 counted only quoted labels.** A second hardcoded tab list written as
+JSX children — `<span>Plan</span>` — carries no quoted label at all, so the whole
+thing counted as zero. Now counts `>Label<` as well. Also switched both C1
+helpers onto comment-stripped source: a **commented-out** nav import used to
+grant the exemption, which is the fail-silent direction.
+
+**M5 — C4's allowlist honesty check keyed on the wrong thing.** The entry exempts
+a file from `fetchesTripData`, but the check asked only whether the raw text
+still contained a trip path. An entry could survive on a leftover comment long
+after the fetch it excused was deleted, silently licensing the next real
+violation in that file. It now calls `fetchesTripData` itself — one contract, one
+definition, the rule `callsFetch` already states.
+
+**M6 — C3 was blind to a directory split.** `isCore` admitted `dayBuilder.ts` and
+`dayBuilder/index.ts` and nothing beside the index: split the core into
+`reducer.ts` and `ops.ts` and the contract silently stopped applying to the parts
+holding the logic while still reporting a pass. Now any `.ts`/`.tsx` under
+`lib/dayBuilder/`, still excluding `use`-prefixed names, which are the hook's
+separate rule.
+
+**Also closes handoff §5f item 5.** The C3 silent-skip hazard is gone: `it.skipIf`
+remains, but a separate hard test now asserts `lib/dayBuilder.ts` is among the
+matched builders, so a pattern that stops matching fails instead of reporting a
+permanent green skip.
+
+### Verified by trying to evade it
+
+The scanner is the risky change — every contract depends on it — so it was probed
+past its tests:
+
+- **Nine unit probes**, all passing: protocol-relative `//cdn/…`, an escaped
+  quote wrapping a `//`, a template literal holding a trip path, an apostrophe in
+  JSX text followed by a real comment, a comment containing an apostrophe, and a
+  `/*` inside a block comment.
+- **145 files walked**: zero runaway quotes, so no file in the tree has an
+  unterminated template or apostrophe that swallows the rest of it.
+- **No file is blanked more than the old version was.** That is the one that
+  matters: the change can only have made the contracts see *more* source, never
+  less, so it cannot have opened a hole while closing one.
+- The widened C1 count was checked against the whole tree: only `lib/nav.ts`
+  (excluded by path, count 4) and `TrackerTab.tsx` (count 1 — a lone `<p>Today</p>`
+  heading, below the two-label threshold) register at all. No false positive.
+
+### Known-and-left
+
+A regex literal ending in `\//` would still trip the line-comment branch and
+blank the rest of that line. It is the one residual case, it exists in no file
+here, and closing it needs regex-vs-division disambiguation — a real parser,
+which is more than a grep-shaped contract is worth.
