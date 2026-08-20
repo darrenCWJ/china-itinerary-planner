@@ -5,8 +5,9 @@
 **Scope:** the whole of PR2 (Tasks 1-33) against spec and plan — not the recent diff
 **Status:** six confirmed, **all six now fixed** (§5). A corrected second pass then
 verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
-**both highs are now closed** (§7) and **all five contract-scan gaps** with them
-(§8). **13 remain open: 7 medium, 6 low.**
+**both highs are now closed** (§7), **all five contract-scan gaps** with them
+(§8), and **the five a11y findings** after that (§9).
+**8 remain open: 4 medium, 4 low.**
 
 This is the §5g review. Six Fable lenses (spec conformance, cross-step drift,
 contract scans, state correctness, a11y/surface, write boundary) produced 31 raw
@@ -322,15 +323,15 @@ apostrophes, so Xi'an-class cities stay unfindable through the server path (the
 same bug §5d fixed client-side — if real, that fix was half a fix);
 `ThemeToggle.tsx:91`/`:104` spec §4.3's per-country hue override shipped with no
 UI and no TODO; `TripView.tsx:203` the 同行 chop hardcoded while `Country.mark`
-is consumed nowhere; `CountryMap.tsx:241` `role="img"` over descendant buttons,
-the pattern WorldMap's own docblock calls wrong; `MapExplorer.tsx:299` controls
-below the C5 44px token their siblings apply; `PlanTab.tsx:192` add-day and
-wizard-resolve failures with no live region.
+is consumed nowhere. ~~`CountryMap.tsx:241` `role="img"`, `MapExplorer.tsx:299`
+tap targets, `PlanTab.tsx:192` no live region~~ **— all three closed 2026-08-21,
+see §9.**
 
 **Low** — `DayBuilder.tsx:521` spec §5.3's slot lanes dropped with no recorded
 decision; `:171` unmounting the builder silently discards queued-but-unsent ops;
-`:383` target-day chips with no visible focus ring; `lib/nav.ts:34` Kit's
-accessible name omitting its visible label (label-in-name); `lib/redactTrip.ts:15`
+~~`:383` target-day chips with no visible focus ring; `lib/nav.ts:34` Kit's
+accessible name omitting its visible label~~ **— both closed 2026-08-21, see
+§9**; `lib/redactTrip.ts:15`
 the guest header's day count reading `input.days`, which disagrees with the plan
 after an `addDay`.
 
@@ -487,3 +488,94 @@ A regex literal ending in `\//` would still trip the line-comment branch and
 blank the rest of that line. It is the one residual case, it exists in no file
 here, and closing it needs regex-vs-division disambiguation — a real parser,
 which is more than a grep-shaped contract is worth.
+
+---
+
+## 9. The a11y sweep — five findings closed (2026-08-21)
+
+Three mediums and two lows, taken as one pass because they share a surface and a
+review lens. Each hand-verified first, then driven red — eight failing tests —
+then fixed. 818/818, tsc and build clean.
+
+### M7 — CountryMap's `role="img"` hides every control inside it
+`components/map/CountryMap.tsx`
+
+The `<svg>` carried `role="img"`, which makes its whole subtree presentational:
+every province zoom control (`role="button"`) and every place toggle
+(`role="button" tabIndex={0} aria-pressed`) is removed from the accessibility
+tree. They stay *focusable*, so a keyboard user tabs onto controls a screen
+reader announces as nothing — worse than either half alone.
+
+WorldMap had already reached the opposite conclusion and said so in its own
+docblock: "A group, not an image: `role='img'` would drop every country button."
+Same role, two components, incompatible decisions — the H3 pattern exactly. Now
+`role="group"`, matching WorldMap.
+
+⚠ **Three existing tests pinned `role="img"`** and had to be repointed. Two of
+them were `queryByRole("img")` asserting *no map is drawn*; left alone they would
+have kept passing while asserting nothing, since nothing renders that role any
+more. They are now `queryByRole("group")` and mean something again.
+
+The new test asserts the container's role rather than going through the buttons,
+and says why: testing-library does not implement ARIA's presentational-children
+rule, so `getByRole("button")` finds them either way. The browser is where this
+bites, so the role is the honest thing to pin.
+
+### M8 — MapExplorer's own controls miss the C5 tap target
+`components/map/MapExplorer.tsx`
+
+Three buttons written with `py-1`/`py-1.5` instead of `min-h-[var(--tap-min)]`,
+landing near 24px against the token's 44px — while roughly thirty components
+across the tree apply it. The three are the back-out, the zoom-out and the
+retry: each is the only way out of the state it appears in, so they are the worst
+ones to make hard to hit. WorldMap's country dots stay exempt, as its docblock
+records.
+
+### M9 — a failed add-day was silent to a screen reader
+`components/trip/PlanTab.tsx`
+
+`addDayError` rendered as a bare `<span>`, conditionally. No role, no live
+region: the only signal that an edit did not land was red text appearing. Now
+`role="status" aria-live="polite"`, and **rendered unconditionally** — a live
+region created in the same tick as its first content is unreliably announced, so
+the region has to already be in the tree for the insertion to register.
+
+⚠ **The finding named "add-day and wizard-resolve failures"; only add-day
+exists.** PlanTab has exactly one error surface (`addDayError`) — there is no
+wizard-resolve path in this component. Half the finding was wrong.
+
+### L1 — target-day chips had no focus indicator at all
+`components/plan/DayBuilder.tsx`
+
+The chip is a `<label>` wrapping an `sr-only` radio, so focus lands on something
+invisible and nothing renders a ring: not a weak indicator, none (WCAG 2.4.7).
+Fixed with `has-[:focus-visible]:outline-…` on the label.
+
+### L2 — Kit's accessible name omits its visible label
+`lib/nav.ts`
+
+`label: "Kit"` against `ariaLabel: "Bookings and packing"` — a speech-input user
+saying "click Kit" addresses a control whose name does not contain "Kit" (WCAG
+2.5.3 Label in Name). The other three satisfied it by accident. Now
+`"Kit — bookings and packing"`, and the rule is a test over all four rather than
+a property three of them happened to have.
+
+### A sixth scan gap, found by the fix
+
+`lib/tokens.test.ts`'s "emits a rule for every arbitrary colour utility" check
+failed on the focus-ring fix — reporting `outline-[var(--accent-ink)]` as never
+emitted. **It was emitted.** The extraction regex's variant pattern admitted only
+bare words (`focus-visible:`, `hover:`), so against the tree's first *bracketed*
+variant — `has-[:focus-visible]:` — it captured the tail alone and looked up a
+rule Tailwind never emits under that name.
+
+Diagnosed by reading the built CSS rather than trusting the failure: all three
+rules are there, `--tw-outline-style: solid` included. The variant pattern now
+carries an optional `-[…]`, which is what every `has-[…]:`, `data-[…]:`,
+`group-has-[…]:` and `@[…]:` utility needs. Swept the tree afterwards: this is
+still its only bracketed variant, so the gap was hiding nothing else.
+
+Worth recording as its own lesson — **the test that catches your fix may be
+wrong about why.** Verifying against the build output before touching the check
+is what separated "the utility is dead" from "the extraction is incomplete", and
+the first reading would have sent the fix in the wrong direction.
