@@ -662,3 +662,64 @@ artifacts in §6. **Every §6 finding was confirmed by a lens and survived a
 refuter, and roughly one in six still did not hold.** Hand-verify before fixing.
 
 **§6 is now empty.**
+
+---
+
+## 12. Why PR #6's Vercel check is red (2026-08-21)
+
+**Not the branch.** The Preview environment has no `BETTER_AUTH_SECRET`, and the
+fail-closed wall refuses to start without one — which is the guard working
+exactly as designed.
+
+### The evidence
+
+| | |
+|---|---|
+| `335915e` **Preview**, 2026-08-15 | **success** — before the wall existed |
+| `0d35d20` / `1fefde2` on main, 2026-08-17 | "refuse to boot / refuse every request without a usable secret" |
+| `316b80c` "merge: bring the fail-closed wall into the redesign branch" | **first branch build, first failure** |
+| every Preview since | failure |
+| every **Production** deploy from main | success |
+
+The comparison that looked like "main works, branch is broken" was
+**Production against Preview**. Main has never had a Preview build since the wall
+landed, and the branch has never had a Production one. Apples to oranges — that
+was the wrong conclusion, drawn before the environment column was read.
+
+`.env.example` states the mechanism in its own words: "On a deployment a blank or
+example value refuses to start (see instrumentation.ts), because an absent secret
+also disables the login wall and would serve every page publicly."
+
+### Ruled out along the way
+
+All tested locally, all clean: case-sensitive imports (209 files scanned, zero
+mismatches), imports of uncommitted files, unresolved imports, deployment payload
+size (3.4 MB tracked), Next version and every build config file (identical to
+main), `package.json` scripts (identical — only four devDependencies differ), the
+lockfile (in sync; none of the 62 added packages has an install script or an
+os/cpu lock), and the build under `VERCEL=1 VERCEL_ENV=preview CI=1` with a
+missing secret *and* an unreachable `DATABASE_URL`. It passes every time.
+
+### The fix, which needs a human
+
+**Vercel → Settings → Environment Variables → add `BETTER_AUTH_SECRET` scoped to
+Preview**, with a value different from production:
+
+```
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+Then redeploy — env vars are read at build. An agent cannot do this: it is a
+secret, and handling secrets is out of bounds.
+
+**Do not weaken the guard to make previews boot.** A preview serving the whole
+site publicly is the same leak the wall exists to prevent. The gap is
+provisioning, not policy.
+
+### Why it went unnoticed for three days
+
+Vercel builds every branch push, but a failing Preview only becomes *visible* as
+a PR check, and no PR was open until 2026-08-21. Nothing else surfaces it. The
+Vercel MCP available here 401s on this team's deployment endpoints and the CLI is
+not installed, so the build log was never readable — the diagnosis is entirely
+from deployment metadata and local reproduction.
