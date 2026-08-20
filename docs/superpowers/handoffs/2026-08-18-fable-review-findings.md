@@ -4,7 +4,8 @@
 **Branch:** `redesign/planner-shell` at `2881aee`
 **Scope:** the whole of PR2 (Tasks 1-33) against spec and plan — not the recent diff
 **Status:** six confirmed, **all six now fixed** (§5). A corrected second pass then
-verified all 31 findings rather than the top 9 — **20 remain open** (§6).
+verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
+**both highs are now closed** (§7). **18 remain open: 12 medium, 6 low.**
 
 This is the §5g review. Six Fable lenses (spec conformance, cross-step drift,
 contract scans, state correctness, a11y/surface, write boundary) produced 31 raw
@@ -302,19 +303,12 @@ Read that as: re-running a review after committing its own output teaches the
 refuters to reject it. Either re-run before writing anything down, or drop the
 prior-findings rule from the refuter brief.
 
-### Still open — 2 high, 12 medium, 6 low
+### Still open — 12 medium, 6 low
 
 Confirmed by a lens and survived refutation, but **not** re-verified by hand the
 way §1's six were. Treat the severities as the reviewers' own.
 
-**High**
-- `lib/server/pgStore.ts:321` — `updateTripDataIf`'s guard and version bump are
-  two autocommit statements, so concurrent writes can lose an op. Pre-PR2 code
-  and pg-only (memory records the pg path as inspection-verified only), but the
-  day builder makes concurrent plan POSTs routine.
-- `lib/contracts.test.ts:237` — C2 misses Tailwind v4's `var` shorthand and CSS
-  `inset` shorthand, which are the idioms the mobile PR will reach for. Same
-  class as M1: a scan whose gap reads as a guarantee.
+**High — both closed 2026-08-21, see §7.**
 
 **Medium** — five more contract-scan gaps (`:204` C1 blind to JSX text children,
 `:39` `stripComments` blanking string literals so a URL's `//` hides trip paths,
@@ -340,3 +334,78 @@ after an `addDay`.
 
 Full text, including each refuter's reasoning, is in the workflow output at
 `tasks/wi2gxfruv.output`.
+
+---
+
+## 7. Both highs closed (2026-08-21)
+
+Each was hand-verified by code read first — §6's findings had only a lens and a
+refuter behind them — then fixed test-first, with the test run against the
+unfixed code and confirmed red for the stated reason. 803/803, tsc and build
+clean.
+
+### H7 — `updateTripDataIf` lost updates on the pg path — **fixed**
+`lib/server/pgStore.ts` · confirmed, then fixed
+
+Verified by reading the function against its sibling. The guard and the bump
+were two autocommit statements:
+
+```
+UPDATE trips SET data=…, name=… WHERE id=… AND version = $expected   -- guard
+UPDATE trips SET version = version + 1, updated_at = …  WHERE id = …  -- touch()
+```
+
+Two writers that both read version 7 both clear the identical guard in the
+window before either bump lands. The second overwrites the first, **both callers
+are told `true`**, and one op is gone. `putWallet` in the same file has always
+done it correctly — one statement that guards and bumps together — so the fix is
+that shape, and `touch()` is dropped from this path (still used by 12 others).
+
+**Second-order find:** the route's retry loop was near-dead on pg.
+`app/api/trips/[id]/plan/route.ts:58` does `if (!written) continue;` and 409s
+only after `MAX_WRITE_ATTEMPTS`, with a comment promising "nobody's edit is
+silently overwritten by a stale snapshot" — but a guard that rarely fires never
+triggers the retry. That comment was load-bearing and false on the pg path, the
+same defect shape as H1. The fix makes the loop live: a conflict now genuinely
+returns `false`, so the op is re-applied rather than lost.
+
+**Test:** `lib/server/pgStore.test.ts` — new. There is no database here, so it
+swaps the `postgres` tagged template cached on `globalThis.__cipSql` for a
+recorder. That runs the real function body against the real driver shape and
+fakes only the database, which is exactly right when the thing under test is
+*statement boundaries*. Red before the fix with "expected 2 to have a length of
+1". It also pins `updated_at`, which `touch()` used to carry.
+
+⚠ **Not run against a live postgres.** The correctness argument is READ
+COMMITTED's re-check of the WHERE after a row lock releases — standard, and the
+same one `putWallet` already relies on. Still worth one pass on the live-pg
+matrix memory already calls for.
+
+⚠ **The sqlite path has the identical two-statement shape and was deliberately
+left alone** (`lib/server/tripStore.ts:215`). better-sqlite3 is synchronous, so
+the two statements cannot interleave inside one process and **no test can be made
+to fail**. Writing the fix without a failing test would violate the standing TDD
+rule. It becomes real only if a second process ever writes the same file.
+
+### H8 — C2 blind to Tailwind v4 `var` and CSS `inset` shorthands — **fixed**
+`lib/contracts.test.ts` · confirmed, then fixed
+
+Verified by evading the predicate. `fixed bottom-(--safe-bottom)` and
+`position: fixed; inset: auto 0 0 0` both pin the bottom edge and both walked
+straight through — the offset alternation admitted only `\d+|\[|full|auto`, and
+`inset-y-0` was matched as a literal for no stated reason.
+
+Widened to three branches: any `bottom-` offset including `px` and the v4
+`(--var)` shorthand, the same set for `inset-y-`, and the CSS declarations
+`bottom:` / `inset:` / `inset-block:` / `inset-block-end:`.
+
+**Verified by trying to evade it** — ten probes, six of them negative.
+`inset-block-start` (top-only) and `inset-inline` / `inset-inline-end`
+(horizontal) correctly stay false; `-bottom-4`, `-inset-y-2`, `[bottom:0]` and
+`inset:0` correctly fire. No new offenders in the tree.
+
+**Known-and-left:** `fixed inset-0` still reads as false. It does set
+`bottom: 0`, but a full-screen overlay does not compete for the bottom edge the
+way a second bottom bar does, and the existing suite asserts it deliberately.
+Whole-file co-occurrence also still can't see `fixed` and `bottom-0` split
+across two files — inherent to the scan's shape and already in its docblock.
