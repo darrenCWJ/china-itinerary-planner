@@ -245,7 +245,7 @@ export function MapExplorer({
           <button
             type="button"
             onClick={() => onLevelChange("country")}
-            className="rounded-lg border border-[var(--line-1)] px-3 py-1 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+            className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
           >
             ← Back to {countryLabel}
           </button>
@@ -264,7 +264,7 @@ export function MapExplorer({
         <button
           type="button"
           onClick={() => setRetryKey((k) => k + 1)}
-          className="mt-3 rounded-lg border border-[var(--accent-ink)] px-4 py-1.5 text-sm font-medium text-[var(--accent-ink)] hover:bg-[var(--line-1)]/50"
+          className="mt-3 inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--accent-ink)] px-4 text-sm font-medium text-[var(--accent-ink)] hover:bg-[var(--line-1)]/50"
         >
           Try again
         </button>
@@ -296,7 +296,7 @@ export function MapExplorer({
                   setZoomRegion(null);
                   setHover(null);
                 }}
-                className="rounded-lg border border-[var(--line-1)] px-3 py-1 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+                className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
               >
                 ← All China
               </button>

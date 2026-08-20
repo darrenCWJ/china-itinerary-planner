@@ -122,6 +122,23 @@ describe("hasDetailLevel", () => {
 });
 
 describe("CountryMap — China", () => {
+  test("exposes the map as a group, so its controls survive in the a11y tree", () => {
+    renderMap();
+
+    // `role="img"` makes every descendant presentational, which drops the
+    // province zoom buttons and every place toggle out of the accessibility
+    // tree — while `tabIndex={0}` keeps them focusable, so a keyboard user
+    // lands on controls a screen reader announces as nothing. WorldMap's own
+    // docblock rejects exactly this pattern and uses a group.
+    //
+    // Asserted on the container's role rather than through the buttons,
+    // because testing-library does not implement ARIA's presentational-children
+    // rule: the assertions below find the buttons either way. The browser is
+    // where this bites, so the role is the honest thing to pin.
+    expect(screen.getByRole("group", { name: "Map of China segmented by region" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Map of China/ })).toBeNull();
+  });
+
   test("makes every province a zoom control and reports the region clicked", () => {
     const { props } = renderMap();
 
@@ -139,7 +156,7 @@ describe("CountryMap — China", () => {
       screen.queryByRole("button", { name: "Zoom into North China (Beijing)" })
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Map of East China with selectable places" })
+      screen.getByRole("group", { name: "Map of East China with selectable places" })
     ).toBeInTheDocument();
     expect(props.onZoomRegion).not.toHaveBeenCalled();
   });
@@ -183,7 +200,7 @@ describe("CountryMap — countries with no detail level", () => {
 
     expect(screen.getByText("Japan")).toBeInTheDocument();
     expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
   });
 
   test("lists whatever places the country does have, as toggles", () => {
@@ -205,7 +222,7 @@ describe("CountryMap — countries with no detail level", () => {
   test("ignores a China topology handed to another country", () => {
     renderMap({ country: "JP", places: [] });
 
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
     expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
   });
 });

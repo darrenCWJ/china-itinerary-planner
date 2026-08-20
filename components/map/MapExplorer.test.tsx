@@ -138,7 +138,7 @@ describe("MapExplorer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "← Back to China" }));
 
     expect(
-      await screen.findByRole("img", { name: "Map of China segmented by region" })
+      await screen.findByRole("group", { name: "Map of China segmented by region" })
     ).toBeInTheDocument();
   });
 
@@ -152,10 +152,55 @@ describe("MapExplorer", () => {
     expect(screen.queryByText(/catalog is unavailable/)).not.toBeInTheDocument();
   });
 
+  /**
+   * C5's 44px minimum. Roughly thirty components across the tree apply
+   * `min-h-[var(--tap-min)]`; MapExplorer's own controls were written with
+   * `py-1`/`py-1.5` instead, which lands them near 24px. Every one of them is
+   * the only way out of the state it appears in — the back-out, the zoom-out
+   * and the retry — so they are the worst ones to make hard to hit.
+   *
+   * WorldMap's country dots are deliberately exempt and stay so: its docblock
+   * records that the A–Z list, not the circle, is the target that meets the
+   * token.
+   */
+  test("gives its back-out control the C5 tap target its siblings apply", async () => {
+    render(<Harness level="world" />);
+
+    expect(await screen.findByRole("button", { name: "← Back to China" })).toHaveClass(
+      "min-h-[var(--tap-min)]"
+    );
+  });
+
+  test("gives its zoom-out control the C5 tap target", async () => {
+    render(<Harness />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Zoom into North China/ }));
+
+    expect(await screen.findByRole("button", { name: "← All China" })).toHaveClass(
+      "min-h-[var(--tap-min)]"
+    );
+  });
+
+  test("gives its retry control the C5 tap target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        url === CHINA_TOPOLOGY_PATH
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve({ ok: true, status: 200, json: async () => WORLD_FIXTURE })
+      )
+    );
+    render(<Harness />);
+
+    expect(await screen.findByRole("button", { name: "Try again" })).toHaveClass(
+      "min-h-[var(--tap-min)]"
+    );
+  });
+
   test("fetches the world topology only once the world level is open", async () => {
     const { unmount } = render(<Harness />);
 
-    await screen.findByRole("img", { name: "Map of China segmented by region" });
+    await screen.findByRole("group", { name: "Map of China segmented by region" });
     expect(requested("/world-countries.json")).toBe(false);
     unmount();
 
