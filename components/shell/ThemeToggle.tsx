@@ -88,6 +88,22 @@ export function ThemeToggle() {
           </div>
         </fieldset>
 
+        {/*
+          Spec §4.3 layer 1 is "a per-user, **per-country** hue". What ships here
+          is per-user and global: "Per country" follows the curated/derived hue
+          of whatever trip is open, and "Fixed" pins one hue across every trip.
+          The per-country dimension of the override has no UI.
+
+          Left that way deliberately rather than overlooked. This menu is the
+          app-wide display settings and is not trip-scoped, so a per-country
+          override needs a surface that can name a country — a picker here, or a
+          control on the trip page — and that is a design question the redesign
+          spec does not answer. Layers 2 and 3 (curated, derived) are live, so
+          every country already gets a sensible hue without it.
+
+          Recorded because a review found the gap with nothing written down, and
+          silence reads as "done".
+        */}
         <fieldset className="mt-2 border-t pt-2" style={{ borderColor: "var(--line-2)" }}>
           <legend className="text-xs font-semibold" style={{ color: "var(--ink-2)" }}>
             Accent

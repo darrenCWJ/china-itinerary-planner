@@ -7,7 +7,7 @@
 verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
 **both highs are now closed** (§7), **all five contract-scan gaps** with them
 (§8), and **the five a11y findings** after that (§9).
-**6 remain open and enumerated: 3 medium, 3 low** (§10 closed the catalog fold).
+**§6 is empty** — every enumerated finding is closed or refuted (§10, §11).
 
 ⚠ The original tally does not add up, and never did. §6 says "2 high, 12
 medium, 6 low" — 20 — but its **Low** paragraph names only five items, so 19 were
@@ -614,3 +614,51 @@ reverting the fold with the fixture in place: 3 of 4 go red. Worth repeating as
 the standing lesson: a red is not automatically the right red.
 
 **6 findings remain enumerated: 3 medium, 3 low.**
+
+---
+
+## 11. The last of §6 (2026-08-21)
+
+`831 → 833` tests, tsc and build clean. Five more closed, one **refuted**.
+
+- **Timing pair on every op** (`schemas.ts:144`). The agreement rule guarded
+  `setTiming` only, so `addItem` stored a half pair directly and `updateItem`
+  accepted one half against an explicit clear. Enforced in two places because
+  the two are knowable in different places: the schema for what the op alone
+  decides, `planOps` for the state-dependent case, gated on the op actually
+  touching timing so legacy half data can still be renamed.
+- **Day count from the plan** (`redactTrip.ts:15`). And the member header had it
+  too, thirty lines below a line already doing it right. The existing test
+  pinned the bug — fixture asks for 3 days against a 1-day plan and asserted 3.
+  It now asserts `days === planDays.length`.
+- **The builder's queue survives a view change** (`DayBuilder.tsx:171`). PlanTab
+  unmounted the builder on a view switch, taking `pendingOps` with it. Now
+  mounted-once-opened and `hidden`, so the send effect drains while the subtree
+  leaves the a11y tree and tab order.
+- **The chop is the country's** (`TripView.tsx:203`). `Country.mark` had been
+  threaded through the profile and read by nobody, so a Japan trip wore 同行.
+  Needed `country` on `GuestTripPayload`, which the guest header's own docblock
+  had deferred as "a server change outside this task's file set" — while naming
+  the exact hazard it caused.
+- **Per-country hue override** (`ThemeToggle.tsx:91`). Real: spec §4.3 layer 1
+  is per-user *per-country* and what ships is per-user global. **Recorded rather
+  than built** — this menu is app-wide and not trip-scoped, so the override needs
+  a surface that can name a country, which is a design question the spec does
+  not answer. Layers 2 and 3 are live, so every country still gets a sensible
+  hue. The finding was that nothing was written down; now something is.
+
+### Refuted — do not re-open
+
+**`DayBuilder.tsx:521` — "spec §5.3's slot lanes dropped with no recorded
+decision" is wrong on all three counts.** The band is implemented
+(`DayBuilder.tsx:603-607`), carries the spec reference in a comment beside it
+("Untimed items keep their slot band — spec §5.3 forbids inventing a start"),
+and is tested (`DayBuilder.test.tsx:266`, "shows the slot band for an untimed
+item rather than a made-up clock"). Nothing was dropped.
+
+That is the third finding from this review to be wrong on inspection, after the
+"wizard-resolve failures" half of the live-region finding and the two refutation
+artifacts in §6. **Every §6 finding was confirmed by a lens and survived a
+refuter, and roughly one in six still did not hold.** Hand-verify before fixing.
+
+**§6 is now empty.**
