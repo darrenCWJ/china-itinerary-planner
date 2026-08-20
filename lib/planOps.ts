@@ -121,6 +121,19 @@ export function applyPlanOp(plan: TripPlan, op: PlanOp, ctx: PlanOpContext): Pla
         startMinutes: patchTiming(existing.startMinutes, op.startMinutes),
         durationMinutes: patchTiming(existing.durationMinutes, op.durationMinutes),
       };
+      // The half the schema cannot see: `undefined` means "leave alone", so
+      // setting one side of the pair on an item that lacks the other produces a
+      // block no reader accepts — `lib/timeline.ts` wants both halves and
+      // `dayLoad` counts zero — on a write that reported success.
+      //
+      // Gated on the op actually touching timing, so an item left half by data
+      // written before this rule can still be renamed or moved. Refusing every
+      // edit to it would punish the member for a bug they did not cause.
+      const touchesTiming = op.startMinutes !== undefined || op.durationMinutes !== undefined;
+      const half = (patched.startMinutes === undefined) !== (patched.durationMinutes === undefined);
+      if (touchesTiming && half) {
+        return { ok: false, error: "A time block needs both a start and a length" };
+      }
       const items = day.items.map((i) => (i.id === op.itemId ? patched : i));
       return { ok: true, plan: replaceDay(plan, { ...day, items }) };
     }
