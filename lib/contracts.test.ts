@@ -34,13 +34,78 @@ interface SourceFile {
  * pattern in a comment scanned identically to one containing it — an audit found
  * that AppShell's own explanatory comment was what decided the check's verdict on
  * that file. Prose must not be able to fail or pass a contract.
+ *
+ * Hand-walked rather than two regexes, because the regex form could not tell a
+ * comment from a URL: `fetch("https://host/api/trips/1")` was blanked from the
+ * `//` in `https://` onward, so the trip path disappeared from `code` and C4
+ * never saw the call. Any absolute URL opened that hole by accident, which is
+ * the worst kind — nobody has to be evading anything.
+ *
+ * Single and double quotes reset at a newline, matching JS: an unterminated one
+ * is an apostrophe in JSX text, not a string, and letting it run would swallow
+ * every comment in the rest of the file.
  */
 function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  let out = "";
+  let quote: string | null = null;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (quote) {
+      if (c === "\\") {
+        out += c + (text[i + 1] ?? "");
+        i += 2;
+        continue;
+      }
+      if (c === quote || (c === "\n" && quote !== "`")) quote = null;
+      out += c;
+      i += 1;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+      i += 1;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i += 1;
+      out += " ";
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
+      i += 2;
+      out += " ";
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
 }
+
+/**
+ * Tests are excluded: they legitimately name the things the contracts forbid
+ * elsewhere, and a test asserting on test files is noise. `.d.ts` is excluded
+ * for having no runtime code to constrain. `.css` is included because a
+ * contract about layout that cannot see stylesheets is trivially bypassed by
+ * writing the rule in CSS.
+ */
+const isScannable = (entry: string) =>
+  /\.(tsx?|css)$/.test(entry) && !/\.test\.tsx?$/.test(entry) && !/\.d\.ts$/.test(entry);
 
 function collect(): SourceFile[] {
   const out: SourceFile[] = [];
+  const add = (full: string) => {
+    const text = readFileSync(full, "utf8");
+    out.push({
+      path: relative(process.cwd(), full).split(sep).join("/"),
+      text,
+      code: stripComments(text),
+    });
+  };
   const walk = (dir: string) => {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir)) {
@@ -49,20 +114,20 @@ function collect(): SourceFile[] {
         walk(full);
         continue;
       }
-      // Tests are excluded: they legitimately name the things the contracts
-      // forbid elsewhere, and a test asserting on test files is noise.
-      // .css is included because a contract about layout that cannot see
-      // stylesheets is trivially bypassed by writing the rule in CSS.
-      if (!/\.(tsx?|css)$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
-      const text = readFileSync(full, "utf8");
-      out.push({
-        path: relative(process.cwd(), full).split(sep).join("/"),
-        text,
-        code: stripComments(text),
-      });
+      if (isScannable(entry)) add(full);
     }
   };
   for (const root of ROOTS) walk(join(process.cwd(), root));
+  // The repo root, one level deep and not recursively — node_modules and .next
+  // are here too. `proxy.ts` and `instrumentation.ts` run on every request and
+  // can fetch a trip payload as readily as anything under app/, so a collector
+  // that stops at the four source directories reports a clean scan of a tree it
+  // never finished walking.
+  for (const entry of readdirSync(process.cwd())) {
+    const full = join(process.cwd(), entry);
+    if (statSync(full).isDirectory() || !isScannable(entry)) continue;
+    add(full);
+  }
   return out;
 }
 
@@ -74,6 +139,37 @@ describe("contract scan harness", () => {
     // a path bug would otherwise make every contract below vacuously true.
     expect(FILES.length).toBeGreaterThan(20);
     expect(FILES.map((f) => f.path)).toContain("lib/useTripPayload.ts");
+  });
+
+  it("reaches the repo root, not only the four source directories", () => {
+    // The proxy and instrumentation live at the root and are as capable of
+    // fetching a trip payload as anything under app/. A collector that cannot
+    // see them reports a clean scan of a tree it never finished walking, which
+    // is the failure mode the harness check above exists to prevent — it just
+    // did not extend to the root.
+    const paths = FILES.map((f) => f.path);
+    expect(paths).toContain("proxy.ts");
+    expect(paths).toContain("instrumentation.ts");
+  });
+
+  it("does not let a URL's // blank the rest of the line", () => {
+    // The sharpest of the scan holes, because an ordinary absolute URL opens it
+    // by accident: `fetch("https://host/api/trips/1")` was blanked from the `//`
+    // onward, so the trip path vanished from `code` and C4 never saw the call.
+    const call = 'const r = await fetch("https://host/api/trips/1"); const tail = 1;';
+    expect(stripComments(call)).toContain("/api/trips/");
+    expect(stripComments(call)).toContain("const tail = 1");
+
+    // Real comments must still go, including one that follows a string on the
+    // same line — otherwise this fix trades one hole for another.
+    expect(stripComments("const a = 1; // bottom-0")).not.toContain("bottom-0");
+    expect(stripComments("/* bottom-0 */ const a = 1;")).not.toContain("bottom-0");
+    expect(stripComments('const u = "https://h/x"; // bottom-0')).not.toContain("bottom-0");
+    expect(stripComments('const u = "https://h/x"; // c')).toContain("https://h/x");
+    // A quote inside a comment must not open a string and swallow the code
+    // after it, and an escaped quote must not close one early.
+    expect(stripComments('// it\'s fine\nconst keep = "/api/trips/";')).toContain("/api/trips/");
+    expect(stripComments('const s = "a\\"// b"; const keep = 1;')).toContain("const keep = 1");
   });
 });
 
@@ -166,16 +262,43 @@ describe("C4 — one module fetches trip data", () => {
     expect(callsFetch("await fetch (url)")).toBe(true);
   });
 
+  /**
+   * Does this file still do the thing its allowlist entry exempts it from?
+   *
+   * That is `fetchesTripData`, so this has to be the same predicate — keying on
+   * the path string alone let an entry survive on a leftover comment long after
+   * the fetch it excused was deleted, silently licensing the next real violation
+   * in that file.
+   */
+  const stillNeedsExemption = (f: SourceFile) => fetchesTripData(f);
+
   it("keeps its own allowlist honest", () => {
     // An allowlist entry that no longer fetches is an exemption nobody needs.
     // Left unchecked it would silently license a future violation in that file.
     for (const { path } of ALLOWED) {
       const file = FILES.find((f) => f.path === path);
       expect(file, `${path} is allowlisted but not in the tree`).toBeDefined();
-      expect(file!.text.includes(TRIP_PATH), `${path} is allowlisted but no longer fetches a trip path — drop it`).toBe(
-        true
-      );
+      expect(
+        stillNeedsExemption(file!),
+        `${path} is allowlisted but no longer fetches a trip path — drop it`
+      ).toBe(true);
     }
+  });
+
+  it("keys the allowlist on fetching, not on naming a path", () => {
+    // The entry exempts a file from `fetchesTripData`, so that is what has to
+    // still be true of it. Keying on the path string alone let an entry survive
+    // on a leftover comment long after the fetch it excused was deleted — an
+    // exemption nobody needs, silently licensing the next real violation.
+    const mention = "// see /api/trips/:id/plan\nexport const x = 1;\n";
+    expect(
+      stillNeedsExemption({ path: "x.tsx", text: mention, code: stripComments(mention) })
+    ).toBe(false);
+
+    const real = 'await fetch(`/api/trips/${id}/plan`);\n';
+    expect(stillNeedsExemption({ path: "y.tsx", text: real, code: stripComments(real) })).toBe(
+      true
+    );
   });
 
   it("does not treat trip creation as a payload read", () => {
@@ -201,18 +324,54 @@ describe("C1 — one source of truth for the trip tabs", () => {
     expect(carriers).toEqual([]);
   });
 
+  /**
+   * Both read comment-stripped source, and both strip it themselves rather than
+   * trusting the caller — one contract, one definition, the same rule `callsFetch`
+   * states below. A commented-out nav import used to grant the exemption, which
+   * is the fail-silent direction: the file is excused from the count entirely.
+   */
+  const importsNav = (source: string) =>
+    /from\s+["'][^"']*\/nav["']/.test(stripComments(source));
+
+  /**
+   * Counts a label written as a string literal *or* as JSX text. Literal-only
+   * was blind to the form a second nav is most likely to take — `<span>Plan</span>`
+   * carries no quoted label at all, so a whole hardcoded tab list read as zero.
+   */
+  const labelCount = (source: string) => {
+    const code = stripComments(source);
+    return TRIP_NAV.filter(
+      (item) =>
+        code.includes(`"${item.label}"`) || new RegExp(`>\\s*${item.label}\\s*<`).test(code)
+    ).length;
+  };
+
   it("routes every tab-label renderer through lib/nav", () => {
     // A component that renders the nav gets its labels from TRIP_NAV and never
     // writes them. Two or more labels as literals in one file is the signature
     // of a second hardcoded list — the exact drift C1 exists to prevent.
-    const importsNav = (text: string) => /from\s+["'][^"']*\/nav["']/.test(text);
-    const labelCount = (text: string) =>
-      TRIP_NAV.filter((item) => text.includes(`"${item.label}"`)).length;
-
     const offenders = FILES.filter(
       (f) => f.path !== "lib/nav.ts" && labelCount(f.text) >= 2 && !importsNav(f.text)
     ).map((f) => f.path);
     expect(offenders).toEqual([]);
+  });
+
+  it("counts a label rendered as JSX text, not only as a string literal", () => {
+    // A second hardcoded tab list written as children — <span>Plan</span> — has
+    // no quoted label anywhere in it, so the literal-only count read the whole
+    // thing as zero and the drift C1 exists to catch walked through.
+    expect(labelCount("<span>Plan</span><span>Money</span>")).toBe(2);
+    expect(labelCount("<a>Today</a>\n<a>Kit</a>")).toBe(2);
+    // Still counts the literal form, and still needs two to mean anything.
+    expect(labelCount('const tabs = ["Plan", "Money"];')).toBe(2);
+    expect(labelCount("<h1>Plan</h1>")).toBe(1);
+  });
+
+  it("cannot have its nav import satisfied by a comment", () => {
+    // Exemption from a comment is the fail-silent direction: a file that only
+    // *mentions* importing nav would be excused from the label count entirely.
+    expect(importsNav('// import { TRIP_NAV } from "@/lib/nav";')).toBe(false);
+    expect(importsNav('import { TRIP_NAV } from "@/lib/nav";')).toBe(true);
   });
 
   it("declares the tab list exactly once", () => {
@@ -324,8 +483,17 @@ describe("C3 — the day-builder core stays free of React", () => {
    * React-free. The honest rule is two rules, so the second one is stated
    * separately below.
    */
+  /**
+   * Widened again: admitting `dayBuilder/index.ts` and nothing beside it was the
+   * same hardcoded-path regression one level down. Split the core into
+   * `reducer.ts` and `ops.ts` and the contract silently stopped applying to the
+   * parts holding the logic, while still reporting a pass on the index.
+   */
   const isCore = (path: string) =>
-    path.startsWith("lib/") && /(^|\/)dayBuilder(\/index)?\.tsx?$/.test(path);
+    path.startsWith("lib/") &&
+    /(^|\/)dayBuilder(\.tsx?$|\/)/.test(path) &&
+    /\.tsx?$/.test(path) &&
+    !/(^|\/)use[A-Z]/.test(path);
 
   const builders = FILES.filter((f) => isCore(f.path));
 
@@ -347,6 +515,26 @@ describe("C3 — the day-builder core stays free of React", () => {
     // The hook is a separate rule, not a core module — see below.
     expect(isCore("lib/useDayBuilder.ts")).toBe(false);
     expect(isCore("components/plan/useDayBuilder.ts")).toBe(false);
+  });
+
+  it("follows the core module through a directory split", () => {
+    // Admitting `dayBuilder/index.ts` and nothing else beside it is the same
+    // hardcoded-path regression one level down: split the core into reducer.ts
+    // and ops.ts and the contract silently stops applying to the parts that
+    // actually hold the logic, while still reporting a pass on index.ts.
+    expect(isCore("lib/dayBuilder/reducer.ts")).toBe(true);
+    expect(isCore("lib/dayBuilder/ops.ts")).toBe(true);
+    // A hook parked inside the directory is still the hook, not the core.
+    expect(isCore("lib/dayBuilder/useDayBuilder.ts")).toBe(false);
+    // And the boundary still holds: a lookalike directory is not the core.
+    expect(isCore("lib/dayBuilderUi/panel.ts")).toBe(false);
+  });
+
+  it("is armed — the core module exists, so the scan is not silently skipped", () => {
+    // A guard, not a behaviour: `it.skipIf` below reports a skip rather than a
+    // failure if the pattern ever stops matching, and a permanent green skip
+    // reads exactly like a passing contract.
+    expect(builders.map((f) => f.path)).toContain("lib/dayBuilder.ts");
   });
 
   it("keeps the day-builder hook out of lib entirely", () => {
