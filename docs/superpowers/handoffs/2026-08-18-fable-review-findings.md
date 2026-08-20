@@ -7,7 +7,7 @@
 verified all 31 findings rather than the top 9 — 20 remained open (§6), of which
 **both highs are now closed** (§7), **all five contract-scan gaps** with them
 (§8), and **the five a11y findings** after that (§9).
-**7 remain open and enumerated: 4 medium, 3 low.**
+**6 remain open and enumerated: 3 medium, 3 low** (§10 closed the catalog fold).
 
 ⚠ The original tally does not add up, and never did. §6 says "2 high, 12
 medium, 6 low" — 20 — but its **Low** paragraph names only five items, so 19 were
@@ -585,3 +585,32 @@ Worth recording as its own lesson — **the test that catches your fix may be
 wrong about why.** Verifying against the build output before touching the check
 is what separated "the utility is dead" from "the extraction is incomplete", and
 the first reading would have sent the fix in the wrong direction.
+
+---
+
+## 10. Catalog folding closed (2026-08-21)
+
+`lib/server/catalog.ts:138` — confirmed, and the finding's guess that "if real,
+that fix was half a fix" was right. §5d added `norm` to `placeSearch` and
+stopped; `searchCities` still compared raw lowercase, so the client and server
+legs answered differently and `/api/destinations` got the broken half.
+
+**It bites real data:** 23 of the 695 catalog cities carry an apostrophe (Xi'an,
+Tai'an, Yan'an, Ma'anshan, Lu'an, Ya'an, Pu'er City …) and two carry diacritics
+(Ürümqi, Lüliang). "taian" and "urumqi" returned nothing.
+
+The fold now lives in `lib/foldPlaceName.ts` and both legs import it. Two extra
+call sites were wrong the same way: `CURATED_NAMES` built its exclusion set with
+`toLowerCase`, and both `searchCities` and `mapCities` tested membership that
+way — a catalog entry spelled with a curly apostrophe would not have been
+excluded by the curated straight-quote one and would have appeared twice.
+
+`searchCities` had no test. It has one now, against a fixture reached through a
+`CIP_CATALOG_PATH` override mirroring `CIP_DB_PATH`.
+
+⚠ **The first red was for the wrong reason** — without the override the test read
+the real catalog, so it failed on data rather than on folding. Re-checked by
+reverting the fold with the fixture in place: 3 of 4 go red. Worth repeating as
+the standing lesson: a red is not automatically the right red.
+
+**6 findings remain enumerated: 3 medium, 3 low.**
