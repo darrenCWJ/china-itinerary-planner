@@ -207,10 +207,17 @@ describe("Tailwind output", () => {
     // both compile to rules that a bare `outline-[…]` lookup would miss. The
     // first run of this test failed on exactly those two, which is the check
     // working — the utilities were fine, the extraction was not.
+    //
+    // It failed the same way a second time, on the first *bracketed* variant to
+    // land in the tree: `has-[:focus-visible]:outline-[var(--accent-ink)]`. The
+    // variant pattern admitted only bare words, so it captured the tail alone
+    // and looked up a rule Tailwind never emits under that name. The optional
+    // `-[…]` below is what lets a variant carry its own brackets — needed by
+    // every `has-[…]:`, `data-[…]:`, `group-has-[…]:` and `@[…]:` utility.
     const wanted = new Set<string>();
     for (const file of FILES) {
       const re = new RegExp(
-        `(?:[a-z][a-z0-9-]*:)*(?:${PREFIXES})-\\[[^\\]"'\`\\s]+\\](?:\\/\\d+)?`,
+        `(?:[a-z][a-z0-9-]*(?:-\\[[^\\]"'\`\\s]*\\])?:)*(?:${PREFIXES})-\\[[^\\]"'\`\\s]+\\](?:\\/\\d+)?`,
         "g"
       );
       for (const match of file.code.matchAll(re)) wanted.add(match[0]);

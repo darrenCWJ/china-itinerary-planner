@@ -37,6 +37,19 @@ describe("TRIP_NAV", () => {
     }
   });
 
+  test("every aria-label contains its visible label", () => {
+    // WCAG 2.5.3 Label in Name: the accessible name must contain the visible
+    // text, or a speech-input user saying "click Kit" addresses a control whose
+    // name is "Bookings and packing" and nothing happens. Three of the four
+    // already satisfied this by accident; the rule is what keeps them there.
+    for (const item of TRIP_NAV) {
+      expect(
+        item.ariaLabel.toLowerCase(),
+        `"${item.label}" is not in its aria-label "${item.ariaLabel}"`
+      ).toContain(item.label.toLowerCase());
+    }
+  });
+
   test("ids are unique", () => {
     expect(new Set(TRIP_NAV.map((item) => item.id)).size).toBe(TRIP_NAV.length);
   });

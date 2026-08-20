@@ -22,7 +22,10 @@ export interface TripNavItem {
   icon: string;
   /**
    * What a screen reader announces. Deliberately fuller than `label`, which is
-   * abbreviated to fit the tab, not to describe the destination.
+   * abbreviated to fit the tab, not to describe the destination — but it must
+   * still *contain* the label. WCAG 2.5.3 Label in Name: a speech-input user
+   * says "click Kit", and a control named only "Bookings and packing" does not
+   * answer to that.
    */
   ariaLabel: string;
 }
@@ -31,7 +34,7 @@ export const TRIP_NAV: readonly TripNavItem[] = [
   { id: "plan", label: "Plan", icon: "route", ariaLabel: "Plan the trip" },
   { id: "today", label: "Today", icon: "sun", ariaLabel: "Today on this trip" },
   { id: "money", label: "Money", icon: "wallet", ariaLabel: "Money and expenses" },
-  { id: "kit", label: "Kit", icon: "bag", ariaLabel: "Bookings and packing" },
+  { id: "kit", label: "Kit", icon: "bag", ariaLabel: "Kit — bookings and packing" },
 ] as const;
 
 /** Narrows an untrusted `?tab=` value; anything unrecognised falls back to Plan. */

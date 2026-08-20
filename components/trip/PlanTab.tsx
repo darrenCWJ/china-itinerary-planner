@@ -194,7 +194,16 @@ export function PlanTab({
                   </option>
                 ))}
               </select>
-              {addDayError && <span className="text-xs text-seal">{addDayError}</span>}
+              {/*
+                Rendered unconditionally, empty and all. A live region created
+                in the same tick as its first content is unreliably announced —
+                the region has to already be in the tree for the insertion to
+                register as a change. Conditional rendering was why a failed
+                add-day was silent to a screen reader.
+              */}
+              <span role="status" aria-live="polite" className="text-xs text-seal">
+                {addDayError}
+              </span>
             </div>
           )}
         </>

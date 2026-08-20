@@ -72,6 +72,18 @@ describe("DayBuilder keyboard path", () => {
     vi.unstubAllGlobals();
   });
 
+  test("gives the target-day chips a visible keyboard focus ring", () => {
+    setup([day(1, []), day(2, [])]);
+
+    // The radio is `sr-only` and the ring has to be on the label, or tabbing
+    // onto a chip moves focus somewhere invisible — no focus indicator at all
+    // (WCAG 2.4.7). Asserted on the class because jsdom runs no Tailwind; that
+    // the variant actually compiles is checked against the build output.
+    const chip = screen.getByRole("radio", { name: "Day 01" }).closest("label");
+    expect(chip).not.toBeNull();
+    expect(chip!.className).toMatch(/has-\[:focus-visible\]:outline/);
+  });
+
   test("names the day that will receive an add", () => {
     // Spec §3.2.4's explicit target, readable without opening anything.
     setup([day(1, []), day(2, [])]);
