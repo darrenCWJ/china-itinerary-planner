@@ -117,8 +117,9 @@ function ensureSchema(): Promise<void> {
         trip_id text PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
         currency_settings jsonb
       )`;
-      // better-auth v1.6.29 schema (generated 2026-08-15 via @better-auth/cli).
-      // Regenerate when bumping the pinned better-auth version.
+      // better-auth v1.7.1 schema. Regenerate when bumping the pinned version,
+      // and pair any new column with a backfill below — these are CREATE TABLE
+      // IF NOT EXISTS, so an existing database never picks one up on its own.
       // Columns are double-quoted throughout: better-auth's Kysely query
       // builder always quotes identifiers, so an unquoted CREATE TABLE would
       // have Postgres fold camelCase column names (e.g. emailVerified) to
@@ -152,6 +153,7 @@ function ensureSchema(): Promise<void> {
         "id" text NOT NULL PRIMARY KEY,
         "accountId" text NOT NULL,
         "providerId" text NOT NULL,
+        "issuer" text NOT NULL,
         "userId" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
         "accessToken" text,
         "refreshToken" text,
@@ -171,6 +173,21 @@ function ensureSchema(): Promise<void> {
         "createdAt" timestamptz NOT NULL,
         "updatedAt" timestamptz NOT NULL
       )`;
+      /**
+       * The Postgres half of db.ts's migrateAuthSchema, and load-bearing for the
+       * same reason: better-auth 1.7.1 added "issuer" and sign-in matches on it,
+       * so a database created before the bump locks every existing member out —
+       * with "invalid email or password", on a correct password — until the
+       * column exists *and* carries `local:credential`.
+       *
+       * Deliberately no `SET NOT NULL`: ensureSchema gates every request, so a
+       * statement that can fail on unexpected data would take the whole app
+       * down rather than one login. Fresh databases get the constraint from the
+       * CREATE TABLE above; migrated ones are nullable-but-populated.
+       */
+      await s`ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "issuer" text`;
+      await s`UPDATE "account" SET "issuer" = 'local:credential'
+              WHERE "issuer" IS NULL AND "providerId" = 'credential'`;
       await s`CREATE INDEX IF NOT EXISTS session_userId_idx ON "session" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS account_userId_idx ON "account" ("userId")`;
       await s`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`;
