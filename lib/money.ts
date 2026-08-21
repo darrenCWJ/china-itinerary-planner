@@ -14,7 +14,7 @@ export interface CurrencyAmount {
  * digits for it: the sen stopped circulating decades ago and rupiah are quoted
  * whole. Every other entry is the ISO exponent for a circulating currency.
  */
-const MINOR_UNIT_DIGITS: Record<string, number> = {
+export const MINOR_UNIT_DIGITS: Record<string, number> = {
   // No minor unit at all: the smallest coin is the major unit.
   BIF: 0, CLP: 0, DJF: 0, GNF: 0, IDR: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
   PYG: 0, RWF: 0, UGX: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
@@ -197,7 +197,7 @@ export function formatMinor(
  * "JPY 1,000" fallback it always has (asserted above). This table is where
  * JPY's plain ¥ lives instead, gated behind the context that makes it safe.
  */
-const CONTEXTUAL_SYMBOLS: Record<string, string> = { ...SYMBOLS, JPY: "¥" };
+export const CONTEXTUAL_SYMBOLS: Record<string, string> = { ...SYMBOLS, JPY: "¥" };
 
 /**
  * Currencies whose plain symbol collides with another currency in
@@ -206,7 +206,7 @@ const CONTEXTUAL_SYMBOLS: Record<string, string> = { ...SYMBOLS, JPY: "¥" };
  * US$, HK$, NT$, …) was already disambiguated when it was chosen, so only
  * the bare ¥ needs this.
  */
-const SYMBOL_DISAMBIGUATION: Record<string, string> = {
+export const SYMBOL_DISAMBIGUATION: Record<string, string> = {
   CNY: "CN¥",
   JPY: "JP¥",
 };
@@ -251,6 +251,14 @@ export function currencySymbol(
  * always been 100_000_000 minor units, which for a two-decimal currency is
  * exactly this; stating it in major units keeps the limit meaning the same
  * thing to a user whatever their currency's exponent.
+ *
+ * Not quite true for a three-decimal currency (BHD, IQD, JOD, KWD, LYD, OMR,
+ * TND): this constant lets `majorToMinor` accept up to 1_000_000_000 minor
+ * units for those, but `lib/server/schemas.ts`'s `MinorAmountSchema` caps
+ * every stored amount at 100_000_000 minor units regardless of currency — so
+ * the ceiling a three-decimal-currency entry actually clears end-to-end is
+ * 100,000 major units, ten times lower than this constant on its own would
+ * suggest. Untouched here (existing disagreement, not this pass's scope).
  */
 const MAX_MAJOR_UNITS = 1_000_000;
 

@@ -1,17 +1,21 @@
 import { describe, expect, test } from "vitest";
 import { getCountryProfile } from "./countryProfile";
+import { isKnownCurrencyCode } from "./rates";
 import { currencyPivot, type Expense, type Settlement } from "./tripShared";
 import {
   balancesByCurrency,
+  CONTEXTUAL_SYMBOLS,
   convertedTotals,
   currencySymbol,
   expensesOnDate,
   formatMinor,
   majorToMinor,
+  MINOR_UNIT_DIGITS,
   minorToMajorInput,
   minorUnitDigits,
   settleUp,
   splitMinorUnits,
+  SYMBOL_DISAMBIGUATION,
   totalsByCurrency,
 } from "./money";
 
@@ -263,8 +267,11 @@ describe("formatMinor", () => {
   test("a zero-decimal currency renders no decimal point", () => {
     // Yen have no cents, so there is nothing to put after a point. The
     // thousands separator still applies. JPY is absent from SYMBOLS and so
-    // takes the code-prefix fallback -- filling that map out is Task 12, and
-    // the yen sign is already spoken for by CNY here.
+    // takes the code-prefix fallback here -- Task 12 deliberately did NOT
+    // fill SYMBOLS in with JPY; it added the context-aware CONTEXTUAL_SYMBOLS
+    // table instead, precisely so this single-currency, no-context call could
+    // keep returning the plain code-prefix fallback it always has, with CNY
+    // still the only currency SYMBOLS hands the bare yen sign to.
     expect(formatMinor(1_000, "JPY")).toBe("JPY 1,000");
     expect(formatMinor(1_234_567, "KRW")).toBe("KRW 1,234,567");
     expect(formatMinor(-500, "JPY")).toBe("-JPY 500");
@@ -303,6 +310,39 @@ describe("currencySymbol", () => {
 
   test("accepts any iterable of currency codes, not just arrays", () => {
     expect(currencySymbol("JPY", new Set(["JPY", "CNY"]))).toBe("JP¥");
+  });
+});
+
+describe("currency-table drift guards (Minor 5 / Minor 6)", () => {
+  test("every MINOR_UNIT_DIGITS key is a currency this app actually recognises", () => {
+    // MINOR_UNIT_DIGITS (this file) and the rates allowlist
+    // (KNOWN_CURRENCY_CODES, lib/rates.ts) are maintained by different parts
+    // of this codebase with nothing enforcing they agree. A currency listed
+    // here that the allowlist doesn't know about would still format fine
+    // locally but could never have a live rate looked up for it.
+    for (const code of Object.keys(MINOR_UNIT_DIGITS)) {
+      expect(isKnownCurrencyCode(code)).toBe(true);
+    }
+  });
+
+  test("every symbol collision in CONTEXTUAL_SYMBOLS has a disambiguation entry for every code that shares it", () => {
+    // currencySymbol falls back to the ambiguous plain symbol whenever
+    // SYMBOL_DISAMBIGUATION has no entry for a code — even after it has
+    // already detected a real collision. Adding e.g. KRW: "₩" and
+    // KPW: "₩" to CONTEXTUAL_SYMBOLS without also adding both to
+    // SYMBOL_DISAMBIGUATION would silently reintroduce the ambiguity Task 12
+    // fixed. Grouping by symbol (rather than hardcoding CNY/JPY) means this
+    // guards every future collision, not just today's one.
+    const codesBySymbol = new Map<string, string[]>();
+    for (const [code, symbol] of Object.entries(CONTEXTUAL_SYMBOLS)) {
+      codesBySymbol.set(symbol, [...(codesBySymbol.get(symbol) ?? []), code]);
+    }
+    for (const codes of codesBySymbol.values()) {
+      if (codes.length < 2) continue;
+      for (const code of codes) {
+        expect(SYMBOL_DISAMBIGUATION[code]).toBeDefined();
+      }
+    }
   });
 });
 
