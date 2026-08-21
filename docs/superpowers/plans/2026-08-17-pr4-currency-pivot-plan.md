@@ -205,3 +205,65 @@ Part B (5–7) is independent of Part A and could run in parallel on a separate 
 Part C (8–12) is the original §5.5 work: 8→9 are the deliverable, 10 is small UI, 11 is cleanup gated on 9, 12 is polish.
 
 A defensible minimum PR4 is **Part A complete, plus Tasks 5, 6, 7, 9**: exponents correct, rates page live, pivot honoured.
+
+---
+
+## 9. Current-state addendum — verified 2026-08-21 against `dfb3b4a`
+
+Written 2026-08-17, before PR2 (`dc25033`) and PR3 (`dfb3b4a`) merged. Every
+factual claim above was re-checked against the tree today and **all of them
+hold**. Line numbers have drifted slightly; navigate by symbol.
+
+### Decisions taken 2026-08-21
+
+- **Scope: all twelve tasks.** Parts A, B and C ship in this PR.
+- **J-C5 is CONFIRMED, not merely recommended.** The rates page headlines the
+  trip/home pair, then lists any additional currency the trip actually has
+  expenses in. It never lists a currency nobody spent in.
+
+### Corrections and additions to the task text above
+
+- **`convertedTotals` is at `lib/money.ts:48`**; the two exponent-unsafe lines
+  are `:62` (`grandTotal += Math.round(t.amount * rate)`) and `:68` (`home`).
+  §3's analysis is exactly right.
+- **MoneyTab has a FOURTH CNY hardcode §2 does not list:** `:256`
+  (`.filter((c) => c !== "CNY")`) in the rates editor. Task 9 must fix it too,
+  or the editor keeps hiding the pivot row for the wrong currency on a
+  non-CNY trip.
+- **Task 3's caller audit is small and already done:** `majorToMinor` has
+  exactly two non-test callers — `components/trip/ExpenseForm.tsx:64` and
+  `components/trip/BalancesCard.tsx:49`. Both are per-currency surfaces, so a
+  currency is in scope at each; neither needs threading work first.
+- **Task 8's J-C1 basis is intact:** `lib/countryProfile.ts` still returns
+  `currency: "USD"` on the fallback path with the comment calling it a
+  placeholder. Do not stamp it.
+- **Task 12's `SYMBOLS` is still the eight-entry CN-era map** at
+  `lib/money.ts:72-81`.
+
+### ⚠ PR3 landed since this was written — Task 7 inherits new rules
+
+The rates page is the first new UI built after dark mode went live, so it must
+be correct in **both** ramps from its first commit. The token rules PR3
+established:
+
+- **Never `text-white` on a background built from `--accent-ink` or `--seal`.**
+  Those tokens invert between ramps; use `--paper`, which inverts with them.
+- **`--on-accent` is for text on `--accent-fill` only** — that token does *not*
+  invert (it is a light colour in both ramps).
+- **A surface under `CountryHero`'s scrim is the exception**: the scrim is dark
+  in both ramps, so fixed `text-white` is correct there. Check for a scrim
+  before choosing ink. Crossing these two families is what took `TripView`'s
+  hero from 9.2:1 to 2.0:1 before review caught it.
+- No hardcoded hex. Use the semantic ramp.
+
+**The four-tab constraint still binds.** Contract C1 makes `TRIP_NAV` the only
+tab declaration and `lib/contracts.test.ts` enforces it. The rates page must
+live inside Money — a sub-view, disclosure, or a route reached from it — not a
+fifth tab.
+
+### Test baseline
+
+848 tests / 60 files green at `dfb3b4a`, tsc and build clean. Two background
+sessions are editing test files (`DayBuilder.test.tsx`, `PlaceSearch.test.tsx`,
+`vitest.setup.ts`) and two components (`PlanStep.tsx`, `TrackerTab.tsx`) on
+their own branches; none is a PR4 file, but rebase before opening the PR.
