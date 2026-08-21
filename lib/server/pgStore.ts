@@ -12,7 +12,6 @@ import type {
   TripMember,
   TripPayload,
 } from "../tripShared";
-import { DEFAULT_CURRENCY_SETTINGS } from "../tripShared";
 import { newBriefingCode, newWalletCode } from "./ids";
 import { newJoinCode, newTripId } from "./ids";
 import type { BriefingRecord, JoinResult, LinkResult, UserTrip } from "./tripStore";
@@ -275,9 +274,13 @@ export async function getTrip(
     expenses: expenseRows.map((r) => r.data as Expense),
     settlements: settlementRows.map((r) => r.data as Settlement),
     journal: journalRows.map((r) => r.data as JournalEntry),
+    // A fresh object when no settings row exists, never the shared
+    // DEFAULT_CURRENCY_SETTINGS reference — a caller that ever mutated a
+    // returned settings object in place would otherwise poison the fallback
+    // every other trip with no settings row reads.
     currencySettings:
       (settingsRows[0]?.currency_settings as CurrencySettings | null | undefined) ??
-      DEFAULT_CURRENCY_SETTINGS,
+      { home: null, rates: {} },
   };
   if (isMember) payload.joinCode = row.join_code as string;
   return payload;
