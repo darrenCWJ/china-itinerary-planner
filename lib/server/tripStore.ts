@@ -11,7 +11,6 @@ import type {
   TripMember,
   TripPayload,
 } from "../tripShared";
-import { DEFAULT_CURRENCY_SETTINGS } from "../tripShared";
 import { getDb } from "./db";
 import { newBriefingCode, newJoinCode, newTripId, newWalletCode } from "./ids";
 
@@ -135,7 +134,10 @@ export function getTrip(id: string, requestingMember?: string): TripPayload | nu
   const settlements = readJsonRows<Settlement>("settlements", id);
   const journal = readJsonRows<JournalEntry>("journal_entries", id);
 
-  let currencySettings: CurrencySettings = DEFAULT_CURRENCY_SETTINGS;
+  // A fresh object, never the shared DEFAULT_CURRENCY_SETTINGS reference — a
+  // caller that ever mutated a returned settings object in place would
+  // otherwise poison the fallback every other trip with no settings row reads.
+  let currencySettings: CurrencySettings = { home: null, rates: {} };
   const settingsRow = db
     .prepare("SELECT currency_settings FROM trip_settings WHERE trip_id = ?")
     .get(id) as { currency_settings: string | null } | undefined;
