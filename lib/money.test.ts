@@ -7,6 +7,7 @@ import {
   expensesOnDate,
   formatMinor,
   majorToMinor,
+  minorToMajorInput,
   minorUnitDigits,
   settleUp,
   splitMinorUnits,
@@ -335,6 +336,61 @@ describe("majorToMinor", () => {
 
   test("an unlisted currency is parsed as a two-decimal one", () => {
     expect(majorToMinor("124.5", "XXX")).toBe(12_450);
+  });
+});
+
+describe("minorToMajorInput", () => {
+  test("formats to the currency's own exponent", () => {
+    expect(minorToMajorInput(12_450, "CNY")).toBe("124.50");
+    expect(minorToMajorInput(1_000, "JPY")).toBe("1000");
+    expect(minorToMajorInput(1_234, "KWD")).toBe("1.234");
+  });
+
+  /**
+   * This is the property that matters: minorToMajorInput is the declared
+   * inverse of majorToMinor, so feeding one's output back into the other
+   * must reproduce the original minor-unit amount, for every exponent in
+   * the table -- not just CNY's. An edit form's amount field is seeded with
+   * minorToMajorInput and re-parsed with majorToMinor on save, so any
+   * disagreement here is a live data-corruption or save-blocking bug, not a
+   * cosmetic one.
+   */
+  test("round-trips through majorToMinor at every exponent", () => {
+    const cases: Array<[number, string]> = [
+      [1, "CNY"], // one fen, the floor
+      [12_450, "CNY"], // an ordinary two-decimal amount
+      [100_000_000, "CNY"], // the ceiling, two-decimal
+      [1, "JPY"], // one yen, the floor
+      [5_000, "JPY"], // an ordinary zero-decimal amount
+      [1_000_000, "JPY"], // the ceiling, zero-decimal
+      [1, "KWD"], // one fils, the floor
+      [1_234, "KWD"], // an ordinary three-decimal amount
+      [50_000, "KWD"], // KWD 50.000 -- the exact figure from the corruption report
+      [1_000_000_000, "KWD"], // the ceiling, three-decimal
+    ];
+    for (const [minor, currency] of cases) {
+      expect(majorToMinor(minorToMajorInput(minor, currency), currency)).toBe(minor);
+    }
+  });
+
+  test("a three-decimal currency no longer inflates a stored amount tenfold on re-save", () => {
+    // Before this fix, an edit form seeded its amount field with a hardcoded
+    // `(amount / 100).toFixed(2)`. For KWD 50.000 (50_000 minor units) that
+    // produced "500.00", and majorToMinor("500.00", "KWD") accepted that
+    // two-digit fraction and returned 500_000 -- an untouched re-save
+    // silently multiplied the stored amount by ten.
+    const prefill = minorToMajorInput(50_000, "KWD");
+    expect(prefill).toBe("50.000");
+    expect(majorToMinor(prefill, "KWD")).toBe(50_000);
+  });
+
+  test("a zero-decimal currency's prefill is no longer refused by majorToMinor", () => {
+    // Before this fix, JPY 5,000 (5_000 minor units, no cents) prefilled as
+    // "50.00", and majorToMinor("50.00", "JPY") returned null -- the save
+    // failed even for a title-only edit, on an amount the user never touched.
+    const prefill = minorToMajorInput(5_000, "JPY");
+    expect(prefill).toBe("5000");
+    expect(majorToMinor(prefill, "JPY")).toBe(5_000);
   });
 });
 
