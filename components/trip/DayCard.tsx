@@ -48,13 +48,13 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
 
   return (
     <article
-      className={`rounded-xl border bg-[var(--paper)] shadow-sm ${isToday ? "border-seal" : "border-[var(--line-1)]"}`}
+      className={`rounded-xl border bg-[var(--paper)] shadow-sm ${isToday ? "border-[var(--seal)]" : "border-[var(--line-1)]"}`}
     >
       <header className="flex items-baseline justify-between px-5 pt-4">
         <p className="font-mono text-sm font-semibold uppercase tracking-widest text-[var(--accent-ink)]">
           Day {String(day.day).padStart(2, "0")}
           {isToday && (
-            <span className="ml-2 rounded bg-seal px-1.5 py-0.5 text-[10px] text-white">TODAY</span>
+            <span className="ml-2 rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] text-white">TODAY</span>
           )}
         </p>
         <p className="text-sm font-medium text-[var(--ink-2)]">{day.destinationName}</p>
@@ -203,7 +203,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
           </li>
         )}
 
-        {error && <li className="text-xs text-seal">{error}</li>}
+        {error && <li className="text-xs text-[var(--seal)]">{error}</li>}
       </ul>
     </article>
   );

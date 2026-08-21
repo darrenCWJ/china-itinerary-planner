@@ -1,15 +1,11 @@
 @import "tailwindcss";
 
 /*
- * Redesign token set — PR1. The @theme block below is the light-only palette
- * the current UI renders from; it stays exactly as it is and is retired in
- * PR3. These are plain custom properties on purpose: mapping them into
- * Tailwind's @theme would generate utility classes nothing consumes yet and
- * risks colliding with the retiring block, so PR2 owns that wiring. Nothing
- * reads these variables in PR1 — they exist so PR2's shell has correct values
- * in both ramps from its first commit.
+ * Token set — the one colour palette the UI renders from. The `@theme` block
+ * that duplicated part of it during PR1/PR2's migration has been retired
+ * (PR3); these plain custom properties are now the only definition of the
+ * palette, in both ramps.
  *
- * Light values are lifted from the @theme palette so the two agree.
  * lib/accent.test.ts asserts this file against lib/accent's constants, which
  * is what stops the two definitions of the dark paper from drifting apart.
  */
@@ -35,6 +31,9 @@
      chroma below must stay in step with lib/accent's RAMP. */
   --accent-ink: oklch(50% 0.08 30);
   --accent-fill: oklch(72% 0.115 30);
+  /* Brand vermilion — the chop mark. Fixed, not derived: this is the product's
+     identity, not a country accent, so it does not move with the trip. */
+  --seal: #c93b2e;
   /* Spec §7 C5 — present from the start even though desktop needs neither, so
      the mobile spec is an addition rather than a retrofit. */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -66,17 +65,9 @@
   --scrim: rgb(3 6 10 / 0.65);
   --accent-ink: oklch(80% 0.095 30);
   --accent-fill: oklch(80% 0.095 30);
-}
-
-@theme {
-  --color-ink: #17263b;
-  --color-ink-soft: #4a5b72;
-  --color-rail: #1d5c9e;
-  --color-rail-deep: #164a80;
-  --color-sky: #d9e7f4;
-  --color-mist: #f1f5fa;
-  --color-paper: #ffffff;
-  --color-seal: #c93b2e;
+  /* Lifted off #c93b2e, which sits at ~3.1:1 on dark paper. Same hue, raised
+     lightness — the chop reads as the same mark in both ramps. */
+  --seal: #f0705f;
 }
 
 @theme inline {
@@ -94,18 +85,16 @@
  *
  * Re-pointed at the PR1 tokens by Task 33 wherever a token exists — the paper
  * wash is now `--paper`, so the stamp follows the theme instead of the retiring
- * palette. `--color-seal` stays: the brand vermilion is the one colour in the
- * `@theme` block with no token counterpart, and inventing one here would put a
- * second definition of the brand in the tree. PR3's removal task owns it.
+ * palette.
  */
 .stamp {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0.1rem 0.45rem;
-  border: 2px solid var(--color-seal);
+  border: 2px solid var(--seal);
   border-radius: 0.375rem;
-  color: var(--color-seal);
+  color: var(--seal);
   font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
   font-size: 1rem;
   font-weight: 700;
@@ -122,9 +111,9 @@
   justify-content: center;
   width: 3.5rem;
   height: 3.5rem;
-  border: 2.5px solid var(--color-seal);
+  border: 2.5px solid var(--seal);
   border-radius: 9999px;
-  color: var(--color-seal);
+  color: var(--seal);
   font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
   font-size: 1.15rem;
   font-weight: 700;

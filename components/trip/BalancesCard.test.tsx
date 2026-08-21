@@ -56,7 +56,7 @@ describe("balance signals", () => {
 
   test("keeps the affirmative half separated from the negative one", () => {
     const { owed, owes } = renderCard();
-    expect(owes.className).toMatch(/text-seal/);
+    expect(owes.className).toContain("text-[var(--seal)]");
     // Equal classes would satisfy the assertion above while erasing the signal.
     expect(owed.className).not.toBe(owes.className);
   });

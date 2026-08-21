@@ -186,7 +186,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
             Cancel
           </button>
         )}
-        {error && <span className="text-xs text-seal">{error}</span>}
+        {error && <span className="text-xs text-[var(--seal)]">{error}</span>}
       </div>
     </div>
   );

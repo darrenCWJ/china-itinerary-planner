@@ -139,7 +139,7 @@ export function JournalSection({
                   )}
                   <button type="button" aria-label="Remove photo"
                     onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-seal text-[10px] text-white">
+                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--seal)] text-[10px] text-white">
                     ✕
                   </button>
                 </li>
@@ -170,7 +170,7 @@ export function JournalSection({
               {busy ? "Saving…" : "Add entry"}
             </button>
           </div>
-          {error && <p className="mt-2 text-xs text-seal">{error}</p>}
+          {error && <p className="mt-2 text-xs text-[var(--seal)]">{error}</p>}
         </div>
       )}
 
@@ -234,7 +234,7 @@ export function JournalSection({
                         Edit
                       </button>
                       <button type="button" onClick={() => void onDelete(e.id)}
-                        className="text-xs text-[var(--ink-2)] hover:text-seal">
+                        className="text-xs text-[var(--ink-2)] hover:text-[var(--seal)]">
                         Delete
                       </button>
                     </div>

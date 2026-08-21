@@ -120,7 +120,7 @@ export function AuthForm({ mode }: Props) {
         className="mt-5 w-full rounded-lg bg-[var(--accent-ink)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
         {busy ? "…" : mode === "signup" ? "Create account" : "Sign in"}
       </button>
-      {error && <p role="alert" className="mt-2 text-xs text-seal">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-xs text-[var(--seal)]">{error}</p>}
       <p className="mt-4 text-center text-xs text-[var(--ink-2)]">
         {mode === "signup" ? (
           <>Already have an account? <Link href={`/login${querySuffix}`} className="text-[var(--accent-ink)] hover:underline">Sign in</Link></>

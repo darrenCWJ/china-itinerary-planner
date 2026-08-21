@@ -123,13 +123,13 @@ export function BriefingShare({ tripId, memberName }: Props) {
             type="button"
             disabled={busy}
             onClick={() => send(false, false)}
-            className="text-sm font-medium text-seal underline disabled:opacity-50"
+            className="text-sm font-medium text-[var(--seal)] underline disabled:opacity-50"
           >
             Revoke link
           </button>
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-seal">{error}</p>}
+      {error && <p className="mt-2 text-xs text-[var(--seal)]">{error}</p>}
     </div>
   );
 }

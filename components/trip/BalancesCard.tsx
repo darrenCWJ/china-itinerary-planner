@@ -95,7 +95,7 @@ export function BalancesCard({
                  * "Japan", never "settled". Neutral-vs-red is the standard
                  * accounting pair and neither side moves with the country.
                  */}
-                <span className={b.net > 0 ? "font-medium text-[var(--ink-0)]" : "font-medium text-seal"}>
+                <span className={b.net > 0 ? "font-medium text-[var(--ink-0)]" : "font-medium text-[var(--seal)]"}>
                   {b.net > 0 ? "is owed " : "owes "}
                   {formatMinor(Math.abs(b.net), currency)}
                 </span>
@@ -143,7 +143,7 @@ export function BalancesCard({
         </div>
       ))}
 
-      {error && <p className="mt-2 text-xs text-seal">{error}</p>}
+      {error && <p className="mt-2 text-xs text-[var(--seal)]">{error}</p>}
 
       {settlements.length > 0 && (
         <div className="mt-4 border-t border-[var(--line-1)] pt-3">
@@ -159,7 +159,7 @@ export function BalancesCard({
                   <button type="button" onClick={() => void removeSettlement(s.id)}
                     disabled={busy}
                     aria-label={`Delete repayment ${s.from} to ${s.to}`}
-                    className="ml-auto text-xs text-[var(--ink-2)] hover:text-seal disabled:opacity-50">
+                    className="ml-auto text-xs text-[var(--ink-2)] hover:text-[var(--seal)] disabled:opacity-50">
                     ✕
                   </button>
                 )}

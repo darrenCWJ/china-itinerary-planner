@@ -216,7 +216,7 @@ export function PlaceSearch({
               <span className="truncate">
                 {place.kind === "off-map" ? `Add “${place.name}” as its own place` : place.name}
               </span>
-              {place.localName && <span className="font-kai text-xs text-seal">{place.localName}</span>}
+              {place.localName && <span className="font-kai text-xs text-[var(--seal)]">{place.localName}</span>}
               {place.province && (
                 <span className="text-xs text-[var(--ink-2)]">{place.province}</span>
               )}

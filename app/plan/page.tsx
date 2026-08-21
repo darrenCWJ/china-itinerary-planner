@@ -294,7 +294,7 @@ export default function PlanPage() {
           </p>
           {step < 2 ? (
             <div className="flex items-center gap-3">
-              {resolveError && <span className="text-xs text-seal">{resolveError}</span>}
+              {resolveError && <span className="text-xs text-[var(--seal)]">{resolveError}</span>}
               <button
                 type="button"
                 onClick={() => {
@@ -312,7 +312,7 @@ export default function PlanPage() {
             <button
               type="button"
               onClick={restart}
-              className="rounded-lg border border-seal px-5 py-2 text-sm font-semibold text-seal transition-colors hover:bg-seal hover:text-white"
+              className="rounded-lg border border-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--seal)] transition-colors hover:bg-[var(--seal)] hover:text-white"
             >
               Plan another trip
             </button>

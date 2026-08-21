@@ -34,7 +34,7 @@ export function PrivateGate({ onSubmitCode }: Props) {
           {busy ? "…" : "View trip"}
         </button>
       </div>
-      {error && <p className="mt-2 text-xs text-seal">{error}</p>}
+      {error && <p className="mt-2 text-xs text-[var(--seal)]">{error}</p>}
     </div>
   );
 }

@@ -155,7 +155,7 @@ export function CrewMenu() {
               </button>
               <p className="mt-1 text-xs text-[var(--ink-2)]">
                 Or have them enter code{" "}
-                <span className="font-mono font-semibold tracking-widest text-seal">
+                <span className="font-mono font-semibold tracking-widest text-[var(--seal)]">
                   {joinCode}
                 </span>
                 .

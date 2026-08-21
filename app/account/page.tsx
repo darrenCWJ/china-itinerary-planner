@@ -106,7 +106,7 @@ export default function AccountPage() {
           className="mt-4 rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? "…" : "Change password"}
         </button>
-        {message && <p role="status" className="mt-2 text-xs text-seal">{message}</p>}
+        {message && <p role="status" className="mt-2 text-xs text-[var(--seal)]">{message}</p>}
       </section>
 
       <section className="mt-4 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
@@ -138,7 +138,7 @@ export default function AccountPage() {
             ))}
           </ul>
         )}
-        {adminMessage && <p role="status" className="mt-2 text-xs text-seal">{adminMessage}</p>}
+        {adminMessage && <p role="status" className="mt-2 text-xs text-[var(--seal)]">{adminMessage}</p>}
       </section>
     </main>
   );

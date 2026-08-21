@@ -27,7 +27,7 @@ export function FeasibilityCounter({ places, daysSet }: Props) {
       // assertive region would interrupt the screen reader mid-word each time.
       aria-live="polite"
       className={`flex flex-wrap items-center gap-x-2 rounded-lg border px-3 py-2 text-sm ${
-        verdict === "over" ? "border-seal/50 bg-seal/5" : "border-[var(--line-1)] bg-[var(--paper)]"
+        verdict === "over" ? "border-[var(--seal)]/50 bg-[var(--seal)]/5" : "border-[var(--line-1)] bg-[var(--paper)]"
       }`}
     >
       {verdict === "empty" ? (
@@ -42,7 +42,7 @@ export function FeasibilityCounter({ places, daysSet }: Props) {
           <span aria-hidden className="text-[var(--ink-2)]">·</span>
           <span>{count(daysSet, "day", "days")} set</span>
           {delta < 0 && (
-            <span className="font-semibold text-seal">— {Math.abs(delta)} over</span>
+            <span className="font-semibold text-[var(--seal)]">— {Math.abs(delta)} over</span>
           )}
           {delta > 0 && <span className="text-[var(--ink-2)]">— {delta} spare</span>}
         </>

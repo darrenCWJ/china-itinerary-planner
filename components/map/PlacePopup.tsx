@@ -57,7 +57,7 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
         {place.emoji && <span aria-hidden>{place.emoji}</span>}
         <p className="font-display text-sm font-bold">{place.name}</p>
         {place.localName && (
-          <span className="font-kai text-xs text-seal">{place.localName}</span>
+          <span className="font-kai text-xs text-[var(--seal)]">{place.localName}</span>
         )}
       </div>
       <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">

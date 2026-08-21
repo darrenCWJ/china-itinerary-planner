@@ -381,7 +381,7 @@ function DestinationCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <h3 className="font-display text-lg font-bold">{dest.name}</h3>
-              <span className="font-kai text-seal">{dest.localName}</span>
+              <span className="font-kai text-[var(--seal)]">{dest.localName}</span>
             </div>
             <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--ink-2)]">
               {dest.region} China
@@ -414,7 +414,7 @@ function DestinationCard({
         <button
           type="button"
           onClick={onVisited}
-          className="text-xs text-[var(--ink-2)] transition-colors hover:text-seal"
+          className="text-xs text-[var(--ink-2)] transition-colors hover:text-[var(--seal)]"
         >
           Been here already? Mark visited
         </button>

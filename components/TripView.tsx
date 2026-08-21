@@ -139,7 +139,7 @@ export function TripView({ tripId }: { tripId: string }) {
           <button
             type="button"
             onClick={() => void showClaimable()}
-            className="mt-6 rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white"
+            className="mt-6 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white"
           >
             Join this trip
           </button>
@@ -153,7 +153,7 @@ export function TripView({ tripId }: { tripId: string }) {
           </p>
         )}
         {legacyName && (
-          <p className="mt-2 rounded-lg border border-dashed border-seal/50 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
+          <p className="mt-2 rounded-lg border border-dashed border-[var(--seal)]/50 bg-[var(--paper)] px-4 py-2 text-xs text-[var(--ink-2)]">
             This device used to edit as <b>{legacyName}</b> — create an account and claim
             that name to keep editing.
           </p>
