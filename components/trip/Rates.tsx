@@ -262,6 +262,7 @@ export function Rates(props: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-expanded={open}
         className="mt-3 min-h-[var(--tap-min)] text-xs font-medium text-[var(--accent-ink)] hover:underline"
       >
         {props.homeCurrency ? "View today's exchange rate" : "Set up live exchange rates"}
@@ -275,6 +276,7 @@ export function Rates(props: Props) {
       <button
         type="button"
         onClick={() => setOpen(false)}
+        aria-expanded={open}
         className="mt-3 min-h-[var(--tap-min)] text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]"
       >
         Hide
