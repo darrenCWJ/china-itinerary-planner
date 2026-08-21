@@ -65,6 +65,31 @@ export interface ConvertedTotals {
 }
 
 /**
+ * Move a value between two minor-unit exponents.
+ *
+ * Amounts here are in minor units but a rate is a major-unit ratio, so every
+ * conversion has to normalise through major units:
+ *
+ *     amount ÷ 10^exp(from) × rate × 10^exp(to)
+ *
+ * While every currency in the app shared an exponent of 2 those two factors
+ * cancelled and a bare `amount × rate` was right by accident. It stops being
+ * right the moment a zero-decimal currency is in play: ¥1,000 of JPY at
+ * 0.0424 CNY per JPY would otherwise book 42 fen instead of 4,240.
+ */
+function rescaleMinorUnits(value: number, fromDigits: number, toDigits: number): number {
+  // Identical exponents return the value untouched rather than multiplying by
+  // a computed 1 — that is every trip in existence today, and it guarantees
+  // their totals cannot shift by so much as a floating-point ulp. Scaling
+  // down divides rather than multiplying by 10^-n, so the result is rounded
+  // once instead of twice.
+  if (fromDigits === toDigits) return value;
+  return toDigits > fromDigits
+    ? value * 10 ** (toDigits - fromDigits)
+    : value / 10 ** (fromDigits - toDigits);
+}
+
+/**
  * Rates are pivot-currency units per 1 unit of foreign currency. Null when no
  * home currency is set.
  *
@@ -79,6 +104,7 @@ export function convertedTotals(
   pivot = "CNY"
 ): ConvertedTotals | null {
   if (settings.home === null) return null;
+  const pivotDigits = minorUnitDigits(pivot);
   let grandTotal = 0;
   const unconverted: CurrencyAmount[] = [];
   for (const t of totals) {
@@ -87,13 +113,24 @@ export function convertedTotals(
       unconverted.push(t);
       continue;
     }
-    grandTotal += Math.round(t.amount * rate);
+    grandTotal += Math.round(
+      rescaleMinorUnits(t.amount * rate, minorUnitDigits(t.currency), pivotDigits)
+    );
   }
   const homeRate = settings.home === pivot ? 1 : settings.rates[settings.home];
   const home =
     homeRate === undefined
       ? null
-      : { currency: settings.home, amount: Math.round(grandTotal / homeRate) };
+      : {
+          currency: settings.home,
+          amount: Math.round(
+            rescaleMinorUnits(
+              grandTotal / homeRate,
+              pivotDigits,
+              minorUnitDigits(settings.home)
+            )
+          ),
+        };
   return { cny: grandTotal, grandTotal, pivot, home, unconverted };
 }
 
