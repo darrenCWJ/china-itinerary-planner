@@ -64,6 +64,26 @@ describe("parseErApiRates", () => {
     expect(parsed?.rates.JPY).toBeCloseTo(23.565029);
   });
 
+  test("a 0 or negative rate is dropped, never kept as a usable rate", () => {
+    // A `0` rate isn't merely unhelpful — it's actively wrong: `Rates.tsx`
+    // computes `1 / rate` for the inverse direction, and `1 / 0` renders the
+    // string "Infinity" straight into the UI. A negative rate is equally not
+    // a real price. Both must collapse to "absent", exactly like `null` and
+    // `NaN` already do above — never survive as a stored 0 or negative value.
+    const broken = {
+      ...erApiFixture,
+      rates: { ...erApiFixture.rates, USD: 0, EUR: -5 },
+    };
+    const parsed = parseErApiRates(broken, "CNY");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rates.USD).toBeUndefined();
+    expect(parsed?.rates.EUR).toBeUndefined();
+    expect("USD" in (parsed?.rates ?? {})).toBe(false);
+    expect("EUR" in (parsed?.rates ?? {})).toBe(false);
+    // A sibling that is a real number is unaffected by its neighbours' rot.
+    expect(parsed?.rates.JPY).toBeCloseTo(23.565029);
+  });
+
   test("unknown extra top-level keys are ignored, not rejected", () => {
     const withExtra = { ...erApiFixture, someNewFieldTheProviderAdded: 12345 };
     expect(parseErApiRates(withExtra, "CNY")).not.toBeNull();
