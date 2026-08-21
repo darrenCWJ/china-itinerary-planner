@@ -1,4 +1,19 @@
+import { configure } from "@testing-library/dom";
 import "@testing-library/jest-dom/vitest";
+
+/**
+ * Testing Library's own `findBy*`/`waitFor` polling window defaults to 1000ms
+ * — a separate, shorter timeout than vitest's own per-test `testTimeout`
+ * (see vitest.config.ts). Under full-suite parallel load, a handful of tests
+ * that do real async work on mount (MapExplorer.test.tsx's topology-fetch
+ * tests, in particular — see Minor 9 in the PR4 final review) can take longer
+ * than 1000ms to settle purely from CPU contention, not a real hang, and fail
+ * with "Unable to find role=..." instead of the vitest-level "Test timed out"
+ * message testTimeout alone guards against. Raised here so both timeout
+ * layers give the same real headroom, rather than fixing one and leaving the
+ * other at its much stricter default.
+ */
+configure({ asyncUtilTimeout: 5000 });
 
 /**
  * jsdom implements no `window.matchMedia` at all. `PrefsProvider.tsx` calls it
