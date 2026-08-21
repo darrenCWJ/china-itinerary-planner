@@ -42,6 +42,7 @@ function matchMediaMock(matches: boolean): { emit(next: boolean): void } {
 }
 
 beforeEach(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   clearCookies();
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.removeAttribute("style");
