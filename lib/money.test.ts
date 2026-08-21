@@ -203,6 +203,21 @@ describe("formatMinor", () => {
   test("negative amounts carry the sign before the symbol", () => {
     expect(formatMinor(-50, "CNY")).toBe("-¥0.50");
   });
+
+  test("a zero-decimal currency renders no decimal point", () => {
+    // Yen have no cents, so there is nothing to put after a point. The
+    // thousands separator still applies. JPY is absent from SYMBOLS and so
+    // takes the code-prefix fallback -- filling that map out is Task 12, and
+    // the yen sign is already spoken for by CNY here.
+    expect(formatMinor(1_000, "JPY")).toBe("JPY 1,000");
+    expect(formatMinor(1_234_567, "KRW")).toBe("KRW 1,234,567");
+    expect(formatMinor(-500, "JPY")).toBe("-JPY 500");
+  });
+
+  test("a three-decimal currency renders all three", () => {
+    expect(formatMinor(1_234_567, "KWD")).toBe("KWD 1,234.567");
+    expect(formatMinor(5, "BHD")).toBe("BHD 0.005");
+  });
 });
 
 describe("majorToMinor", () => {
