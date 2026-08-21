@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { TRIP_NAV } from "./nav";
+import { fullPayload } from "./tripFixtures";
 
 /**
  * Whole-tree scans for the spec §7 contracts.
@@ -546,5 +547,48 @@ describe("C3 — the day-builder core stays free of React", () => {
       (f) => f.path
     );
     expect(hooksInLib).toEqual([]);
+  });
+});
+
+describe("C6 — the trip payload stays serialisable", () => {
+  /**
+   * Two checks, because either alone passes vacuously. The round-trip proves
+   * a fully-populated payload survives JSON; the source scan catches a field
+   * added later that the fixture does not happen to set.
+   */
+  const NON_SERIALISABLE = ["Date", "Map<", "Set<", "RegExp", "bigint", "symbol", "=>"];
+
+  test("a fully-populated payload round-trips through JSON unchanged", () => {
+    const payload = fullPayload();
+    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  /**
+   * A plain substring check false-positives on `GuestTripPayload.startDate`:
+   * `"startDate".includes("Date")` is true, so a correct, already-serialisable
+   * field name would have permanently failed this scan. Word-boundary
+   * matching is required for any alphanumeric token so a field *named*
+   * `startDate` is not confused with one *typed* `Date`. Not needed for
+   * `Map<`, `Set<`, and `=>` — none of those can appear inside an identifier,
+   * so a plain substring check on them cannot false-positive the same way.
+   */
+  const isOffender = (block: string, token: string): boolean =>
+    /^\w+$/.test(token) ? new RegExp(`\\b${token}\\b`).test(block) : block.includes(token);
+
+  test("no payload interface declares a non-serialisable field type", () => {
+    const source = readFileSync(join(process.cwd(), "lib", "tripShared.ts"), "utf8");
+    const block = source.slice(
+      source.indexOf("export interface TripPayload"),
+      source.indexOf("export interface MapCity")
+    );
+    const offenders = NON_SERIALISABLE.filter((t) => isOffender(block, t));
+    expect(offenders).toEqual([]);
+  });
+
+  test("does not mistake a field named ...Date for one typed Date", () => {
+    // Pins the false positive above: `startDate` must not trip the scan, and
+    // an actual `Date`-typed field still must.
+    expect(isOffender("startDate: string | null;", "Date")).toBe(false);
+    expect(isOffender("createdAt: Date;", "Date")).toBe(true);
   });
 });
