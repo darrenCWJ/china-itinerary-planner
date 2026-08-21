@@ -12,11 +12,15 @@ import {
 import type { CurrencySettings, Expense, ExpenseCategory, Settlement } from "@/lib/tripShared";
 import { BalancesCard, type SettlementDraft } from "./BalancesCard";
 import { CATEGORIES, ExpenseForm, type ExpenseDraft } from "./ExpenseForm";
+import { Rates } from "./Rates";
 
 type Props = {
   expenses: Expense[];
   settlements: Settlement[];
   currencySettings: CurrencySettings;
+  /** The destination currency, or null when the country has no researched
+   * profile yet — see `lib/tripShared.ts`'s `tripCurrency`. */
+  tripCurrency: string | null;
   members: string[];
   myName: string;
   isMember: boolean;
@@ -34,6 +38,7 @@ export function MoneyTab({
   expenses,
   settlements,
   currencySettings,
+  tripCurrency,
   members,
   myName,
   isMember,
@@ -56,6 +61,18 @@ export function MoneyTab({
   const balances = useMemo(
     () => balancesByCurrency(expenses, settlements, members),
     [expenses, settlements, members]
+  );
+
+  // J-C5: currencies the trip actually has expenses in, beyond the
+  // trip/home headline pair — never a currency nobody spent in, and never
+  // the pair itself repeated as an "extra".
+  const extraCurrencies = useMemo(
+    () =>
+      totals
+        .map((t) => t.currency)
+        .filter((c) => c !== tripCurrency && c !== currencySettings.home)
+        .sort(),
+    [totals, tripCurrency, currencySettings.home]
   );
 
   // Expenses grouped by date, newest day first, insertion order within a day.
@@ -134,13 +151,31 @@ export function MoneyTab({
             )}
           </div>
         )}
-        {isMember && (
-          <CurrencySettingsEditor
-            currencySettings={currencySettings}
-            usedCurrencies={totals.map((t) => t.currency)}
-            onSave={onSaveCurrency}
-          />
-        )}
+        {/*
+          Anchored so Rates' empty-state link (below) can jump straight here
+          when a member has no home currency set yet — a plain in-page anchor,
+          not a route, so it stays inside Money (C1).
+        */}
+        <div id="currency-settings">
+          {isMember && (
+            <CurrencySettingsEditor
+              currencySettings={currencySettings}
+              usedCurrencies={totals.map((t) => t.currency)}
+              onSave={onSaveCurrency}
+            />
+          )}
+        </div>
+        {/*
+          The live-rates sub-view (Task 7): a disclosure inside Money, not a
+          fifth tab (C1) and not a route. Read-only and display-only (J-C2) —
+          it never feeds convertedTotals or writes to the trip.
+        */}
+        <Rates
+          tripCurrency={tripCurrency}
+          homeCurrency={currencySettings.home}
+          extraCurrencies={extraCurrencies}
+          isMember={isMember}
+        />
       </div>
 
       <BalancesCard

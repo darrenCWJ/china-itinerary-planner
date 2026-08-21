@@ -22,7 +22,7 @@ import { forgetMyTrip } from "@/lib/myTrips";
 import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
 import { getCountry } from "@/lib/countries";
-import { tripCountry, type GuestTripPayload } from "@/lib/tripShared";
+import { tripCountry, tripCurrency, type GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
 
 export function TripView({ tripId }: { tripId: string }) {
@@ -299,6 +299,7 @@ export function TripView({ tripId }: { tripId: string }) {
           expenses={payload.expenses}
           settlements={payload.settlements}
           currencySettings={payload.currencySettings}
+          tripCurrency={tripCurrency(data)}
           members={payload.members.map((m) => m.name)}
           myName={myName}
           isMember={isMember}

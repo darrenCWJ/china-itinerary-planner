@@ -211,3 +211,20 @@ export function getCountryProfile(code: string): CountryProfile {
   const country = getCountry(code);
   return country.code === "CN" ? chinaProfile() : neutralProfile(country.hemisphere);
 }
+
+/**
+ * Whether `getCountryProfile(code).currency` reflects real currency research
+ * rather than `neutralProfile`'s admitted USD placeholder (see the comment on
+ * that field above). Only China has a currency-researched profile today —
+ * this mirrors `getCountryProfile`'s own CN-only dispatch exactly, so the two
+ * can never disagree about which countries are "researched."
+ *
+ * Exists for callers (the live-rates page, Task 7) that must never present a
+ * placeholder pivot as fact — see judgment call J-C1 in
+ * docs/superpowers/plans/2026-08-17-pr4-currency-pivot-plan.md. A future
+ * researched profile for another country should extend the check here, which
+ * keeps this the one place "researched" is decided.
+ */
+export function isCurrencyResearched(code: string): boolean {
+  return getCountry(code).code === "CN";
+}
