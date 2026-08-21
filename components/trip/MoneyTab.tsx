@@ -54,10 +54,13 @@ export function MoneyTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
 
+  // Computed once so the totals row and the rates editor can never disagree
+  // about which currency the trip's rates are actually expressed against.
+  const pivot = currencyPivot(currencySettings);
   const totals = useMemo(() => totalsByCurrency(expenses), [expenses]);
   const converted = useMemo(
-    () => convertedTotals(totals, currencySettings, currencyPivot(currencySettings)),
-    [totals, currencySettings]
+    () => convertedTotals(totals, currencySettings, pivot),
+    [totals, currencySettings, pivot]
   );
   const balances = useMemo(
     () => balancesByCurrency(expenses, settlements, members),
@@ -169,7 +172,7 @@ export function MoneyTab({
             <CurrencySettingsEditor
               currencySettings={currencySettings}
               usedCurrencies={totals.map((t) => t.currency)}
-              pivot={currencyPivot(currencySettings)}
+              pivot={pivot}
               onSave={onSaveCurrency}
             />
           )}
@@ -361,7 +364,7 @@ function CurrencySettingsEditor({
                 onChange={(e) =>
                   setRateInputs((prev) => ({ ...prev, [c]: e.target.value }))
                 } />
-              <span>CNY</span>
+              <span>{pivot}</span>
             </label>
           ))}
         </div>

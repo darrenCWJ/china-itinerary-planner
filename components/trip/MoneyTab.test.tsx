@@ -67,12 +67,25 @@ describe("totals row pivot label", () => {
 
   test("labels the totals row CNY when no pivot is stored — the legacy guarantee", () => {
     // Settings saved before pivots existed carry no `pivot` field at all.
+    // A real CNY expense (not the empty-expenses default) makes the
+    // grandTotal nonzero, so this proves the legacy path actually prices in
+    // CNY, not merely that it would pass at a grandTotal of 0 under any
+    // pivot arithmetic — the gap Minor 4 flagged.
     renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "CNY", amount: 12345 })],
       currencySettings: { home: "SGD", rates: { SGD: 5.2 } },
       tripCurrency: "CNY",
     });
 
-    expect(screen.getByText("Total CNY")).toBeInTheDocument();
+    // CNY is the (legacy default) pivot, so it converts at identity — no
+    // rate needed — straight into the totals row.
+    const cnyRow = screen.getByText("Total CNY").closest("p");
+    expect(cnyRow).toHaveTextContent("¥123.45");
+
+    // The stored SGD rate (5.2) is exercised too: 123.45 CNY ÷ 5.2 = 23.74
+    // SGD is the home-currency row, derived from the same CNY grand total.
+    const sgdRow = screen.getByText("Total SGD").closest("p");
+    expect(sgdRow).toHaveTextContent("S$23.74");
   });
 
   test("the home-currency row never repeats the pivot itself", () => {
@@ -105,5 +118,25 @@ describe("rates editor currency list (the fourth CNY hardcode)", () => {
     expect(screen.getByText("1 CNY =")).toBeInTheDocument();
     // JPY is the pivot itself — it never needs a rate against itself.
     expect(screen.queryByText("1 JPY =")).not.toBeInTheDocument();
+  });
+});
+
+describe("rate row unit label (the fifth CNY hardcode)", () => {
+  test("labels the rate input's unit with the trip's real pivot, not literal CNY", () => {
+    // On a JPY-pivot trip, "1 SGD = [input]" must read as JPY per SGD — a
+    // member reading a CNY label here would type a CNY-scale number
+    // (~5.2) into a field the app reads as JPY-scale (~110), off by ~20x.
+    renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "SGD" })],
+      currencySettings: { home: "SGD", rates: {}, pivot: "JPY" },
+      tripCurrency: "JPY",
+    });
+
+    // home is already set, so the disclosure reads "Edit conversion rates".
+    fireEvent.click(screen.getByText(/edit conversion rates/i));
+
+    expect(screen.getByText("1 SGD =")).toBeInTheDocument();
+    expect(screen.getByText("JPY")).toBeInTheDocument();
+    expect(screen.queryByText("CNY")).not.toBeInTheDocument();
   });
 });
