@@ -179,3 +179,27 @@ describe("rate row unit label (the fifth CNY hardcode)", () => {
     expect(screen.queryByText("CNY")).not.toBeInTheDocument();
   });
 });
+
+describe("converted-totals rows use the displayed-currency set (Minor 3)", () => {
+  test("the pivot total disambiguates its ¥ the same way the totals list above it does", () => {
+    // A JPY expense alongside a CNY one makes ¥ genuinely ambiguous on this
+    // screen (same fixture shape as the "Spend so far" disambiguation tests
+    // above). Before the fix, the totals list correctly printed "CN¥" but
+    // the converted-totals row a few lines below called formatMinor with no
+    // displayed-currency set, so it fell back to a bare "¥" — the exact
+    // ambiguity Task 12 exists to prevent, reappearing two elements away.
+    renderMoneyTab({
+      expenses: [
+        expense({ id: "e-1", currency: "JPY", amount: 124_000 }),
+        expense({ id: "e-2", currency: "CNY", amount: 12_345 }),
+      ],
+      currencySettings: { home: "CNY", rates: {} },
+      tripCurrency: "CNY",
+    });
+
+    const totalRow = screen.getByText("Total CNY").closest("p");
+    expect(totalRow).toHaveTextContent("CN¥123.45");
+    // Never the bare, un-disambiguated symbol.
+    expect(screen.queryByText("¥123.45")).not.toBeInTheDocument();
+  });
+});
