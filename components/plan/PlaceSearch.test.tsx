@@ -64,6 +64,26 @@ const activeOptionText = () => {
 
 describe("PlaceSearch keyboard path", () => {
   beforeEach(() => {
+    /**
+     * Fake timers so the 300ms debounce cannot fire while a test is running.
+     *
+     * Every test here drives the keyboard synchronously over the curated set
+     * and none of them wants the catalog request, but typing leaves the
+     * debounce armed. It stays harmless today for two separate reasons, both
+     * incidental rather than designed: the bodies finish well inside 300ms, so
+     * `cleanup` unmounts and the effect clears the timer before it can fire;
+     * and the stub answers with no results, so the update would change nothing
+     * even if it did.
+     *
+     * Lose either — a body that outlives 300ms because the machine is loaded,
+     * or a stub that grows a hit matching the typed query — and `setHits`
+     * lands outside `act`. Probed with both together, which produces exactly
+     * the warning this file is otherwise clean of; neither on its own does.
+     *
+     * Freezing the clock removes the arming, rather than leaving the file
+     * resting on two coincidences that nothing here states or checks.
+     */
+    vi.useFakeTimers();
     // No network in these tests; ranking over the curated set plus the off-map
     // row is enough to exercise every key.
     vi.stubGlobal(
@@ -74,6 +94,7 @@ describe("PlaceSearch keyboard path", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
