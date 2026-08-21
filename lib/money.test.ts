@@ -120,6 +120,17 @@ describe("convertedTotals", () => {
 
   test("an explicit pivot reads the rates in that pivot's terms", () => {
     // rates = { USD: 150 } read as "JPY per 1 USD".
+    //
+    //   JPY leg     10_000 yen, already the pivot = 10_000 JPY
+    //   USD leg     100 cents ÷ 10^2 = $1.00,
+    //               then $1.00 × 150 JPY/USD      =    150 JPY
+    //   grandTotal                                = 10_150 JPY
+    //
+    // This test predates the exponent table and expected 25_000, which read
+    // the USD leg's 15_000 as JPY minor units — the ¥150 a dollar actually
+    // buys, inflated 100x by the factor that no longer cancels. No trip in
+    // existence has a JPY pivot, so no shipped total moves: the old number
+    // was the conversion bug written down as an expectation.
     const c = convertedTotals(
       [
         { currency: "JPY", amount: 10_000 },
@@ -130,9 +141,9 @@ describe("convertedTotals", () => {
       "JPY"
     );
     expect(c!.pivot).toBe("JPY");
-    expect(c!.grandTotal).toBe(25_000);
+    expect(c!.grandTotal).toBe(10_150);
     expect(c!.unconverted).toEqual([{ currency: "XXX", amount: 5 }]);
-    expect(c!.home).toEqual({ currency: "JPY", amount: 25_000 });
+    expect(c!.home).toEqual({ currency: "JPY", amount: 10_150 });
   });
 
   test("the country profile supplies the pivot with no special-casing", () => {
@@ -145,6 +156,55 @@ describe("convertedTotals", () => {
   test("cny stays an alias of the grand total for existing readers", () => {
     const c = convertedTotals(totals, { home: "SGD", rates: { SGD: 5.2 } }, "JPY");
     expect(c!.cny).toBe(c!.grandTotal);
+  });
+
+  test("a zero-decimal expense converts into a two-decimal pivot", () => {
+    // ¥12,000 spent in JPY (exponent 0) alongside ¥1,000.00 spent in CNY
+    // (exponent 2), totalled into a CNY pivot at 0.05 CNY per 1 JPY.
+    //
+    //   JPY leg     12_000 ÷ 10^0 = 12_000 JPY major
+    //               12_000 × 0.05 =    600.00 CNY major
+    //               600 × 10^2                    =  60_000 fen
+    //   CNY leg     already the pivot, rate 1     = 100_000 fen
+    //   grandTotal                                = 160_000 fen = ¥1,600.00
+    //   home SGD at 5.2 CNY per SGD:
+    //               160_000 ÷ 5.2 = 30_769.23…    =  30_769 cents = S$307.69
+    //
+    // The unfixed arithmetic multiplied minor units by a major-unit ratio:
+    // Math.round(12_000 × 0.05) = 600 fen, booking ¥6.00 for a ¥600.00
+    // expense — wrong by exactly the 100 that used to cancel.
+    const c = convertedTotals(
+      [
+        { currency: "CNY", amount: 100_000 },
+        { currency: "JPY", amount: 12_000 },
+      ],
+      { home: "SGD", rates: { JPY: 0.05, SGD: 5.2 } },
+      "CNY"
+    );
+    expect(c!.grandTotal).toBe(160_000);
+    expect(c!.home).toEqual({ currency: "SGD", amount: 30_769 });
+  });
+
+  test("a two-decimal expense converts into a zero-decimal pivot", () => {
+    // The same break the other way round: ¥1,240.50 spent in CNY, totalled
+    // into a JPY pivot at 20 JPY per 1 CNY.
+    //
+    //   124_050 ÷ 10^2                            =   1_240.50 CNY major
+    //   1_240.50 × 20                             =  24_810    JPY major
+    //   24_810 × 10^0                             =  24_810    JPY minor
+    //   home CNY    24_810 ÷ 20 = 1_240.50 major  = 124_050    fen
+    //
+    // The home leg lands back on exactly the amount that went in, so the two
+    // conversions round-trip. The unfixed arithmetic gave
+    // Math.round(124_050 × 20) = 2_481_000, i.e. ¥2,481,000 of yen owed for
+    // a ¥1,240.50 dinner.
+    const c = convertedTotals(
+      [{ currency: "CNY", amount: 124_050 }],
+      { home: "CNY", rates: { CNY: 20 } },
+      "JPY"
+    );
+    expect(c!.grandTotal).toBe(24_810);
+    expect(c!.home).toEqual({ currency: "CNY", amount: 124_050 });
   });
 });
 
