@@ -36,13 +36,17 @@ export const metadata: Metadata = {
  * cookies() keeps the whole app statically prerenderable.
  *
  * A constant string with no interpolation of anything, which is what keeps it
- * free of an injection surface. PR1 forces light regardless of what the cookie
- * says (the components below are light-only); the cookie read is present so
- * PR2's change is the one line that picks `t` out of the allowlist.
+ * free of an injection surface. The cookie is read but never trusted: `t` comes
+ * out of a two-value allowlist, so anything that is not exactly `dark` or
+ * `system` — a corrupted value, someone else's cookie, a hostile one — degrades
+ * to light rather than reaching the DOM.
  */
 const FIRST_PAINT = `(function(){try{
 var m=document.cookie.match(/(?:^|; )cip-prefs=([^;]*)/);
-var t="light";
+var p=m?decodeURIComponent(m[1]):"";
+var s=p.match(/(?:^|&)theme=([a-z]+)/);
+var v=s?s[1]:"light";
+var t=v==="dark"?"dark":v==="system"?(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):"light";
 document.documentElement.setAttribute("data-theme",t);
 }catch(e){document.documentElement.setAttribute("data-theme","light")}})();`;
 

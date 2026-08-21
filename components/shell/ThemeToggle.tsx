@@ -61,30 +61,21 @@ export function ThemeToggle() {
             Theme
           </legend>
           <div className="mt-1 flex flex-col">
-            {THEME_OPTIONS.map((option) => {
-              // PR1 pins rendering to light because today's components hardcode
-              // light palette utilities; offering a choice that changes nothing
-              // would be a lie. PR3 Task 37 drops the pin and this `disabled`.
-              const locked = option.value !== "light";
-              return (
-                <label
-                  key={option.value}
-                  className="flex min-h-[var(--tap-min)] items-center gap-2 text-sm"
-                  style={locked ? { color: "var(--ink-4)" } : undefined}
-                  title={locked ? "Dark mode lands with the redesign" : undefined}
-                >
-                  <input
-                    type="radio"
-                    name="theme"
-                    value={option.value}
-                    checked={prefs.theme === option.value}
-                    disabled={locked}
-                    onChange={() => setPrefs({ ...prefs, theme: option.value })}
-                  />
-                  {option.label}
-                </label>
-              );
-            })}
+            {THEME_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-h-[var(--tap-min)] items-center gap-2 text-sm"
+              >
+                <input
+                  type="radio"
+                  name="theme"
+                  value={option.value}
+                  checked={prefs.theme === option.value}
+                  onChange={() => setPrefs({ ...prefs, theme: option.value })}
+                />
+                {option.label}
+              </label>
+            ))}
           </div>
         </fieldset>
 

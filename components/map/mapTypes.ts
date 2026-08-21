@@ -63,6 +63,19 @@ export function fitForRegion(region: string, month: number): MonthFit {
   return regionFit(region, month);
 }
 
+/**
+ * Categorical, so these stay literals rather than following the ramp: a legend
+ * whose swatches inverted with the theme would stop meaning anything.
+ *
+ * Checked against the dark paper when the dark ramp was enabled (Task 37).
+ * As solid swatches every one clears 3:1 there — the lowest is `avoid` at 3.71
+ * and `great` at 3.74 — so none needed lifting. Lifting them would in fact cost
+ * light, where those two sit at 5.06 and 5.02 against white.
+ *
+ * `unknown` is the one weak swatch, and it is weak in *light* (1.61 on white),
+ * which is a pre-existing issue the dark ramp neither caused nor worsened — on
+ * dark paper it reads at 11.65.
+ */
 export const FIT_COLORS: Record<MonthFit, string> = {
   great: "#2f7d54",
   ok: "#b98a2f",

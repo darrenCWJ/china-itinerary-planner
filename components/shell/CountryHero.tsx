@@ -46,10 +46,10 @@ export interface CountryHeroProps {
   /** ISO 3166-1 alpha-2. Anything unrecognised degrades to the gradient. */
   countryCode: string;
   /**
-   * Which accent ramp the gradient fallback draws from. Defaults to light for
-   * the same reason `WorldMap` does: the shell still pins `data-theme="light"`,
-   * and resolving the theme a second time here would let the band disagree with
-   * the page it sits on. PR3 drops the pin and wires this.
+   * Which accent ramp the gradient fallback draws from. Defaults to the ramp
+   * `PrefsProvider` resolved, for the same reason `WorldMap` does: resolving the
+   * theme a second time here would let the band disagree with the page it sits
+   * on. Override only to render a fixed ramp.
    */
   theme?: AccentTheme;
   /** Load the photograph immediately — true for a page's first hero (its LCP). */
@@ -61,12 +61,13 @@ export interface CountryHeroProps {
 
 export function CountryHero({
   countryCode,
-  theme = "light",
+  theme: themeOverride,
   eager = false,
   className = "",
   children,
 }: CountryHeroProps) {
-  const { prefs } = usePrefs();
+  const { prefs, theme: resolvedTheme } = usePrefs();
+  const theme = themeOverride ?? resolvedTheme;
   const country = getCountry(countryCode);
   // The gradient is an accent surface, so it resolves the user's accent the one
   // way every accent surface does: through lib/prefs. Reading accentHues here

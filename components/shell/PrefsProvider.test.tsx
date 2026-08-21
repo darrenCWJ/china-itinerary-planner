@@ -12,10 +12,44 @@ function clearCookies() {
   }
 }
 
+/**
+ * jsdom implements no `window.matchMedia` at all, so the provider's system-theme
+ * listener has nothing to attach to and every test would throw on the "system"
+ * path. This installs the smallest stand-in that covers what the provider
+ * actually uses — a `matches` flag and a `change` listener — and hands back an
+ * `emit` so a test can move the system preference mid-session, which is the one
+ * behaviour a static `matches` cannot express.
+ */
+function matchMediaMock(matches: boolean): { emit(next: boolean): void } {
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  const list = {
+    matches,
+    media: DARK_QUERY,
+    addEventListener(_type: "change", listener: (event: MediaQueryListEvent) => void) {
+      listeners.add(listener);
+    },
+    removeEventListener(_type: "change", listener: (event: MediaQueryListEvent) => void) {
+      listeners.delete(listener);
+    },
+  };
+  vi.stubGlobal("matchMedia", vi.fn(() => list));
+  return {
+    emit(next: boolean) {
+      list.matches = next;
+      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+    },
+  };
+}
+
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
 beforeEach(() => {
   clearCookies();
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.removeAttribute("style");
+  // Light unless a test says otherwise, so only the tests that care about the
+  // system preference have to mention it.
+  matchMediaMock(false);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
 });
 
@@ -69,19 +103,45 @@ describe("PrefsProvider", () => {
     expect(JSON.parse(screen.getByRole("status").textContent!)).toEqual(DEFAULT_PREFS);
   });
 
-  test("pins data-theme to light even when the stored theme is dark", () => {
-    // PR1 stores the preference but does not honour it: the components that
-    // exist today hardcode light palette utilities, so flipping the attribute
-    // would half-restyle the app. PR2 removes this pin.
+  test("applies the stored dark theme to the document", () => {
     document.cookie = "cip-prefs=theme=dark&accent=country; Path=/";
 
     render(
       <PrefsProvider>
-        <Probe />
+        <span />
       </PrefsProvider>
     );
 
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+
+  test("resolves system against the media query", () => {
+    matchMediaMock(true);
+    document.cookie = "cip-prefs=theme=system&accent=country; Path=/";
+
+    render(
+      <PrefsProvider>
+        <span />
+      </PrefsProvider>
+    );
+
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+
+  test("follows the system preference when it changes mid-session", () => {
+    const mq = matchMediaMock(false);
+    document.cookie = "cip-prefs=theme=system&accent=country; Path=/";
+
+    render(
+      <PrefsProvider>
+        <span />
+      </PrefsProvider>
+    );
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+
+    act(() => mq.emit(true));
+
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
   test("applies the country's accent variables to the document", () => {
@@ -136,8 +196,9 @@ describe("PrefsProvider", () => {
     );
   });
 
-  test("the theme stays pinned to light even after saving dark", () => {
-    // Persisting the choice and honouring it are separate things in PR1.
+  test("saving dark flips the document without a reload", () => {
+    // The cookie and the attribute move together: a preference that only took
+    // effect on the next navigation would read as a broken toggle.
     let save: (p: UserPrefs) => void = () => {};
 
     function Saver() {
@@ -150,10 +211,33 @@ describe("PrefsProvider", () => {
         <Saver />
       </PrefsProvider>
     );
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
 
     act(() => save({ theme: "dark", accent: "country", accentHues: {} }));
 
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+
+  test("publishes the resolved ramp on context, not the three-valued preference", () => {
+    // WorldMap and CountryHero read this instead of resolving the theme a
+    // second time locally, which is what stops the map disagreeing with the
+    // page it sits on.
+    matchMediaMock(true);
+    document.cookie = "cip-prefs=theme=system&accent=country; Path=/";
+    let seen: string | undefined;
+
+    function ThemeProbe() {
+      seen = usePrefs().theme;
+      return null;
+    }
+
+    render(
+      <PrefsProvider>
+        <ThemeProbe />
+      </PrefsProvider>
+    );
+
+    expect(seen).toBe("dark");
   });
 
   test("a failing save is swallowed rather than crashing the shell", async () => {
