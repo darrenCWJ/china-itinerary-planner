@@ -70,10 +70,18 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
             {input.kids > 0 ? ` + ${input.kids} kid${input.kids > 1 ? "s" : ""}` : ""}
           </span>
         </div>
+        {/*
+          The face is `--paper`, not `white`. Its label is `--accent-ink`, which
+          inverts with the ramp — dark at oklch(50%) in light, light at oklch(80%)
+          in dark — so a literal white face reads 5.75:1 in light and 1.79:1 in
+          dark for the same pairing. `--paper` inverts with it and is `#ffffff`
+          in the light ramp, so this is unchanged in light and 9.65:1 in dark.
+          The `--line-1` hover already followed the ramp and needed no change.
+        */}
         <button
           type="button"
           onClick={() => window.print()}
-          className="mt-5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] print:hidden"
+          className="mt-5 rounded-lg bg-[var(--paper)] px-4 py-2 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--line-1)] print:hidden"
         >
           🖨️ Print / save as PDF
         </button>

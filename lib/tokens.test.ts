@@ -93,6 +93,50 @@ describe("retiring @theme palette", () => {
   });
 });
 
+/**
+ * Gate for the mirror image of Task 39's bug.
+ *
+ * Task 39 fixed *inks* that assumed a fixed backdrop. This gate covers the
+ * other direction: a literal, non-inverting surface under something that does
+ * invert. `bg-white` is `#ffffff` in both ramps, so an opaque one painted on a
+ * hero band — `color-mix(in oklab, var(--accent-ink) 85%, var(--ink-0))`, dark
+ * in light and light in dark — is correct in exactly one of the two. Measured
+ * on the band at its worst hue: white reads 6.72:1 in light and 1.67:1 in dark.
+ *
+ * `--paper` is the fix rather than a new token for the same reason it was in
+ * Task 39: it inverts in lockstep with the band, and its light value *is*
+ * `#ffffff`, so the swap is free in light and repairs dark.
+ *
+ * Translucent `bg-white/NN` is deliberately still allowed. A 15% wash lightens
+ * whatever it sits on in *either* ramp, so the pill chips in `PlanStep` and
+ * `TripView` stay legible without inverting — they tint a surface rather than
+ * being one, and carry no contrast requirement of their own. Only opacities
+ * that carry meaning are pinned, below.
+ */
+describe("literal white on inverting surfaces", () => {
+  const opaqueWhiteBg = /(^|[^A-Za-z0-9_-])bg-white(?![A-Za-z0-9_/-])/;
+
+  it("has no opaque `bg-white` left to be wrong in one of the two ramps", () => {
+    const offenders = FILES.filter((f) => opaqueWhiteBg.test(f.code)).map((f) => f.path);
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The tracker's progress bar is the one *translucent* white the exemption
+   * above must not cover. Its track and fill are a graphical affordance under
+   * SC 1.4.11, not decoration: the fill's edge is the only thing encoding the
+   * percentage, so it needs 3:1 against the band it sits on. Literal white gave
+   * 1.67:1 in dark; `--paper` gives 10.54:1 (see lib/accent.test.ts, which does
+   * the arithmetic).
+   */
+  it("gives the tracker's progress bar a track and fill that follow the ramp", () => {
+    const tracker = FILES.find((f) => f.path === "components/trip/TrackerTab.tsx");
+    expect(tracker, "components/trip/TrackerTab.tsx not collected").toBeDefined();
+    const bar = /rounded-full bg-\[var\(--paper\)\]\/20[\s\S]{0,200}?h-full rounded-full bg-\[var\(--paper\)\]/;
+    expect(bar.test(tracker!.code)).toBe(true);
+  });
+});
+
 /** Every `var(--x)` the sweep wrote into a Tailwind arbitrary value. */
 function referencedTokens(): Map<string, string[]> {
   const found = new Map<string, string[]>();
