@@ -169,6 +169,65 @@ export function formatMinor(amount: number, currency: string): string {
 }
 
 /**
+ * Symbols resolvable only through `currencySymbol`'s context-aware lookup,
+ * never through `formatMinor`'s single-currency one. JPY's ¥ is genuinely
+ * ambiguous with CNY's — the two can only be told apart once you know what
+ * else is on screen — so JPY is deliberately absent from the flat `SYMBOLS`
+ * map `formatMinor` reads: a single-currency call has no "what else is on
+ * screen" to consult, and `formatMinor(1000, "JPY")` must keep returning the
+ * "JPY 1,000" fallback it always has (asserted above). This table is where
+ * JPY's plain ¥ lives instead, gated behind the context that makes it safe.
+ */
+const CONTEXTUAL_SYMBOLS: Record<string, string> = { ...SYMBOLS, JPY: "¥" };
+
+/**
+ * Currencies whose plain symbol collides with another currency in
+ * `CONTEXTUAL_SYMBOLS`, mapped to the country-prefixed form to use once a
+ * collision is actually on screen. Every other symbol in the table (S$,
+ * US$, HK$, NT$, …) was already disambiguated when it was chosen, so only
+ * the bare ¥ needs this.
+ */
+const SYMBOL_DISAMBIGUATION: Record<string, string> = {
+  CNY: "CN¥",
+  JPY: "JP¥",
+};
+
+/**
+ * The display symbol for `currency`, given every currency appearing
+ * alongside it on the same screen (`displayedCurrencies`) — symbol choice is
+ * a property of that whole set, not of one currency in isolation, because
+ * whether ¥ is ambiguous depends on who else is in the room.
+ *
+ * Returns `undefined` for a currency with no known symbol, exactly like
+ * `formatMinor`'s internal lookup, so a caller falls back the same way
+ * (`` `${currency} ${amount}` ``) rather than this function inventing its
+ * own fallback string.
+ *
+ * Callers rendering N currencies side by side (e.g. a per-currency totals
+ * list) should compute the displayed set once — `totals.map(t =>
+ * t.currency)` or similar — and pass that same set into every call for that
+ * screen, not resolve one currency at a time against an empty or partial
+ * set. Resolving row-by-row against whatever has been seen so far would let
+ * a CNY row rendered before a JPY row appears keep the ambiguous plain ¥
+ * instead of being revisited once JPY shows up.
+ */
+export function currencySymbol(
+  currency: string,
+  displayedCurrencies: Iterable<string>
+): string | undefined {
+  const symbol = CONTEXTUAL_SYMBOLS[currency];
+  if (symbol === undefined) return undefined;
+  const disambiguated = SYMBOL_DISAMBIGUATION[currency];
+  if (disambiguated === undefined) return symbol;
+  for (const other of displayedCurrencies) {
+    if (other !== currency && CONTEXTUAL_SYMBOLS[other] === symbol) {
+      return disambiguated;
+    }
+  }
+  return symbol;
+}
+
+/**
  * The largest single amount anyone can enter, in major units. The bound has
  * always been 100_000_000 minor units, which for a two-decimal currency is
  * exactly this; stating it in major units keeps the limit meaning the same

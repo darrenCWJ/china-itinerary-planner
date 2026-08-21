@@ -4,6 +4,7 @@ import { currencyPivot, type Expense, type Settlement } from "./tripShared";
 import {
   balancesByCurrency,
   convertedTotals,
+  currencySymbol,
   expensesOnDate,
   formatMinor,
   majorToMinor,
@@ -272,6 +273,36 @@ describe("formatMinor", () => {
   test("a three-decimal currency renders all three", () => {
     expect(formatMinor(1_234_567, "KWD")).toBe("KWD 1,234.567");
     expect(formatMinor(5, "BHD")).toBe("BHD 0.005");
+  });
+});
+
+describe("currencySymbol", () => {
+  test("JPY alone renders the plain yen sign", () => {
+    expect(currencySymbol("JPY", ["JPY"])).toBe("¥");
+  });
+
+  test("CNY alone renders the plain yen sign too", () => {
+    expect(currencySymbol("CNY", ["CNY"])).toBe("¥");
+  });
+
+  test("JPY and CNY together disambiguate into CN¥/JP¥", () => {
+    const displayed = ["JPY", "CNY"];
+    expect(currencySymbol("JPY", displayed)).toBe("JP¥");
+    expect(currencySymbol("CNY", displayed)).toBe("CN¥");
+  });
+
+  test("a currency absent from the map falls back to undefined, same as formatMinor's code form", () => {
+    expect(currencySymbol("THB", ["THB"])).toBeUndefined();
+  });
+
+  test("a non-colliding symbol ignores the rest of the set", () => {
+    // SGD's own S$ never collides with anything else in the table, so
+    // sharing a set with CNY and JPY changes nothing about it.
+    expect(currencySymbol("SGD", ["SGD", "CNY", "JPY"])).toBe("S$");
+  });
+
+  test("accepts any iterable of currency codes, not just arrays", () => {
+    expect(currencySymbol("JPY", new Set(["JPY", "CNY"]))).toBe("JP¥");
   });
 });
 
