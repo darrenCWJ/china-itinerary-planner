@@ -6,6 +6,7 @@ import {
   balancesByCurrency,
   convertedTotals,
   formatMinor,
+  minorUnitDigits,
   totalsByCurrency,
 } from "@/lib/money";
 import type { CurrencySettings, Expense, ExpenseCategory, Settlement } from "@/lib/tripShared";
@@ -76,7 +77,7 @@ export function MoneyTab({
         value: Math.round(
           expenses
             .filter((e) => e.currency === currency && e.category === c.id)
-            .reduce((a, e) => a + e.amount, 0) / 100
+            .reduce((a, e) => a + e.amount, 0) / 10 ** minorUnitDigits(currency)
         ),
       })).filter((s) => s.value > 0),
     })).filter((c) => c.slices.length > 0);
