@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { tripCountry, tripCurrency } from "./tripShared";
+import { DEFAULT_CURRENCY_SETTINGS, initialCurrencySettings, tripCountry, tripCurrency } from "./tripShared";
 import type { TripData } from "./tripShared";
 import type { TripInput } from "./itinerary";
 import type { Destination } from "./types";
@@ -48,6 +48,27 @@ describe("tripCurrency", () => {
     // that guess to a member would be wrong-by-commission, so this must read
     // as an honest "we don't know" instead.
     expect(tripCurrency(tripData({ country: "JP" }))).toBeNull();
+  });
+});
+
+describe("initialCurrencySettings", () => {
+  test("stamps the researched pivot for a China trip", () => {
+    expect(initialCurrencySettings("CN")).toEqual({ home: null, rates: {}, pivot: "CNY" });
+  });
+
+  test("J-C1: stamps nothing for a country with no researched currency profile", () => {
+    // getCountryProfile("JP").currency is "USD" today — an admitted
+    // placeholder (lib/countryProfile.ts), not a fact about Japan. Stamping
+    // it would persist a guess as fact, which is worse than an absent pivot
+    // — the absent case already reads as the legacy CNY default.
+    expect(initialCurrencySettings("JP")).toEqual({ home: null, rates: {} });
+  });
+
+  test("never returns the shared DEFAULT_CURRENCY_SETTINGS reference", () => {
+    // A mutated shared default would poison every later trip that falls
+    // back to it — identity, not just deep equality, is the guarantee.
+    expect(initialCurrencySettings("CN")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
+    expect(initialCurrencySettings("JP")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
   });
 });
 

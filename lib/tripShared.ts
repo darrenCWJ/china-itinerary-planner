@@ -145,6 +145,25 @@ export function currencyPivot(settings: CurrencySettings): string {
   return settings.pivot ?? "CNY";
 }
 
+/**
+ * The currency settings a freshly created trip should start with. Always a
+ * fresh object — never `DEFAULT_CURRENCY_SETTINGS` itself, since a caller
+ * that later mutated that shared reference would poison every trip that
+ * falls back to it.
+ *
+ * The pivot is stamped only when `isCurrencyResearched` says the country's
+ * currency is a fact rather than `neutralProfile`'s admitted USD placeholder
+ * (judgment call J-C1, see the comment on `tripCurrency` above) — stamping a
+ * guess would persist it as though it were researched, which is worse than
+ * leaving the pivot absent. An absent pivot is not a gap: `currencyPivot`
+ * already reads it as the legacy CNY default, so an unresearched country's
+ * trip degrades to exactly the behaviour every pre-pivot trip has today.
+ */
+export function initialCurrencySettings(countryCode: CountryCode): CurrencySettings {
+  if (!isCurrencyResearched(countryCode)) return { home: null, rates: {} };
+  return { home: null, rates: {}, pivot: getCountryProfile(countryCode).currency };
+}
+
 /** GET /api/trips/:id response. */
 export interface TripPayload {
   id: string;
