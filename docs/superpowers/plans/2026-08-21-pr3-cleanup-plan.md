@@ -927,3 +927,146 @@ git add -A && git commit -m "chore: drop the dead world-map hover prop, assert C
 **Known risk, disclosed.** Task 37's real gate is a visual pass, not a test. Dark mode has never been rendered in this app, so the honest expectation is that Step 10 finds work beyond the enumerated hex. Step 9 turns the largest known source into a closed list of 18 literals across three files, which is why it is a step rather than a warning — but `WorldMap:494` already flags its ground token as needing a second look, and a surface nobody has viewed in dark can hide more. If Step 10 turns up more than a handful of new problems, split the fixes into a Task 37b rather than growing Task 37 past a reviewable size.
 
 **Left deliberately open.** The per-country accent hue override (spec §4.3 layer 1) is *not* in this plan. It needs a surface that can name a country, which is a design question the spec does not answer — recorded in `ThemeToggle.tsx` and in the review findings, and it is a feature, not a cleanup.
+
+---
+
+## Task 39 — Make text legible on accent surfaces in both ramps
+
+Added 2026-08-21 after Task 37's dark pass measured the failures. The user chose
+the `--on-accent` route over darkening `--accent-fill`.
+
+**Files:**
+- Modify: `app/globals.css` (both ramps), `components/shell/RailNav.tsx:116`, `components/TripView.tsx:198`, plus the 50 `text-white` sites on accent backgrounds
+- Test: `lib/accent.test.ts`, `components/shell/RailNav.test.tsx`
+
+**Interfaces:**
+- Produces: `--on-accent`, a token pinned to a dark ink value in **both** ramps.
+
+**The measurement this task is built on.** Two families fail, for opposite reasons:
+
+| Background | Light | Dark | Inverts? | Correct ink |
+|---|---|---|---|---|
+| `--accent-ink` | `oklch(50%)` dark | `oklch(80%)` light | **yes** | `--paper` (`#fff` → `#0d1218`) |
+| `--seal` | `#c93b2e` dark | `#f0705f` light | **yes** | `--paper` |
+| `--accent-fill` | `oklch(72%)` light | `oklch(80%)` light | **no — light in both** | a new token, dark in both |
+
+So the 50 `text-white` sites do **not** need a new token: `--paper` inverts in
+lockstep with the background they sit on, and its light value *is* `#ffffff`, so
+that migration is provably free in light and fixes dark.
+
+Only `--accent-fill` needs `--on-accent`, because no existing token is dark in
+both ramps — `--ink-0` is dark in light and light in dark, which is exactly why
+`RailNav`'s active tab reads 1.72:1 in dark.
+
+- [ ] **Step 1: Write the failing contrast test**
+
+In `lib/accent.test.ts`, beside the existing accent-contrast cases:
+
+```ts
+test("--on-accent stays legible on --accent-fill across every hue, in both themes", () => {
+  for (const theme of ["light", "dark"] as const) {
+    for (let hue = 0; hue < 360; hue += 5) {
+      const fill = accentColor("CN", theme, "fill", hue);
+      expect(contrast(onAccentFor(theme), fill), `hue ${hue} in ${theme}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+```
+
+Use the file's existing contrast helper and hue-sweep style rather than adding a
+second one. `onAccentFor(theme)` reads the token out of `globals.css` the way the
+file's other ramp assertions do — the point is that the CSS and the test cannot
+drift.
+
+**4.5, not 3.0.** The existing pin is ≥3.0, which is the right spec-level floor
+for a fill, but `RailNav`'s label is 11px and needs AA text contrast. `RailNav.test.tsx`
+already carries a ≥4.5 assertion for the light ramp; this extends the guarantee
+to both.
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+```bash
+npx vitest run lib/accent.test.ts -t "on-accent"
+```
+
+Expected: FAIL — the token does not exist yet.
+
+- [ ] **Step 3: Add the token**
+
+In `app/globals.css`, in `:root`:
+
+```css
+  /* Ink for text sitting ON `--accent-fill`. Pinned dark in BOTH ramps, because
+     unlike every other token here `--accent-fill` does not invert — it is a light
+     colour in both (oklch 72% / 80%), per spec §4.2's "accent as fill behind
+     *dark* ink". A ramp-following token is wrong on it by construction: `--ink-0`
+     reads 5.82:1 in light and 1.72:1 in dark for the same pairing. */
+  --on-accent: #17263b;
+```
+
+and the identical declaration in `[data-theme="dark"]`. Repeating the value is
+the point — the token is a constant across ramps, and defining it only once in
+`:root` would work today but silently start inverting the day someone reorders
+the blocks.
+
+- [ ] **Step 4: Run the test and confirm it passes**
+
+```bash
+npx vitest run lib/accent.test.ts -t "on-accent"
+```
+
+- [ ] **Step 5: Point the accent-fill consumers at it**
+
+`components/shell/RailNav.tsx:116` — `color: "var(--ink-0)"` becomes
+`color: "var(--on-accent)"`. Rewrite the comment block above it: it currently
+explains why `--ink-0` beats `--paper`, which was right when light was the only
+ramp and is now the wrong conclusion. Say what is true — neither works in both,
+which is why the token exists.
+
+Then grep for any other pairing of `--accent-fill` with a ramp-following ink and
+fix each the same way:
+
+```bash
+grep -rn "accent-fill" --include=*.tsx app components
+```
+
+- [ ] **Step 6: Migrate the 50 white-on-inverting-background sites**
+
+```bash
+grep -rl "text-white" --include=*.tsx app components
+```
+
+For each, check what it sits on. If the background is `--accent-ink` or `--seal`,
+`text-white` becomes `text-[var(--paper)]`. **If it sits on a fixed dark surface
+that does not invert — `WorldMap.tsx:474`'s `bg-[#17263b]` hero band is the known
+one — leave `text-white` alone.** It is correct there, and changing it would break
+the band in dark.
+
+`components/TripView.tsx:198` carries the same defect in a third form: a
+`color-mix` of two tokens that both invert. Resolve it on the same principle.
+
+- [ ] **Step 7: Verify the light ramp is untouched**
+
+This is the claim that makes the migration safe, so prove it rather than assuming
+it: `--paper`'s light value is `#ffffff`, which is what `text-white` resolved to,
+so every migrated site must render identically in light. Confirm by reading the
+built CSS at `.next/static/chunks/*.css` after a build, and say in the report what
+you checked.
+
+- [ ] **Step 8: Full verification and commit**
+
+```bash
+npm test
+```
+
+```bash
+npx tsc --noEmit
+```
+
+```bash
+npm run build
+```
+
+```bash
+git add -A && git commit -m "fix: make text on accent surfaces legible in both ramps"
+```
