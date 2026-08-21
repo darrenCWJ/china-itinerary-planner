@@ -222,16 +222,59 @@ describe("formatMinor", () => {
 
 describe("majorToMinor", () => {
   test("parses major-unit strings", () => {
-    expect(majorToMinor("124.5")).toBe(12_450);
-    expect(majorToMinor("124.50")).toBe(12_450);
-    expect(majorToMinor("0.01")).toBe(1);
-    expect(majorToMinor("1000")).toBe(100_000);
+    expect(majorToMinor("124.5", "CNY")).toBe(12_450);
+    expect(majorToMinor("124.50", "CNY")).toBe(12_450);
+    expect(majorToMinor("0.01", "CNY")).toBe(1);
+    expect(majorToMinor("1000", "CNY")).toBe(100_000);
   });
 
   test("rejects junk", () => {
     for (const bad of ["", "abc", "-5", "1.234", "1,000", "1e3"]) {
-      expect(majorToMinor(bad)).toBeNull();
+      expect(majorToMinor(bad, "CNY")).toBeNull();
     }
+  });
+
+  test("a zero-decimal currency counts whole units", () => {
+    expect(majorToMinor("1000", "JPY")).toBe(1_000);
+    expect(majorToMinor("1", "KRW")).toBe(1);
+  });
+
+  test("a zero-decimal currency rejects decimals instead of flooring them", () => {
+    // Yen have no cents. Silently dropping the .50 would lose real money and
+    // tell the user nothing; refusing the input is the honest answer.
+    expect(majorToMinor("1000.50", "JPY")).toBeNull();
+    expect(majorToMinor("1000.0", "JPY")).toBeNull();
+  });
+
+  test("a three-decimal currency accepts three and no more", () => {
+    expect(majorToMinor("1.234", "KWD")).toBe(1_234);
+    expect(majorToMinor("1.2", "KWD")).toBe(1_200);
+    expect(majorToMinor("1.2345", "KWD")).toBeNull();
+  });
+
+  test("the ceiling is a million major units whatever the exponent", () => {
+    // The bound has always read 100_000_000 minor units, which for a
+    // two-decimal currency is exactly a million major units. Pinning the
+    // major meaning keeps the ceiling where it has always been for CNY
+    // instead of letting it drift 100x either way with the exponent.
+    expect(majorToMinor("1000000", "CNY")).toBe(100_000_000);
+    expect(majorToMinor("1000000.01", "CNY")).toBeNull();
+    expect(majorToMinor("1000000", "JPY")).toBe(1_000_000);
+    expect(majorToMinor("1000001", "JPY")).toBeNull();
+    expect(majorToMinor("1000000", "KWD")).toBe(1_000_000_000);
+    expect(majorToMinor("1000000.001", "KWD")).toBeNull();
+  });
+
+  test("the floor is one minor unit whatever the exponent", () => {
+    expect(majorToMinor("0", "CNY")).toBeNull();
+    expect(majorToMinor("0.01", "CNY")).toBe(1);
+    expect(majorToMinor("0", "JPY")).toBeNull();
+    expect(majorToMinor("1", "JPY")).toBe(1);
+    expect(majorToMinor("0.001", "KWD")).toBe(1);
+  });
+
+  test("an unlisted currency is parsed as a two-decimal one", () => {
+    expect(majorToMinor("124.5", "XXX")).toBe(12_450);
   });
 });
 

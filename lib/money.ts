@@ -131,13 +131,30 @@ export function formatMinor(amount: number, currency: string): string {
     : `${sign}${currency} ${major}${fraction}`;
 }
 
-/** "124.5" → 12450 minor units. Null when not a plain positive decimal. */
-export function majorToMinor(input: string): number | null {
-  const m = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(input.trim());
+/**
+ * The largest single amount anyone can enter, in major units. The bound has
+ * always been 100_000_000 minor units, which for a two-decimal currency is
+ * exactly this; stating it in major units keeps the limit meaning the same
+ * thing to a user whatever their currency's exponent.
+ */
+const MAX_MAJOR_UNITS = 1_000_000;
+
+/**
+ * "124.5" CNY → 12450 minor units; "1000" JPY → 1000. Null when the input is
+ * not a plain positive decimal, when it carries more decimals than the
+ * currency has (yen have no cents, so "1000.50" is refused rather than
+ * quietly floored), or when it falls outside one minor unit to a million
+ * major units.
+ */
+export function majorToMinor(input: string, currency: string): number | null {
+  const digits = minorUnitDigits(currency);
+  const m = /^(\d{1,7})(?:\.(\d+))?$/.exec(input.trim());
   if (!m) return null;
-  const cents = (m[2] ?? "").padEnd(2, "0");
-  const value = Number(m[1]) * 100 + Number(cents);
-  return value >= 1 && value <= 100_000_000 ? value : null;
+  const fraction = m[2] ?? "";
+  if (fraction.length > digits) return null;
+  const unit = 10 ** digits;
+  const value = Number(m[1]) * unit + Number(fraction.padEnd(digits, "0") || "0");
+  return value >= 1 && value <= MAX_MAJOR_UNITS * unit ? value : null;
 }
 
 /** Equal split with largest-remainder: the first (amount % parts) shares get +1. */

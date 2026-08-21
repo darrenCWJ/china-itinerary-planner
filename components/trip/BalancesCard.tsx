@@ -46,7 +46,7 @@ export function BalancesCard({
   };
 
   const recordRepayment = async (from: string, to: string, currency: string) => {
-    const minor = majorToMinor(confirmAmount);
+    const minor = majorToMinor(confirmAmount, currency);
     if (minor === null) return setError("Enter an amount like 62.25.");
     setBusy(true);
     const err = await onAddSettlement({ date: todayIso(), from, to, amount: minor, currency });
