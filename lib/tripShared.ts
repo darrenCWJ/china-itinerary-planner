@@ -1,3 +1,4 @@
+import { getCountryProfile, isCurrencyResearched } from "./countryProfile";
 import type { TripInput, TripPlan } from "./itinerary";
 import type { PackingGroup } from "./packing";
 import type { CountryCode, Season } from "./types";
@@ -21,6 +22,22 @@ export interface TripData {
  */
 export function tripCountry(data: TripData): CountryCode {
   return data.input.country ?? "CN";
+}
+
+/**
+ * The trip's destination currency, or `null` when that country has no
+ * currency-researched profile yet. Deliberately never
+ * `getCountryProfile(code).currency` unguarded — for every country besides
+ * China that value is an admitted placeholder ("USD", see
+ * `neutralProfile` in lib/countryProfile.ts), and showing a guess to a
+ * member as though it were the destination's real currency is worse than
+ * showing nothing (judgment call J-C1). `isCurrencyResearched` is the one
+ * place that distinction is decided, so this and `getCountryProfile` can
+ * never disagree about which countries are "researched."
+ */
+export function tripCurrency(data: TripData): string | null {
+  const code = tripCountry(data);
+  return isCurrencyResearched(code) ? getCountryProfile(code).currency : null;
 }
 
 export interface TripMember {

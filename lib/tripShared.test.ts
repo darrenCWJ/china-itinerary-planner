@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { tripCountry } from "./tripShared";
+import { tripCountry, tripCurrency } from "./tripShared";
 import type { TripData } from "./tripShared";
 import type { TripInput } from "./itinerary";
 import type { Destination } from "./types";
@@ -34,6 +34,20 @@ describe("tripCountry", () => {
 
   test("reads the stored country once a trip carries one", () => {
     expect(tripCountry(tripData({ country: "JP" }))).toBe("JP");
+  });
+});
+
+describe("tripCurrency", () => {
+  test("a China trip has a researched currency", () => {
+    expect(tripCurrency(tripData({}))).toBe("CNY");
+  });
+
+  test("a country with no researched currency profile reads as null, never the neutral profile's USD placeholder", () => {
+    // getCountryProfile("JP").currency is "USD" today — an admitted
+    // placeholder (lib/countryProfile.ts), not a fact about Japan. Showing
+    // that guess to a member would be wrong-by-commission, so this must read
+    // as an honest "we don't know" instead.
+    expect(tripCurrency(tripData({ country: "JP" }))).toBeNull();
   });
 });
 
