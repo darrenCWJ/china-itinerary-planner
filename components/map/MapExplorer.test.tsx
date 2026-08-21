@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
 
@@ -87,6 +87,24 @@ const A_CATALOG_PLACE: MapPlace = {
   attractionCount: 2,
   blurb: null,
 };
+/**
+ * MapExplorer pulls WorldMap in through `next/dynamic`, so at the world level
+ * the tree suspends on a real module load before any of its markup exists.
+ * React only resolves that lazily under the act queue once
+ * `IS_REACT_ACT_ENVIRONMENT` is set, and the two tests that assert on markup
+ * *inside* WorldMap were spending their `findBy*` budget on the module hop
+ * rather than on the fetch it gates — around half of full-suite runs, where the
+ * jsdom and node projects compete for the CPU, and never when this file runs
+ * alone.
+ *
+ * Warming the module cache removes the hop instead of widening the window:
+ * React.lazy still unwraps its promise, but an already-resolved one, within the
+ * flush that `findBy*` was going to do anyway. The specifier has to match the
+ * component's own so both land on one module-graph entry.
+ */
+beforeAll(async () => {
+  await import("./WorldMap");
+});
 
 let fetchMock: ReturnType<typeof vi.fn>;
 

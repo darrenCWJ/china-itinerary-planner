@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { SearchableCurated } from "@/lib/placeSearch";
 import { PlaceSearch, type PickedPlace } from "./PlaceSearch";
@@ -35,6 +35,22 @@ function setup(selected: PickedPlace[] = []) {
   const input = screen.getByRole("combobox");
   return { input, onAdd, onRemove };
 }
+
+/** Comfortably past the component's 300ms debounce, on a real clock. */
+const PAST_DEBOUNCE_MS = 400;
+
+/**
+ * Waits out the debounce with the timer *and* the fetch it starts inside `act`.
+ *
+ * The debounced callback awaits the response before calling `setHits`, so that
+ * update lands long after the `fireEvent.change` that set the query. A bare
+ * `await new Promise(setTimeout)` leaves React no act scope to attribute it to,
+ * and the hits it writes land after the assertion below has already run.
+ */
+const pastDebounce = () =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, PAST_DEBOUNCE_MS));
+  });
 
 /** Options in listbox order, as a keyboard user would traverse them. */
 const optionTexts = () => screen.getAllByRole("option").map((o) => o.textContent ?? "");
@@ -217,7 +233,7 @@ describe("PlaceSearch country scoping", () => {
     );
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
-    await new Promise((r) => setTimeout(r, 400));
+    await pastDebounce();
 
     expect(globalThis.fetch).toHaveBeenCalled();
   });
@@ -238,7 +254,7 @@ describe("PlaceSearch country scoping", () => {
     );
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
-    await new Promise((r) => setTimeout(r, 400));
+    await pastDebounce();
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
     // The off-map row is still there, so a place in Japan remains reachable.

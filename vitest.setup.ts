@@ -24,3 +24,12 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+/**
+ * React only emits its `act(...)` warnings when it believes it is under test,
+ * and it decides that from this global — nothing else, not NODE_ENV and not the
+ * jsdom environment. Left unset, every "update was not wrapped in act(...)" is
+ * dropped in silence, and with it the only signal that a component was still
+ * re-rendering after the test driving it had finished asserting.
+ */
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
