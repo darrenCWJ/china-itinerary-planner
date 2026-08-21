@@ -58,10 +58,16 @@ export async function POST(req: NextRequest) {
   const creatorName = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   const { id, joinCode } = await createTrip(data, creatorName);
   // Stamp the pivot the trip's rates will be expressed against (Task 8).
-  // Best-effort: a failed write here just leaves the trip reading the
-  // legacy absent-pivot default (see initialCurrencySettings), never a
-  // wrong or corrupted one, so it doesn't block trip creation.
-  await setCurrencySettings(id, initialCurrencySettings(input.country));
+  // Best-effort and actually best-effort now: a thrown error is caught and
+  // logged rather than rejecting this handler, so it can never skip the
+  // creator-linking step below or orphan the trip. A failed write just
+  // leaves the trip reading the legacy absent-pivot default (see
+  // initialCurrencySettings), never a wrong or corrupted one.
+  try {
+    await setCurrencySettings(id, initialCurrencySettings(input.country));
+  } catch (error) {
+    console.error(`trip create: currency stamp failed (${error}) for trip ${id}`);
+  }
   const linked = await linkMemberAccount(id, creatorName, user.id);
   if (linked !== "linked") {
     console.error(`trip create: creator link failed (${linked}) for trip ${id}`);
