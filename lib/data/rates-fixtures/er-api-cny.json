@@ -1,0 +1,29 @@
+{
+  "result": "success",
+  "provider": "https://www.exchangerate-api.com",
+  "documentation": "https://www.exchangerate-api.com/docs/free",
+  "terms_of_use": "https://www.exchangerate-api.com/terms",
+  "time_last_update_unix": 1787270551,
+  "time_last_update_utc": "Fri, 21 Aug 2026 00:02:31 +0000",
+  "time_next_update_unix": 1787358141,
+  "time_next_update_utc": "Sat, 22 Aug 2026 00:22:21 +0000",
+  "time_eol_unix": 0,
+  "base_code": "CNY",
+  "rates": {
+    "CNY": 1,
+    "USD": 0.148383,
+    "EUR": 0.12708,
+    "GBP": 0.108961,
+    "JPY": 23.565029,
+    "KWD": 0.045625,
+    "SGD": 0.188631,
+    "HKD": 1.163689,
+    "MYR": 0.599628,
+    "KRW": 206.143063,
+    "VND": 3891.050584,
+    "IDR": 2652.519894,
+    "AUD": 0.20875,
+    "THB": 4.87474,
+    "CAD": 0.20462
+  }
+}

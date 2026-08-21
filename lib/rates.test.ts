@@ -1,0 +1,130 @@
+import { describe, expect, test } from "vitest";
+import cdnFixture from "./data/rates-fixtures/cdn-cny.json";
+import erApiFixture from "./data/rates-fixtures/er-api-cny.json";
+import { parseCdnRates, parseErApiRates } from "./rates";
+
+describe("parseErApiRates", () => {
+  test("normalises the real er-api payload", () => {
+    const parsed = parseErApiRates(erApiFixture);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.base).toBe("CNY");
+    expect(parsed?.source).toBe("er-api");
+    expect(parsed?.rates.USD).toBeCloseTo(0.148383);
+    expect(parsed?.rates.JPY).toBeCloseTo(23.565029);
+    // asOf is normalised to ISO 8601 regardless of the source's RFC-1123
+    // string, so the UI only ever has one date format to render.
+    expect(parsed?.asOf).toBe(new Date("Fri, 21 Aug 2026 00:02:31 +0000").toISOString());
+  });
+
+  test("normalised shape has exactly base/rates/asOf/source — no leaked provider fields", () => {
+    const parsed = parseErApiRates(erApiFixture);
+    expect(Object.keys(parsed ?? {}).sort()).toEqual(["asOf", "base", "rates", "source"]);
+  });
+
+  test('rejects a payload whose result is not "success"', () => {
+    const failure = { ...erApiFixture, result: "error" };
+    expect(parseErApiRates(failure)).toBeNull();
+  });
+
+  test("rejects a payload with no result field at all — absence is not trusted either", () => {
+    const withoutResult = { ...erApiFixture } as Record<string, unknown>;
+    delete withoutResult.result;
+    expect(parseErApiRates(withoutResult)).toBeNull();
+  });
+
+  test("a rate missing for a requested code is absent, never 0", () => {
+    const parsed = parseErApiRates(erApiFixture);
+    expect(parsed?.rates.ZZZ).toBeUndefined();
+    expect("ZZZ" in (parsed?.rates ?? {})).toBe(false);
+  });
+
+  test("a NaN-ish rate (null, NaN, non-numeric string) is dropped, not coerced to 0", () => {
+    const broken = {
+      ...erApiFixture,
+      rates: { ...erApiFixture.rates, USD: Number.NaN, EUR: null, GBP: "n/a" },
+    };
+    const parsed = parseErApiRates(broken);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rates.USD).toBeUndefined();
+    expect(parsed?.rates.EUR).toBeUndefined();
+    expect(parsed?.rates.GBP).toBeUndefined();
+    // A sibling that is a real number is unaffected by its neighbours' rot.
+    expect(parsed?.rates.JPY).toBeCloseTo(23.565029);
+  });
+
+  test("unknown extra top-level keys are ignored, not rejected", () => {
+    const withExtra = { ...erApiFixture, someNewFieldTheProviderAdded: 12345 };
+    expect(parseErApiRates(withExtra)).not.toBeNull();
+  });
+
+  test("non-object input returns null instead of throwing", () => {
+    expect(parseErApiRates(null)).toBeNull();
+    expect(parseErApiRates("garbage")).toBeNull();
+    expect(parseErApiRates(42)).toBeNull();
+    expect(parseErApiRates([])).toBeNull();
+  });
+});
+
+describe("parseCdnRates", () => {
+  test("normalises the real CDN payload and upcases every code", () => {
+    const parsed = parseCdnRates(cdnFixture, "cny");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.base).toBe("CNY");
+    expect(parsed?.source).toBe("cdn");
+    expect(parsed?.rates.USD).toBeCloseTo(0.14875538);
+    expect(Object.keys(parsed?.rates ?? {})).not.toContain("usd");
+    expect(parsed?.asOf).toBe(new Date("2026-08-21").toISOString());
+  });
+
+  test("normalised shape has exactly base/rates/asOf/source", () => {
+    const parsed = parseCdnRates(cdnFixture, "cny");
+    expect(Object.keys(parsed ?? {}).sort()).toEqual(["asOf", "base", "rates", "source"]);
+  });
+
+  test("real non-fiat extra keys (crypto tickers the app never asks for) don't break parsing", () => {
+    // The trimmed fixture keeps two real crypto entries (1inch, aave) exactly
+    // as fawazahmed0 sent them — proof a provider carrying currencies this
+    // app doesn't recognise can't take the page down.
+    const parsed = parseCdnRates(cdnFixture, "cny");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rates["1INCH"]).toBeCloseTo(1.67311696);
+  });
+
+  test("a rate missing for a requested code is absent, never 0", () => {
+    const parsed = parseCdnRates(cdnFixture, "cny");
+    expect(parsed?.rates.ZZZ).toBeUndefined();
+  });
+
+  test("rejects when the requested base's rates object isn't in the payload", () => {
+    expect(parseCdnRates(cdnFixture, "usd")).toBeNull();
+  });
+
+  test("rejects a payload missing the date field", () => {
+    const withoutDate = { ...cdnFixture } as Record<string, unknown>;
+    delete withoutDate.date;
+    expect(parseCdnRates(withoutDate, "cny")).toBeNull();
+  });
+
+  test("a NaN-ish rate (null, non-numeric string) is dropped, not coerced to 0", () => {
+    const broken = {
+      ...cdnFixture,
+      cny: { ...cdnFixture.cny, usd: null, eur: "n/a" },
+    };
+    const parsed = parseCdnRates(broken, "cny");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rates.USD).toBeUndefined();
+    expect(parsed?.rates.EUR).toBeUndefined();
+    expect(parsed?.rates.JPY).toBeCloseTo(23.64561762);
+  });
+
+  test("non-object input returns null instead of throwing", () => {
+    expect(parseCdnRates(null, "cny")).toBeNull();
+    expect(parseCdnRates("garbage", "cny")).toBeNull();
+    expect(parseCdnRates([], "cny")).toBeNull();
+  });
+
+  test("an empty or blank requested base returns null rather than guessing a key", () => {
+    expect(parseCdnRates(cdnFixture, "")).toBeNull();
+    expect(parseCdnRates(cdnFixture, "   ")).toBeNull();
+  });
+});
