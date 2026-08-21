@@ -1,5 +1,4 @@
 import { monthFitForSeasons, REGION_MONTHS, type MonthFit } from "@/lib/months";
-import { REGION_ORDER } from "@/lib/provinces";
 import type { ChinaRegion, Season } from "@/lib/types";
 
 /** Unified marker model: curated destinations + catalog cities. */
@@ -27,16 +26,24 @@ export interface MapPlace {
 /** What a place outside China's month table gets: no claim either way. */
 export const NEUTRAL_FIT: MonthFit = "unknown";
 
-const CHINA_REGIONS = new Set<string>(REGION_ORDER);
-
 /**
  * Whether a region label is one of China's own seven. The narrowing any
  * caller needs before reading China-only data (REGION_MONTHS and anything
  * keyed off it, like `regionMonthClimate`) for a place that might not be
  * Chinese. PlacePopup uses this directly; `regionFit` below uses it too.
+ *
+ * Keyed off `REGION_MONTHS` rather than `REGION_ORDER`: `REGION_MONTHS` is a
+ * `Record<ChinaRegion, …>`, so the compiler keeps it exhaustive over every
+ * region. `REGION_ORDER` is only a `ChinaRegion[]`, which the compiler never
+ * forces to be complete — an eighth region added to `ChinaRegion` and
+ * `REGION_MONTHS` but not to `REGION_ORDER` would still typecheck and would
+ * silently read as "no data" everywhere. Same fix `lib/countryProfile.ts`'s
+ * `chinaClimate` already uses: ownership is checked rather than truthiness so
+ * a plain index can't resolve an inherited key ("constructor", "toString")
+ * to something that isn't a climate row.
  */
 export function isChinaRegion(region: string): region is ChinaRegion {
-  return CHINA_REGIONS.has(region);
+  return Object.prototype.hasOwnProperty.call(REGION_MONTHS, region);
 }
 
 /**
