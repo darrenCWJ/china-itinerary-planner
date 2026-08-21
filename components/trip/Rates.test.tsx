@@ -28,6 +28,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("disclosure toggle accessibility (Minor 8)", () => {
+  test("aria-expanded reflects the disclosure's open/closed state", () => {
+    stubFetch(200, { base: "CNY", rates: {}, asOf: "2026-08-21", source: "er-api", stale: false });
+    render(
+      <Rates tripCurrency="CNY" homeCurrency="SGD" pivot="CNY" extraCurrencies={[]} isMember />
+    );
+
+    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
+    open();
+    expect(screen.getByRole("button", { name: /hide/i })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+  });
+});
+
 /**
  * Every row this panel renders is priced against `pivot` (Important 2 —
  * see the Props doc on `Rates.tsx`'s `pivot` for the full rationale), so
