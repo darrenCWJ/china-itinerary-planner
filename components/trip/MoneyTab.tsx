@@ -59,11 +59,12 @@ export function MoneyTab({
   const pivot = currencyPivot(currencySettings);
   const totals = useMemo(() => totalsByCurrency(expenses), [expenses]);
   // Every currency this trip actually has expenses in, computed once for the
-  // whole tab so every amount rendered against it -- the totals list and the
-  // per-expense rows below -- resolves JPY/CNY's shared ¥ the same way,
-  // rather than each row consulting a different (or empty) set. Per
-  // `currencySymbol`'s usage contract: the displayed set is a property of
-  // the whole screen, not of one row in isolation.
+  // whole tab so every amount rendered against it -- the totals list, the
+  // converted-totals row, and the per-expense rows below -- resolves
+  // JPY/CNY's shared ¥ the same way, rather than each row consulting a
+  // different (or empty) set. Per `currencySymbol`'s usage contract: the
+  // displayed set is a property of the whole screen, not of one row in
+  // isolation -- every `formatMinor` call on this screen must be passed it.
   const displayedCurrencies = useMemo(() => totals.map((t) => t.currency), [totals]);
   const converted = useMemo(
     () => convertedTotals(totals, currencySettings, pivot),
@@ -144,14 +145,14 @@ export function MoneyTab({
             <p className="flex justify-between">
               <span className="text-[var(--ink-2)]">Total {converted.pivot}</span>
               <span className="font-semibold tabular-nums">
-                {formatMinor(converted.grandTotal, converted.pivot)}
+                {formatMinor(converted.grandTotal, converted.pivot, displayedCurrencies)}
               </span>
             </p>
             {converted.home && converted.home.currency !== converted.pivot && (
               <p className="flex justify-between">
                 <span className="text-[var(--ink-2)]">Total {converted.home.currency}</span>
                 <span className="font-semibold tabular-nums">
-                  {formatMinor(converted.home.amount, converted.home.currency)}
+                  {formatMinor(converted.home.amount, converted.home.currency, displayedCurrencies)}
                 </span>
               </p>
             )}
