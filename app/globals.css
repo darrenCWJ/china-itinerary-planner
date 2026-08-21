@@ -44,10 +44,11 @@
 }
 
 /*
- * Unreachable in PR1: the shell pins data-theme="light" because the current
- * components hardcode light palette utilities and a dark flip would restyle
- * half of them. The values land now so PR2 flips a switch instead of picking
- * colours under deadline.
+ * The dark ramp — reachable now. PR1 pinned data-theme="light" at the shell
+ * because components still hardcoded light palette utilities and a dark flip
+ * would have restyled only half of them; PR2 flipped that switch once the
+ * rest of the UI read from these tokens instead. PrefsProvider now sets
+ * data-theme on the root element at runtime, so every value below renders.
  */
 [data-theme="dark"] {
   --ink-0: #edf2f9;

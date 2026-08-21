@@ -48,8 +48,8 @@ export function routeDestinationIds(plan: TripPlan): string[] {
  * `/api/destinations/resolve`, and a trip is capped at eight destinations so
  * that would fit — but fetching here would put a second resolution path in the
  * tree for data the day list already names, and the map would still be missing
- * the same off-map stops. PR3 owns the catalog leg; until then a catalog-only
- * trip falls through to the empty state below, which says so.
+ * the same off-map stops. A catalog-only trip falls through to the empty state
+ * below, which says so.
  */
 export function routePlaces(plan: TripPlan): MapPlace[] {
   const wanted = routeDestinationIds(plan);

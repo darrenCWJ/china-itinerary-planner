@@ -6,15 +6,18 @@ import { describe, expect, it } from "vitest";
 /**
  * Gates for the Task 33 re-tokenisation sweep — the PR3 enabler.
  *
- * PR3 deletes the `@theme` block in `app/globals.css`. Nothing in TypeScript or
- * React can notice that deletion: a Tailwind utility whose colour no longer
- * exists still compiles, still renders, and simply comes out unstyled. `tsc` is
- * blind to it and so is every component test. These scans are the only place a
- * missed consumer can fail loudly, so they are deliberately blunt and read
- * source as text.
+ * PR3 deleted the `@theme` block that used to duplicate part of the palette in
+ * `app/globals.css`. Nothing in TypeScript or React can notice a consumer of
+ * that deleted block: a Tailwind utility whose colour no longer exists still
+ * compiles, still renders, and simply comes out unstyled. `tsc` is blind to it
+ * and so is every component test. These scans are the only place a missed
+ * consumer can fail loudly, so they are deliberately blunt and read source as
+ * text — and they stay in place as a permanent guard, not just a one-time
+ * migration check.
  *
  * Three separate risks, three separate gates:
- *  1. a surviving consumer of the retiring palette (breaks on PR3's deletion);
+ *  1. a surviving consumer of the retired palette (would have broken on PR3's
+ *     deletion, and would break again if the block ever came back);
  *  2. a *typo'd* token — `var(--ink-9)` is valid CSS, so it compiles happily and
  *     paints nothing;
  *  3. an arbitrary value Tailwind cannot parse, which silently emits no rule.

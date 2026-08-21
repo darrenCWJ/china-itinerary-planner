@@ -61,9 +61,10 @@ interface LevelProps {
   selected: string[];
   month: number;
   /**
-   * Still the China region union: the other countries have no regions to zoom
-   * into, so a wider type would be a promise this level cannot keep. PR3
-   * generalises it alongside the data.
+   * `ChinaRegion`, permanently — not a type PR3 widens. Judgement call J14:
+   * other countries have no regions to zoom into, so a wider type here would
+   * be a promise this level can't keep. Zooming into a region stays a
+   * China-only feature by design.
    */
   zoomRegion: ChinaRegion | null;
   routeIds: string[];
