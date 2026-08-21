@@ -30,6 +30,11 @@ const DEFAULT_MINOR_UNIT_DIGITS = 2;
  * other function here asks this rather than assuming a factor of 100.
  */
 export function minorUnitDigits(currency: string): number {
+  // The `??` looks unreachable to the compiler: tsconfig.json does not set
+  // `noUncheckedIndexedAccess`, so TS types this index as `number`, not
+  // `number | undefined`. It is very much reachable at runtime — most codes
+  // are absent from the table — so do not "simplify" this away. (Turning on
+  // the flag would fix the type but is a tree-wide change, out of scope here.)
   return MINOR_UNIT_DIGITS[currency] ?? DEFAULT_MINOR_UNIT_DIGITS;
 }
 
@@ -192,6 +197,29 @@ export function majorToMinor(input: string, currency: string): number | null {
   const unit = 10 ** digits;
   const value = Number(m[1]) * unit + Number(fraction.padEnd(digits, "0") || "0");
   return value >= 1 && value <= MAX_MAJOR_UNITS * unit ? value : null;
+}
+
+/**
+ * The declared inverse of `majorToMinor`: 12450 CNY → "124.50", 1000 JPY →
+ * "1000", 1234 KWD → "1.234". Every edit form that seeds its amount field
+ * from a stored minor-unit value must go through this, not a hand-rolled
+ * `/ 100`, or the prefill and `majorToMinor` disagree the moment a currency
+ * is not exponent-2 — a disagreement that either corrupts the stored amount
+ * (padding a three-decimal fraction to two zeros multiplies it by ten) or
+ * blocks the save outright (a zero-decimal fraction `majorToMinor` refuses).
+ * Built on `minorUnitDigits`, the one authority on a currency's exponent, so
+ * this and `majorToMinor` can never drift apart on what a minor unit means.
+ */
+export function minorToMajorInput(amount: number, currency: string): string {
+  const digits = minorUnitDigits(currency);
+  const unit = 10 ** digits;
+  const sign = amount < 0 ? "-" : "";
+  const abs = Math.abs(amount);
+  const major = Math.floor(abs / unit).toString();
+  // A currency with no minor unit has nothing to put after a point, so it
+  // gets no point either — mirrors formatMinor's fraction rule exactly.
+  const fraction = digits === 0 ? "" : `.${(abs % unit).toString().padStart(digits, "0")}`;
+  return `${sign}${major}${fraction}`;
 }
 
 /** Equal split with largest-remainder: the first (amount % parts) shares get +1. */
