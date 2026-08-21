@@ -79,7 +79,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
             type="button"
             disabled={busy}
             onClick={() => send(true, false)}
-            className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50"
+            className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50"
           >
             {busy ? "Creating…" : "Create share link"}
           </button>
@@ -102,7 +102,7 @@ export function BriefingShare({ tripId, memberName }: Props) {
                   () => setError("Copy failed — select the link and copy it manually")
                 );
               }}
-              className="rounded-lg bg-[var(--accent-ink)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
+              className="rounded-lg bg-[var(--accent-ink)] px-3 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
             >
               {copied ? "Copied" : "Copy"}
             </button>

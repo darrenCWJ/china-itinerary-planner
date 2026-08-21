@@ -54,7 +54,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
         <p className="font-mono text-sm font-semibold uppercase tracking-widest text-[var(--accent-ink)]">
           Day {String(day.day).padStart(2, "0")}
           {isToday && (
-            <span className="ml-2 rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] text-white">TODAY</span>
+            <span className="ml-2 rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] text-[var(--paper)]">TODAY</span>
           )}
         </p>
         <p className="text-sm font-medium text-[var(--ink-2)]">{day.destinationName}</p>
@@ -299,7 +299,7 @@ function ItemForm({
           type="button"
           disabled={!canSave}
           onClick={() => onSave(fields)}
-          className="rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-xs font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
         >
           {saving ? "Saving…" : saveLabel}
         </button>

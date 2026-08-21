@@ -74,7 +74,7 @@ export function DetailsStep({
               onClick={() => onDays(d)}
               aria-pressed={days === d}
               className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                days === d ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+                days === d ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}
             >
               {d} days
@@ -120,7 +120,7 @@ export function DetailsStep({
                 aria-pressed={on}
                 className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)] ${
                   on
-                    ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-white"
+                    ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-[var(--paper)]"
                     : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-0)] hover:border-[var(--accent-ink)]/50"
                 }`}
               >
@@ -155,7 +155,7 @@ function Counter({
           onClick={() => onChange(value - 1)}
           disabled={value <= min}
           aria-label={`Fewer ${label.toLowerCase()}`}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-white disabled:opacity-40 disabled:hover:bg-[var(--line-1)] disabled:hover:text-[var(--accent-ink)]"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-[var(--paper)] disabled:opacity-40 disabled:hover:bg-[var(--line-1)] disabled:hover:text-[var(--accent-ink)]"
         >
           −
         </button>
@@ -164,7 +164,7 @@ function Counter({
           type="button"
           onClick={() => onChange(value + 1)}
           aria-label={`More ${label.toLowerCase()}`}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--line-1)] font-mono text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-ink)] hover:text-[var(--paper)]"
         >
           +
         </button>

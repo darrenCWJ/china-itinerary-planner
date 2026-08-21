@@ -139,7 +139,7 @@ export function JournalSection({
                   )}
                   <button type="button" aria-label="Remove photo"
                     onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--seal)] text-[10px] text-white">
+                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--seal)] text-[10px] text-[var(--paper)]">
                     ✕
                   </button>
                 </li>
@@ -166,7 +166,7 @@ export function JournalSection({
               Attach link
             </button>
             <button type="button" onClick={() => void submit()} disabled={busy}
-              className="ml-auto rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+              className="ml-auto rounded-lg bg-[var(--accent-ink)] px-4 py-1.5 text-sm font-semibold text-[var(--paper)] disabled:opacity-50">
               {busy ? "Saving…" : "Add entry"}
             </button>
           </div>
@@ -193,7 +193,7 @@ export function JournalSection({
                         onChange={(ev) => setEditText(ev.target.value)} />
                       <div className="mt-1.5 flex gap-2">
                         <button type="button" disabled={busy} onClick={() => void saveEdit(e.id)}
-                          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] disabled:opacity-50">
                           Save
                         </button>
                         <button type="button" onClick={() => setEditingId(null)}

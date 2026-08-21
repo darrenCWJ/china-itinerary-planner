@@ -196,7 +196,7 @@ export default function PlanPage() {
                   aria-current={isCurrent ? "step" : undefined}
                   className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-ink)] sm:gap-2 sm:px-3.5 ${
                     isCurrent
-                      ? "bg-[var(--accent-ink)] text-white"
+                      ? "bg-[var(--accent-ink)] text-[var(--paper)]"
                       : isDone
                         ? "bg-[var(--line-1)] text-[var(--accent-ink)] hover:bg-[var(--line-1)]/70"
                         : "bg-[var(--paper)] text-[var(--ink-2)]"
@@ -304,7 +304,7 @@ export default function PlanPage() {
                   else setStep(step + 1);
                 }}
                 disabled={!canNext || resolving}
-                className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40 disabled:hover:bg-[var(--accent-ink)]"
+                className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40 disabled:hover:bg-[var(--accent-ink)]"
               >
                 {step === 1 ? (resolving ? "Loading…" : "Build my plan →") : "Next →"}
               </button>
@@ -313,7 +313,7 @@ export default function PlanPage() {
             <button
               type="button"
               onClick={restart}
-              className="rounded-lg border border-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--seal)] transition-colors hover:bg-[var(--seal)] hover:text-white"
+              className="rounded-lg border border-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--seal)] transition-colors hover:bg-[var(--seal)] hover:text-[var(--paper)]"
             >
               Plan another trip
             </button>

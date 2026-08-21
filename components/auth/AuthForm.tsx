@@ -117,7 +117,7 @@ export function AuthForm({ mode }: Props) {
           onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
       </label>
       <button type="button" onClick={() => void submit()} disabled={busy}
-        className="mt-5 w-full rounded-lg bg-[var(--accent-ink)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
+        className="mt-5 w-full rounded-lg bg-[var(--accent-ink)] px-4 py-2.5 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
         {busy ? "…" : mode === "signup" ? "Create account" : "Sign in"}
       </button>
       {error && <p role="alert" className="mt-2 text-xs text-[var(--seal)]">{error}</p>}

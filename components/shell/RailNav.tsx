@@ -97,23 +97,28 @@ export function RailNav() {
             aria-current={isActive ? "page" : undefined}
             // min-h-[--tap-min] even on desktop, which does not need it (C5).
             className="flex min-h-[var(--tap-min)] flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium transition-colors"
-            // `--ink-0` on `--accent-fill`, not `--paper`. Spec §4.2 defines
-            // `--accent-fill` as "accent as fill behind *dark* ink"; white on it
-            // peaks at 2.62:1 across all 360 hues — under AA for this 11px label
-            // and under even the 3:1 graphics floor for the icon. Dark ink on it
-            // bottoms out at 5.82:1.
+            // `--on-accent` on `--accent-fill`, not `--ink-0` and not `--paper`.
+            // Spec §4.2 defines `--accent-fill` as "accent as fill behind *dark*
+            // ink"; white on it peaks at 2.62:1 across all 360 hues — under AA
+            // for this 11px label and under even the 3:1 graphics floor for the
+            // icon.
             //
-            // accent.test.ts pins that pairing at ≥3.0 only, which is the right
-            // spec-level floor for a fill but is *not* enough for text this
-            // small — RailNav.test.tsx carries the ≥4.5 assertion, next to the
-            // component that needs it.
+            // `--ink-0` looked like the fix — it bottoms out at 5.82:1 in
+            // light — but `--accent-fill` does not invert between ramps the way
+            // `--accent-ink` and `--seal` do (oklch 72% light, 80% dark: a light
+            // colour in *both*). `--ink-0` inverts, so the same pairing reads
+            // 1.72:1 in dark. Neither a ramp-following token nor `--paper` (which
+            // also inverts) can work here; `--on-accent` exists because this is
+            // the one surface that needs an ink pinned dark in both ramps.
             //
-            // The inversion read as fine because it only fails under the light
-            // ramp, which is the one theme PR2 ships. The mobile strip renders
-            // this same TRIP_NAV active state correctly (TripView.tsx).
+            // accent.test.ts pins the fill token's contrast at ≥3.0 only, which
+            // is the right spec-level floor for a fill but is *not* enough for
+            // text this small — RailNav.test.tsx carries the ≥4.5 assertion,
+            // next to the component that needs it, and accent.test.ts separately
+            // sweeps `--on-accent` itself against the fill in both themes.
             style={
               isActive
-                ? { background: "var(--accent-fill)", color: "var(--ink-0)" }
+                ? { background: "var(--accent-fill)", color: "var(--on-accent)" }
                 : { color: "var(--ink-2)" }
             }
           >

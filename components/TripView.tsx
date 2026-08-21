@@ -139,7 +139,7 @@ export function TripView({ tripId }: { tripId: string }) {
           <button
             type="button"
             onClick={() => void showClaimable()}
-            className="mt-6 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white"
+            className="mt-6 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--paper)]"
           >
             Join this trip
           </button>
@@ -171,7 +171,7 @@ export function TripView({ tripId }: { tripId: string }) {
           <p className="mt-2 text-sm text-[var(--ink-2)]">
             This trip may have been created on another machine or the link is wrong.
           </p>
-          <Link href="/" className="mt-4 inline-block rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white">
+          <Link href="/" className="mt-4 inline-block rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-[var(--paper)]">
             Plan a new trip
           </Link>
         </div>
@@ -198,7 +198,7 @@ export function TripView({ tripId }: { tripId: string }) {
       <CountryHero
         countryCode={tripCountry(data)}
         eager
-        className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8"
+        className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-[var(--paper)] sm:p-8"
       >
         {/*
           The chop is the country's, not China's. `Country.mark` has carried it
@@ -207,7 +207,7 @@ export function TripView({ tripId }: { tripId: string }) {
           get no chop rather than a borrowed one.
         */}
         {getCountry(tripCountry(data)).mark && (
-          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
             {getCountry(tripCountry(data)).mark}
           </span>
         )}
@@ -241,7 +241,7 @@ export function TripView({ tripId }: { tripId: string }) {
             aria-pressed={tab === item.id}
             aria-label={item.ariaLabel}
             className={`min-h-[var(--tap-min)] rounded-full px-4 text-sm font-medium transition-colors ${
-              tab === item.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+              tab === item.id ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
             }`}
           >
             {item.label}
@@ -340,9 +340,9 @@ function PageMain({ children }: { children: React.ReactNode }) {
 function GuestHeader({ view }: { view: GuestTripPayload }) {
   const seasonMeta = SEASONS.find((s) => s.id === view.season);
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8">
+    <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-[var(--paper)] sm:p-8">
       {getCountry(view.country).mark && (
-        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
           {getCountry(view.country).mark}
         </span>
       )}

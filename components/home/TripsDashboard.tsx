@@ -74,7 +74,7 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
           className="group mt-3 block overflow-hidden rounded-2xl border-2 border-[var(--seal)] bg-[var(--paper)] shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="flex items-stretch">
-            <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[var(--seal)] py-5 text-white">
+            <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[var(--seal)] py-5 text-[var(--paper)]">
               <span aria-hidden className="font-kai text-2xl">游</span>
               <span className="font-mono text-[9px] uppercase tracking-widest">Next</span>
             </div>
@@ -141,7 +141,7 @@ function EmptyTripsCard({
       <p className="font-display text-xl font-bold [text-wrap:balance]">{heading}</p>
       <p className="mt-1 text-sm [text-wrap:pretty] text-[var(--ink-2)]">{body}</p>
       <Link href={ctaHref}
-        className="mt-4 inline-flex min-h-[var(--tap-min)] items-center rounded-lg bg-[var(--accent-ink)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
+        className="mt-4 inline-flex min-h-[var(--tap-min)] items-center rounded-lg bg-[var(--accent-ink)] px-5 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
         {ctaLabel}
       </Link>
     </div>

@@ -140,7 +140,7 @@ function CountryPlaceList({
                   aria-pressed={isSelected}
                   className={`min-h-[var(--tap-min)] rounded-full border px-3.5 text-sm transition-colors ${
                     isSelected
-                      ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-white"
+                      ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-[var(--paper)]"
                       : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
                   }`}
                 >
