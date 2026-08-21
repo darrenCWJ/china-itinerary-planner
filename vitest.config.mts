@@ -1,7 +1,9 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 
-const alias = { "@": path.resolve(__dirname, ".") };
+// `import.meta.dirname`, not `__dirname`: this file is .mts so Vite loads it as
+// real ESM, where the CommonJS globals do not exist.
+const alias = { "@": path.resolve(import.meta.dirname, ".") };
 
 /**
  * Two projects, split by file extension so their includes cannot overlap:

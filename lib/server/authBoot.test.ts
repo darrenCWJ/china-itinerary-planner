@@ -6,6 +6,17 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 // every page publicly (see lib/wall.ts — no secret turns the wall off).
 const ORIGINAL = { ...process.env };
 
+/**
+ * Every test here calls `vi.resetModules()` and re-imports the auth chain —
+ * better-auth, better-sqlite3 and the whole db layer — because the boot rules
+ * under test are read at module load from the environment. That import is the
+ * bulk of each test, and while the jsdom project runs alongside this one it
+ * regularly costs more than the 5s default, which fails the *first* test with a
+ * timeout and nothing else. Sized to the work rather than left to trip on how
+ * busy the machine is.
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 beforeEach(() => {
   vi.resetModules();
   delete globalThis.__cipAuth;
