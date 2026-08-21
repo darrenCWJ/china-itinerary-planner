@@ -64,14 +64,25 @@ const ErApiSchema = z.object({
  * fields (`provider`, `documentation`, a field a future response adds) are
  * dropped by zod's default strip-unknown-keys behaviour rather than failing
  * the parse — a provider adding a field must not break the page.
+ *
+ * The caller states which base it requested (exactly like `parseCdnRates`
+ * already does) so this function can check the payload's own `base_code`
+ * against it, rather than trusting the provider's label unconditionally. A
+ * mismatch — a provider bug, a misrouted response, a proxy serving a cached
+ * response for the wrong key — is treated as a parse failure (`null`), the
+ * same as any other malformed payload: it sends the caller to the CDN
+ * fallback instead of silently returning (and caching, under the *requested*
+ * key) rates for a currency nobody asked for.
  */
-export function parseErApiRates(json: unknown): NormalizedRates | null {
+export function parseErApiRates(json: unknown, requestedBase: string): NormalizedRates | null {
   const parsed = ErApiSchema.safeParse(json);
   if (!parsed.success) return null;
   const asOf = toIsoAsOf(parsed.data.time_last_update_utc);
   if (asOf === null) return null;
+  const base = parsed.data.base_code.trim().toUpperCase();
+  if (base !== requestedBase.trim().toUpperCase()) return null;
   return {
-    base: parsed.data.base_code.toUpperCase(),
+    base,
     rates: parsed.data.rates,
     asOf,
     source: "er-api",
@@ -170,7 +181,12 @@ export function getLastGoodRates(base: string): NormalizedRates | null {
 }
 
 export function setLastGoodRates(rates: NormalizedRates): void {
-  lastGoodByBase.set(rates.base, rates);
+  // Normalised the same way `getLastGoodRates` normalises its lookup key —
+  // both parsers already return an upcased `base`, so this is defence in
+  // depth rather than a case this module expects to hit in practice, but an
+  // un-normalised write here would silently file a value under a key the
+  // read side can never find again.
+  lastGoodByBase.set(rates.base.trim().toUpperCase(), rates);
 }
 
 /** A normalised rate table plus whether it's a fresh answer or a carried-over one. */
@@ -184,26 +200,40 @@ export interface RatesResult extends NormalizedRates {
  * harness (this repo has neither) — a fetcher returns the parsed rates on
  * success or `null` for anything that should trigger the next step: a
  * non-200, a `result !== "success"`, a timeout, or a body that doesn't
- * parse. Each fetcher already knows which base it's fetching for (it built
- * the request URL from it), so `resolveRates` never has to pass it through.
+ * parse.
+ *
+ * Each fetcher takes the base it should fetch for as a parameter, rather
+ * than closing over one, so `resolveRates` is structurally required to pass
+ * the *validated* code through (see the call sites below) instead of the
+ * invariant "the string that went into the URL is the string that passed
+ * the allowlist" holding only by convention because the route wrapper
+ * happened to close over the same local.
  */
 export interface RatesFetchers {
-  fetchErApi: () => Promise<NormalizedRates | null>;
-  fetchCdn: () => Promise<NormalizedRates | null>;
+  fetchErApi: (base: string) => Promise<NormalizedRates | null>;
+  fetchCdn: (base: string) => Promise<NormalizedRates | null>;
 }
 
 export type ResolveRatesResult =
   | { ok: true; data: RatesResult }
   | { ok: false; status: 400 | 502; error: string };
 
+/** Longest prefix of a rejected `base` echoed back in an error message — long enough to show a caller what it sent, short enough that a multi-kilobyte `?base=` can't inflate the response body. */
+const MAX_ECHOED_BASE_LENGTH = 12;
+
 /**
- * The fallback chain, as one pure decision over injected fetchers: er-api,
- * then the CDN, then the last good cached value (marked stale), then an
- * error — stopping at the first that produces something. `base` is checked
- * against the known-code allowlist before either fetcher is ever invoked,
- * so an unknown code never reaches a network call — the one invariant a
- * route test can't verify without a harness this repo doesn't have, so it's
- * proven here instead, against fake fetchers.
+ * The fallback chain over injected fetchers: er-api, then the CDN, then the
+ * last good cached value (marked stale), then an error — stopping at the
+ * first that produces something. `base` is checked against the known-code
+ * allowlist before either fetcher is ever invoked, so an unknown code never
+ * reaches a network call — the one invariant a route test can't verify
+ * without a harness this repo doesn't have, so it's proven here instead,
+ * against fake fetchers.
+ *
+ * Not a pure function — the success branches below write `lastGoodByBase`
+ * via `setLastGoodRates` as a side effect, which is exactly why this
+ * decision logic (rather than `route.ts`) is the place both the fallback
+ * ordering and the cache-population behaviour get tested.
  */
 export async function resolveRates(
   base: string,
@@ -211,16 +241,17 @@ export async function resolveRates(
 ): Promise<ResolveRatesResult> {
   const normalizedBase = base.trim().toUpperCase();
   if (!isKnownCurrencyCode(normalizedBase)) {
-    return { ok: false, status: 400, error: `Unknown currency code: "${base}"` };
+    const shown = base.trim().slice(0, MAX_ECHOED_BASE_LENGTH);
+    return { ok: false, status: 400, error: `Unknown currency code: "${shown}"` };
   }
 
-  const primary = await fetchers.fetchErApi();
+  const primary = await fetchers.fetchErApi(normalizedBase);
   if (primary) {
     setLastGoodRates(primary);
     return { ok: true, data: { ...primary, stale: false } };
   }
 
-  const fallback = await fetchers.fetchCdn();
+  const fallback = await fetchers.fetchCdn(normalizedBase);
   if (fallback) {
     setLastGoodRates(fallback);
     return { ok: true, data: { ...fallback, stale: false } };
@@ -236,4 +267,54 @@ export async function resolveRates(
     status: 502,
     error: "Exchange rates are temporarily unavailable and no cached rates exist yet",
   };
+}
+
+/**
+ * Provider URL builders, kept here (rather than in `route.ts`, where they
+ * used to live non-exported) so the property that matters — "the code that
+ * passed the allowlist is the code that reaches the URL" — can be tested
+ * directly instead of only by inspection.
+ */
+export function erApiUrl(base: string): string {
+  return `https://open.er-api.com/v6/latest/${base}`;
+}
+
+export function cdnUrl(base: string): string {
+  return `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${base.toLowerCase()}.json`;
+}
+
+export interface FetchJsonOptions {
+  /** How long to wait before treating the request as failed. */
+  timeoutMs: number;
+  /** Defaults to the global `fetch`; overridable so a test can inject a fake response without a network call. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * `null` covers every failure mode the fallback chain treats as "this
+ * provider didn't answer": a non-200 status, a network error, a timeout
+ * (via the injected `AbortController`), and a body that isn't valid JSON.
+ * None of them are distinguished further — the caller only ever needs to
+ * know "did this provider give us something usable," never why it didn't.
+ *
+ * HTTP-cache options (e.g. Next's `next: { revalidate }`) are deliberately
+ * not baked in here — that's a route-level caching decision, not part of
+ * "fetch JSON with a bounded timeout," so a caller that wants it wraps
+ * `fetchImpl` itself (see `route.ts`'s `fetchWithRevalidate`).
+ */
+export async function fetchJsonWithTimeout(
+  url: string,
+  { timeoutMs, fetchImpl = fetch }: FetchJsonOptions
+): Promise<unknown | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }

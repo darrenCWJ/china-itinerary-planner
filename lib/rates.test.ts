@@ -2,6 +2,9 @@ import { describe, expect, test, vi } from "vitest";
 import cdnFixture from "./data/rates-fixtures/cdn-cny.json";
 import erApiFixture from "./data/rates-fixtures/er-api-cny.json";
 import {
+  cdnUrl,
+  erApiUrl,
+  fetchJsonWithTimeout,
   getLastGoodRates,
   isKnownCurrencyCode,
   parseCdnRates,
@@ -14,7 +17,7 @@ import {
 
 describe("parseErApiRates", () => {
   test("normalises the real er-api payload", () => {
-    const parsed = parseErApiRates(erApiFixture);
+    const parsed = parseErApiRates(erApiFixture, "CNY");
     expect(parsed).not.toBeNull();
     expect(parsed?.base).toBe("CNY");
     expect(parsed?.source).toBe("er-api");
@@ -26,23 +29,23 @@ describe("parseErApiRates", () => {
   });
 
   test("normalised shape has exactly base/rates/asOf/source — no leaked provider fields", () => {
-    const parsed = parseErApiRates(erApiFixture);
+    const parsed = parseErApiRates(erApiFixture, "CNY");
     expect(Object.keys(parsed ?? {}).sort()).toEqual(["asOf", "base", "rates", "source"]);
   });
 
   test('rejects a payload whose result is not "success"', () => {
     const failure = { ...erApiFixture, result: "error" };
-    expect(parseErApiRates(failure)).toBeNull();
+    expect(parseErApiRates(failure, "CNY")).toBeNull();
   });
 
   test("rejects a payload with no result field at all — absence is not trusted either", () => {
     const withoutResult = { ...erApiFixture } as Record<string, unknown>;
     delete withoutResult.result;
-    expect(parseErApiRates(withoutResult)).toBeNull();
+    expect(parseErApiRates(withoutResult, "CNY")).toBeNull();
   });
 
   test("a rate missing for a requested code is absent, never 0", () => {
-    const parsed = parseErApiRates(erApiFixture);
+    const parsed = parseErApiRates(erApiFixture, "CNY");
     expect(parsed?.rates.ZZZ).toBeUndefined();
     expect("ZZZ" in (parsed?.rates ?? {})).toBe(false);
   });
@@ -52,7 +55,7 @@ describe("parseErApiRates", () => {
       ...erApiFixture,
       rates: { ...erApiFixture.rates, USD: Number.NaN, EUR: null, GBP: "n/a" },
     };
-    const parsed = parseErApiRates(broken);
+    const parsed = parseErApiRates(broken, "CNY");
     expect(parsed).not.toBeNull();
     expect(parsed?.rates.USD).toBeUndefined();
     expect(parsed?.rates.EUR).toBeUndefined();
@@ -63,14 +66,32 @@ describe("parseErApiRates", () => {
 
   test("unknown extra top-level keys are ignored, not rejected", () => {
     const withExtra = { ...erApiFixture, someNewFieldTheProviderAdded: 12345 };
-    expect(parseErApiRates(withExtra)).not.toBeNull();
+    expect(parseErApiRates(withExtra, "CNY")).not.toBeNull();
   });
 
   test("non-object input returns null instead of throwing", () => {
-    expect(parseErApiRates(null)).toBeNull();
-    expect(parseErApiRates("garbage")).toBeNull();
-    expect(parseErApiRates(42)).toBeNull();
-    expect(parseErApiRates([])).toBeNull();
+    expect(parseErApiRates(null, "CNY")).toBeNull();
+    expect(parseErApiRates("garbage", "CNY")).toBeNull();
+    expect(parseErApiRates(42, "CNY")).toBeNull();
+    expect(parseErApiRates([], "CNY")).toBeNull();
+  });
+
+  test("accepts when the payload's base_code matches the requested base, case-insensitively", () => {
+    expect(parseErApiRates(erApiFixture, "cny")).not.toBeNull();
+    expect(parseErApiRates(erApiFixture, " CNY ")?.base).toBe("CNY");
+  });
+
+  test("rejects when the payload's base_code doesn't match the requested base", () => {
+    // erApiFixture's own base_code is "CNY" (see "normalises the real
+    // er-api payload" above). A caller that asked for a different base and
+    // received this payload back anyway must not have it trusted silently
+    // — a provider bug, a misrouted response, or a proxy serving a cached
+    // reply under the wrong key could otherwise hand a EUR request
+    // CNY-denominated rates mislabelled as EUR, and — because
+    // `setLastGoodRates` keys by the returned `base` while
+    // `getLastGoodRates` looks up the *requested* base — silently file the
+    // result under a cache key nothing will ever look up again.
+    expect(parseErApiRates(erApiFixture, "EUR")).toBeNull();
   });
 });
 
@@ -261,5 +282,91 @@ describe("resolveRates", () => {
     await expect(
       resolveRates("NOTACODE", { fetchErApi, fetchCdn })
     ).resolves.toMatchObject({ ok: false, status: 400 });
+  });
+
+  test("passes the validated, normalised base into both fetchers — not the raw caller input", async () => {
+    // `RatesFetchers` takes a `(base: string)` parameter specifically so
+    // this is structurally guaranteed rather than true only by convention
+    // (a route wrapper closing over the same local it validated). Both
+    // fetchers are exercised: er-api is called unconditionally, and the CDN
+    // fetcher only gets a turn once er-api has already failed.
+    const fetchErApi = vi.fn().mockResolvedValue(null);
+    const fetchCdn = vi.fn().mockResolvedValue(null);
+
+    await resolveRates("  sek ", { fetchErApi, fetchCdn });
+
+    expect(fetchErApi).toHaveBeenCalledWith("SEK");
+    expect(fetchCdn).toHaveBeenCalledWith("SEK");
+  });
+});
+
+describe("erApiUrl / cdnUrl", () => {
+  test("erApiUrl builds the request URL from exactly the code it's given", () => {
+    expect(erApiUrl("CNY")).toBe("https://open.er-api.com/v6/latest/CNY");
+  });
+
+  test("cdnUrl lowercases the code for the CDN's URL convention", () => {
+    expect(cdnUrl("CNY")).toBe(
+      "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/cny.json"
+    );
+  });
+});
+
+describe("fetchJsonWithTimeout", () => {
+  test("returns null for a non-200 response without reading the body", () => {
+    const readBody = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 500, json: readBody }) as unknown as typeof fetch;
+
+    return fetchJsonWithTimeout("https://example.test/x", { timeoutMs: 50, fetchImpl }).then(
+      (result) => {
+        expect(result).toBeNull();
+        expect(readBody).not.toHaveBeenCalled();
+      }
+    );
+  });
+
+  test("returns null when the request is aborted (a hung provider)", async () => {
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError"))
+        );
+      })) as unknown as typeof fetch;
+
+    const result = await fetchJsonWithTimeout("https://example.test/x", {
+      timeoutMs: 5,
+      fetchImpl,
+    });
+    expect(result).toBeNull();
+  });
+
+  test("returns null when the body isn't valid JSON", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError("Unexpected token")),
+    }) as unknown as typeof fetch;
+
+    const result = await fetchJsonWithTimeout("https://example.test/x", {
+      timeoutMs: 50,
+      fetchImpl,
+    });
+    expect(result).toBeNull();
+  });
+
+  test("returns the parsed body on a real 200 response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ hello: "world" }),
+    }) as unknown as typeof fetch;
+
+    const result = await fetchJsonWithTimeout("https://example.test/x", {
+      timeoutMs: 50,
+      fetchImpl,
+    });
+    expect(result).toEqual({ hello: "world" });
   });
 });
