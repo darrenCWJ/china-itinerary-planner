@@ -195,10 +195,23 @@ export function TripView({ tripId }: { tripId: string }) {
         falls back to (see CountryHero) — it is not decoration to be dropped.
         `eager`: this is the first thing on the page, so it is the LCP.
       */}
+      {/*
+        Fixed white, not `--paper`: unlike its neighbours in this file (e.g.
+        GuestHeader below), this hero is wrapped in CountryHero, which paints an
+        always-on `--scrim` between the background and this content (see
+        CountryHero.tsx's docstring — "everything above the scrim is light text
+        by construction"). `--scrim` is dark in both ramps, so the effective
+        background here does not invert the way `--accent-ink`/`--seal`
+        surfaces do — it stays pinned dark, same family as WorldMap's frozen
+        ground. `--paper` inverts to a near-black in dark theme, which against
+        this pinned-dark scrim measures ~2:1 — a contrast fail. Fixed white
+        against the scrim measures ~9:1 in both themes. Do not migrate this
+        site to `--paper` in a future token sweep.
+      */}
       <CountryHero
         countryCode={tripCountry(data)}
         eager
-        className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-[var(--paper)] sm:p-8"
+        className="rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8"
       >
         {/*
           The chop is the country's, not China's. `Country.mark` has carried it
@@ -207,7 +220,7 @@ export function TripView({ tripId }: { tripId: string }) {
           get no chop rather than a borrowed one.
         */}
         {getCountry(tripCountry(data)).mark && (
-          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
+          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-white/90 sm:inline-flex">
             {getCountry(tripCountry(data)).mark}
           </span>
         )}
