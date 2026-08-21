@@ -90,7 +90,8 @@ async function settle() {
 }
 
 beforeEach(() => {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // The act environment is set globally in vitest.setup.ts; setting it here too
+  // would read as though it were this file's own opt-in.
   localStorage.clear();
   vi.useFakeTimers();
 });
