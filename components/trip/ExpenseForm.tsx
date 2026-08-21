@@ -61,10 +61,10 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
   };
 
   const submit = async () => {
-    const minor = majorToMinor(amount);
     const currency = (currencyPick === "other" ? customCurrency : currencyPick)
       .trim()
       .toUpperCase();
+    const minor = majorToMinor(amount, currency);
     if (!title.trim()) return setError("Give the expense a name.");
     if (minor === null) return setError("Enter an amount like 128 or 128.50.");
     if (!/^[A-Z]{3}$/.test(currency)) return setError("Currency must be a 3-letter code.");
