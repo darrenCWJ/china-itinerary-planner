@@ -577,10 +577,14 @@ describe("C6 — the trip payload stays serialisable", () => {
 
   test("no payload interface declares a non-serialisable field type", () => {
     const source = readFileSync(join(process.cwd(), "lib", "tripShared.ts"), "utf8");
-    const block = source.slice(
-      source.indexOf("export interface TripPayload"),
-      source.indexOf("export interface MapCity")
-    );
+    const start = source.indexOf("export interface TripPayload");
+    const end = source.indexOf("export interface MapCity");
+    // Guard against silent scan failure: if an anchor moves or is deleted,
+    // the slice returns "" and the filter finds nothing, falsely passing the test.
+    expect(start, "C6 start anchor not found — the scan would silently pass if TripPayload moves").toBeGreaterThanOrEqual(0);
+    expect(end, "C6 end anchor not found — the scan would silently pass if MapCity moves").toBeGreaterThanOrEqual(0);
+    expect(end, "C6 end anchor out of order — the scan would silently pass if MapCity moves before TripPayload").toBeGreaterThan(start);
+    const block = source.slice(start, end);
     const offenders = NON_SERIALISABLE.filter((t) => isOffender(block, t));
     expect(offenders).toEqual([]);
   });
