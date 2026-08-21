@@ -30,12 +30,6 @@ export default defineConfig({
           include: ["components/**/*.test.tsx", "lib/**/*.test.tsx"],
           environment: "jsdom",
           setupFiles: ["./vitest.setup.ts"],
-          // MapExplorer.test.tsx times out under full-suite parallel load on
-          // the 5s default (it passes in isolation) — contention, not a real
-          // hang. A known-flaky test in a repo whose only gate is `npm test`
-          // trains people to re-run reds, which is how a real one gets waved
-          // through, so give this project real headroom instead.
-          testTimeout: 15000,
         },
       },
     ],

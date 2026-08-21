@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
 
@@ -88,22 +88,28 @@ const A_CATALOG_PLACE: MapPlace = {
   blurb: null,
 };
 /**
- * MapExplorer pulls WorldMap in through `next/dynamic`, so at the world level
- * the tree suspends on a real module load before any of its markup exists.
- * React only resolves that lazily under the act queue once
- * `IS_REACT_ACT_ENVIRONMENT` is set, and the two tests that assert on markup
- * *inside* WorldMap were spending their `findBy*` budget on the module hop
- * rather than on the fetch it gates — around half of full-suite runs, where the
- * jsdom and node projects compete for the CPU, and never when this file runs
- * alone.
+ * MapExplorer pulls WorldMap in through `next/dynamic`: real code-splitting in
+ * production, and a wall-clock dependency in tests. The module load plus
+ * React.lazy's unwrap costs ~90ms cold on an idle machine, and it is the only
+ * reason these tests ever needed a timeout budget at all. Under full-suite
+ * parallel load it stretched past Testing Library's polling window and failed
+ * as "Unable to find role=…" — which reads like a missing element rather than
+ * a slow one, and sent two rounds of fixes at the timeout instead.
  *
- * Warming the module cache removes the hop instead of widening the window:
- * React.lazy still unwraps its promise, but an already-resolved one, within the
- * flush that `findBy*` was going to do anyway. The specifier has to match the
- * component's own so both land on one module-graph entry.
+ * Raising a budget only moves the threshold; the test still races the machine,
+ * and the next busy CI box moves it back. Resolving the component up front
+ * removes the race outright: WorldMap is imported once, here, and `dynamic()`
+ * hands it straight back, so nothing in this file suspends and no assertion
+ * depends on how loaded the CPU is.
+ *
+ * What is given up is coverage of the `loading` fallback, which no test here
+ * asserts on. Safe as written because MapExplorer has exactly one `dynamic()`
+ * call — a second would need this to dispatch on the loader rather than return
+ * WorldMap unconditionally.
  */
-beforeAll(async () => {
-  await import("./WorldMap");
+vi.mock("next/dynamic", async () => {
+  const { WorldMap } = await import("./WorldMap");
+  return { default: () => WorldMap };
 });
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -128,6 +134,34 @@ afterEach(() => {
 
 function requested(path: string): boolean {
   return fetchMock.mock.calls.some(([url]) => String(url) === path);
+}
+
+/**
+ * Flush mount effects, the promises they start, and the renders those cause —
+ * then let the test query synchronously.
+ *
+ * Used instead of `findBy*` throughout this file. Those poll against a
+ * wall-clock budget, and mounting this component is ~165ms of real CPU (jsdom
+ * plus d3-geo projection). That is comfortably inside the budget on an idle
+ * machine and comfortably outside it when the full suite has every core busy,
+ * which is exactly the shape of the flake: it never reproduced on this file
+ * alone, only in a full run. Nothing here was ever slow to *settle* — it was
+ * slow to *compute*, and a poll timeout cannot tell those apart, so it reported
+ * "Unable to find role=…" as though the element were missing.
+ *
+ * Draining to a fixed point removes the clock from the assertion entirely. The
+ * work still takes however long it takes; the test simply waits for it rather
+ * than racing it. vitest's own testTimeout stays as the backstop for a genuine
+ * hang, which is the only thing a timeout should be catching.
+ */
+async function settle(): Promise<void> {
+  let previous = "";
+  for (let i = 0; i < 10 && document.body.innerHTML !== previous; i++) {
+    previous = document.body.innerHTML;
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
 }
 
 function Harness({
@@ -159,10 +193,12 @@ describe("MapExplorer", () => {
   test("carries a world-level pick down into that country's level", async () => {
     render(<Harness level="world" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Japan/ }));
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Japan/ }));
 
     // Japan has no detail level, so the same shell shows the fallback.
-    expect(await screen.findByText(/No map for Japan yet/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
     // And the world level is gone: the two levels never render at once.
     expect(screen.queryByRole("group", { name: /World map/ })).not.toBeInTheDocument();
   });
@@ -170,17 +206,20 @@ describe("MapExplorer", () => {
   test("goes back to the country level without changing the country", async () => {
     render(<Harness level="world" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "← Back to China" }));
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "← Back to China" }));
 
+    await settle();
     expect(
-      await screen.findByRole("group", { name: "Map of China segmented by region" })
+      screen.getByRole("group", { name: "Map of China segmented by region" })
     ).toBeInTheDocument();
   });
 
   test("buys no China assets for a country that cannot use them", async () => {
     render(<Harness country="JP" />);
 
-    expect(await screen.findByText(/No map for Japan yet/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
     expect(requested(CHINA_TOPOLOGY_PATH)).toBe(false);
     // Nor the China-only city catalog, whose "unavailable" notice would
     // otherwise appear for a request nobody made.
@@ -201,7 +240,8 @@ describe("MapExplorer", () => {
   test("gives its back-out control the C5 tap target its siblings apply", async () => {
     render(<Harness level="world" />);
 
-    expect(await screen.findByRole("button", { name: "← Back to China" })).toHaveClass(
+    await settle();
+    expect(screen.getByRole("button", { name: "← Back to China" })).toHaveClass(
       "min-h-[var(--tap-min)]"
     );
   });
@@ -209,9 +249,11 @@ describe("MapExplorer", () => {
   test("gives its zoom-out control the C5 tap target", async () => {
     render(<Harness />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Zoom into North China/ }));
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Zoom into North China/ }));
 
-    expect(await screen.findByRole("button", { name: "← All China" })).toHaveClass(
+    await settle();
+    expect(screen.getByRole("button", { name: "← All China" })).toHaveClass(
       "min-h-[var(--tap-min)]"
     );
   });
@@ -227,7 +269,8 @@ describe("MapExplorer", () => {
     );
     render(<Harness />);
 
-    expect(await screen.findByRole("button", { name: "Try again" })).toHaveClass(
+    await settle();
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveClass(
       "min-h-[var(--tap-min)]"
     );
   });
@@ -235,13 +278,18 @@ describe("MapExplorer", () => {
   test("fetches the world topology only once the world level is open", async () => {
     const { unmount } = render(<Harness />);
 
-    await screen.findByRole("group", { name: "Map of China segmented by region" });
+    await settle();
+    screen.getByRole("group", { name: "Map of China segmented by region" });
     expect(requested("/world-countries.json")).toBe(false);
     unmount();
 
     render(<Harness level="world" />);
-    // Named by regex: the selected country's label carries a suffix.
-    await screen.findByRole("button", { name: /China/ });
+    await settle();
+    // The world map itself, not a button named /China/: once the level is fully
+    // settled both the back-out control and the country's own label match that
+    // regex. `findByRole` never saw the ambiguity because it resolved on the
+    // first match during an earlier render — it was reading a transient DOM.
+    screen.getByRole("group", { name: /World map/ });
     expect(requested("/world-countries.json")).toBe(true);
   });
 });
