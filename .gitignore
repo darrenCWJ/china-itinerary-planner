@@ -35,3 +35,6 @@ yarn-error.log*
 /data/app.db*
 /data/ingest.log
 /data/.ingest.lock
+
+# agent scratch: SDD ledgers, task briefs, review packages, generated schema dumps
+/.superpowers/

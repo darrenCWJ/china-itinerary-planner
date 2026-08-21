@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fujian-Kinmen Presentation Deck</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Plus+Jakarta+Sans:wght@300;400;600&display=swap');
+        
+        :root {
+            --brand-primary: #5c4033;
+            --brand-accent: #c2a382;
+            --slide-bg: #ffffff;
+            --app-bg: #f2f0eb;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--app-bg);
+            color: var(--brand-primary);
+            overflow: hidden;
+        }
+
+        h1, h2 {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .slide-container {
+            height: calc(100vh - 120px);
+            perspective: 1000px;
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            background: var(--slide-bg);
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+            padding: 4rem;
+            display: none;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .slide.active {
+            display: flex;
+            flex-direction: column;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .next-steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px;
+            height: 300px;
+            margin: 0 auto;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #e2e2e2;
+            width: 100%;
+            position: fixed;
+            bottom: 80px;
+            left: 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--brand-accent);
+            transition: width 0.3s ease;
+        }
+
+        .keyboard-hint {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-size: 10px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Chosen Palette: Earth & Parchment (Professional, high-contrast for visibility) -->
+<!-- Application Structure Plan: 
+    A slide-deck architecture designed for group presentation. 
+    1. Title Slide: Sets the tone and dates.
+    2. Daily Slides (1-11): Each focuses on one day with a clear "Activity vs Logistics" split.
+    3. Next Steps Slide: A summary of critical actions (Permits, HSR, Flights) with a visual booking timeline.
+    Interactive elements: Keyboard/Click navigation and a responsive booking priority chart.
+-->
+<!-- Visualization & Content Choices: 
+    - Line/Gantt-style Bar Chart (Chart.js): To visualize the "Booking Window" for HSR vs Flights.
+    - Day-by-Day Slides: Concise bullet points and transport icons.
+    - NO SVG/Mermaid: Icons replaced with Unicode symbols.
+-->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+<div class="h-screen w-screen flex flex-col p-6">
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-6">
+        <div>
+            <span class="text-xs font-bold tracking-[0.2em] text-gray-400 uppercase">Family Expedition Portfolio</span>
+            <h2 id="current-slide-title" class="text-xl">Introduction</h2>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span id="slide-number" class="text-sm font-mono font-bold">01 / 13</span>
+            <div class="flex space-x-2">
+                <button onclick="prevSlide()" class="p-2 rounded-full border border-gray-200 hover:bg-white transition-all">←</button>
+                <button onclick="nextSlide()" class="p-2 rounded-full border border-gray-200 hover:bg-white transition-all">→</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Slide Area -->
+    <div class="slide-container relative flex-grow" id="deck">
+        
+        <!-- Slide 0: Title -->
+        <div class="slide active" data-title="Expedition Overview">
+            <div class="flex-grow flex flex-col justify-center text-center">
+                <h1 class="text-6xl mb-6">Singapore to Fujian <br>& Kinmen Island</h1>
+                <p class="text-xl text-gray-500 mb-12">Year-End Journey: Dec 24, 2026 – Jan 03, 2027</p>
+                <div class="flex justify-center space-x-8 text-sm uppercase tracking-widest font-semibold">
+                    <div class="flex items-center"><span class="mr-2">👤</span> 4 Adults</div>
+                    <div class="flex items-center"><span class="mr-2">🧒</span> 3 Children</div>
+                    <div class="flex items-center"><span class="mr-2">⏳</span> 11 Days</div>
+                </div>
+            </div>
+            <div class="mt-auto pt-8 border-t border-gray-100 flex justify-between text-xs text-gray-400">
+                <span>VERIFIED: EXCLUDED RESTRICTED CITIES</span>
+                <span>DESTINATION: FUZHOU - WUYISHAN - QUANZHOU - KINMEN</span>
+            </div>
+        </div>
+
+        <!-- Slides 1-11: Content injected via JS -->
+        
+        <!-- Slide 12: Next Steps -->
+        <div class="slide" data-title="Critical Next Steps">
+            <h2 class="text-3xl mb-8">Preparation Roadmap</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <div class="space-y-6">
+                    <div class="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                        <div class="font-bold text-amber-900 mb-1">1. Documentation (ASAP)</div>
+                        <ul class="text-sm space-y-1 text-amber-800">
+                            <li>• Check Passport Validity (>6 months)</li>
+                            <li>• Apply for China Visa (if required)</li>
+                            <li>• Apply for Kinmen Exit-Entry Permit</li>
+                        </ul>
+                    </div>
+                    <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                        <div class="font-bold text-blue-900 mb-1">2. Transport Booking</div>
+                        <ul class="text-sm space-y-1 text-blue-800">
+                            <li>• Flight TR174/MF866 (Book by Oct 2026)</li>
+                            <li>• HSR 12306 Tickets (Exactly 14 days before travel)</li>
+                            <li>• 7-Seater Van Hire (Book by Nov 2026)</li>
+                        </ul>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4 text-center">Booking Urgency Timeline</h3>
+                    <div class="chart-container">
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="progress-bar">
+        <div class="progress-fill" id="progress-bar"></div>
+    </div>
+
+    <div class="keyboard-hint">Use Arrow Keys or Buttons to Navigate</div>
+</div>
+
+<script>
+    const itinerary = [
+        { day: 1, title: "FOC Arrival", detail: "Fuzhou arrival & hotel check-in. Christmas Eve walk at Yantai Mountain or Sanfang Qixiang.", icon: "✈️", transport: "Airport Van" },
+        { day: 2, title: "To Wuyishan", detail: "Midday HSR (1hr) to Wuyishan. Check into Sangu Resort. Evening walk at Song Street.", icon: "🚄", transport: "HSR G-Train" },
+        { day: 3, title: "Nature Immersion", detail: "Morning Nine-Bend Stream Rafting. Afternoon Dahongpao Tea Valley hike (easy paved paths).", icon: "🛶", transport: "Park Shuttle" },
+        { day: 4, title: "Scenic Transfer", detail: "Morning views from Tianyou Peak. Afternoon HSR to Quanzhou (2hrs). West Street snacks.", icon: "🚄", transport: "HSR G-Train" },
+        { day: 5, title: "Heritage Day", detail: "Kaiyuan Temple history & Xunpu Village 'Flower Crown' culture. Oyster shell houses.", icon: "🌸", transport: "Private Van" },
+        { day: 6, title: "Kinmen Island", detail: "Ferry to Kinmen. Visit Zhaishan Tunnel & Juguang Tower. Stay in traditional courtyard B&B.", icon: "⛴️", transport: "Ferry + Van" },
+        { day: 7, title: "Artillery & Return", detail: "Mt. Lion Artillery drill & Shamei Morocco. Afternoon ferry back to Quanzhou.", icon: "💥", transport: "Ferry + Van" },
+        { day: 8, title: "NYE Countdown", detail: "Choice A: Quanzhou Ocean Kingdom Fireworks | Choice B: Fuzhou Riverfront Gala.", icon: "🎆", transport: "Flexible" },
+        { day: 9, title: "2027 Welcome", detail: "New Year's Day at Fudao forest walkway (stroller friendly) & Fortune Street market.", icon: "🚶", transport: "Private Van" },
+        { day: 10, title: "Science & Culture", detail: "Fujian Museum & Science Museum (great for kids). Farewell banquet dinner.", icon: "🔬", transport: "Private Van" },
+        { day: 11, title: "Homebound", detail: "Transfer to FOC Airport. Flight back to Singapore. Late afternoon arrival.", icon: "✈️", transport: "Airport Van" }
+    ];
+
+    let currentIdx = 0;
+    const deck = document.getElementById('deck');
+
+    function createSlides() {
+        itinerary.forEach(item => {
+            const slide = document.createElement('div');
+            slide.className = 'slide';
+            slide.setAttribute('data-title', `Day ${item.day}: ${item.title}`);
+            slide.innerHTML = `
+                <div class="flex justify-between items-center mb-12">
+                    <h2 class="text-5xl">Day ${item.day}</h2>
+                    <div class="text-7xl opacity-20">${item.icon}</div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                    <div>
+                        <h3 class="text-amber-700 font-bold uppercase tracking-widest text-xs mb-4">Core Experience</h3>
+                        <p class="text-2xl leading-relaxed text-gray-800">${item.detail}</p>
+                    </div>
+                    <div class="space-y-8">
+                        <div>
+                            <h3 class="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Transport Mode</h3>
+                            <div class="flex items-center text-lg font-semibold">
+                                <span class="mr-2">📍</span> ${item.transport}
+                            </div>
+                        </div>
+                        <div class="p-6 bg-gray-50 rounded-2xl">
+                            <h3 class="text-gray-400 font-bold uppercase tracking-widest text-xs mb-4">Group Tip</h3>
+                            <p class="text-sm italic text-gray-600">
+                                ${item.day === 6 ? "Carry small denominations of NTD cash for snacks in Kinmen." : "Ensure kids have charged devices for the 2hr HSR journey today."}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-auto pt-8 border-t border-gray-100 flex justify-between text-xs font-mono text-gray-400">
+                    <span>DATE: ${item.day < 9 ? 'DEC ' + (23 + item.day) : 'JAN ' + (item.day - 8)}, 2026/27</span>
+                    <span>EXPEDITION PHASE: ${item.day < 4 ? 'Mountains' : (item.day < 8 ? 'Heritage' : 'Metropolis')}</span>
+                </div>
+            `;
+            // Insert before the Next Steps slide
+            deck.insertBefore(slide, deck.lastElementChild);
+        });
+    }
+
+    function updateView() {
+        const slides = document.querySelectorAll('.slide');
+        slides.forEach((s, i) => {
+            s.classList.toggle('active', i === currentIdx);
+        });
+        
+        const currentSlide = slides[currentIdx];
+        document.getElementById('current-slide-title').innerText = currentSlide.getAttribute('data-title');
+        document.getElementById('slide-number').innerText = `${String(currentIdx + 1).padStart(2, '0')} / ${slides.length}`;
+        document.getElementById('progress-bar').style.width = `${((currentIdx + 1) / slides.length) * 100}%`;
+    }
+
+    function nextSlide() {
+        const slides = document.querySelectorAll('.slide');
+        if (currentIdx < slides.length - 1) {
+            currentIdx++;
+            updateView();
+        }
+    }
+
+    function prevSlide() {
+        if (currentIdx > 0) {
+            currentIdx--;
+            updateView();
+        }
+    }
+
+    function initTimelineChart() {
+        const ctx = document.getElementById('timelineChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Flights', 'Ferry Permit', 'HSR 12306', 'Van Hire', 'Kinmen B&B'],
+                datasets: [{
+                    label: 'Months Before Travel',
+                    data: [6, 2.5, 0.5, 2, 3],
+                    backgroundColor: ['#5c4033', '#c2a382', '#d97706', '#c2a382', '#5c4033'],
+                    borderRadius: 12
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Time Lead (Months)', font: { size: 10 } },
+                        grid: { display: false } 
+                    },
+                    y: { grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+        if (e.key === 'ArrowLeft') prevSlide();
+    });
+
+    window.onload = () => {
+        createSlides();
+        initTimelineChart();
+        updateView();
+    };
+</script>
+</body>
+</html>
