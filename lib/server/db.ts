@@ -82,8 +82,9 @@ CREATE TABLE IF NOT EXISTS trip_settings (
   currency_settings TEXT
 );
 
--- better-auth v1.6.29 schema (generated 2026-08-15 via @better-auth/cli).
--- Regenerate when bumping the pinned better-auth version.
+-- better-auth v1.7.1 schema. Regenerate when bumping the pinned version, and
+-- pair any new column with a backfill below: these are CREATE TABLE IF NOT
+-- EXISTS, so an existing database never picks a new column up on its own.
 CREATE TABLE IF NOT EXISTS user (
   id TEXT NOT NULL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -112,6 +113,9 @@ CREATE TABLE IF NOT EXISTS account (
   id TEXT NOT NULL PRIMARY KEY,
   accountId TEXT NOT NULL,
   providerId TEXT NOT NULL,
+  -- Added in better-auth 1.7.1. Not decorative: sign-in *matches* on it, so a
+  -- row without the right value cannot authenticate. See migrateAuthSchema.
+  issuer TEXT NOT NULL,
   userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
   accessToken TEXT,
   refreshToken TEXT,
@@ -154,6 +158,40 @@ CREATE TABLE IF NOT EXISTS member_accounts (
 );
 `;
 
+/**
+ * Additive migrations for databases that predate a schema change.
+ *
+ * SCHEMA is `CREATE TABLE IF NOT EXISTS` throughout, which is why it cannot
+ * carry these: an existing table is left exactly as it was found, so every
+ * column added after a database was first created has to be applied here too.
+ *
+ * The one that forced this to exist: better-auth 1.7.1 added `account.issuer`
+ * and made sign-in *match* on it —
+ * `accounts.find(a => a.providerId === "credential" && a.issuer === "local:credential" && …)`.
+ * A column added but left empty therefore fails every existing member's login
+ * with "invalid email or password" while they type the correct one, which is
+ * why the backfill is part of the same step rather than a follow-up.
+ *
+ * `local:credential` is not a guess: better-auth derives a local issuer as
+ * `local:` + `encodeURIComponent(providerId)`, and `credential` is the only
+ * provider this app enables (email+password, no OAuth), so it is the only
+ * value an existing row can correctly take.
+ *
+ * SQLite cannot add a NOT NULL column without a DEFAULT, and a default here
+ * would be a wrong value waiting to be applied silently to some later row, so
+ * a migrated database ends up nullable-but-fully-populated where a fresh one
+ * carries the NOT NULL that better-auth's own schema declares.
+ */
+function migrateAuthSchema(db: Database.Database): void {
+  const columns = db.prepare("PRAGMA table_info(account)").all() as { name: string }[];
+  if (columns.some((column) => column.name === "issuer")) return;
+  db.exec("ALTER TABLE account ADD COLUMN issuer TEXT");
+  db.prepare("UPDATE account SET issuer = ? WHERE issuer IS NULL AND providerId = ?").run(
+    "local:credential",
+    "credential"
+  );
+}
+
 export function getDb(): Database.Database {
   if (!globalThis.__cipDb) {
     fs.mkdirSync(path.dirname(dbPath()), { recursive: true });
@@ -161,6 +199,7 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     db.exec(SCHEMA);
+    migrateAuthSchema(db);
     globalThis.__cipDb = db;
   }
   return globalThis.__cipDb;
