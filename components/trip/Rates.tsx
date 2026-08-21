@@ -6,8 +6,24 @@ type Props = {
   /** The destination currency, or null when the country has no researched
    * profile yet (see `lib/tripShared.ts`'s `tripCurrency`). Never a guess. */
   tripCurrency: string | null;
-  /** `currencySettings.home` — the currency the pair is priced against. */
+  /** `currencySettings.home` — gates the empty state and the fetch, and is
+   * the one currency of every pair that is *not* priced against `pivot`. */
   homeCurrency: string | null;
+  /**
+   * `currencyPivot(currencySettings)` — the same currency
+   * `CurrencySettingsEditor`'s rate rows are priced against (`MoneyTab.tsx`'s
+   * "1 {c} = [___] {pivot}" label). Every rate this panel shows is fetched
+   * and rendered against this currency, never `homeCurrency`, so the number
+   * a member reads here is always the number the rate editor wants — for the
+   * headline pair *and* for every J-C5 extra currency alike. Before this,
+   * every row was priced against `homeCurrency`: that coincided with the
+   * editor's pivot-relative field for the headline pair (because the trip's
+   * pivot is usually the destination currency, which is also what the
+   * headline pair's "other" side already was) but was quietly wrong for any
+   * extra currency, where copying the panel's number into the editor stored
+   * a rate off by roughly the home/pivot cross-rate.
+   */
+  pivot: string;
   /**
    * Currencies actually present in the trip's expenses, beyond the headline
    * pair (J-C5) — a layover or cross-border spend the member still needs a
@@ -92,14 +108,17 @@ function PairLines({
   );
 }
 
-function RatesPanel({ tripCurrency, homeCurrency, extraCurrencies, isMember }: Props) {
+function RatesPanel({ tripCurrency, homeCurrency, pivot, extraCurrencies, isMember }: Props) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
 
   useEffect(() => {
+    // Still gated on a home currency being set — there's nothing personal to
+    // price against otherwise (unchanged UX) — but the request itself is
+    // keyed by `pivot`, not `homeCurrency` (see the Props doc above).
     if (!homeCurrency) return;
     let live = true;
     setState({ status: "loading" });
-    fetch(`/api/rates?base=${encodeURIComponent(homeCurrency)}`, { cache: "no-store" })
+    fetch(`/api/rates?base=${encodeURIComponent(pivot)}`, { cache: "no-store" })
       .then(async (res) => {
         if (!live) return;
         // The 400 and 502 bodies both carry `{ error }`, but neither is
@@ -119,7 +138,7 @@ function RatesPanel({ tripCurrency, homeCurrency, extraCurrencies, isMember }: P
     return () => {
       live = false;
     };
-  }, [homeCurrency]);
+  }, [homeCurrency, pivot]);
 
   if (!homeCurrency) {
     return (
@@ -160,8 +179,8 @@ function RatesPanel({ tripCurrency, homeCurrency, extraCurrencies, isMember }: P
 
       {state.status === "rejected" && (
         <p className="text-[var(--seal)]">
-          {homeCurrency} isn&apos;t recognised by our rates provider, so we can&apos;t look up
-          its rate.
+          {pivot} isn&apos;t recognised by our rates provider, so we can&apos;t look up its
+          rate.
         </p>
       )}
 
@@ -185,13 +204,21 @@ function RatesPanel({ tripCurrency, homeCurrency, extraCurrencies, isMember }: P
             </p>
           )}
           <ul className="space-y-1">
-            {tripCurrency && tripCurrency !== homeCurrency && (
-              <PairLines home={homeCurrency} other={tripCurrency} rates={state.data.rates} />
+            {/*
+              Every row is priced against `pivot`, not `homeCurrency` — see
+              the Props doc on `pivot` above for why. `PairLines`' `home` slot
+              is always `pivot` here; its `other` slot is whichever currency
+              this row is about, so the inverse clause it renders ("1 {other}
+              = {rate} {pivot}") is always the exact number the rate editor's
+              "1 {other} = [___] {pivot}" field wants.
+            */}
+            {homeCurrency !== pivot && (
+              <PairLines home={pivot} other={homeCurrency} rates={state.data.rates} />
             )}
             {extraCurrencies
-              .filter((c) => c !== homeCurrency && c !== tripCurrency)
+              .filter((c) => c !== homeCurrency && c !== pivot)
               .map((c) => (
-                <PairLines key={c} home={homeCurrency} other={c} rates={state.data.rates} />
+                <PairLines key={c} home={pivot} other={c} rates={state.data.rates} />
               ))}
           </ul>
           <p className="text-xs text-[var(--ink-2)]">
