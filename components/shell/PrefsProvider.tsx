@@ -21,7 +21,7 @@ import {
   type UserPrefs,
 } from "@/lib/prefs";
 
-const DARK_QUERY = "(prefers-color-scheme: dark)";
+export const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /** The stored preference is one of three; the ramp is one of two. */
 function resolveTheme(pref: ThemePref, systemPrefersDark: boolean): AccentTheme {
@@ -86,10 +86,13 @@ export function PrefsProvider({
     });
   }, []);
 
-  // `false` until the effect corrects it, and deliberately so: the inline
-  // script in app/layout has already set the attribute from the same cookie and
-  // the same media query before React ran, so the one-frame default is never
-  // painted. Reading matchMedia during render would break the server pass.
+  // `false` until the passive effect below corrects it. This value only ever
+  // feeds the `theme` used during render (context + JSX): the first client
+  // render must agree with the server-rendered "light" default or hydration
+  // genuinely mismatches, so it has to start false regardless of the real OS
+  // preference. The DOM-writing layout effect further down does NOT trust
+  // this value — see its own comment — so this staleness never reaches the
+  // painted page.
   const [systemDark, setSystemDark] = useState(false);
 
   useEffect(() => {
@@ -102,21 +105,26 @@ export function PrefsProvider({
 
   const theme = resolveTheme(prefs.theme, systemDark);
 
-  const accentVars = useMemo(
-    () => resolveAccentVars(prefs, country, theme),
-    [prefs, country, theme]
-  );
-
   // useLayoutEffect, not useEffect: this runs before paint, so it also repairs
   // the attribute after React's dev-mode Strict remount resets <html> to the
   // attributes it manages from JSX, clearing what the inline script set.
+  //
+  // It re-reads matchMedia directly instead of trusting `theme` above. React
+  // guarantees layout effects flush before paint, but gives no such guarantee
+  // for the passive effect that corrects `systemDark` — so on mount, `theme`
+  // can still be the render's "light" default for this commit even when the
+  // OS prefers dark. Reading the query live here means this effect never
+  // re-paints the light ramp over the dark attribute the inline script
+  // already set correctly. `systemDark` stays in the dependency array (unused
+  // in the body) purely so a mid-session OS change still re-runs this effect.
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.setAttribute("data-theme", theme);
-    for (const [name, value] of Object.entries(accentVars)) {
+    const liveTheme = resolveTheme(prefs.theme, window.matchMedia(DARK_QUERY).matches);
+    root.setAttribute("data-theme", liveTheme);
+    for (const [name, value] of Object.entries(resolveAccentVars(prefs, country, liveTheme))) {
       root.style.setProperty(name, value);
     }
-  }, [accentVars, theme]);
+  }, [prefs, country, systemDark]);
 
   const value = useMemo(() => ({ prefs, setPrefs, theme }), [prefs, setPrefs, theme]);
 
