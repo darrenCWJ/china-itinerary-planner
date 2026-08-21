@@ -108,18 +108,27 @@ const SYMBOLS: Record<string, string> = {
   MYR: "RM",
 };
 
-/** Minor units → display string, e.g. 124050 CNY → "¥1,240.50". */
+/**
+ * Minor units → display string: 124050 CNY → "¥1,240.50", 1000 JPY →
+ * "JPY 1,000", 1234567 KWD → "KWD 1,234.567". How many decimals to show is
+ * the currency's business, not a fixed factor of 100.
+ */
 export function formatMinor(amount: number, currency: string): string {
+  const digits = minorUnitDigits(currency);
+  const unit = 10 ** digits;
   const sign = amount < 0 ? "-" : "";
   const abs = Math.abs(amount);
-  const major = Math.floor(abs / 100)
+  const major = Math.floor(abs / unit)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const cents = (abs % 100).toString().padStart(2, "0");
+  // A currency with no minor unit has nothing to put after a point, so it
+  // gets no point either.
+  const fraction =
+    digits === 0 ? "" : `.${(abs % unit).toString().padStart(digits, "0")}`;
   const symbol = SYMBOLS[currency];
   return symbol !== undefined
-    ? `${sign}${symbol}${major}.${cents}`
-    : `${sign}${currency} ${major}.${cents}`;
+    ? `${sign}${symbol}${major}${fraction}`
+    : `${sign}${currency} ${major}${fraction}`;
 }
 
 /** "124.5" → 12450 minor units. Null when not a plain positive decimal. */
