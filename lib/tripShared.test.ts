@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   applyCurrencySettingsUpdate,
-  DEFAULT_CURRENCY_SETTINGS,
   initialCurrencySettings,
   tripCountry,
   tripCurrency,
@@ -70,11 +69,15 @@ describe("initialCurrencySettings", () => {
     expect(initialCurrencySettings("JP")).toEqual({ home: null, rates: {} });
   });
 
-  test("never returns the shared DEFAULT_CURRENCY_SETTINGS reference", () => {
-    // A mutated shared default would poison every later trip that falls
-    // back to it — identity, not just deep equality, is the guarantee.
-    expect(initialCurrencySettings("CN")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
-    expect(initialCurrencySettings("JP")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
+  test("never returns the same object reference across calls", () => {
+    // A shared, module-level instance would let one caller's in-place
+    // mutation poison every other trip that reads the same reference —
+    // identity, not just deep equality, is the guarantee. There is no
+    // longer a shared default constant to compare against directly (it was
+    // removed as an orphan once every caller stopped falling back to it),
+    // so this proves freshness the direct way: two calls never alias.
+    expect(initialCurrencySettings("CN")).not.toBe(initialCurrencySettings("CN"));
+    expect(initialCurrencySettings("JP")).not.toBe(initialCurrencySettings("JP"));
   });
 });
 

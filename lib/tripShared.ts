@@ -134,8 +134,6 @@ export interface CurrencySettings {
   pivot?: string;
 }
 
-export const DEFAULT_CURRENCY_SETTINGS: CurrencySettings = { home: null, rates: {} };
-
 /**
  * The pivot a trip's rates are expressed in. The only way callers should read
  * it: settings saved before the field existed are CNY-relative, so an absent
@@ -147,9 +145,14 @@ export function currencyPivot(settings: CurrencySettings): string {
 
 /**
  * The currency settings a freshly created trip should start with. Always a
- * fresh object — never `DEFAULT_CURRENCY_SETTINGS` itself, since a caller
- * that later mutated that shared reference would poison every trip that
- * falls back to it.
+ * fresh object — never a shared module-level instance reused across calls,
+ * since a caller that later mutated one returned settings object in place
+ * would otherwise poison every other trip that reads the same reference.
+ * (There used to be a shared `DEFAULT_CURRENCY_SETTINGS` constant exported
+ * for exactly that fallback; it was removed once nothing constructed a
+ * trip's settings from it any more — see the store fallbacks in
+ * `lib/server/tripStore.ts` / `pgStore.ts`, which build their own fresh
+ * literal instead.)
  *
  * The pivot is stamped only when `isCurrencyResearched` says the country's
  * currency is a fact rather than `neutralProfile`'s admitted USD placeholder

@@ -274,10 +274,10 @@ export async function getTrip(
     expenses: expenseRows.map((r) => r.data as Expense),
     settlements: settlementRows.map((r) => r.data as Settlement),
     journal: journalRows.map((r) => r.data as JournalEntry),
-    // A fresh object when no settings row exists, never the shared
-    // DEFAULT_CURRENCY_SETTINGS reference — a caller that ever mutated a
-    // returned settings object in place would otherwise poison the fallback
-    // every other trip with no settings row reads.
+    // A fresh object literal when no settings row exists, never a shared
+    // module-level instance — a caller that ever mutated a returned settings
+    // object in place would otherwise poison the fallback every other trip
+    // with no settings row reads.
     currencySettings:
       (settingsRows[0]?.currency_settings as CurrencySettings | null | undefined) ??
       { home: null, rates: {} },
