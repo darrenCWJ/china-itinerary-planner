@@ -186,8 +186,17 @@ export function TrackerTab({
         <p className="mt-1 font-display text-2xl font-bold">
           {todayPlan ? todayPlan.destinationName : data.tripName}
         </p>
-        <div className="mt-3 h-2 rounded-full bg-white/20" aria-hidden>
-          <div className="h-full rounded-full bg-white" style={{ width: `${pct}%` }} />
+        {/*
+          Track and fill are `--paper`, not `white`. The band behind them is a
+          mix of two tokens that both invert, so it is dark in light and light in
+          dark; a literal white fill holds 6.72:1 on it in light but only 1.67:1
+          in dark, where it all but disappears. The fill's edge is the only thing
+          encoding the percentage, so SC 1.4.11's 3:1 applies to it. `--paper`
+          inverts with the band and is `#ffffff` in light, leaving this ramp
+          untouched while taking dark to 10.54:1.
+        */}
+        <div className="mt-3 h-2 rounded-full bg-[var(--paper)]/20" aria-hidden>
+          <div className="h-full rounded-full bg-[var(--paper)]" style={{ width: `${pct}%` }} />
         </div>
         <p className="mt-1 text-xs text-[var(--line-1)]">
           {overall.done} of {overall.total} activities ticked · {pct}%

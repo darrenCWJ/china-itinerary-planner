@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  type AccentTheme,
   DARK_PAPER,
   accentColor,
   accentHue,
@@ -365,5 +366,136 @@ describe("globals.css accent defaults", () => {
   ] as const)("%s defaults are China's accent at the pinned ramp", (theme, selector) => {
     expect(varIn(selector, "--accent-ink")).toBe(accentColor("CN", theme, "ink"));
     expect(varIn(selector, "--accent-fill")).toBe(accentColor("CN", theme, "fill"));
+  });
+});
+
+/**
+ * What may be painted *on* the hero band —
+ * `color-mix(in oklab, var(--accent-ink) 85%, var(--ink-0))`.
+ *
+ * Both of the band's ingredients invert between ramps, so the band does too:
+ * dark in light, light in dark. That makes it the exact opposite of
+ * `WorldMap`'s frozen `#17263b` ground or anything behind `CountryHero`'s
+ * always-on `--scrim`, and it is why a literal `bg-white` on it can only ever
+ * be right in one ramp.
+ *
+ * These cases are the arithmetic behind the source gate in lib/tokens.test.ts,
+ * kept here because this is where the repo does colour. The band is rebuilt
+ * from the tokens in app/globals.css rather than from restated literals, on the
+ * same principle as the ramp assertions above: the CSS and the test cannot
+ * drift apart.
+ */
+describe("surfaces on the hero band", () => {
+  const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+
+  const varIn = (selector: string, name: string): string => {
+    const open = css.indexOf("{", css.indexOf(selector));
+    const block = css.slice(open + 1, css.indexOf("}", open));
+    const m = new RegExp(`${name}:\s*([^;]+);`).exec(block);
+    if (!m) throw new Error(`no ${name} under ${selector}`);
+    return m[1].trim();
+  };
+
+  const SELECTOR = { light: ":root", dark: '[data-theme="dark"]' } as const;
+  const token = (theme: AccentTheme, name: string) => varIn(SELECTOR[theme], name);
+
+  type RGB = [number, number, number];
+  const fromHex = (h: string): RGB =>
+    [h.slice(1, 3), h.slice(3, 5), h.slice(5, 7)].map((p) => parseInt(p, 16) / 255) as RGB;
+  const toLin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+
+  /**
+   * sRGB to OKLab. This is the one piece of colour maths lib/accent does not
+   * already export — it only ever needs the forward direction. These are
+   * Ottosson's forward matrices, the exact inverse of `oklchToSrgb`, and the
+   * round-trip case below is what proves they agree with it rather than being
+   * a second, subtly different definition of the space.
+   */
+  const toOklab = ([r, g, b]: RGB): RGB => {
+    const [R, G, B] = [toLin(r), toLin(g), toLin(b)];
+    const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+    const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+    const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+    return [
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    ];
+  };
+
+  /** OKLab back to sRGB, handed to lib/accent so the conversion stays single-sourced. */
+  const fromOklab = ([L, a, b]: RGB): RGB =>
+    oklchToSrgb(L, Math.hypot(a, b), (Math.atan2(b, a) * 180) / Math.PI);
+
+  const accentInk = (theme: AccentTheme, hue: number): RGB =>
+    oklchToSrgb(lightnessFor(theme, "ink") / 100, chromaFor(theme, "ink"), hue);
+
+  /** `color-mix(in oklab, var(--accent-ink) 85%, var(--ink-0))`, per the markup. */
+  const band = (theme: AccentTheme, hue: number): RGB => {
+    const a = toOklab(accentInk(theme, hue));
+    const b = toOklab(fromHex(token(theme, "--ink-0")));
+    return fromOklab([0, 1, 2].map((i) => a[i] * 0.85 + b[i] * 0.15) as RGB);
+  };
+
+  const paper = (theme: AccentTheme): RGB => fromHex(token(theme, "--paper"));
+  const WHITE_LITERAL: RGB = [1, 1, 1];
+
+  /** Worst case over the hue circle, since the accent is per country. */
+  const worst = (theme: AccentTheme, f: (hue: number) => number): number => {
+    let lowest = Infinity;
+    for (let hue = 0; hue < 360; hue += 5) lowest = Math.min(lowest, f(hue));
+    return lowest;
+  };
+
+  test("toOklab round-trips through lib/accent's oklchToSrgb", () => {
+    for (const sample of [[1, 1, 1], [0, 0, 0], [0.09, 0.15, 0.23], [0.79, 0.32, 0.28]] as RGB[]) {
+      for (const [i, channel] of fromOklab(toOklab(sample)).entries()) {
+        expect(channel).toBeCloseTo(sample[i], 5);
+      }
+    }
+  });
+
+  /**
+   * The defect, stated as an assertion so it cannot quietly come back: an
+   * opaque literal white is a passing surface in one ramp and a failing one in
+   * the other, against the same band.
+   */
+  test("a literal white surface passes SC 1.4.11 on the band in light and fails it in dark", () => {
+    expect(worst("light", (h) => contrastRatio(WHITE_LITERAL, band("light", h)))).toBeGreaterThanOrEqual(3);
+    expect(worst("dark", (h) => contrastRatio(WHITE_LITERAL, band("dark", h)))).toBeLessThan(3);
+  });
+
+  /**
+   * `--paper` is the repair, and it is free: its light value *is* `#ffffff`, so
+   * every migrated surface renders byte-identically in the ramp that already
+   * worked. Asserted as an equality on the token, not on the ratio, because
+   * that is the actual guarantee.
+   */
+  test("--paper is exactly the literal it replaces in the light ramp", () => {
+    expect(fromHex(token("light", "--paper"))).toEqual(WHITE_LITERAL);
+  });
+
+  /** The tracker's progress track and fill, and the print button's face. */
+  test("a --paper surface clears SC 1.4.11 on the band at every hue, in both ramps", () => {
+    for (const theme of ["light", "dark"] as const) {
+      expect(
+        worst(theme, (h) => contrastRatio(paper(theme), band(theme, h))),
+        `--paper on the band in ${theme}`
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  /**
+   * The print button's label: `text-[var(--accent-ink)]` on that same face.
+   * 4.5, not 3.0 — it is 14px at weight 600, which is not large text, so SC
+   * 1.4.3 applies in full.
+   */
+  test("--accent-ink text clears SC 1.4.3 on a --paper face at every hue, in both ramps", () => {
+    for (const theme of ["light", "dark"] as const) {
+      expect(
+        worst(theme, (h) => contrastRatio(accentInk(theme, h), paper(theme))),
+        `--accent-ink on --paper in ${theme}`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
