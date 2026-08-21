@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
-import { fitForPlace, fitForRegion, NEUTRAL_FIT, type MapPlace } from "./mapTypes";
+import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
 
 /**
  * What is asserted here is the coordination the component exists for: which
@@ -235,10 +235,13 @@ describe("fit lookups degrade instead of throwing on a foreign region label", ()
     // the REGION_MONTHS lookup this test exists to cover.
     const abroad = { ...A_CATALOG_PLACE, region: "Kansai", bestSeasons: undefined };
     expect(() => fitForPlace(abroad, 4)).not.toThrow();
-    expect(fitForPlace(abroad, 4)).toBe(NEUTRAL_FIT);
+    // Literal, not NEUTRAL_FIT: the constant is what's under test here, so
+    // comparing against itself can't catch it regressing from "unknown" back
+    // to "poor" — the exact distinction this fit exists to preserve.
+    expect(fitForPlace(abroad, 4)).toBe("unknown");
   });
 
   test("fitForRegion degrades on a label outside China's seven", () => {
-    expect(fitForRegion("Kansai", 4)).toBe(NEUTRAL_FIT);
+    expect(fitForRegion("Kansai", 4)).toBe("unknown");
   });
 });

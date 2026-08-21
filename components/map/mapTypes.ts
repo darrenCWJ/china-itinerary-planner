@@ -79,16 +79,17 @@ export function fitForRegion(region: string, month: number): MonthFit {
  * and `great` at 3.74 — so none needed lifting. Lifting them would in fact cost
  * light, where those two sit at 5.06 and 5.02 against white.
  *
- * `unknown` is the one weak swatch, and it is weak in *light* (1.61 on white),
- * which is a pre-existing issue the dark ramp neither caused nor worsened — on
- * dark paper it reads at 11.65.
+ * `unknown` was added by Task 35 (this PR) alongside the `NEUTRAL_FIT` split
+ * from `poor`, and shipped at 1.61:1 on white — a new light-mode failure, not
+ * an inherited one. Darkened to `#8a939f` (3.11 on white, matching `poor`'s
+ * weight; 6.05 on dark paper) to actually clear the legend's contrast bar.
  */
 export const FIT_COLORS: Record<MonthFit, string> = {
   great: "#2f7d54",
   ok: "#b98a2f",
   poor: "#8f9bab",
   avoid: "#c93b2e",
-  unknown: "#c7ccd4",
+  unknown: "#8a939f",
 };
 
 export const FIT_LABELS: Record<MonthFit, string> = {
