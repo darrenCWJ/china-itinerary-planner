@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { majorToMinor } from "@/lib/money";
+import { majorToMinor, minorToMajorInput, minorUnitDigits } from "@/lib/money";
 import { todayIso } from "@/lib/tracker";
 import type { Expense, ExpenseCategory } from "@/lib/tripShared";
 
@@ -27,6 +27,19 @@ export const CATEGORIES: { id: ExpenseCategory; label: string; emoji: string }[]
 
 const QUICK_CURRENCIES = ["CNY", "SGD"];
 
+/**
+ * A currency-appropriate amount for the "couldn't parse that" hint: "128 or
+ * 128.50" for a two-decimal currency, "128.500" for three, plain "128" for a
+ * currency with no minor unit at all. A yen user told to enter cents while
+ * being refused for entering them is the least helpful version of this
+ * message, so the example now follows the same exponent majorToMinor checks
+ * against, instead of a hardcoded two-decimal literal.
+ */
+function amountHint(currency: string): string {
+  const digits = minorUnitDigits(currency);
+  return digits === 0 ? "128" : `128 or 128.${"5".padEnd(digits, "0")}`;
+}
+
 type Props = {
   members: string[];
   myName: string;
@@ -41,7 +54,9 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
   const [date, setDate] = useState(initial?.date ?? todayIso());
   const [title, setTitle] = useState(initial?.title ?? "");
   const [category, setCategory] = useState<ExpenseCategory>(initial?.category ?? "food");
-  const [amount, setAmount] = useState(initial ? (initial.amount / 100).toFixed(2) : "");
+  const [amount, setAmount] = useState(
+    initial ? minorToMajorInput(initial.amount, initial.currency) : ""
+  );
   const [currencyPick, setCurrencyPick] = useState(
     initialQuick ? (initial?.currency ?? "CNY") : "other"
   );
@@ -66,7 +81,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
       .toUpperCase();
     const minor = majorToMinor(amount, currency);
     if (!title.trim()) return setError("Give the expense a name.");
-    if (minor === null) return setError("Enter an amount like 128 or 128.50.");
+    if (minor === null) return setError(`Enter an amount like ${amountHint(currency)}.`);
     if (!/^[A-Z]{3}$/.test(currency)) return setError("Currency must be a 3-letter code.");
     if (splitAmong.length === 0) return setError("Pick at least one person to split among.");
     setSaving(true);
