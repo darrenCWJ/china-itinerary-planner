@@ -17,10 +17,11 @@ import { TripSwitcher } from "./TripSwitcher";
  * Mounted in the root layout as of Task 5, which retired `AppHeader` and moved
  * its brand mark and `AccountChip` here.
  *
- * Colours come from the PR1 token set (`--surf-*`, `--ink-*`, `--line-*`) via
- * `var()` rather than Tailwind utilities: PR1 deliberately left those tokens out
- * of `@theme` so they could not collide with the retiring palette, and Task 33
- * owns that wiring. Writing `var()` here keeps this task from pre-empting it.
+ * Colours come from the semantic token set (`--surf-*`, `--ink-*`, `--line-*`)
+ * via `var()` rather than Tailwind utilities. The old `@theme` colour palette
+ * these tokens once had to avoid colliding with is gone (PR3), so `var()` is
+ * simply how colour is expressed here now — and it is what lets the ramp swap
+ * under `data-theme="dark"`.
  */
 
 interface Props {
