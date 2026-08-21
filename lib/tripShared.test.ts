@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { DEFAULT_CURRENCY_SETTINGS, initialCurrencySettings, tripCountry, tripCurrency } from "./tripShared";
-import type { TripData } from "./tripShared";
+import {
+  applyCurrencySettingsUpdate,
+  DEFAULT_CURRENCY_SETTINGS,
+  initialCurrencySettings,
+  tripCountry,
+  tripCurrency,
+} from "./tripShared";
+import type { CurrencySettings, TripData } from "./tripShared";
 import type { TripInput } from "./itinerary";
 import type { Destination } from "./types";
 
@@ -69,6 +75,39 @@ describe("initialCurrencySettings", () => {
     // back to it — identity, not just deep equality, is the guarantee.
     expect(initialCurrencySettings("CN")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
     expect(initialCurrencySettings("JP")).not.toBe(DEFAULT_CURRENCY_SETTINGS);
+  });
+});
+
+describe("applyCurrencySettingsUpdate", () => {
+  test("Critical 1: a rate save on a pivot-stamped trip does not erase the pivot", () => {
+    // This is the exact shape TripView's saveCurrency sends: home + rates,
+    // no pivot — the client never sends one. The trip was stamped "JPY" at
+    // creation; saving a rate must not silently drop back to CNY-relative.
+    const existing: CurrencySettings = { home: null, rates: {}, pivot: "JPY" };
+    const incoming = { home: "SGD", rates: { SGD: 110.4 } };
+
+    const result = applyCurrencySettingsUpdate(existing, incoming);
+
+    expect(result).toEqual({ home: "SGD", rates: { SGD: 110.4 }, pivot: "JPY" });
+  });
+
+  test("an explicit pivot in the request still wins over the stored one", () => {
+    const existing: CurrencySettings = { home: null, rates: {}, pivot: "JPY" };
+    const incoming = { home: "SGD", rates: {}, pivot: "USD" };
+
+    expect(applyCurrencySettingsUpdate(existing, incoming).pivot).toBe("USD");
+  });
+
+  test("a legacy trip with no stored pivot stays pivot-free after a save", () => {
+    // The route must never introduce a pivot key that wasn't there before —
+    // that would silently change what an old trip's rates mean.
+    const existing: CurrencySettings = { home: "SGD", rates: { SGD: 5.2 } };
+    const incoming = { home: "SGD", rates: { SGD: 5.3 } };
+
+    const result = applyCurrencySettingsUpdate(existing, incoming);
+
+    expect(result).toEqual({ home: "SGD", rates: { SGD: 5.3 } });
+    expect("pivot" in result).toBe(false);
   });
 });
 

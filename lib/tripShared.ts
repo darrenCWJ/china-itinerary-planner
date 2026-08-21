@@ -164,6 +164,38 @@ export function initialCurrencySettings(countryCode: CountryCode): CurrencySetti
   return { home: null, rates: {}, pivot: getCountryProfile(countryCode).currency };
 }
 
+/**
+ * What the currency-settings PUT route should persist, given what a trip
+ * already has stored and what the request body sent.
+ *
+ * `home`/`rates` always come from the request — that's the whole point of
+ * the save. `pivot` is different: it is never client-editable (no UI sends
+ * one — see `CurrencySettingsEditor`), so the request omits it on every
+ * real save. Because the store replaces the whole settings blob on write
+ * (see `setCurrencySettings` in `lib/server/tripStore.ts` / `pgStore.ts`),
+ * naively writing back only what the client sent would silently erase a
+ * trip's stamped pivot the first time anyone touched their home currency or
+ * a single rate — the pivot key would simply be missing from the new blob.
+ * Falling back to `existing.pivot` when the request has none is what keeps
+ * the save from ever discarding meaning it didn't intend to change.
+ *
+ * A legacy trip with no stored pivot must stay pivot-free: `existing.pivot`
+ * is `undefined` there too, so `incoming.pivot ?? existing.pivot` is
+ * `undefined`, and the spread below adds no key at all — never an explicit
+ * `pivot: undefined`, which would be a different (and wrong) stored shape.
+ */
+export function applyCurrencySettingsUpdate(
+  existing: CurrencySettings,
+  incoming: { home: string | null; rates: Record<string, number>; pivot?: string }
+): CurrencySettings {
+  const pivot = incoming.pivot ?? existing.pivot;
+  return {
+    home: incoming.home,
+    rates: incoming.rates,
+    ...(pivot !== undefined ? { pivot } : {}),
+  };
+}
+
 /** GET /api/trips/:id response. */
 export interface TripPayload {
   id: string;
