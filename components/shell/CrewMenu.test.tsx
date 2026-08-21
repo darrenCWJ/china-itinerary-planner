@@ -55,14 +55,19 @@ describe("CrewMenu", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
-  test("names the crew on a focusable trigger", async () => {
+  test("names the crew on a keyboard-reachable trigger", async () => {
     renderMenu(payloadWith({}));
 
     const trigger = await screen.findByRole("button", { name: "Crew — 2 members" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
 
-    trigger.focus();
-    expect(trigger).toHaveFocus();
+    // Asserted on the tab index, not by calling focus(). This test used to do
+    // `trigger.focus(); expect(trigger).toHaveFocus()`, which passes on any
+    // native <button> — including one carrying `tabIndex={-1}`, i.e. exactly
+    // the regression a "focusable trigger" test exists to catch. It measured
+    // jsdom rather than the trigger's place in the tab order. Probed both
+    // ways: this line fails under that mutation, the old one did not.
+    expect(trigger.tabIndex).toBe(0);
   });
 
   test("opens to the member list and the invite code", async () => {
