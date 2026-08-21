@@ -90,7 +90,6 @@ describe("convertedTotals", () => {
     // Back-compat pin: with no pivot argument the numbers are exactly what
     // they have always been, and the pivot is CNY by default.
     expect(c).toEqual({
-      cny: 152_000,
       grandTotal: 152_000,
       pivot: "CNY",
       home: { currency: "SGD", amount: 29_231 },
@@ -104,7 +103,7 @@ describe("convertedTotals", () => {
       { home: "SGD", rates: { SGD: 5.2 } }
     );
     expect(c!.unconverted).toEqual([{ currency: "USD", amount: 3_000 }]);
-    expect(c!.cny).toBe(152_000);
+    expect(c!.grandTotal).toBe(152_000);
   });
 
   test("home CNY needs no rate", () => {
@@ -115,7 +114,7 @@ describe("convertedTotals", () => {
   test("home without a rate yields null home but still a CNY total", () => {
     const c = convertedTotals(totals, { home: "SGD", rates: {} });
     expect(c!.home).toBeNull();
-    expect(c!.cny).toBe(100_000);
+    expect(c!.grandTotal).toBe(100_000);
     expect(c!.unconverted).toEqual([{ currency: "SGD", amount: 10_000 }]);
   });
 
@@ -152,11 +151,6 @@ describe("convertedTotals", () => {
     expect(convertedTotals(totals, settings, getCountryProfile("CN").currency)).toEqual(
       convertedTotals(totals, settings)
     );
-  });
-
-  test("cny stays an alias of the grand total for existing readers", () => {
-    const c = convertedTotals(totals, { home: "SGD", rates: { SGD: 5.2 } }, "JPY");
-    expect(c!.cny).toBe(c!.grandTotal);
   });
 
   test("a zero-decimal expense converts into a two-decimal pivot", () => {
