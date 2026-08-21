@@ -82,7 +82,14 @@ Nothing is created except one test block. The work is deletion, so the map below
 
 - [ ] **Step 1: Write the failing test for the read boundary**
 
-Add to `lib/server/catalog.test.ts`:
+Add to **`lib/server/catalogSearch.test.ts`** — it already owns the
+`CIP_CATALOG_PATH` fixture harness, a `city()` builder and an `afterAll`
+cleanup. `catalog.test.ts` has none of that and would need a second harness.
+
+Follow that file's existing style: build the fixture with its `city()` helper
+and point `CIP_CATALOG_PATH` at it the way its other cases do. The legacy row
+is the one thing its helper cannot express, because the helper is typed against
+the *new* shape — so cast that single row:
 
 ```ts
 test("reads a legacy catalog artifact that still spells the field chineseName", () => {
@@ -106,15 +113,23 @@ test("reads a legacy catalog artifact that still spells the field chineseName", 
     ],
     attractions: [],
   };
-  const file = join(tmpdir(), `cip-legacy-catalog-${process.pid}.json`);
-  writeFileSync(file, JSON.stringify(legacy));
+  const file = path.join(os.tmpdir(), `cip-legacy-catalog-${process.pid}.json`);
+  fs.writeFileSync(file, JSON.stringify(legacy));
   process.env.CIP_CATALOG_PATH = file;
 
-  const hits = searchCatalog("Nanjing", 5);
+  const hits = searchCities("Nanjing", 5);
 
   expect(hits[0].localName).toBe("南京");
   expect(hits[0]).not.toHaveProperty("chineseName");
 });
+```
+
+The exported function is **`searchCities(query, limit)`** — there is no
+`searchCatalog`. `loadCatalog()` caches on the file's `mtimeMs`, so a fixture
+written inside the same millisecond as a previous one can be served stale;
+write to a uniquely-named file per test, as above.
+
+```
 ```
 
 Match the file's existing import list and cache-reset helper — `lib/server/catalog.test.ts` already sets `CIP_CATALOG_PATH` for other cases; reuse whatever teardown it uses rather than adding a second one.
@@ -172,7 +187,12 @@ function normaliseCatalog(raw: Catalog): Catalog {
 }
 ```
 
-Wrap **both** return paths inside `loadCatalog()` — the `CIP_CATALOG_PATH` file read and the `bundledCatalogJson` fallback — in `normaliseCatalog(...)`. Missing one is the failure mode this step exists to prevent.
+Call it in exactly one place: **inside `setCache()`**, on the `catalog`
+argument before it is stored. Both of `loadCatalog()`'s paths — the
+`CIP_CATALOG_PATH` file read and the `BUNDLED_CATALOG` fallback — funnel
+through `setCache`, so normalising there covers both and cannot drift. Wrapping
+the two call sites separately is the failure mode this instruction exists to
+prevent.
 
 - [ ] **Step 4: Run the test and confirm it passes**
 
