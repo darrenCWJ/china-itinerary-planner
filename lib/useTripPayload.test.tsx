@@ -80,9 +80,20 @@ function stubFetch(...responses: ReturnType<typeof res>[]) {
   return mock;
 }
 
-/** Let the awaited fetch/json microtasks settle inside act. */
+/**
+ * Let the awaited fetch/json microtasks settle inside act.
+ *
+ * Drains until the rendered output stops changing rather than taking a fixed
+ * number of turns. Six was enough for the chains this hook had when it was
+ * written, and every assertion here is a positive one, so an under-drain shows
+ * up as a loud failure rather than a wrong pass — but it shows up as a failure
+ * in whichever test happens to grow the deeper chain, which is a poor way to
+ * learn that the count was the problem. Converging removes the count.
+ */
 async function settle() {
-  for (let i = 0; i < 6; i++) {
+  let previous = "";
+  for (let i = 0; i < 12 && document.body.innerHTML !== previous; i++) {
+    previous = document.body.innerHTML;
     await act(async () => {
       await Promise.resolve();
     });
