@@ -5,6 +5,34 @@ export interface CurrencyAmount {
   amount: number;
 }
 
+/**
+ * Currencies whose minor unit is not one hundredth of the major unit, keyed by
+ * ISO 4217 exponent. Anything absent has two digits — the ISO majority — so an
+ * unresearched country is still priceable and an unknown code never throws.
+ *
+ * IDR is the single deliberate departure from ISO 4217, which still records two
+ * digits for it: the sen stopped circulating decades ago and rupiah are quoted
+ * whole. Every other entry is the ISO exponent for a circulating currency.
+ */
+const MINOR_UNIT_DIGITS: Record<string, number> = {
+  // No minor unit at all: the smallest coin is the major unit.
+  BIF: 0, CLP: 0, DJF: 0, GNF: 0, IDR: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
+  PYG: 0, RWF: 0, UGX: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+  // Thousandths: the Gulf and North African dinars.
+  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+};
+
+const DEFAULT_MINOR_UNIT_DIGITS = 2;
+
+/**
+ * How many digits separate a currency's minor unit from its major unit: 0 for
+ * yen, 2 for yuan, 3 for dinars. The one authority on the question — every
+ * other function here asks this rather than assuming a factor of 100.
+ */
+export function minorUnitDigits(currency: string): number {
+  return MINOR_UNIT_DIGITS[currency] ?? DEFAULT_MINOR_UNIT_DIGITS;
+}
+
 /** Plain per-currency sums in minor units, sorted by currency code. */
 export function totalsByCurrency(expenses: Expense[]): CurrencyAmount[] {
   const sums = new Map<string, number>();

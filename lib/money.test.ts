@@ -7,6 +7,7 @@ import {
   expensesOnDate,
   formatMinor,
   majorToMinor,
+  minorUnitDigits,
   settleUp,
   splitMinorUnits,
   totalsByCurrency,
@@ -155,6 +156,36 @@ describe("currencyPivot", () => {
 
   test("a recorded pivot is used as-is", () => {
     expect(currencyPivot({ home: null, rates: {}, pivot: "JPY" })).toBe("JPY");
+  });
+});
+
+describe("minorUnitDigits", () => {
+  test("zero-decimal currencies have no minor unit at all", () => {
+    expect(minorUnitDigits("JPY")).toBe(0);
+    expect(minorUnitDigits("KRW")).toBe(0);
+    expect(minorUnitDigits("VND")).toBe(0);
+    expect(minorUnitDigits("IDR")).toBe(0);
+  });
+
+  test("three-decimal currencies keep all three", () => {
+    expect(minorUnitDigits("BHD")).toBe(3);
+    expect(minorUnitDigits("JOD")).toBe(3);
+    expect(minorUnitDigits("KWD")).toBe(3);
+    expect(minorUnitDigits("OMR")).toBe(3);
+    expect(minorUnitDigits("TND")).toBe(3);
+  });
+
+  test("the ISO-4217 majority has two", () => {
+    expect(minorUnitDigits("CNY")).toBe(2);
+    expect(minorUnitDigits("SGD")).toBe(2);
+    expect(minorUnitDigits("USD")).toBe(2);
+  });
+
+  test("an unlisted code defaults to two instead of throwing", () => {
+    // An unresearched country must still be priceable. Two is the ISO-4217
+    // majority, so the default is the least-surprising guess, never an error.
+    expect(minorUnitDigits("XXX")).toBe(2);
+    expect(minorUnitDigits("")).toBe(2);
   });
 });
 
