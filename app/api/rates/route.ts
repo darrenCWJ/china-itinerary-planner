@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/server/session";
-import { parseCdnRates, parseErApiRates, resolveRates, type NormalizedRates } from "@/lib/rates";
+import {
+  cdnUrl,
+  erApiUrl,
+  fetchJsonWithTimeout,
+  parseCdnRates,
+  parseErApiRates,
+  resolveRates,
+  type NormalizedRates,
+} from "@/lib/rates";
 
 // Upstream refreshes at most daily (`time_next_update_utc` in er-api's own
 // payload) — hourly sits well inside their documented throttle guidance and
@@ -8,49 +16,44 @@ import { parseCdnRates, parseErApiRates, resolveRates, type NormalizedRates } fr
 const REVALIDATE_SECONDS = 3600;
 // A hung upstream must count as a failure quickly enough that the CDN
 // fallback (and, beyond that, the stale cache) still has time to answer
-// within a normal request lifetime — a fetch that never resolves is
-// indistinguishable from "down" as far as this route is concerned.
-const FETCH_TIMEOUT_MS = 5000;
+// within a user-facing time budget — a fetch that never resolves is
+// indistinguishable from "down" as far as this route is concerned. The two
+// fetches run in series, so a both-providers-hanging outage — precisely
+// the case the stale cache exists for — costs up to 2x this value before
+// that branch is reached. The previous 5s-per-fetch budget meant a full
+// outage cost 10s before showing a cached rate; 3s+3s halves that to a
+// still-generous 6s worst case (real upstream responses land in well under
+// a second) without materially reducing the odds of a legitimately slow
+// provider getting a fair chance to answer.
+const FETCH_TIMEOUT_MS = 3000;
 
-function erApiUrl(base: string): string {
-  return `https://open.er-api.com/v6/latest/${base}`;
-}
+// Fetch is cheap to retry and there is no per-request work to resume, so an
+// explicit, comfortably-above-worst-case budget documents the route's
+// actual time contract rather than relying on the platform's default
+// function-execution ceiling (which can be far larger than anything this
+// route should ever need).
+export const maxDuration = 10;
 
-function cdnUrl(base: string): string {
-  return `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${base.toLowerCase()}.json`;
-}
-
-/**
- * `null` covers every failure mode the brief lists as a trigger for the next
- * step in the fallback chain: a non-200 status, a network error, a timeout,
- * and a body that isn't valid JSON. None of them are distinguished further —
- * the caller only ever needs to know "did this provider give us something
- * usable," never why it didn't.
- */
-async function fetchJsonWithTimeout(url: string): Promise<unknown | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      next: { revalidate: REVALIDATE_SECONDS },
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+// The Next.js fetch-cache option belongs to this route's caching policy,
+// not to the generic "fetch JSON with a timeout" helper — so it's applied
+// here, by wrapping `fetch` before handing it to `fetchJsonWithTimeout`,
+// rather than baked into that helper.
+const fetchWithRevalidate: typeof fetch = (input, init) =>
+  fetch(input, { ...init, next: { revalidate: REVALIDATE_SECONDS } });
 
 async function fetchErApiRates(base: string): Promise<NormalizedRates | null> {
-  const json = await fetchJsonWithTimeout(erApiUrl(base));
-  return json === null ? null : parseErApiRates(json);
+  const json = await fetchJsonWithTimeout(erApiUrl(base), {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    fetchImpl: fetchWithRevalidate,
+  });
+  return json === null ? null : parseErApiRates(json, base);
 }
 
 async function fetchCdnRates(base: string): Promise<NormalizedRates | null> {
-  const json = await fetchJsonWithTimeout(cdnUrl(base));
+  const json = await fetchJsonWithTimeout(cdnUrl(base), {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    fetchImpl: fetchWithRevalidate,
+  });
   return json === null ? null : parseCdnRates(json, base);
 }
 
@@ -74,9 +77,13 @@ export async function GET(req: NextRequest) {
   // the same string.
   const base = (req.nextUrl.searchParams.get("base") ?? "").trim().toUpperCase();
 
+  // `fetchErApiRates`/`fetchCdnRates` are passed directly, not wrapped in a
+  // closure over `base` — `resolveRates` calls them with the base it just
+  // validated, so that validated string is structurally what reaches the
+  // URL builders, not merely "the same local a closure happened to capture."
   const result = await resolveRates(base, {
-    fetchErApi: () => fetchErApiRates(base),
-    fetchCdn: () => fetchCdnRates(base),
+    fetchErApi: fetchErApiRates,
+    fetchCdn: fetchCdnRates,
   });
 
   if (!result.ok) {
