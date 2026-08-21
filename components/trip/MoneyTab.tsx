@@ -136,13 +136,8 @@ export function MoneyTab({
           <div className="mt-3 border-t border-[var(--line-1)] pt-2 text-sm">
             <p className="flex justify-between">
               <span className="text-[var(--ink-2)]">Total {converted.pivot}</span>
-              {/*
-                Still reads `converted.cny`, not `.grandTotal` — the two are
-                always equal (lib/money.ts), and this stays the deprecated
-                field's one production reader until Task 11 retires it.
-              */}
               <span className="font-semibold tabular-nums">
-                {formatMinor(converted.cny, converted.pivot)}
+                {formatMinor(converted.grandTotal, converted.pivot)}
               </span>
             </p>
             {converted.home && converted.home.currency !== converted.pivot && (

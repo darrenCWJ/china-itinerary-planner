@@ -54,11 +54,6 @@ export function expensesOnDate(expenses: Expense[], isoDate: string): Expense[] 
 }
 
 export interface ConvertedTotals {
-  /**
-   * @deprecated Equal to grandTotal. Named for the era when the pivot was
-   * always CNY; kept so existing readers keep compiling.
-   */
-  cny: number;
   /** Grand total in the pivot currency's minor units. */
   grandTotal: number;
   /** The currency the rates are expressed against. */
@@ -136,7 +131,7 @@ export function convertedTotals(
             )
           ),
         };
-  return { cny: grandTotal, grandTotal, pivot, home, unconverted };
+  return { grandTotal, pivot, home, unconverted };
 }
 
 const SYMBOLS: Record<string, string> = {
