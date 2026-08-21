@@ -124,6 +124,11 @@ export function TrackerTab({
     return d ? latLonOf(d) : null;
   });
   const tripTotals = totalsByCurrency(expenses);
+  // Every currency the whole trip has spent in, computed once so the
+  // "That's a wrap" total line and the "Whole trip" column below (both
+  // driven by this same tripTotals) resolve JPY/CNY's shared ¥ the same way
+  // rather than each render site consulting its own (or no) set.
+  const tripCurrencies = tripTotals.map((t) => t.currency);
 
   const statsStrip = (
     <div className="grid grid-cols-2 gap-3 text-center text-sm sm:grid-cols-4">
@@ -159,7 +164,9 @@ export function TrackerTab({
           {tripTotals.length > 0 && (
             <p className="mt-2 text-sm">
               Total spend:{" "}
-              {tripTotals.map((t) => formatMinor(t.amount, t.currency)).join(" + ")}
+              {tripTotals
+                .map((t) => formatMinor(t.amount, t.currency, tripCurrencies))
+                .join(" + ")}
             </p>
           )}
         </div>
@@ -175,6 +182,8 @@ export function TrackerTab({
   const slot = slotForHour(now.getHours());
   const guide = todayPlan ? nowNext(todayPlan, checkedKeys, slot) : { current: null, next: null };
   const todaySpend = totalsByCurrency(expensesOnDate(expenses, today));
+  // Same reasoning as tripCurrencies above, scoped to just today's spend.
+  const todayCurrencies = todaySpend.map((t) => t.currency);
   const pct = overall.total > 0 ? Math.round((overall.done / overall.total) * 100) : 0;
 
   return (
@@ -268,7 +277,7 @@ export function TrackerTab({
             ) : (
               todaySpend.map((t) => (
                 <p key={t.currency} className="font-semibold tabular-nums">
-                  {formatMinor(t.amount, t.currency)}
+                  {formatMinor(t.amount, t.currency, todayCurrencies)}
                 </p>
               ))
             )}
@@ -280,7 +289,7 @@ export function TrackerTab({
             ) : (
               tripTotals.map((t) => (
                 <p key={t.currency} className="font-semibold tabular-nums">
-                  {formatMinor(t.amount, t.currency)}
+                  {formatMinor(t.amount, t.currency, tripCurrencies)}
                 </p>
               ))
             )}
