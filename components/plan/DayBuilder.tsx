@@ -330,7 +330,7 @@ export function DayBuilder({ tripId, payload, forcedAt, mutate, activitiesByDest
   return (
     <div className="mt-4" ref={rootRef}>
       {state.error !== null && (
-        <p role="alert" className="mb-3 rounded-lg border border-seal/50 bg-seal/5 px-3 py-2 text-sm">
+        <p role="alert" className="mb-3 rounded-lg border border-[var(--seal)]/50 bg-[var(--seal)]/5 px-3 py-2 text-sm">
           {state.error}
         </p>
       )}
@@ -617,7 +617,7 @@ function TimeBlock({
           </span>
         )}
         {entry.overflows === true && (
-          <span className="shrink-0 rounded bg-seal/10 px-1.5 py-0.5 text-[10px] text-seal">
+          <span className="shrink-0 rounded bg-[var(--seal)]/10 px-1.5 py-0.5 text-[10px] text-[var(--seal)]">
             past midnight
           </span>
         )}

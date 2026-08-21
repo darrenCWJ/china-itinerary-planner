@@ -25,7 +25,7 @@ export function JoinClaimDialog({ claimable, legacyName, onJoin }: Props) {
   };
 
   return (
-    <div className="mt-6 rounded-xl border-2 border-dashed border-seal/50 bg-[var(--paper)] p-5">
+    <div className="mt-6 rounded-xl border-2 border-dashed border-[var(--seal)]/50 bg-[var(--paper)] p-5">
       <h2 className="font-display text-lg font-semibold">Join this trip</h2>
       {claimable.length > 0 && (
         <>
@@ -50,10 +50,10 @@ export function JoinClaimDialog({ claimable, legacyName, onJoin }: Props) {
         </>
       )}
       <button type="button" onClick={() => void join()} disabled={busy}
-        className="mt-4 rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        className="mt-4 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
         {busy ? "Joining…" : "Join trip"}
       </button>
-      {error && <span className="ml-3 text-xs text-seal">{error}</span>}
+      {error && <span className="ml-3 text-xs text-[var(--seal)]">{error}</span>}
     </div>
   );
 }

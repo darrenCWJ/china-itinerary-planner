@@ -76,7 +76,7 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
                 <span key={c.id}>
                   {i > 0 && " → "}
                   {c.name}
-                  {c.localName && <span className="ml-1 font-kai text-seal">{c.localName}</span>}
+                  {c.localName && <span className="ml-1 font-kai text-[var(--seal)]">{c.localName}</span>}
                 </span>
               ))}
             </dd>

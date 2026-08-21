@@ -98,7 +98,7 @@ export function MonthTimeline({ month, onMonth }: Props) {
             <span
               key={b.name}
               title={`${b.emoji} ${b.name}: ${b.note}`}
-              className="absolute top-0 h-2 rounded-full bg-seal"
+              className="absolute top-0 h-2 rounded-full bg-[var(--seal)]"
               style={{
                 left: `${(b.from / 12) * 100}%`,
                 width: `${((b.to - b.from) / 12) * 100}%`,

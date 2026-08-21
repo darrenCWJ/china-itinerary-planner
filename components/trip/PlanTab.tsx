@@ -220,7 +220,7 @@ export function PlanTab({
                 register as a change. Conditional rendering was why a failed
                 add-day was silent to a screen reader.
               */}
-              <span role="status" aria-live="polite" className="text-xs text-seal">
+              <span role="status" aria-live="polite" className="text-xs text-[var(--seal)]">
                 {addDayError}
               </span>
             </div>
@@ -234,7 +234,7 @@ export function PlanTab({
           <ul className="mt-2 space-y-1.5">
             {plan.tips.map((tip) => (
               <li key={tip} className="flex gap-2">
-                <span aria-hidden className="text-seal">
+                <span aria-hidden className="text-[var(--seal)]">
                   ※
                 </span>
                 <span>{tip}</span>

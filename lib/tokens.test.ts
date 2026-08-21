@@ -67,11 +67,12 @@ const PREFIXES =
   "bg|text|border|ring|outline|accent|fill|divide|stroke|shadow|caret|placeholder|from|to|via|decoration";
 
 /**
- * The `@theme` colours PR3 removes. `seal` is deliberately absent: the brand
- * vermilion is the one entry with no token counterpart, so it survives the sweep
- * by design and gets its own pinned gate below.
+ * The `@theme` colours PR3 removes. `seal` now has a token counterpart
+ * (`--seal`, in both ramps) so it retires alongside the rest — the pinned
+ * gate that used to hand it a closed set of files is gone; this general gate
+ * covers it.
  */
-const RETIRED = ["rail-deep", "rail", "sky", "mist", "paper", "ink-soft", "ink"] as const;
+const RETIRED = ["rail-deep", "rail", "sky", "mist", "paper", "ink-soft", "ink", "seal"] as const;
 
 const utilityRe = (name: string) =>
   new RegExp(`(^|[^A-Za-z0-9_\\-\\[])(${PREFIXES})-${name}(?![A-Za-z0-9_\\-])`, "g");
@@ -80,49 +81,6 @@ describe("retiring @theme palette", () => {
   it.each(RETIRED)("has no surviving `-%s` consumer", (name) => {
     const offenders = FILES.filter((f) => utilityRe(name).test(f.code)).map((f) => f.path);
     expect(offenders).toEqual([]);
-  });
-
-  /**
-   * The vermilion has nowhere to go: `--color-seal` (#c93b2e) lives only in the
-   * retiring block and the token set has no brand slot. Inventing one here would
-   * put a second definition of the brand colour in the tree, so the sweep left
-   * these alone and pins them instead — PR3 gets an exact, non-growing list of
-   * what its deletion must resolve rather than a grep it has to re-run blind.
-   */
-  it("leaves the seal utilities as the only survivors, in a pinned set of files", () => {
-    const users = FILES.filter((f) => utilityRe("seal").test(f.code))
-      .map((f) => f.path)
-      .sort();
-    expect(users).toEqual([
-      "app/account/page.tsx",
-      "app/plan/page.tsx",
-      "components/DestinationStep.tsx",
-      "components/PlanStep.tsx",
-      "components/TripView.tsx",
-      "components/auth/AccountChip.tsx",
-      "components/auth/AuthForm.tsx",
-      "components/home/TripsDashboard.tsx",
-      "components/map/MonthTimeline.tsx",
-      "components/map/PlacePopup.tsx",
-      "components/plan/DayBuilder.tsx",
-      "components/plan/FeasibilityCounter.tsx",
-      "components/plan/PlaceSearch.tsx",
-      "components/shell/AppShell.tsx",
-      "components/shell/CrewMenu.tsx",
-      "components/shell/ShareMenu.tsx",
-      "components/trip/BalancesCard.tsx",
-      "components/trip/BriefingShare.tsx",
-      "components/trip/BriefingView.tsx",
-      "components/trip/DayCard.tsx",
-      "components/trip/ExpenseForm.tsx",
-      "components/trip/JoinClaimDialog.tsx",
-      "components/trip/JournalSection.tsx",
-      "components/trip/MoneyTab.tsx",
-      "components/trip/PlanTab.tsx",
-      "components/trip/PrivateGate.tsx",
-      "components/trip/TicketsTab.tsx",
-      "components/trip/TrackerTab.tsx",
-    ]);
   });
 
   /** C5's 44px minimum has a token; two files had the literal instead (§5e). */

@@ -213,7 +213,7 @@ export function MoneyTab({
                           Edit
                         </button>
                         <button type="button" onClick={() => void removeExpense(e.id)}
-                          className="text-xs text-[var(--ink-2)] hover:text-seal">
+                          className="text-xs text-[var(--ink-2)] hover:text-[var(--seal)]">
                           Delete
                         </button>
                       </span>
@@ -224,7 +224,7 @@ export function MoneyTab({
             </ul>
           </div>
         ))}
-        {listError && <p className="text-xs text-seal">{listError}</p>}
+        {listError && <p className="text-xs text-[var(--seal)]">{listError}</p>}
       </div>
     </div>
   );
@@ -327,7 +327,7 @@ function CurrencySettingsEditor({
           className="text-xs text-[var(--ink-2)] hover:text-[var(--ink-0)]">
           Cancel
         </button>
-        {error && <span className="text-xs text-seal">{error}</span>}
+        {error && <span className="text-xs text-[var(--seal)]">{error}</span>}
       </div>
     </div>
   );

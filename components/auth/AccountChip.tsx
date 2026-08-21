@@ -70,7 +70,7 @@ export function AccountChip() {
             Account
           </Link>
           <button type="button" role="menuitem" disabled={signingOut}
-            className="flex min-h-10 w-full items-center rounded-lg px-2.5 text-left text-seal transition-colors hover:bg-[var(--surf-1)] disabled:opacity-50"
+            className="flex min-h-10 w-full items-center rounded-lg px-2.5 text-left text-[var(--seal)] transition-colors hover:bg-[var(--surf-1)] disabled:opacity-50"
             onClick={() => {
               setSigningOut(true);
               void authClient.signOut().then(() => {

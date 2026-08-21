@@ -168,7 +168,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
             <ul className="mt-3 space-y-2 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 text-sm">
               {plan.tips.map((tip) => (
                 <li key={tip} className="flex gap-2">
-                  <span aria-hidden className="text-seal">※</span>
+                  <span aria-hidden className="text-[var(--seal)]">※</span>
                   <span>{tip}</span>
                 </li>
               ))}
@@ -269,12 +269,12 @@ function ShareTripCard({
           type="button"
           onClick={() => void create()}
           disabled={creating}
-          className="rounded-lg bg-seal px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-seal/85 disabled:opacity-50"
+          className="rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--seal)]/85 disabled:opacity-50"
         >
           {creating ? "Creating…" : "Start shared trip →"}
         </button>
         {unauthenticated ? (
-          <span className="text-xs text-seal">
+          <span className="text-xs text-[var(--seal)]">
             Sign in to share this trip —{" "}
             <Link
               href={`/login?next=${encodeURIComponent(window.location.pathname)}`}
@@ -284,7 +284,7 @@ function ShareTripCard({
             </Link>
           </span>
         ) : (
-          error && <span className="text-xs text-seal">{error}</span>
+          error && <span className="text-xs text-[var(--seal)]">{error}</span>
         )}
       </div>
     </div>

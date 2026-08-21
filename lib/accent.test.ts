@@ -246,9 +246,15 @@ describe("globals.css token set", () => {
     expect(varIn(blockAfter('[data-theme="dark"]'), "--paper")).toBe(toHex(DARK_PAPER));
   });
 
-  test("the existing @theme block is left intact", () => {
-    expect(css).toContain("--color-seal: #c93b2e;");
-    expect(css).toContain("--color-ink: #17263b;");
+  test("the retiring @theme colour block is gone", () => {
+    expect(css).not.toContain("--color-seal");
+    expect(css).not.toContain("--color-ink:");
+    expect(css).not.toContain("--color-rail");
+  });
+
+  test("the brand vermilion survives as a token in both ramps", () => {
+    expect(varIn(blockAfter(":root"), "--seal")).toBe("#c93b2e");
+    expect(varIn(blockAfter('[data-theme="dark"]'), "--seal")).toBeTruthy();
   });
 
   test("light and dark both define the full semantic ramp", () => {

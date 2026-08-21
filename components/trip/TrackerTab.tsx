@@ -198,7 +198,7 @@ export function TrackerTab({
         <h3 className="font-display text-lg font-semibold">Now &amp; next</h3>
         {guide.current ? (
           <p className="mt-2 text-sm">
-            <span className="rounded bg-seal px-1.5 py-0.5 text-[10px] font-mono text-white">
+            <span className="rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] font-mono text-white">
               NOW
             </span>{" "}
             {guide.current.title}

@@ -71,10 +71,10 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
       {next && (
         <Link
           href={`/trip/${next.id}`}
-          className="group mt-3 block overflow-hidden rounded-2xl border-2 border-seal bg-[var(--paper)] shadow-sm transition-shadow hover:shadow-md"
+          className="group mt-3 block overflow-hidden rounded-2xl border-2 border-[var(--seal)] bg-[var(--paper)] shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="flex items-stretch">
-            <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-seal py-5 text-white">
+            <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[var(--seal)] py-5 text-white">
               <span aria-hidden className="font-kai text-2xl">游</span>
               <span className="font-mono text-[9px] uppercase tracking-widest">Next</span>
             </div>
@@ -83,7 +83,7 @@ function TripCards({ trips, today }: { trips: MyTrip[]; today: string }) {
                 <p className="font-display text-lg font-bold [text-wrap:balance] group-hover:text-[var(--accent-ink)]">
                   {next.name}
                 </p>
-                <p className="font-mono text-xs font-semibold tabular-nums text-seal">
+                <p className="font-mono text-xs font-semibold tabular-nums text-[var(--seal)]">
                   {phaseLabel(tripPhase(next, today), next.days)}
                 </p>
               </div>

@@ -121,7 +121,7 @@ export function TicketsTab({
         />
       )}
 
-      {error && <p className="text-xs text-seal">{error}</p>}
+      {error && <p className="text-xs text-[var(--seal)]">{error}</p>}
     </div>
   );
 }
@@ -189,7 +189,7 @@ function TicketCard({
                 type="button"
                 disabled={pending}
                 onClick={onDelete}
-                className="rounded px-2 py-0.5 text-xs font-semibold text-seal transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
+                className="rounded px-2 py-0.5 text-xs font-semibold text-[var(--seal)] transition-colors hover:bg-[var(--line-1)] disabled:opacity-40"
               >
                 ✕ Remove
               </button>
