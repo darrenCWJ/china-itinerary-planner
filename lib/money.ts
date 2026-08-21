@@ -149,8 +149,25 @@ const SYMBOLS: Record<string, string> = {
  * Minor units → display string: 124050 CNY → "¥1,240.50", 1000 JPY →
  * "JPY 1,000", 1234567 KWD → "KWD 1,234.567". How many decimals to show is
  * the currency's business, not a fixed factor of 100.
+ *
+ * `displayedCurrencies` is optional and defaults to `undefined`, in which
+ * case symbol lookup goes through the flat, single-currency `SYMBOLS` table
+ * exactly as it always has -- so every existing two-argument call keeps its
+ * byte-identical output, including `formatMinor(1000, "JPY")` still
+ * returning the "JPY 1,000" code fallback. Pass the set of every currency
+ * appearing alongside this one on the same screen to route through
+ * `currencySymbol`'s context-aware lookup instead -- that is what lets a
+ * lone JPY render a plain ¥ while JPY sitting next to CNY disambiguates to
+ * JP¥/CN¥. Compute that set once per screen, not once per row (see
+ * `currencySymbol`'s own docs), and this stays the single authority on
+ * amount formatting -- sign, grouping, and fraction padding are decided
+ * here regardless of which symbol path is taken.
  */
-export function formatMinor(amount: number, currency: string): string {
+export function formatMinor(
+  amount: number,
+  currency: string,
+  displayedCurrencies?: Iterable<string>
+): string {
   const digits = minorUnitDigits(currency);
   const unit = 10 ** digits;
   const sign = amount < 0 ? "-" : "";
@@ -162,7 +179,9 @@ export function formatMinor(amount: number, currency: string): string {
   // gets no point either.
   const fraction =
     digits === 0 ? "" : `.${(abs % unit).toString().padStart(digits, "0")}`;
-  const symbol = SYMBOLS[currency];
+  const symbol = displayedCurrencies
+    ? currencySymbol(currency, displayedCurrencies)
+    : SYMBOLS[currency];
   return symbol !== undefined
     ? `${sign}${symbol}${major}${fraction}`
     : `${sign}${currency} ${major}${fraction}`;

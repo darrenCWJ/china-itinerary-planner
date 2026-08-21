@@ -53,6 +53,20 @@ export function BalancesCard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Every currency this card can show at once: the balance/settle-up
+  // sections group by currency already, but they still stack on the same
+  // screen, and the repayments log below mixes every currency in one flat
+  // list. Computed once for the whole card rather than resolved per row, per
+  // `currencySymbol`'s usage contract -- otherwise a CNY row rendered before
+  // a JPY section appeared would keep the ambiguous plain ¥ instead of being
+  // revisited once JPY showed up.
+  const displayedCurrencies = [
+    ...new Set([
+      ...currencies.map((c) => c.currency),
+      ...settlements.map((s) => s.currency),
+    ]),
+  ];
+
   const startConfirm = (key: string, amountMinor: number, currency: string) => {
     setConfirming(key);
     setConfirmAmount(minorToMajorInput(amountMinor, currency));
@@ -111,7 +125,7 @@ export function BalancesCard({
                  */}
                 <span className={b.net > 0 ? "font-medium text-[var(--ink-0)]" : "font-medium text-[var(--seal)]"}>
                   {b.net > 0 ? "is owed " : "owes "}
-                  {formatMinor(Math.abs(b.net), currency)}
+                  {formatMinor(Math.abs(b.net), currency, displayedCurrencies)}
                 </span>
               </li>
             ))}
@@ -125,7 +139,7 @@ export function BalancesCard({
                   <span>
                     <span className="font-medium">{t.from}</span> →{" "}
                     <span className="font-medium">{t.to}</span>:{" "}
-                    {formatMinor(t.amount, currency)}
+                    {formatMinor(t.amount, currency, displayedCurrencies)}
                   </span>
                   {isMember && confirming !== key && (
                     <button type="button" onClick={() => startConfirm(key, t.amount, currency)}
@@ -167,7 +181,7 @@ export function BalancesCard({
               <li key={s.id} className="flex items-center gap-2">
                 <span className="text-[var(--ink-2)]">{s.date}</span>
                 <span>
-                  {s.from} → {s.to}: {formatMinor(s.amount, s.currency)}
+                  {s.from} → {s.to}: {formatMinor(s.amount, s.currency, displayedCurrencies)}
                 </span>
                 {isMember && (
                   <button type="button" onClick={() => void removeSettlement(s.id)}

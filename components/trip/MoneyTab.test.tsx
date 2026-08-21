@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MoneyTab } from "./MoneyTab";
 import type { CurrencySettings, Expense } from "@/lib/tripShared";
@@ -118,6 +118,45 @@ describe("rates editor currency list (the fourth CNY hardcode)", () => {
     expect(screen.getByText("1 CNY =")).toBeInTheDocument();
     // JPY is the pivot itself — it never needs a rate against itself.
     expect(screen.queryByText("1 JPY =")).not.toBeInTheDocument();
+  });
+});
+
+describe("Spend so far totals list (Task 12: the collision rule reaches the screen)", () => {
+  test("a JPY total alongside a CNY total disambiguates into JP¥ and CN¥", () => {
+    renderMoneyTab({
+      expenses: [
+        expense({ id: "e-1", currency: "JPY", amount: 124_000 }),
+        expense({ id: "e-2", currency: "CNY", amount: 124_050 }),
+      ],
+      currencySettings: { home: null, rates: {} },
+    });
+
+    // Scoped to the "Spend so far" totals panel specifically — the by-date
+    // expense list below renders the same two amounts a second time (it is
+    // wired to the same displayed-currency set), so an unscoped query would
+    // correctly, but uninformatively, find two matches of each.
+    const totalsPanel = within(screen.getByText("Spend so far").closest("div")!);
+
+    // Both currencies are on screen at once, so the ambiguous plain ¥ must
+    // be disambiguated for each — never a bare "JPY 124,000" code fallback
+    // and never two identical, unattributable ¥ amounts.
+    expect(totalsPanel.getByText("JP¥124,000")).toBeInTheDocument();
+    expect(totalsPanel.getByText("CN¥1,240.50")).toBeInTheDocument();
+    expect(totalsPanel.queryByText(/JPY 124,000/)).not.toBeInTheDocument();
+  });
+
+  test("a JPY total alone renders the plain yen sign, not the JPY code fallback", () => {
+    renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "JPY", amount: 124_000 })],
+      currencySettings: { home: null, rates: {} },
+    });
+
+    // Note: the row's uppercase "JPY" currency-code label is expected and
+    // untouched (`t.currency` printed plainly) — only the formatted-amount
+    // fallback ("JPY 124,000", the pre-fix code-prefix form) must be absent.
+    const totalsPanel = within(screen.getByText("Spend so far").closest("div")!);
+    expect(totalsPanel.getByText("¥124,000")).toBeInTheDocument();
+    expect(totalsPanel.queryByText(/JPY 124,000/)).not.toBeInTheDocument();
   });
 });
 

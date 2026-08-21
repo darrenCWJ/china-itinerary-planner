@@ -58,6 +58,13 @@ export function MoneyTab({
   // about which currency the trip's rates are actually expressed against.
   const pivot = currencyPivot(currencySettings);
   const totals = useMemo(() => totalsByCurrency(expenses), [expenses]);
+  // Every currency this trip actually has expenses in, computed once for the
+  // whole tab so every amount rendered against it -- the totals list and the
+  // per-expense rows below -- resolves JPY/CNY's shared ¥ the same way,
+  // rather than each row consulting a different (or empty) set. Per
+  // `currencySymbol`'s usage contract: the displayed set is a property of
+  // the whole screen, not of one row in isolation.
+  const displayedCurrencies = useMemo(() => totals.map((t) => t.currency), [totals]);
   const converted = useMemo(
     () => convertedTotals(totals, currencySettings, pivot),
     [totals, currencySettings, pivot]
@@ -126,7 +133,7 @@ export function MoneyTab({
                   {t.currency}
                 </span>
                 <span className="font-semibold tabular-nums">
-                  {formatMinor(t.amount, t.currency)}
+                  {formatMinor(t.amount, t.currency, displayedCurrencies)}
                 </span>
               </li>
             ))}
@@ -247,7 +254,7 @@ export function MoneyTab({
                         : " · split all"}
                     </span>
                     <span className="ml-auto font-semibold tabular-nums">
-                      {formatMinor(e.amount, e.currency)}
+                      {formatMinor(e.amount, e.currency, displayedCurrencies)}
                     </span>
                     {isMember && (
                       <span className="flex gap-2">
