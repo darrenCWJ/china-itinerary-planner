@@ -87,7 +87,7 @@ in to exercise accounts and the wall.
 
 ```
 app/                Wizard page, /trip/[id] shared trip page, /api routes
-components/         Wizard steps, CatalogSearch, TripView (live trip UI)
+components/         Wizard steps, PlaceSearch, TripView (live trip UI)
 lib/
   data/             Curated destination dataset
   itinerary.ts      Scheduling engine (+ tests)

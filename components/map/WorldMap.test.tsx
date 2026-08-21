@@ -270,17 +270,4 @@ describe("WorldMap", () => {
     // rather than silently presenting the first country as chosen.
     expect(screen.getByRole("combobox", { name: /pick from the list/i })).toHaveValue("");
   });
-
-  test("reports hover with a position relative to the map", async () => {
-    const onHover = vi.fn();
-    render(<WorldMap onSelectCountry={() => {}} onHoverCountry={onHover} />);
-
-    const france = await screen.findByRole("button", { name: "France" });
-    fireEvent.mouseEnter(france, { clientX: 120, clientY: 90 });
-
-    expect(onHover).toHaveBeenCalledWith("FR", { x: 120, y: 90 });
-
-    fireEvent.mouseLeave(france);
-    expect(onHover).toHaveBeenLastCalledWith(null, null);
-  });
 });

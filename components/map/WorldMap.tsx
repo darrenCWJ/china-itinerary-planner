@@ -13,14 +13,7 @@ import {
 import { CountryHero } from "@/components/shell/CountryHero";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { usePrefs } from "@/components/shell/PrefsProvider";
-import {
-  MAP_VIEW_H,
-  MAP_VIEW_W,
-  buildFitProjection,
-  createHoverReporter,
-  makeProjector,
-  type HoverPos,
-} from "./mapShared";
+import { MAP_VIEW_H, MAP_VIEW_W, buildFitProjection, makeProjector } from "./mapShared";
 
 /**
  * World level of the two-level picker (spec §6): every country as a selectable
@@ -109,8 +102,6 @@ export interface WorldMapProps {
   /** ISO alpha-2 of the country currently chosen, if any. */
   selectedCountry?: string | null;
   onSelectCountry: (code: string) => void;
-  /** Hover in container coordinates, for a popup the parent positions. */
-  onHoverCountry?: (code: string | null, pos: HoverPos | null) => void;
   /**
    * Which accent ramp to tint with. Defaults to the ramp `PrefsProvider`
    * resolved — resolving the theme a second time here would let the map
@@ -128,7 +119,6 @@ function countryLabel(code: string, topologyName: string): string {
 export function WorldMap({
   selectedCountry = null,
   onSelectCountry,
-  onHoverCountry,
   theme: themeOverride,
 }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -233,11 +223,6 @@ export function WorldMap({
   const fillFor = (code: string): string =>
     accentColor(code, theme, "fill", prefs.accentHues[code]);
 
-  const reportHover = createHoverReporter<string>(
-    containerRef,
-    (code, pos) => onHoverCountry?.(code, pos)
-  );
-
   const entries = view?.entries ?? [];
 
   /** Only a country the map actually drew gets a card; a stray code gets none. */
@@ -316,17 +301,8 @@ export function WorldMap({
         setFocusedCode(code);
       },
       onBlur: () => setFocusedCode((current) => (current === code ? null : current)),
-      onMouseEnter: (event: React.MouseEvent) => {
-        setHoverCode(code);
-        reportHover(code, event);
-      },
-      // Position updates skip React state on purpose: a setState per mousemove
-      // would re-render every country to move one popup.
-      onMouseMove: (event: React.MouseEvent) => reportHover(code, event),
-      onMouseLeave: () => {
-        setHoverCode((current) => (current === code ? null : current));
-        reportHover(null);
-      },
+      onMouseEnter: () => setHoverCode(code),
+      onMouseLeave: () => setHoverCode((current) => (current === code ? null : current)),
     };
   };
 
@@ -452,10 +428,6 @@ export function WorldMap({
         docblock for why the circle itself cannot grow. Every country the map drew
         is here, so this is the equivalent control WCAG 2.2 AA 2.5.8 allows and
         the guaranteed path spec §6 requires, not a shortcut for small ones only.
-
-        Below the SVG, for the same reason `CountryHero` is: `createHoverReporter`
-        measures against this container's top-left, so anything above the map
-        offsets every hover popup the parent draws.
       */}
       <div className="mt-3">
         <label
@@ -485,10 +457,7 @@ export function WorldMap({
       </div>
 
       {/*
-        The chosen country's imagery (spec §4.4). Below the SVG, not above it:
-        `createHoverReporter` measures pointer positions against this container's
-        top-left corner, so anything inserted before the map would silently
-        offset every hover popup the parent draws.
+        The chosen country's imagery (spec §4.4).
 
         The ground is a fixed dark value and not `--ink-0`, which is what it was
         while the shell pinned light. Everything above the scrim here is literal
