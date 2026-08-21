@@ -9,6 +9,7 @@ import {
   minorUnitDigits,
   totalsByCurrency,
 } from "@/lib/money";
+import { currencyPivot } from "@/lib/tripShared";
 import type { CurrencySettings, Expense, ExpenseCategory, Settlement } from "@/lib/tripShared";
 import { BalancesCard, type SettlementDraft } from "./BalancesCard";
 import { CATEGORIES, ExpenseForm, type ExpenseDraft } from "./ExpenseForm";
@@ -55,7 +56,7 @@ export function MoneyTab({
 
   const totals = useMemo(() => totalsByCurrency(expenses), [expenses]);
   const converted = useMemo(
-    () => convertedTotals(totals, currencySettings),
+    () => convertedTotals(totals, currencySettings, currencyPivot(currencySettings)),
     [totals, currencySettings]
   );
   const balances = useMemo(
@@ -131,10 +132,17 @@ export function MoneyTab({
         {converted && (
           <div className="mt-3 border-t border-[var(--line-1)] pt-2 text-sm">
             <p className="flex justify-between">
-              <span className="text-[var(--ink-2)]">Total CNY</span>
-              <span className="font-semibold tabular-nums">{formatMinor(converted.cny, "CNY")}</span>
+              <span className="text-[var(--ink-2)]">Total {converted.pivot}</span>
+              {/*
+                Still reads `converted.cny`, not `.grandTotal` — the two are
+                always equal (lib/money.ts), and this stays the deprecated
+                field's one production reader until Task 11 retires it.
+              */}
+              <span className="font-semibold tabular-nums">
+                {formatMinor(converted.cny, converted.pivot)}
+              </span>
             </p>
-            {converted.home && converted.home.currency !== "CNY" && (
+            {converted.home && converted.home.currency !== converted.pivot && (
               <p className="flex justify-between">
                 <span className="text-[var(--ink-2)]">Total {converted.home.currency}</span>
                 <span className="font-semibold tabular-nums">
@@ -161,6 +169,7 @@ export function MoneyTab({
             <CurrencySettingsEditor
               currencySettings={currencySettings}
               usedCurrencies={totals.map((t) => t.currency)}
+              pivot={currencyPivot(currencySettings)}
               onSave={onSaveCurrency}
             />
           )}
@@ -269,10 +278,13 @@ export function MoneyTab({
 function CurrencySettingsEditor({
   currencySettings,
   usedCurrencies,
+  pivot,
   onSave,
 }: {
   currencySettings: CurrencySettings;
   usedCurrencies: string[];
+  /** The currency the rates are expressed against — never needs a rate row against itself. */
+  pivot: string;
   onSave: (home: string | null, rates: Record<string, number>) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
@@ -285,11 +297,11 @@ function CurrencySettingsEditor({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Every currency worth rating: seen in expenses or already rated, CNY excluded.
+  // Every currency worth rating: seen in expenses or already rated, the pivot excluded.
   const rateCurrencies = [
     ...new Set([...usedCurrencies, ...Object.keys(currencySettings.rates), home].filter(Boolean)),
   ]
-    .filter((c) => c !== "CNY")
+    .filter((c) => c !== pivot)
     .sort();
 
   const save = async () => {
