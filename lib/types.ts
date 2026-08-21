@@ -55,12 +55,8 @@ export interface Activity {
 export interface Destination {
   id: string;
   name: string;
-  chineseName: string;
-  /**
-   * Name in the local language. Added alongside `chineseName`, which every
-   * consumer still reads; the two converge when consumers migrate.
-   */
-  localName?: string | null;
+  /** Name in the local language. `null` for a hand-typed place with none. */
+  localName: string | null;
   region: Region;
   /** ISO alpha-2. Absent on the curated data, which is all China. */
   country?: CountryCode;

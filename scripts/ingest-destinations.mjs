@@ -294,11 +294,11 @@ async function fetchDetailsMap(qids, label) {
     for (const row of rows) {
       const qid = qidFromUri(row.x.value);
       const entity = details.get(qid) ?? {
-        qid, name: null, chineseName: null, coord: null, image: null,
+        qid, name: null, localName: null, coord: null, image: null,
         adminQid: null, adminLabel: null, wikiTitle: null, wikidataDescription: null,
       };
       entity.name ??= row.en?.value ?? null;
-      entity.chineseName ??= row.zh?.value ?? null;
+      entity.localName ??= row.zh?.value ?? null;
       entity.coord ??= parsePoint(row.coord?.value);
       entity.image ??= toThumbnailUrl(row.img?.value);
       entity.adminQid ??= row.adminQ ? qidFromUri(row.adminQ.value) : null;
@@ -576,7 +576,7 @@ function buildCityRecords(cities, populations) {
     return {
       qid: city.qid,
       name: city.name,
-      chineseName: city.chineseName,
+      localName: city.localName,
       province: city.province,
       lat: city.coord.lat,
       lon: city.coord.lon,
@@ -595,7 +595,7 @@ function buildAttractionRecords(attractions) {
   let records = [...attractions.values()].map((attraction) => ({
     qid: attraction.qid,
     name: attraction.name,
-    chineseName: attraction.chineseName,
+    localName: attraction.localName,
     cityQid: attraction.cityQid ?? null,
     lat: attraction.coord.lat,
     lon: attraction.coord.lon,

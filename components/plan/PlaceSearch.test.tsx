@@ -194,7 +194,7 @@ describe("PlaceSearch country scoping", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
-        json: async () => ({ available: true, results: [{ qid: "Q16666", name: "Nanjing", chineseName: "南京", province: "Jiangsu" }] }),
+        json: async () => ({ available: true, results: [{ qid: "Q16666", name: "Nanjing", localName: "南京", province: "Jiangsu" }] }),
       })
     );
   });

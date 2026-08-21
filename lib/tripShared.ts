@@ -174,7 +174,8 @@ export interface GuestTripPayload {
 export interface MapCity {
   qid: string;
   name: string;
-  chineseName: string | null;
+  /** Name in the local language; `null` when the catalog has none. */
+  localName: string | null;
   province: string | null;
   lat: number;
   lon: number;
@@ -188,7 +189,8 @@ export interface MapCity {
 export interface CatalogHit {
   qid: string;
   name: string;
-  chineseName: string | null;
+  /** Name in the local language; `null` when the catalog has none. */
+  localName: string | null;
   province: string | null;
   description: string | null;
   population: number | null;

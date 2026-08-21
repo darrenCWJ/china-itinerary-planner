@@ -10,7 +10,12 @@ import type { Activity, Destination, Interest, Region } from "../types";
 export interface CatalogCity {
   qid: string;
   name: string;
-  chineseName: string | null;
+  /**
+   * Local-language name. The on-disk artifact predates the rename and may
+   * still spell this `chineseName`; `normaliseCatalog` accepts either, so an
+   * artifact generated before PR3 keeps working without a re-ingest.
+   */
+  localName: string | null;
   province: string | null;
   lat: number;
   lon: number;
@@ -24,7 +29,12 @@ export interface CatalogCity {
 export interface CatalogAttraction {
   qid: string;
   name: string;
-  chineseName: string | null;
+  /**
+   * Local-language name. The on-disk artifact predates the rename and may
+   * still spell this `chineseName`; `normaliseCatalog` accepts either, so an
+   * artifact generated before PR3 keeps working without a re-ingest.
+   */
+  localName: string | null;
   cityQid: string | null;
   lat: number;
   lon: number;
@@ -55,15 +65,32 @@ const BUNDLED_CATALOG = bundledCatalogJson as unknown as Catalog;
 let cache: { mtimeMs: number; catalog: Catalog; byCity: Map<string, CatalogAttraction[]> } | null =
   null;
 
+type LegacyNamed = { localName?: string | null; chineseName?: string | null };
+
+/** The artifact's field was renamed in PR3; read both spellings, emit one. */
+function withLocalName<T extends LegacyNamed>(row: T): T {
+  const { chineseName, ...rest } = row;
+  return { ...rest, localName: row.localName ?? chineseName ?? null } as T;
+}
+
+function normaliseCatalog(raw: Catalog): Catalog {
+  return {
+    ...raw,
+    cities: raw.cities.map(withLocalName),
+    attractions: raw.attractions.map(withLocalName),
+  };
+}
+
 function setCache(catalog: Catalog, mtimeMs: number): void {
+  const normalised = normaliseCatalog(catalog);
   const byCity = new Map<string, CatalogAttraction[]>();
-  for (const a of catalog.attractions) {
+  for (const a of normalised.attractions) {
     if (!a.cityQid) continue;
     const list = byCity.get(a.cityQid) ?? [];
     list.push(a);
     byCity.set(a.cityQid, list);
   }
-  cache = { mtimeMs, catalog, byCity };
+  cache = { mtimeMs, catalog: normalised, byCity };
 }
 
 export function loadCatalog(): Catalog | null {
@@ -146,7 +173,7 @@ export function searchCities(query: string, limit = 25): CatalogHit[] {
     .filter((c) => !CURATED_NAMES.has(foldPlaceName(c.name)))
     .map((c) => {
       const name = foldPlaceName(c.name);
-      const zh = c.chineseName ?? "";
+      const zh = c.localName ?? "";
       const province = foldPlaceName(c.province ?? "");
       let score = -1;
       if (name.startsWith(q) || zh.startsWith(query.trim())) score = 3;
@@ -165,7 +192,7 @@ export function searchCities(query: string, limit = 25): CatalogHit[] {
     return {
       qid: c.qid,
       name: c.name,
-      chineseName: c.chineseName,
+      localName: c.localName,
       province: c.province,
       description: c.description,
       population: c.population,
@@ -219,7 +246,7 @@ export function mapCities(): MapCity[] {
     .map((c): MapCity => ({
       qid: c.qid,
       name: c.name,
-      chineseName: c.chineseName,
+      localName: c.localName,
       province: c.province,
       lat: c.lat,
       lon: c.lon,
@@ -261,7 +288,7 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
   return {
     id: city.qid,
     name: city.name,
-    chineseName: city.chineseName ?? "",
+    localName: city.localName,
     region: regionFor(city.province, city.name),
     lat: city.lat,
     lon: city.lon,

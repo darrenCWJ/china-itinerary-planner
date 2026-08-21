@@ -14,7 +14,7 @@ import type { Catalog, CatalogCity } from "./catalog";
  */
 
 const city = (over: Partial<CatalogCity> & Pick<CatalogCity, "qid" | "name">): CatalogCity => ({
-  chineseName: null,
+  localName: null,
   province: "Shandong",
   lat: 36.6,
   lon: 117.0,
@@ -79,5 +79,38 @@ describe("searchCities — folding", () => {
     expect(names("luoyang")).toEqual(["Luoyang"]);
     expect(names("taian")).not.toContain("Luoyang");
     expect(names("zzzz")).toEqual([]);
+  });
+});
+
+describe("searchCities — legacy catalog read boundary", () => {
+  test("reads a legacy catalog artifact that still spells the field chineseName", () => {
+    const legacy = {
+      generatedAt: "2026-01-01",
+      source: "test",
+      cities: [
+        {
+          qid: "Q1",
+          name: "Nanjing",
+          chineseName: "南京",
+          province: "Jiangsu",
+          lat: 32.06,
+          lon: 118.8,
+          population: 8000000,
+          description: null,
+          interests: [],
+          image: null,
+          level: "prefecture",
+        },
+      ],
+      attractions: [],
+    };
+    const file = path.join(os.tmpdir(), `cip-legacy-catalog-${process.pid}.json`);
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    process.env.CIP_CATALOG_PATH = file;
+
+    const hits = searchCities("Nanjing", 5);
+
+    expect(hits[0].localName).toBe("南京");
+    expect(hits[0]).not.toHaveProperty("chineseName");
   });
 });

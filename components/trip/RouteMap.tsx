@@ -64,7 +64,7 @@ export function routePlaces(plan: TripPlan): MapPlace[] {
       id: destination.id,
       kind: "curated",
       name: destination.name,
-      localName: destination.localName ?? destination.chineseName,
+      localName: destination.localName,
       province: null,
       region: destination.region,
       lat: at.lat,
