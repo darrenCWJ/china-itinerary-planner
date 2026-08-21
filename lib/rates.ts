@@ -25,7 +25,12 @@ export interface NormalizedRates {
 }
 
 function isUsableRate(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+  // Finite alone lets 0 and negative numbers through — Number.isFinite(0)
+  // and Number.isFinite(-1) are both true. A 0 or negative rate is not a
+  // real price (see this module's NormalizedRates docstring), so it must be
+  // rejected here rather than surviving as a stored value: Rates.tsx renders
+  // 1 / rate for the inverse direction, and 1 / 0 is the string "Infinity".
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 /**
