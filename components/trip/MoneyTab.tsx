@@ -187,6 +187,7 @@ export function MoneyTab({
         <Rates
           tripCurrency={tripCurrency}
           homeCurrency={currencySettings.home}
+          pivot={pivot}
           extraCurrencies={extraCurrencies}
           isMember={isMember}
         />
