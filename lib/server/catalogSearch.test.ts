@@ -83,6 +83,12 @@ describe("searchCities — folding", () => {
 });
 
 describe("searchCities — legacy catalog read boundary", () => {
+  const originalCatalogPath = process.env.CIP_CATALOG_PATH;
+
+  afterAll(() => {
+    process.env.CIP_CATALOG_PATH = originalCatalogPath;
+  });
+
   test("reads a legacy catalog artifact that still spells the field chineseName", () => {
     const legacy = {
       generatedAt: "2026-01-01",
@@ -108,9 +114,13 @@ describe("searchCities — legacy catalog read boundary", () => {
     fs.writeFileSync(file, JSON.stringify(legacy));
     process.env.CIP_CATALOG_PATH = file;
 
-    const hits = searchCities("Nanjing", 5);
+    try {
+      const hits = searchCities("Nanjing", 5);
 
-    expect(hits[0].localName).toBe("南京");
-    expect(hits[0]).not.toHaveProperty("chineseName");
+      expect(hits[0].localName).toBe("南京");
+      expect(hits[0]).not.toHaveProperty("chineseName");
+    } finally {
+      fs.unlinkSync(file);
+    }
   });
 });
