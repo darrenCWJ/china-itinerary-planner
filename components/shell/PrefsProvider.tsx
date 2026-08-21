@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { AccentTheme } from "@/lib/accent";
 import {
   DEFAULT_PREFS,
@@ -9,23 +17,30 @@ import {
   resolveAccentVars,
   sanitizePrefs,
   serializePrefsCookie,
+  type ThemePref,
   type UserPrefs,
 } from "@/lib/prefs";
 
-/**
- * PR1 renders light and only light. The preference is read, stored and sent to
- * the server, but the attribute is pinned, because every component that exists
- * today is written against fixed light palette utilities — honouring a dark
- * preference now would restyle half the app and leave the other half white.
- * PR2 builds the shell that consumes the tokens and deletes this constant.
- */
-const PINNED_THEME: AccentTheme = "light";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/** The stored preference is one of three; the ramp is one of two. */
+function resolveTheme(pref: ThemePref, systemPrefersDark: boolean): AccentTheme {
+  if (pref === "system") return systemPrefersDark ? "dark" : "light";
+  return pref;
+}
 
 const YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 interface PrefsContextValue {
   prefs: UserPrefs;
   setPrefs(next: UserPrefs): void;
+  /**
+   * The resolved ramp, published once so every surface reads the same answer.
+   * `WorldMap` and `CountryHero` default their `theme` prop from this rather
+   * than resolving it again locally, which is what stops a component
+   * disagreeing with the page it sits on.
+   */
+  theme: AccentTheme;
 }
 
 /**
@@ -36,6 +51,7 @@ interface PrefsContextValue {
 const PrefsContext = createContext<PrefsContextValue>({
   prefs: DEFAULT_PREFS,
   setPrefs: () => {},
+  theme: "light",
 });
 
 function readCookie(): string | undefined {
@@ -70,9 +86,25 @@ export function PrefsProvider({
     });
   }, []);
 
+  // `false` until the effect corrects it, and deliberately so: the inline
+  // script in app/layout has already set the attribute from the same cookie and
+  // the same media query before React ran, so the one-frame default is never
+  // painted. Reading matchMedia during render would break the server pass.
+  const [systemDark, setSystemDark] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia(DARK_QUERY);
+    setSystemDark(mq.matches);
+    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const theme = resolveTheme(prefs.theme, systemDark);
+
   const accentVars = useMemo(
-    () => resolveAccentVars(prefs, country, PINNED_THEME),
-    [prefs, country]
+    () => resolveAccentVars(prefs, country, theme),
+    [prefs, country, theme]
   );
 
   // useLayoutEffect, not useEffect: this runs before paint, so it also repairs
@@ -80,13 +112,13 @@ export function PrefsProvider({
   // attributes it manages from JSX, clearing what the inline script set.
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.setAttribute("data-theme", PINNED_THEME);
+    root.setAttribute("data-theme", theme);
     for (const [name, value] of Object.entries(accentVars)) {
       root.style.setProperty(name, value);
     }
-  }, [accentVars]);
+  }, [accentVars, theme]);
 
-  const value = useMemo(() => ({ prefs, setPrefs }), [prefs, setPrefs]);
+  const value = useMemo(() => ({ prefs, setPrefs, theme }), [prefs, setPrefs, theme]);
 
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>;
 }

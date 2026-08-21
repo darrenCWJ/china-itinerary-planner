@@ -270,7 +270,7 @@ function ChinaLevel({
                 d={pathGen(f) ?? undefined}
                 fill={REGION_META[meta.region].color}
                 fillOpacity={dimmed ? 0.05 : FIT_FILL_OPACITY[regionFit]}
-                stroke={dimmed ? "#d9e7f4" : "#ffffff"}
+                stroke={dimmed ? "var(--line-1)" : "var(--paper)"}
                 strokeWidth={(zoomRegion ? 0.7 : 1) / k}
                 className={zoomRegion ? undefined : "cursor-pointer"}
                 onClick={() => {
@@ -295,7 +295,7 @@ function ChinaLevel({
             <path
               d={pathGen(ninedash) ?? undefined}
               fill="none"
-              stroke="#c93b2e"
+              stroke="var(--seal)"
               strokeOpacity={0.5}
               strokeWidth={1}
             />
@@ -314,7 +314,7 @@ function ChinaLevel({
                   className="pointer-events-none font-mono uppercase"
                   fontSize={13}
                   letterSpacing="0.18em"
-                  fill="#4a5b72"
+                  fill="var(--ink-2)"
                   opacity={0.85}
                 >
                   {REGION_META[region].label}
@@ -322,12 +322,20 @@ function ChinaLevel({
               );
             })}
 
-          {/* Suggested route */}
+          {/*
+            Suggested route. Neutral ink rather than the blue literal it used to
+            be: at strokeOpacity 0.75 no single fixed colour clears 3:1 against
+            both papers (over white it would have to be darker than L 0.07, over
+            dark paper lighter than L 0.15), so the line has to follow the ramp.
+            `--ink-1` and not an accent token because the selection ring beside
+            it is `--seal` — an accent-coloured route would read as the same
+            mark. The stop numbers carry the meaning; the line only connects.
+          */}
           {routePoints.length >= 2 && (
             <polyline
               points={routePoints.map(([x, y]) => `${x},${y}`).join(" ")}
               fill="none"
-              stroke="#1d5c9e"
+              stroke="var(--ink-1)"
               strokeWidth={2 / k}
               strokeDasharray={`${7 / k} ${5 / k}`}
               strokeLinecap="round"
@@ -372,7 +380,7 @@ function ChinaLevel({
                       cy={y}
                       r={r + 3.5 / k}
                       fill="none"
-                      stroke="#c93b2e"
+                      stroke="var(--seal)"
                       strokeWidth={2 / k}
                       opacity={0.9}
                     />
@@ -383,7 +391,7 @@ function ChinaLevel({
                     r={r}
                     fill={FIT_COLORS[fit]}
                     fillOpacity={p.kind === "curated" ? 0.95 : 0.8}
-                    stroke="#ffffff"
+                    stroke="var(--paper)"
                     strokeWidth={1.2 / k}
                   />
                   {isSelected && stopIndex >= 0 && (
@@ -393,7 +401,7 @@ function ChinaLevel({
                       textAnchor="middle"
                       fontSize={Math.max(8 / k, r * 1.1)}
                       fontWeight={700}
-                      fill="#ffffff"
+                      fill="var(--paper)"
                       className="pointer-events-none"
                     >
                       {stopIndex + 1}
@@ -406,8 +414,8 @@ function ChinaLevel({
                       textAnchor="middle"
                       fontSize={zoomRegion ? 11 / k : 11}
                       fontWeight={600}
-                      fill="#17263b"
-                      stroke="#ffffff"
+                      fill="var(--ink-0)"
+                      stroke="var(--paper)"
                       strokeWidth={3 / k}
                       paintOrder="stroke"
                       className="pointer-events-none"

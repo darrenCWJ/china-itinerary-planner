@@ -112,10 +112,9 @@ export interface WorldMapProps {
   /** Hover in container coordinates, for a popup the parent positions. */
   onHoverCountry?: (code: string | null, pos: HoverPos | null) => void;
   /**
-   * Which accent ramp to tint with. Defaults to light because the shell still
-   * pins `data-theme="light"` (`PrefsProvider`'s `PINNED_THEME`) — resolving the
-   * theme a second time here would let the map disagree with the page it sits
-   * on. PR3 drops the pin and this is the one prop that has to be wired.
+   * Which accent ramp to tint with. Defaults to the ramp `PrefsProvider`
+   * resolved — resolving the theme a second time here would let the map
+   * disagree with the page it sits on. Override only to render a fixed ramp.
    */
   theme?: AccentTheme;
 }
@@ -130,12 +129,13 @@ export function WorldMap({
   selectedCountry = null,
   onSelectCountry,
   onHoverCountry,
-  theme = "light",
+  theme: themeOverride,
 }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef(new Map<string, SVGGElement>());
   const pickerId = useId();
-  const { prefs } = usePrefs();
+  const { prefs, theme: resolvedTheme } = usePrefs();
+  const theme = themeOverride ?? resolvedTheme;
 
   const [world, setWorld] = useState<WorldTopology | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -490,16 +490,19 @@ export function WorldMap({
         top-left corner, so anything inserted before the map would silently
         offset every hover popup the parent draws.
 
-        The ground is `--ink-0` because everything above the scrim is light text.
-        That token inverts under `data-theme="dark"`, which is unreachable while
-        `PrefsProvider` pins light; it needs revisiting with the `theme` prop in
-        PR3, and for the same reason.
+        The ground is a fixed dark value and not `--ink-0`, which is what it was
+        while the shell pinned light. Everything above the scrim here is literal
+        white — `text-white` below, and `white/70` on the eyebrow — so the ground
+        has to stay dark in *both* ramps. `--ink-0` inverts to near-white under
+        `data-theme="dark"` and would have put white type on a white band. This
+        is the light ramp's own `--ink-0` value, frozen: the band is unchanged in
+        light and reads as an elevated dark surface on dark paper.
       */}
       {selectedEntry && (
         <CountryHero
           countryCode={selectedEntry.code}
           theme={theme}
-          className="mt-3 rounded-xl bg-[var(--ink-0)] px-4 py-3 text-white"
+          className="mt-3 rounded-xl bg-[#17263b] px-4 py-3 text-white"
         >
           <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/70">
             Selected

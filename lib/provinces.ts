@@ -71,7 +71,17 @@ export function regionForProvinceText(text: string): ChinaRegion | undefined {
   return undefined;
 }
 
-/** Display metadata per region: atlas tint + label anchor (lon/lat). */
+/**
+ * Display metadata per region: atlas tint + label anchor (lon/lat).
+ *
+ * The tints are categorical and stay literals for the same reason `FIT_COLORS`
+ * does. They only ever render as province fills at `FIT_FILL_OPACITY` (0.05 to
+ * 0.5), never as solid swatches, so what matters is that a tinted province is
+ * still separable from the paper. Measured on the dark ramp at the strongest
+ * tint (0.5) they land at 1.55–2.05 against dark paper, against 1.86–2.32 in
+ * light: the same faint wash in both, so nothing disappeared and nothing was
+ * lifted.
+ */
 export const REGION_META: Record<
   ChinaRegion,
   { color: string; label: string; anchor: [number, number] }
