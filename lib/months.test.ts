@@ -8,7 +8,7 @@ import {
   REGION_MONTHS,
   seasonOfMonth,
 } from "./months";
-import type { Region } from "./types";
+import type { ChinaRegion } from "./types";
 
 describe("seasonOfMonth", () => {
   test("maps month boundaries to the right seasons", () => {
@@ -68,7 +68,7 @@ describe("holiday bands and crowds", () => {
 });
 
 describe("REGION_MONTHS climate table", () => {
-  const regions: Region[] = [
+  const regions: ChinaRegion[] = [
     "North",
     "Northeast",
     "Northwest",

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
+import { fitForPlace, fitForRegion, NEUTRAL_FIT, type MapPlace } from "./mapTypes";
 
 /**
  * What is asserted here is the coordination the component exists for: which
@@ -70,6 +71,22 @@ const CHINA_FIXTURE = {
 };
 
 const CHINA_TOPOLOGY_PATH = "/china-provinces.json";
+
+/** A generic catalog place — the shape MapExplorer builds for a catalog city. */
+const A_CATALOG_PLACE: MapPlace = {
+  id: "some-catalog-qid",
+  kind: "catalog",
+  name: "Some City",
+  localName: null,
+  province: "Some Province",
+  region: "East",
+  lat: 30,
+  lon: 120,
+  population: 100_000,
+  level: "prefecture",
+  attractionCount: 2,
+  blurb: null,
+};
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -208,5 +225,20 @@ describe("MapExplorer", () => {
     // Named by regex: the selected country's label carries a suffix.
     await screen.findByRole("button", { name: /China/ });
     expect(requested("/world-countries.json")).toBe(true);
+  });
+});
+
+describe("fit lookups degrade instead of throwing on a foreign region label", () => {
+  test("an unknown region label gets a neutral fit instead of throwing", () => {
+    // bestSeasons: undefined is load-bearing — fitForPlace returns early when a
+    // place has its own seasons, so a fixture that sets them would never reach
+    // the REGION_MONTHS lookup this test exists to cover.
+    const abroad = { ...A_CATALOG_PLACE, region: "Kansai", bestSeasons: undefined };
+    expect(() => fitForPlace(abroad, 4)).not.toThrow();
+    expect(fitForPlace(abroad, 4)).toBe(NEUTRAL_FIT);
+  });
+
+  test("fitForRegion degrades on a label outside China's seven", () => {
+    expect(fitForRegion("Kansai", 4)).toBe(NEUTRAL_FIT);
   });
 });

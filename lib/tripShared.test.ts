@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { tripCountry } from "./tripShared";
 import type { TripData } from "./tripShared";
 import type { TripInput } from "./itinerary";
-import type { ChinaRegion, Region } from "./types";
+import type { Destination } from "./types";
 
 function tripData(input: Partial<TripInput>): TripData {
   return {
@@ -37,13 +37,14 @@ describe("tripCountry", () => {
   });
 });
 
-describe("ChinaRegion alias", () => {
-  test("is the same type as Region, so existing consumers are untouched", () => {
-    // A compile-time assertion first: the two names have to stay mutually
-    // assignable or the "mechanical alias" claim is false and every Region
-    // consumer would need touching.
-    const asChina: ChinaRegion = "East" satisfies Region;
-    const asRegion: Region = asChina;
-    expect(asRegion).toBe("East");
+describe("Destination.region is free-form", () => {
+  test("accepts a region label that is meaningful outside China", () => {
+    const kansai: Destination["region"] = "Kansai";
+    expect(kansai).toBe("Kansai");
+  });
+
+  test("still accepts China's own labels, which are just strings now", () => {
+    const east: Destination["region"] = "East";
+    expect(east).toBe("East");
   });
 });
