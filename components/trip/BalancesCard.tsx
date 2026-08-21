@@ -4,6 +4,8 @@ import { useState } from "react";
 import {
   formatMinor,
   majorToMinor,
+  minorToMajorInput,
+  minorUnitDigits,
   settleUp,
   type CurrencyBalances,
 } from "@/lib/money";
@@ -16,6 +18,18 @@ export interface SettlementDraft {
   to: string;
   amount: number;
   currency: string;
+}
+
+/**
+ * A currency-appropriate amount for the "couldn't parse that" hint: "62.25"
+ * for a two-decimal currency, "62.250" for three, plain "62" for a currency
+ * with no minor unit at all. Mirrors ExpenseForm's `amountHint` -- same
+ * technique, different example number, since the two messages have always
+ * used different figures.
+ */
+function amountHint(currency: string): string {
+  const digits = minorUnitDigits(currency);
+  return digits === 0 ? "62" : `62.${"25".padEnd(digits, "0")}`;
 }
 
 type Props = {
@@ -39,15 +53,15 @@ export function BalancesCard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const startConfirm = (key: string, amountMinor: number) => {
+  const startConfirm = (key: string, amountMinor: number, currency: string) => {
     setConfirming(key);
-    setConfirmAmount((amountMinor / 100).toFixed(2));
+    setConfirmAmount(minorToMajorInput(amountMinor, currency));
     setError(null);
   };
 
   const recordRepayment = async (from: string, to: string, currency: string) => {
     const minor = majorToMinor(confirmAmount, currency);
-    if (minor === null) return setError("Enter an amount like 62.25.");
+    if (minor === null) return setError(`Enter an amount like ${amountHint(currency)}.`);
     setBusy(true);
     const err = await onAddSettlement({ date: todayIso(), from, to, amount: minor, currency });
     setBusy(false);
@@ -114,7 +128,7 @@ export function BalancesCard({
                     {formatMinor(t.amount, currency)}
                   </span>
                   {isMember && confirming !== key && (
-                    <button type="button" onClick={() => startConfirm(key, t.amount)}
+                    <button type="button" onClick={() => startConfirm(key, t.amount, currency)}
                       className="ml-auto rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
                       Mark repaid
                     </button>

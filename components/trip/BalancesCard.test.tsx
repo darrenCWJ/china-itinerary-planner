@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import type { CurrencyBalances } from "@/lib/money";
-import { BalancesCard } from "./BalancesCard";
+import { BalancesCard, type SettlementDraft } from "./BalancesCard";
 
 /**
  * The balance row encodes state in colour: two spans of identical role, size and
@@ -59,5 +59,49 @@ describe("balance signals", () => {
     expect(owes.className).toContain("text-[var(--seal)]");
     // Equal classes would satisfy the assertion above while erasing the signal.
     expect(owed.className).not.toBe(owes.className);
+  });
+});
+
+/**
+ * "Mark repaid" seeds its confirm field from the transfer's stored minor-unit
+ * amount via `minorToMajorInput` (lib/money.ts) -- the declared inverse of the
+ * `majorToMinor` parser this confirm box re-parses on "Confirm". Before that
+ * inverse existed, the seed was a hardcoded `(amount / 100).toFixed(2)`, which
+ * disagrees with `majorToMinor` for any currency that isn't exponent-2: a
+ * three-decimal currency's transfer gets silently multiplied by ten on an
+ * untouched confirm. This drives the real component -- render, click "Mark
+ * repaid", click "Confirm" without editing the field -- rather than testing
+ * lib/money.ts in isolation.
+ */
+describe("confirming a repayment untouched", () => {
+  test("a three-decimal currency (KWD) records its stored amount, not ten times it", async () => {
+    const kwdBalances: CurrencyBalances[] = [
+      {
+        currency: "KWD",
+        balances: [
+          { member: "Ada", net: 50_000 }, // KWD 50.000
+          { member: "Bob", net: -50_000 },
+        ],
+      },
+    ];
+    let recorded: SettlementDraft | null = null;
+    render(
+      <BalancesCard
+        currencies={kwdBalances}
+        settlements={[]}
+        isMember={true}
+        onAddSettlement={async (draft) => {
+          recorded = draft;
+          return null;
+        }}
+        onDeleteSettlement={async () => null}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark repaid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await waitFor(() => expect(recorded).not.toBeNull());
+    expect((recorded as unknown as SettlementDraft).amount).toBe(50_000);
   });
 });
