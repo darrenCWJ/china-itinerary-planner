@@ -1,7 +1,16 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import cdnFixture from "./data/rates-fixtures/cdn-cny.json";
 import erApiFixture from "./data/rates-fixtures/er-api-cny.json";
-import { parseCdnRates, parseErApiRates } from "./rates";
+import {
+  getLastGoodRates,
+  isKnownCurrencyCode,
+  parseCdnRates,
+  parseErApiRates,
+  resolveRates,
+  setLastGoodRates,
+  type NormalizedRates,
+  type RateSource,
+} from "./rates";
 
 describe("parseErApiRates", () => {
   test("normalises the real er-api payload", () => {
@@ -126,5 +135,131 @@ describe("parseCdnRates", () => {
   test("an empty or blank requested base returns null rather than guessing a key", () => {
     expect(parseCdnRates(cdnFixture, "")).toBeNull();
     expect(parseCdnRates(cdnFixture, "   ")).toBeNull();
+  });
+});
+
+describe("isKnownCurrencyCode", () => {
+  test("accepts real ISO codes regardless of case or surrounding whitespace", () => {
+    expect(isKnownCurrencyCode("CNY")).toBe(true);
+    expect(isKnownCurrencyCode("usd")).toBe(true);
+    expect(isKnownCurrencyCode(" eur ")).toBe(true);
+  });
+
+  test("rejects a well-formed but unknown three-letter code", () => {
+    // The exact case a "does this look like a currency code" regex would
+    // wrongly let through — this is why the check is set membership, not a
+    // shape check.
+    expect(isKnownCurrencyCode("ZZZ")).toBe(false);
+    expect(isKnownCurrencyCode("XXX")).toBe(false);
+  });
+
+  test("rejects input that isn't even the right shape", () => {
+    expect(isKnownCurrencyCode("")).toBe(false);
+    expect(isKnownCurrencyCode("US")).toBe(false);
+    expect(isKnownCurrencyCode("USDD")).toBe(false);
+    expect(isKnownCurrencyCode("1; DROP TABLE")).toBe(false);
+  });
+});
+
+describe("getLastGoodRates / setLastGoodRates", () => {
+  const sample = (base: string): NormalizedRates => ({
+    base,
+    rates: { USD: 0.14 },
+    asOf: new Date("2026-08-21").toISOString(),
+    source: "er-api",
+  });
+
+  test("returns null for a base nothing has ever been cached for", () => {
+    // AWG is not touched by any other test in this file.
+    expect(getLastGoodRates("AWG")).toBeNull();
+  });
+
+  test("returns what was stored, looked up case-insensitively", () => {
+    setLastGoodRates(sample("AUD"));
+    expect(getLastGoodRates("AUD")).toEqual(sample("AUD"));
+    expect(getLastGoodRates("aud")).toEqual(sample("AUD"));
+  });
+});
+
+describe("resolveRates", () => {
+  const makeRates = (base: string, source: RateSource): NormalizedRates => ({
+    base,
+    rates: { USD: 0.14 },
+    asOf: new Date("2026-08-21").toISOString(),
+    source,
+  });
+
+  test("primary success skips the fallback entirely", async () => {
+    const erApiResult = makeRates("GBP", "er-api");
+    const fetchErApi = vi.fn().mockResolvedValue(erApiResult);
+    const fetchCdn = vi.fn();
+
+    const result = await resolveRates("GBP", { fetchErApi, fetchCdn });
+
+    expect(fetchCdn).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, data: { ...erApiResult, stale: false } });
+  });
+
+  test("primary failure falls back to the CDN", async () => {
+    const cdnResult = makeRates("JPY", "cdn");
+    const fetchErApi = vi.fn().mockResolvedValue(null);
+    const fetchCdn = vi.fn().mockResolvedValue(cdnResult);
+
+    const result = await resolveRates("JPY", { fetchErApi, fetchCdn });
+
+    expect(fetchErApi).toHaveBeenCalledTimes(1);
+    expect(fetchCdn).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, data: { ...cdnResult, stale: false } });
+  });
+
+  test("both providers failing returns the last good cached value, marked stale", async () => {
+    // Prime the cache the same way a real prior request would: a successful
+    // resolveRates call for this base.
+    const primed = makeRates("KRW", "er-api");
+    await resolveRates("KRW", {
+      fetchErApi: vi.fn().mockResolvedValue(primed),
+      fetchCdn: vi.fn(),
+    });
+
+    const fetchErApi = vi.fn().mockResolvedValue(null);
+    const fetchCdn = vi.fn().mockResolvedValue(null);
+    const result = await resolveRates("KRW", { fetchErApi, fetchCdn });
+
+    expect(result).toEqual({ ok: true, data: { ...primed, stale: true } });
+  });
+
+  test("both providers failing with nothing cached yet is an error, not a throw", async () => {
+    // NOK is not primed by any other test in this file.
+    const fetchErApi = vi.fn().mockResolvedValue(null);
+    const fetchCdn = vi.fn().mockResolvedValue(null);
+
+    const result = await resolveRates("NOK", { fetchErApi, fetchCdn });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(502);
+  });
+
+  test("an invalid base is rejected before either fetcher is ever called", async () => {
+    const fetchErApi = vi.fn();
+    const fetchCdn = vi.fn();
+
+    const result = await resolveRates("ZZZ", { fetchErApi, fetchCdn });
+
+    expect(fetchErApi).not.toHaveBeenCalled();
+    expect(fetchCdn).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(400);
+  });
+
+  test("validation happens before any fetch — proven by fetchers that would throw if reached", async () => {
+    // Belt-and-braces on the ordering claim above: if validation were ever
+    // moved after the fetch calls, these rejections would fail the test
+    // instead of the assertions quietly passing on an uncalled mock.
+    const fetchErApi = vi.fn().mockRejectedValue(new Error("must not be called"));
+    const fetchCdn = vi.fn().mockRejectedValue(new Error("must not be called"));
+
+    await expect(
+      resolveRates("NOTACODE", { fetchErApi, fetchCdn })
+    ).resolves.toMatchObject({ ok: false, status: 400 });
   });
 });
