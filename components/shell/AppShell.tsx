@@ -78,12 +78,13 @@ export function AppShell({
 
   return (
     <div
-      // --surf-1 is #f1f5fa, the same value the retiring mist palette gave the
-      // body, and --paper is the white the old header used. Assigning
-      // them this way round is what keeps the cutover invisible to every page:
-      // content keeps its backdrop and the header keeps its contrast. The
-      // reverse — which reads more naturally from the token names — would flip
-      // every page from mist to white in one commit.
+      // --surf-1 is #f1f5fa in light mode — the value the old mist palette
+      // (now retired) gave the body — and a separate dark value (#161d27) in
+      // dark mode; --paper is the white the old header used in light mode.
+      // Assigning them this way round is what keeps the cutover invisible to
+      // every page: content keeps its backdrop and the header keeps its
+      // contrast. The reverse — which reads more naturally from the token
+      // names — would flip every page from mist to white in one commit.
       className="flex min-h-dvh flex-col"
       style={{ background: "var(--surf-1)", color: "var(--ink-0)" }}
     >

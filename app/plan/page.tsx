@@ -112,8 +112,9 @@ export default function PlanPage() {
       id,
       name: trimmed,
       localName: null,
-      // Region is required and PR3 retires the union. Nothing reads it for a
-      // place with no coordinates, so this is a placeholder, not a claim.
+      // Region is required — a plain string now that PR3 retired the Region
+      // union. Nothing reads it for a place with no coordinates, so this is a
+      // placeholder, not a claim.
       region: "Central",
       country: "CN",
       lat: null,
