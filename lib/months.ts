@@ -1,7 +1,12 @@
-import type { Region, Season } from "./types";
+import type { ChinaRegion, Season } from "./types";
 
-/** How well a month suits a place. Drives map tinting and popup verdicts. */
-export type MonthFit = "great" | "ok" | "poor" | "avoid";
+/**
+ * How well a month suits a place. Drives map tinting and popup verdicts.
+ * `unknown` is not a fifth rating — it is what a place outside China's own
+ * month table gets, so a foreign catalog city is never told it's "off-season"
+ * (that's what `poor` claims) when the table simply has no row for it.
+ */
+export type MonthFit = "great" | "ok" | "poor" | "avoid" | "unknown";
 
 export interface MonthInfo {
   /** 1–12 */
@@ -113,7 +118,7 @@ export interface RegionMonthClimate {
  * South→Guangzhou, Southwest→Chengdu/Kunming, Northwest→Xi'an/Dunhuang,
  * Central→Wuhan). Used for catalog cities that lack curated season data.
  */
-export const REGION_MONTHS: Record<Region, RegionMonthClimate[]> = {
+export const REGION_MONTHS: Record<ChinaRegion, RegionMonthClimate[]> = {
   North: [
     { lo: -9, hi: 2, fit: "poor", note: "Bitter dry cold, clear skies" },
     { lo: -7, hi: 5, fit: "poor" },
@@ -214,7 +219,7 @@ export const REGION_MONTHS: Record<Region, RegionMonthClimate[]> = {
   ],
 };
 
-export function regionMonthClimate(region: Region, month: number): RegionMonthClimate {
+export function regionMonthClimate(region: ChinaRegion, month: number): RegionMonthClimate {
   return REGION_MONTHS[region][month - 1];
 }
 

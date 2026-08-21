@@ -12,6 +12,7 @@ import {
   FIT_LABELS,
   fitForPlace,
   formatPopulation,
+  isChinaRegion,
   type MapPlace,
 } from "./mapTypes";
 
@@ -27,7 +28,10 @@ const POPUP_W = 260;
 /** Hover card following the cursor over a map marker. */
 export function PlacePopup({ place, month, position, containerWidth }: Props) {
   const fit = fitForPlace(place, month);
-  const climate = regionMonthClimate(place.region, month);
+  // regionMonthClimate is China-only data (see lib/months.ts); a place from
+  // outside China's seven regions has no row to read, so this degrades to no
+  // climate line instead of throwing.
+  const climate = isChinaRegion(place.region) ? regionMonthClimate(place.region, month) : null;
   const season = seasonOfMonth(month);
   const seasonNote = place.seasonNotes?.[season];
   const highlight = place.kind === "curated" ? highlightFor(place.id, month) : undefined;
@@ -68,12 +72,14 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
           aria-hidden
         />
         <span className="text-xs font-semibold">{FIT_LABELS[fit]}</span>
-        <span className="text-xs text-[var(--ink-2)]">
-          {climate.lo}°–{climate.hi}°C typical
-        </span>
+        {climate && (
+          <span className="text-xs text-[var(--ink-2)]">
+            {climate.lo}°–{climate.hi}°C typical
+          </span>
+        )}
       </div>
 
-      {climate.note && !seasonNote && (
+      {climate?.note && !seasonNote && (
         <p className="mt-1 text-xs text-[var(--ink-2)]">{climate.note}</p>
       )}
       {seasonNote && <p className="mt-1 text-xs text-[var(--ink-2)]">{seasonNote}</p>}

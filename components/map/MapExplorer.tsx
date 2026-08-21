@@ -8,7 +8,7 @@ import { DESTINATIONS } from "@/lib/data";
 import { latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
-import type { Region } from "@/lib/types";
+import type { ChinaRegion } from "@/lib/types";
 import { CountryMap, hasDetailLevel } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
@@ -61,7 +61,7 @@ export function MapExplorer({
   onMonthPicked,
 }: Props) {
   const [month, setMonth] = useState(DEFAULT_MONTH);
-  const [zoomRegion, setZoomRegion] = useState<Region | null>(null);
+  const [zoomRegion, setZoomRegion] = useState<ChinaRegion | null>(null);
   const [topology, setTopology] = useState<Topology | null>(null);
   const [cities, setCities] = useState<MapCity[]>([]);
   const [citiesUnavailable, setCitiesUnavailable] = useState(false);

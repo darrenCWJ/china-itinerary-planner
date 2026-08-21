@@ -6,7 +6,7 @@ import type { Topology, GeometryCollection } from "topojson-specification";
 import { getCountry } from "@/lib/countries";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
-import type { Region } from "@/lib/types";
+import type { ChinaRegion } from "@/lib/types";
 import {
   buildFitProjection,
   createHoverReporter,
@@ -65,9 +65,9 @@ interface LevelProps {
    * into, so a wider type would be a promise this level cannot keep. PR3
    * generalises it alongside the data.
    */
-  zoomRegion: Region | null;
+  zoomRegion: ChinaRegion | null;
   routeIds: string[];
-  onZoomRegion: (region: Region | null) => void;
+  onZoomRegion: (region: ChinaRegion | null) => void;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -303,7 +303,7 @@ function ChinaLevel({
 
           {/* Region labels at country level */}
           {!zoomRegion &&
-            (Object.keys(REGION_META) as Region[]).map((region) => {
+            (Object.keys(REGION_META) as ChinaRegion[]).map((region) => {
               const [x, y] = project(...REGION_META[region].anchor);
               return (
                 <text

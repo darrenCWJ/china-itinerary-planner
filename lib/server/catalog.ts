@@ -5,7 +5,7 @@ import { DESTINATIONS } from "../data";
 import { foldPlaceName } from "../foldPlaceName";
 import { regionForProvinceText } from "../provinces";
 import type { CatalogHit, MapCity } from "../tripShared";
-import type { Activity, Destination, Interest, Region } from "../types";
+import type { Activity, ChinaRegion, Destination, Interest } from "../types";
 
 export interface CatalogCity {
   qid: string;
@@ -201,7 +201,7 @@ export function searchCities(query: string, limit = 25): CatalogHit[] {
   });
 }
 
-function regionFor(province: string | null, cityName: string): Region {
+function regionFor(province: string | null, cityName: string): ChinaRegion {
   return regionForProvinceText(`${province ?? ""} ${cityName}`) ?? "Central";
 }
 

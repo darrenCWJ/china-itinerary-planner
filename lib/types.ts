@@ -31,9 +31,6 @@ export type ChinaRegion =
   | "Southwest"
   | "Central";
 
-/** @deprecated Use ChinaRegion. Kept so existing consumers compile unchanged. */
-export type Region = ChinaRegion;
-
 export type TimeSlot = "morning" | "afternoon" | "evening";
 
 /** When an activity can be scheduled. "day" = morning or afternoon, "any" = any slot. */
@@ -57,7 +54,13 @@ export interface Destination {
   name: string;
   /** Name in the local language. `null` for a hand-typed place with none. */
   localName: string | null;
-  region: Region;
+  /**
+   * A region label meaningful inside this destination's country — "East" in
+   * China, "Kansai" in Japan. Free-form by spec §5.1: there is no union that
+   * could span every country, and inventing one per country would put the
+   * catalog's vocabulary in the type system.
+   */
+  region: string;
   /** ISO alpha-2. Absent on the curated data, which is all China. */
   country?: CountryCode;
   /**

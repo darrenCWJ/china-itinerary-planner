@@ -1,4 +1,4 @@
-import type { Region } from "./types";
+import type { ChinaRegion } from "./types";
 
 /**
  * Province metadata keyed by the adcodes used in public/china-provinces.json
@@ -8,7 +8,7 @@ export interface ProvinceMeta {
   adcode: number;
   nameZh: string;
   nameEn: string;
-  region: Region;
+  region: ChinaRegion;
 }
 
 export const PROVINCES: ProvinceMeta[] = [
@@ -58,12 +58,12 @@ export function provinceByAdcode(adcode: number): ProvinceMeta | undefined {
  * Keyword → region lookup for free-text province strings (catalog data uses
  * English names like "Henan" or "Xinjiang Uyghur Autonomous Region").
  */
-const REGION_KEYWORDS: [string, Region][] = [
-  ...PROVINCES.map((p): [string, Region] => [p.nameEn.toLowerCase(), p.region]),
+const REGION_KEYWORDS: [string, ChinaRegion][] = [
+  ...PROVINCES.map((p): [string, ChinaRegion] => [p.nameEn.toLowerCase(), p.region]),
   ["xizang", "Southwest"],
 ];
 
-export function regionForProvinceText(text: string): Region | undefined {
+export function regionForProvinceText(text: string): ChinaRegion | undefined {
   const haystack = text.toLowerCase();
   for (const [key, region] of REGION_KEYWORDS) {
     if (haystack.includes(key)) return region;
@@ -73,7 +73,7 @@ export function regionForProvinceText(text: string): Region | undefined {
 
 /** Display metadata per region: atlas tint + label anchor (lon/lat). */
 export const REGION_META: Record<
-  Region,
+  ChinaRegion,
   { color: string; label: string; anchor: [number, number] }
 > = {
   North: { color: "#8a6d3b", label: "North", anchor: [111.5, 41.5] },
@@ -85,7 +85,7 @@ export const REGION_META: Record<
   Central: { color: "#a8564e", label: "Central", anchor: [112.6, 31.2] },
 };
 
-export const REGION_ORDER: Region[] = [
+export const REGION_ORDER: ChinaRegion[] = [
   "North",
   "Northeast",
   "East",
