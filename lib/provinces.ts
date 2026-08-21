@@ -95,12 +95,3 @@ export const REGION_META: Record<
   Central: { color: "#a8564e", label: "Central", anchor: [112.6, 31.2] },
 };
 
-export const REGION_ORDER: ChinaRegion[] = [
-  "North",
-  "Northeast",
-  "East",
-  "Central",
-  "South",
-  "Southwest",
-  "Northwest",
-];
