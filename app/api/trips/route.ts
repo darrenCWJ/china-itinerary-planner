@@ -3,7 +3,14 @@ import { ensureCatalogLoaded } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
 import { getSessionUser } from "@/lib/server/session";
-import { createTrip, DB_UNAVAILABLE, linkMemberAccount, storeMode } from "@/lib/server/store";
+import {
+  createTrip,
+  DB_UNAVAILABLE,
+  linkMemberAccount,
+  setCurrencySettings,
+  storeMode,
+} from "@/lib/server/store";
+import { initialCurrencySettings } from "@/lib/tripShared";
 import { resolveTripSeason } from "@/lib/tripSeason";
 
 export async function POST(req: NextRequest) {
@@ -50,6 +57,11 @@ export async function POST(req: NextRequest) {
 
   const creatorName = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   const { id, joinCode } = await createTrip(data, creatorName);
+  // Stamp the pivot the trip's rates will be expressed against (Task 8).
+  // Best-effort: a failed write here just leaves the trip reading the
+  // legacy absent-pivot default (see initialCurrencySettings), never a
+  // wrong or corrupted one, so it doesn't block trip creation.
+  await setCurrencySettings(id, initialCurrencySettings(input.country));
   const linked = await linkMemberAccount(id, creatorName, user.id);
   if (linked !== "linked") {
     console.error(`trip create: creator link failed (${linked}) for trip ${id}`);
