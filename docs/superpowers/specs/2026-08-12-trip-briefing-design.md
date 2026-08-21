@@ -10,7 +10,7 @@ the whole trip — overview, day-by-day explorer, at-a-glance charts, logistics 
 readable as a fifth tab by members, and sendable as a read-only link to people
 who will never join the trip (grandparents, a group chat).
 
-Prompted by `interactive_trip_planner.html`, a one-off research artifact for a
+Prompted by `docs/prototypes/interactive_trip_planner.html`, a one-off research artifact for a
 Fujian–Kinmen trip. What we take from it is the **structure** (overview card →
 day explorer → analytics → logistics tiles), not its sand/amber palette and not
 its data model.
