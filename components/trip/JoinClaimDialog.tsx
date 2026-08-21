@@ -50,7 +50,7 @@ export function JoinClaimDialog({ claimable, legacyName, onJoin }: Props) {
         </>
       )}
       <button type="button" onClick={() => void join()} disabled={busy}
-        className="mt-4 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        className="mt-4 rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--paper)] disabled:opacity-50">
         {busy ? "Joining…" : "Join trip"}
       </button>
       {error && <span className="ml-3 text-xs text-[var(--seal)]">{error}</span>}

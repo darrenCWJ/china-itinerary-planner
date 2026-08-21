@@ -320,7 +320,7 @@ function CurrencySettingsEditor({
       )}
       <div className="mt-3 flex items-center gap-3">
         <button type="button" onClick={() => void save()} disabled={saving}
-          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-3 py-1.5 text-xs font-semibold text-[var(--paper)] disabled:opacity-50">
           {saving ? "Saving…" : "Save rates"}
         </button>
         <button type="button" onClick={() => setOpen(false)}

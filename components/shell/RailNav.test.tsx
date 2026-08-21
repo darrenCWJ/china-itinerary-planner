@@ -41,15 +41,17 @@ const PAPER: [number, number, number] = [1, 1, 1];
 describe("RailNav active-tab contrast", () => {
   afterEach(cleanup);
 
-  test("the active tab draws its label in --ink-0, not --paper", () => {
+  test("the active tab draws its label in --on-accent, not --ink-0 or --paper", () => {
     search.current = "tab=money";
     render(<RailNav />);
 
     const active = screen.getByRole("link", { name: "Money and expenses" });
     expect(active).toHaveAttribute("aria-current", "page");
     expect(active.style.background).toBe("var(--accent-fill)");
-    // The regression: `var(--paper)` here is 2.60:1.
-    expect(active.style.color).toBe("var(--ink-0)");
+    // The regression: `var(--paper)` here is 2.60:1 in light. `var(--ink-0)`
+    // fixed light (5.82:1) but broke dark (1.72:1) — `--accent-fill` does not
+    // invert between ramps, so a ramp-following ink cannot pair with it in both.
+    expect(active.style.color).toBe("var(--on-accent)");
   });
 
   test("inactive tabs stay --ink-2 on the rail's own paper", () => {

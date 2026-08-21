@@ -380,7 +380,7 @@ export function MapExplorer({
             <button
               type="button"
               onClick={applyRouteOrder}
-              className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
+              className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
             >
               Apply this order
             </button>

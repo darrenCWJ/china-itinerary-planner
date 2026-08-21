@@ -179,7 +179,7 @@ export function TrackerTab({
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="rounded-xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-5 text-white">
+      <div className="rounded-xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-5 text-[var(--paper)]">
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">
           Day {dayIndex} of {days.length}
         </p>
@@ -198,7 +198,7 @@ export function TrackerTab({
         <h3 className="font-display text-lg font-semibold">Now &amp; next</h3>
         {guide.current ? (
           <p className="mt-2 text-sm">
-            <span className="rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] font-mono text-white">
+            <span className="rounded bg-[var(--seal)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--paper)]">
               NOW
             </span>{" "}
             {guide.current.title}
@@ -208,7 +208,7 @@ export function TrackerTab({
         )}
         {guide.next && (
           <p className="mt-1.5 text-sm">
-            <span className="rounded bg-[var(--accent-ink)] px-1.5 py-0.5 text-[10px] font-mono text-white">
+            <span className="rounded bg-[var(--accent-ink)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--paper)]">
               NEXT
             </span>{" "}
             {guide.next.title}

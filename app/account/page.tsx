@@ -103,7 +103,7 @@ export default function AccountPage() {
             onChange={(e) => setNewPassword(e.target.value)} />
         </label>
         <button type="button" onClick={() => void changePassword()} disabled={busy}
-          className="mt-4 rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          className="mt-4 rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-[var(--paper)] disabled:opacity-50">
           {busy ? "…" : "Change password"}
         </button>
         {message && <p role="status" className="mt-2 text-xs text-[var(--seal)]">{message}</p>}
@@ -131,7 +131,7 @@ export default function AccountPage() {
                     setResetPasswords((prev) => ({ ...prev, [u.id]: e.target.value }))
                   } />
                 <button type="button" onClick={() => void resetFor(u.id)} disabled={adminBusy}
-                  className="rounded-lg bg-[var(--accent-ink)] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                  className="rounded-lg bg-[var(--accent-ink)] px-2.5 py-1 text-xs font-semibold text-[var(--paper)] disabled:opacity-50">
                   Reset
                 </button>
               </li>

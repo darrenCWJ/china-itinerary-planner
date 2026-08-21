@@ -115,7 +115,7 @@ export function BalancesCard({
                   </span>
                   {isMember && confirming !== key && (
                     <button type="button" onClick={() => startConfirm(key, t.amount)}
-                      className="ml-auto rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-white hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
+                      className="ml-auto rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]">
                       Mark repaid
                     </button>
                   )}
@@ -127,7 +127,7 @@ export function BalancesCard({
                         onChange={(e) => setConfirmAmount(e.target.value)} />
                       <button type="button" disabled={busy}
                         onClick={() => void recordRepayment(t.from, t.to, currency)}
-                        className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                        className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] disabled:opacity-50">
                         {busy ? "…" : "Confirm"}
                       </button>
                       <button type="button" onClick={() => setConfirming(null)}

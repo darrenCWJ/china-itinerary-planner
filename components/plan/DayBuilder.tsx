@@ -428,7 +428,7 @@ function TargetDayChip({
             // label: without it, tabbing onto a chip moves focus somewhere
             // invisible and there is no focus indicator at all (WCAG 2.4.7).
             className={`flex min-h-[var(--tap-min)] cursor-pointer items-center rounded-full px-3 text-sm font-medium has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--accent-ink)] ${
-              isTarget ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+              isTarget ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
             } ${isOver ? "ring-2 ring-[var(--accent-ink)]" : ""} ${draggingShelf && !accepts ? "opacity-40" : ""}`}
           >
             <input

@@ -107,7 +107,7 @@ export function AppShell({
           className="flex min-h-[var(--tap-min)] items-center gap-2"
           style={{ color: "var(--ink-0)" }}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--seal)] font-kai text-lg text-white">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--seal)] font-kai text-lg text-[var(--paper)]">
             游
           </span>
           {/* The wordmark is desktop-only: §2.3 collapses the mobile header to

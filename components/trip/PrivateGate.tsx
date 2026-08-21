@@ -30,7 +30,7 @@ export function PrivateGate({ onSubmitCode }: Props) {
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} />
         <button type="button" onClick={() => void submit()} disabled={busy}
-          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-[var(--paper)] disabled:opacity-50">
           {busy ? "…" : "View trip"}
         </button>
       </div>

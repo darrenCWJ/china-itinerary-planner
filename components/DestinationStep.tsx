@@ -214,7 +214,7 @@ export function DestinationStep({
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
                 className={`px-3.5 py-1 text-xs font-medium transition-colors ${
-                  view === v ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+                  view === v ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
                 }`}
               >
                 {v === "map" ? "🗺️ Map" : "🎴 Cards"}
@@ -231,7 +231,7 @@ export function DestinationStep({
                   aria-pressed={region === r}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                     region === r
-                      ? "bg-[var(--accent-ink)] text-white"
+                      ? "bg-[var(--accent-ink)] text-[var(--paper)]"
                       : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
                   }`}
                 >

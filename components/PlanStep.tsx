@@ -51,8 +51,8 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
 
   return (
     <section>
-      <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-white sm:p-8">
-        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-white/80 text-white/90 sm:inline-flex">
+      <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-[var(--paper)] sm:p-8">
+        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
           启程
         </span>
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Boarding pass</p>
@@ -269,7 +269,7 @@ function ShareTripCard({
           type="button"
           onClick={() => void create()}
           disabled={creating}
-          className="rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--seal)]/85 disabled:opacity-50"
+          className="rounded-lg bg-[var(--seal)] px-5 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[var(--seal)]/85 disabled:opacity-50"
         >
           {creating ? "Creating…" : "Start shared trip →"}
         </button>

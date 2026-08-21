@@ -31,6 +31,12 @@
      chroma below must stay in step with lib/accent's RAMP. */
   --accent-ink: oklch(50% 0.08 30);
   --accent-fill: oklch(72% 0.115 30);
+  /* Ink for text sitting ON `--accent-fill`. Pinned dark in BOTH ramps, because
+     unlike every other token here `--accent-fill` does not invert — it is a light
+     colour in both (oklch 72% / 80%), per spec §4.2's "accent as fill behind
+     *dark* ink". A ramp-following token is wrong on it by construction: `--ink-0`
+     reads 5.82:1 in light and 1.72:1 in dark for the same pairing. */
+  --on-accent: #17263b;
   /* Brand vermilion — the chop mark. Fixed, not derived: this is the product's
      identity, not a country accent, so it does not move with the trip. */
   --seal: #c93b2e;
@@ -66,6 +72,10 @@
   --scrim: rgb(3 6 10 / 0.65);
   --accent-ink: oklch(80% 0.095 30);
   --accent-fill: oklch(80% 0.095 30);
+  /* Identical to :root's value — see there. Repeated, not inherited, so the
+     token stays a constant across ramps instead of silently starting to
+     invert if these blocks are ever reordered. */
+  --on-accent: #17263b;
   /* Lifted off #c93b2e, which sits at ~3.1:1 on dark paper. Same hue, raised
      lightness — the chop reads as the same mark in both ramps. */
   --seal: #f0705f;

@@ -146,7 +146,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
             <button key={c.id} type="button" onClick={() => setCategory(c.id)}
               aria-pressed={category === c.id}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                category === c.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+                category === c.id ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}>
               {c.emoji} {c.label}
             </button>
@@ -161,7 +161,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
             <button key={m} type="button" onClick={() => toggleSplit(m)}
               aria-pressed={splitAmong.includes(m)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                splitAmong.includes(m) ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+                splitAmong.includes(m) ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--surf-1)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
               }`}>
               {m}
             </button>
@@ -177,7 +177,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
 
       <div className="mt-4 flex items-center gap-3">
         <button type="button" onClick={() => void submit()} disabled={saving}
-          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
+          className="rounded-lg bg-[var(--accent-ink)] px-4 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-50">
           {saving ? "Saving…" : submitLabel}
         </button>
         {onCancel && (

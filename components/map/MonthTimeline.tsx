@@ -117,7 +117,7 @@ export function MonthTimeline({ month, onMonth }: Props) {
                 key={m.id}
                 className={`flex-1 border-r border-[var(--line-1)]/60 py-1.5 text-center font-mono text-[11px] uppercase last:border-r-0 ${
                   isActive
-                    ? "bg-[var(--accent-ink)] font-bold text-white"
+                    ? "bg-[var(--accent-ink)] font-bold text-[var(--paper)]"
                     : "text-[var(--ink-2)] hover:bg-[var(--line-1)]/50"
                 }`}
               >

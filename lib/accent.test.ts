@@ -200,6 +200,56 @@ describe("contrast holds by construction", () => {
   });
 });
 
+/**
+ * Parses either colour form the token set uses — `#rrggbb` or `oklch(L% C H)`
+ * — into an sRGB tuple, then hands off to the file's one contrast primitive
+ * (`contrastRatio`) rather than reimplementing the ratio maths a second time.
+ */
+const toRgb = (css: string): [number, number, number] => {
+  if (css.startsWith("#")) {
+    const hex = css.slice(1);
+    return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [
+      number,
+      number,
+      number,
+    ];
+  }
+  const m = /^oklch\((\d+(?:\.\d+)?)% (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)\)$/.exec(css);
+  if (!m) throw new Error(`unparseable colour: ${css}`);
+  return oklchToSrgb(Number(m[1]) / 100, Number(m[2]), Number(m[3]));
+};
+
+const contrast = (a: string, b: string): number => contrastRatio(toRgb(a), toRgb(b));
+
+/**
+ * Reads `--on-accent` out of app/globals.css for the given ramp, the same way
+ * the "globals.css token set" tests below read other tokens — so the CSS and
+ * this assertion cannot drift apart.
+ */
+const onAccentFor = (theme: "light" | "dark"): string => {
+  const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+  const selector = theme === "dark" ? '[data-theme="dark"]' : ":root";
+  const start = css.indexOf(selector);
+  if (start === -1) throw new Error(`no ${selector} block in app/globals.css`);
+  const open = css.indexOf("{", start);
+  const close = css.indexOf("}", open);
+  const block = css.slice(open + 1, close);
+  const m = /--on-accent:\s*([^;]+);/.exec(block);
+  if (!m) throw new Error(`no --on-accent in ${selector}`);
+  return m[1].trim();
+};
+
+describe("--on-accent", () => {
+  test("--on-accent stays legible on --accent-fill across every hue, in both themes", () => {
+    for (const theme of ["light", "dark"] as const) {
+      for (let hue = 0; hue < 360; hue += 5) {
+        const fill = accentColor("CN", theme, "fill", hue);
+        expect(contrast(onAccentFor(theme), fill), `hue ${hue} in ${theme}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+});
+
 describe("colour maths", () => {
   test("relativeLuminance matches known anchors", () => {
     expect(relativeLuminance([1, 1, 1])).toBeCloseTo(1, 5);

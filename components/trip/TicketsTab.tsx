@@ -150,7 +150,7 @@ function TicketCard({
   return (
     <article className="overflow-hidden rounded-xl border border-[var(--line-1)] bg-[var(--paper)] shadow-sm">
       <div className="flex items-stretch">
-        <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] py-4 text-white">
+        <div className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] py-4 text-[var(--paper)]">
           <span aria-hidden className="text-xl">
             {meta.emoji}
           </span>
@@ -275,7 +275,7 @@ function TicketForm({
             onClick={() => set({ kind: k.id })}
             aria-pressed={fields.kind === k.id}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              fields.kind === k.id ? "bg-[var(--accent-ink)] text-white" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
+              fields.kind === k.id ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
             }`}
           >
             {k.emoji} {k.label}
@@ -333,7 +333,7 @@ function TicketForm({
           type="button"
           disabled={!canSave}
           onClick={() => onSave(toDraft(fields))}
-          className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent-ink)] px-5 py-2 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] disabled:opacity-40"
         >
           {saving ? "Saving…" : saveLabel}
         </button>
