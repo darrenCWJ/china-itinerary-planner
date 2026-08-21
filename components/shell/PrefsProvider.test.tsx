@@ -3,7 +3,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { accentColor } from "@/lib/accent";
 import { DEFAULT_PREFS, type UserPrefs } from "@/lib/prefs";
-import { PrefsProvider, usePrefs } from "./PrefsProvider";
+import { DARK_QUERY, PrefsProvider, usePrefs } from "./PrefsProvider";
 
 function clearCookies() {
   for (const pair of document.cookie.split(";")) {
@@ -40,8 +40,6 @@ function matchMediaMock(matches: boolean): { emit(next: boolean): void } {
     },
   };
 }
-
-const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 beforeEach(() => {
   clearCookies();
@@ -126,6 +124,10 @@ describe("PrefsProvider", () => {
     );
 
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    // Guards against querying the wrong media string (e.g. the light-scheme
+    // query), which would invert the theme for every "system" user while
+    // still passing the assertion above by coincidence of a permissive mock.
+    expect(window.matchMedia).toHaveBeenCalledWith(DARK_QUERY);
   });
 
   test("follows the system preference when it changes mid-session", () => {
