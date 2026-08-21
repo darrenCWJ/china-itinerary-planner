@@ -8,11 +8,7 @@ import type { Interest, TimeSlot } from "./types";
 export interface BriefingCity {
   id: string;
   name: string;
-  /**
-   * Name in the local language. Curated destinations carry one; catalog cities
-   * do not. Replaces the old `chineseName` field, which assumed every trip was
-   * a China trip — the destination data still holds both until PR3 drops it.
-   */
+  /** Name in the local language. Curated destinations carry one; catalog cities do not. */
   localName: string | null;
   days: number[];
 }
@@ -87,11 +83,8 @@ export interface BriefingOptions {
 }
 
 function localNameFor(destinationId: string): string | null {
-  // Falls back to chineseName so a destination whose localName has not been
-  // populated still renders its script rather than nothing. PR3 removes the
-  // fallback with the field.
   const destination = DESTINATIONS.find((d) => d.id === destinationId);
-  return destination?.localName ?? destination?.chineseName ?? null;
+  return destination?.localName ?? null;
 }
 
 function citiesOf(payload: TripPayload): BriefingCity[] {

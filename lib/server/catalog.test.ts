@@ -7,7 +7,7 @@ function city(overrides: Partial<CatalogCity> = {}): CatalogCity {
   return {
     qid: "Q123456",
     name: "Luoyang",
-    chineseName: "洛阳",
+    localName: "洛阳",
     province: "Henan",
     lat: 34.6,
     lon: 112.4,

@@ -111,9 +111,6 @@ export default function PlanPage() {
     const place: Destination = {
       id,
       name: trimmed,
-      // chineseName is required until PR3 deletes it; a hand-typed place has no
-      // local-language name, and inventing one would be worse than empty.
-      chineseName: "",
       localName: null,
       // Region is required and PR3 retires the union. Nothing reads it for a
       // place with no coordinates, so this is a placeholder, not a claim.

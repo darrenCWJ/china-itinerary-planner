@@ -111,9 +111,7 @@ export function PlaceSearch({
         hits.map((h) => ({
           qid: h.qid,
           name: h.name,
-          // The catalog payload still carries chineseName; only client-side
-          // shapes were renamed in Task 13.
-          localName: h.chineseName,
+          localName: h.localName,
           province: h.province,
         })),
         { selectedIds, selectedOffMapNames }

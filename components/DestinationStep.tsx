@@ -164,7 +164,7 @@ export function DestinationStep({
     onAddCatalog({
       qid: place.id,
       name: place.name,
-      chineseName: null,
+      localName: null,
       province: null,
       description: null,
       population: null,
@@ -253,7 +253,7 @@ export function DestinationStep({
           curated={countryDestinations.filter((d) => !visited.includes(d.id)).map((d) => ({
             id: d.id,
             name: d.name,
-            localName: d.localName ?? d.chineseName,
+            localName: d.localName,
             knownFor: d.knownFor,
           }))}
           coordsFor={(id) => {
@@ -381,7 +381,7 @@ function DestinationCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <h3 className="font-display text-lg font-bold">{dest.name}</h3>
-              <span className="font-kai text-seal">{dest.localName ?? dest.chineseName}</span>
+              <span className="font-kai text-seal">{dest.localName}</span>
             </div>
             <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--ink-2)]">
               {dest.region} China

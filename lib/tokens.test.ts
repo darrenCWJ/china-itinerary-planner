@@ -96,7 +96,6 @@ describe("retiring @theme palette", () => {
     expect(users).toEqual([
       "app/account/page.tsx",
       "app/plan/page.tsx",
-      "components/CatalogSearch.tsx",
       "components/DestinationStep.tsx",
       "components/PlanStep.tsx",
       "components/TripView.tsx",
