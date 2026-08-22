@@ -20,6 +20,8 @@ describe("China profile", () => {
     expect(cn.tips).toEqual([...GENERAL_TIPS]);
     expect(cn.transport.railKmh).toBe(230);
     expect(cn.transport.flightThresholdKm).toBe(1200);
+    expect(cn.transport.groundTransferKmh).toBe(TRANSPORT.groundTransferKmh);
+    expect(cn.transport.airportSearchRadiusKm).toBe(TRANSPORT.airportSearchRadiusKm);
     expect(cn.currency).toBe("CNY");
     expect(cn.packing.length).toBeGreaterThan(0);
   });
@@ -94,6 +96,11 @@ describe("neutral profile", () => {
     expect(xx.transport.railKmh).toBeNull();
     expect(xx.transport.flightKmh).toBe(TRANSPORT.flightKmh);
     expect(xx.transport.flightThresholdKm).toBe(TRANSPORT.flightThresholdKm);
+  });
+
+  test("ground transfer speed and airport search radius are offered everywhere, not just researched countries", () => {
+    expect(xx.transport.groundTransferKmh).toBe(TRANSPORT.groundTransferKmh);
+    expect(xx.transport.airportSearchRadiusKm).toBe(TRANSPORT.airportSearchRadiusKm);
   });
 
   test("currency falls back to the documented placeholder pivot", () => {

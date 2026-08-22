@@ -10,6 +10,6 @@ export async function GET(req: NextRequest) {
   const country = req.nextUrl.searchParams.get("country") ?? "";
   return NextResponse.json(
     { airports: airportsForCountry(country) },
-    { headers: { "Cache-Control": "public, max-age=3600" } }
+    { headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } }
   );
 }
