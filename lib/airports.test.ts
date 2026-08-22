@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { findAirport, searchAirports, type Airport } from "./airports";
+import {
+  findAirport,
+  searchAirports,
+  nearestAirports,
+  DEFAULT_AIRPORT_RADIUS_KM,
+  type Airport,
+} from "./airports";
 
 /** A small hand-built set — real coordinates, so distance tests stay honest. */
 export const FIXTURE: Airport[] = [
@@ -73,5 +79,54 @@ describe("searchAirports", () => {
 
   test("respects the limit", () => {
     expect(searchAirports(FIXTURE, "London", 2)).toHaveLength(2);
+  });
+});
+
+describe("nearestAirports", () => {
+  const london = { lat: 51.507, lon: -0.128 };
+  const jinan = { lat: 36.667, lon: 116.983 };
+
+  test("returns every airport serving a multi-airport city, nearest-ish first", () => {
+    const codes = nearestAirports(FIXTURE, london).map((r) => r.airport.iata);
+    expect(codes).toEqual(expect.arrayContaining(["LHR", "LCY", "LGW"]));
+  });
+
+  test("prefers a large airport over a marginally closer medium one", () => {
+    // LCY is ~13km from central London and LHR ~23km. Straight distance would
+    // make London City "the" London airport, which is wrong for a trip planner.
+    const codes = nearestAirports(FIXTURE, london).map((r) => r.airport.iata);
+    expect(codes[0]).toBe("LHR");
+  });
+
+  test("reports true distance, not the size-adjusted ranking score", () => {
+    const lhr = nearestAirports(FIXTURE, london).find((r) => r.airport.iata === "LHR");
+    // ~23km from central London; the 15km size bonus must not leak into `km`.
+    expect(lhr?.km).toBeGreaterThan(18);
+    expect(lhr?.km).toBeLessThan(30);
+  });
+
+  test("returns an empty list when nothing is in range", () => {
+    // Point Nemo — the most remote place in the ocean.
+    expect(nearestAirports(FIXTURE, { lat: -48.876, lon: -123.393 })).toEqual([]);
+  });
+
+  test("honours a tightened radius", () => {
+    // Jinan's own airport is ~30km out, so a 10km radius must find nothing.
+    expect(nearestAirports(FIXTURE, jinan, { radiusKm: 10 })).toEqual([]);
+    expect(nearestAirports(FIXTURE, jinan, { radiusKm: 60 })[0].airport.iata).toBe("TNA");
+  });
+
+  test("honours the limit", () => {
+    expect(nearestAirports(FIXTURE, london, { limit: 1 })).toHaveLength(1);
+  });
+
+  test("the default radius is the documented one", () => {
+    expect(DEFAULT_AIRPORT_RADIUS_KM).toBe(150);
+  });
+
+  test("is deterministic when two airports rank identically", () => {
+    const a = nearestAirports(FIXTURE, london).map((r) => r.airport.iata);
+    const b = nearestAirports([...FIXTURE].reverse(), london).map((r) => r.airport.iata);
+    expect(a).toEqual(b);
   });
 });
