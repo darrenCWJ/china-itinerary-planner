@@ -145,8 +145,12 @@ export interface Airport {
 ```
 
 Envelope `{ generatedAt, source, airports }`, mirroring `catalog.json`.
-**557 KB raw / ~140 KB gzipped** — smaller than the catalog already bundled, so
-it imports the same way with no new size concern.
+**816 KB raw / 167 KB gzipped** as actually built, against `catalog.json`'s
+569 KB / 120 KB — the same order of magnitude, so it bundles the same way with
+no new size concern. (An earlier estimate here said 557 KB; that measured
+short keys like `ia`/`la`. Readable keys and `catalog.json`'s 1-space
+indentation cost more raw bytes and almost nothing gzipped — 158 KB compact
+against 167 KB as written — which is why the readable form was kept.)
 
 **Abort gate.** The script refuses to write if the CSV header loses a required
 column, or if the row count drops more than 10% against the existing artifact.
