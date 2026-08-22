@@ -78,8 +78,13 @@ const FLIGHT_KMH = 700;
  * not double-count the ride to the airport.
  *
  * On the zero-airport branch there is no separate transfer term, so this same
- * 2.5h is the only non-flight time in that estimate — there it stands in for
- * door-to-door time, not just gate-side time, and is not an under-count.
+ * 2.5h is the only non-flight time in that estimate — there it deliberately
+ * stands in for the transfer time too, because no airport is known and so no
+ * transfer distance is knowable to estimate it from. Relative to the
+ * airport-aware model above, which adds a real transfer term on top, that
+ * makes the legacy branch an under-count by exactly the transfer term it has
+ * no distance to compute: the test suite pins this on the same city pair —
+ * 6.5h airport-aware against 6.0h legacy for Beijing → Ürümqi.
  */
 const FLIGHT_BUFFER_H = 2.5;
 
@@ -122,8 +127,12 @@ function toRouteAirport(airport: Airport): RouteAirport {
  * — which is what keeps every caller that has no airport data working, and what
  * the "behaves exactly as before" test pins.
  *
- * With airports it fixes two lies in that heuristic: it no longer flies between
- * city centres, and it no longer routes a flight to a city that has no airport.
+ * With airports it fixes three lies in that heuristic: it no longer flies
+ * between city centres, it no longer routes a flight to a city that has no
+ * airport, and it no longer picks "flight" on distance alone — a threshold on
+ * the airport-pair distance can still be beaten by rail door-to-door once
+ * ground transfer at both ends is counted, so the estimate falls back to rail
+ * whenever that would actually be faster.
  */
 export function estimateLeg(
   from: RoutePlace,
@@ -276,9 +285,10 @@ export function suggestRoute(
   }
   // `l.km <= FLIGHT_THRESHOLD_KM` already implies the leg isn't grounded,
   // since `groundedForLackOfAirport` is only ever set once km exceeds that
-  // threshold. It also catches the case the grounded flag alone can't see:
-  // close airports masking a long city-to-city hop that comes back "rail"
-  // and ungrounded.
+  // threshold. It also catches the two cases the grounded flag alone can't
+  // see: close airports masking a long city-to-city hop that comes back
+  // "rail" and ungrounded, and the slower-than-rail fallback above, which
+  // also returns "rail" with the full city-to-city km still over threshold.
   if (
     legs.length > 0 &&
     measured.length === legs.length &&
