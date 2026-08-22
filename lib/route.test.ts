@@ -165,9 +165,16 @@ const remote: RoutePlace = { id: "remote", name: "Remote valley", lat: 30.0, lon
 
 describe("estimateLeg with airports", () => {
   test("without airports it behaves exactly as before", () => {
-    const without = estimateLeg(beijing, urumqi);
-    const empty = estimateLeg(beijing, urumqi, []);
-    expect(empty).toEqual(without);
+    const withoutFlight = estimateLeg(beijing, urumqi);
+    const emptyFlight = estimateLeg(beijing, urumqi, []);
+    expect(emptyFlight).toEqual(withoutFlight);
+
+    // A flight pair alone leaves the rail branch of `estimateLeg` unpinned by
+    // this equivalence — cover a rail pair too so the property holds for both
+    // modes, not just the one this test happened to pick first.
+    const withoutRail = estimateLeg(beijing, shanghai);
+    const emptyRail = estimateLeg(beijing, shanghai, []);
+    expect(emptyRail).toEqual(withoutRail);
   });
 
   test("a long leg between two served cities resolves the airport pair", () => {
@@ -186,6 +193,19 @@ describe("estimateLeg with airports", () => {
     // Both airports are well outside their city centres, so the airport-aware
     // estimate must be longer than the one that pretends you board downtown.
     expect(aware.hours).toBeGreaterThan(bare.hours);
+
+    // A relational check alone cannot catch the transfer term being wildly
+    // wrong (e.g. `*` instead of `/` in transferH) — `aware.hours` would
+    // still be greater than `bare.hours`, just absurdly so. Pin the exact
+    // value so the derivation is auditable instead of a moving target:
+    //   cityKm 2411, airportKm 2430 (PEK → URC)
+    //   Beijing → PEK 25 km, Ürümqi → URC 15 km
+    //   transferH = (25 + 15) / 60 = 0.6667
+    //   aware.hours = roundHalf(2430/700 + 2.5 + 0.6667)
+    //               = roundHalf(3.4714 + 2.5 + 0.6667)
+    //               = roundHalf(6.6381) = 6.5
+    //   bare.hours (city-to-city, no ground transfer) = roundHalf(2411/700 + 2.5) = 6.0
+    expect(aware.hours).toBe(6.5);
   });
 
   test("km stays city-to-city even when the flight is airport-to-airport", () => {
@@ -232,6 +252,69 @@ describe("suggestRoute with airports", () => {
   test("notes a leg that had to stay on the ground", () => {
     const { notes } = suggestRoute([beijing, remote], AIRPORTS);
     expect(notes.join(" ")).toMatch(/no airport/i);
+    // The exclusion this task is named for: a grounded leg must not also earn
+    // the all-rail note. Deleting the exclusion from the predicate leaves
+    // this test — and the rest of the suite — green, because nothing here
+    // previously checked for the note's absence.
+    expect(notes.join(" ")).not.toMatch(/Every leg/i);
+  });
+
+  test("all-rail note is not claimed when close airports mask a long city-to-city hop", () => {
+    // The door Finding 1b found: airports can sit closer together than the
+    // cities they serve. Two cities just over FLIGHT_THRESHOLD_KM apart, with
+    // airports pulled toward each other so the airport-to-airport hop is
+    // under the threshold, comes back mode "rail" and *not* grounded (both
+    // ends have an airport in range) — a leg the grounded flag cannot see.
+    //
+    // Built along a meridian, same idiom as "estimateLeg flips mode either
+    // side of the exported threshold" above: great-circle distance is linear
+    // in latitude there, so city-to-city and airport-to-airport distances can
+    // be placed exactly instead of guessed at.
+    //   cityA lat 0; airportA 100 km north of cityA
+    //   cityB 1250 km north of cityA; airportB 100 km south of cityB
+    //   -> city-to-city 1250 km (over the 1200 km threshold)
+    //   -> airport-to-airport 1050 km (under the threshold)
+    //   -> both ground transfers 100 km (comfortably inside the 150 km radius)
+    // Verified numerically: haversineKm gives exactly 1250, 1050 and 100/100.
+    const kmPerDegree = (6371 * Math.PI) / 180;
+    const cityA: RoutePlace = { id: "meridian-city-a", name: "Meridian City A", lat: 0, lon: 0 };
+    const cityB: RoutePlace = {
+      id: "meridian-city-b",
+      name: "Meridian City B",
+      lat: 1250 / kmPerDegree,
+      lon: 0,
+    };
+    const airportA: Airport = {
+      iata: "NGA",
+      icao: null,
+      name: "Northgate Airport",
+      municipality: "Meridian City A",
+      country: "CN",
+      lat: 100 / kmPerDegree,
+      lon: 0,
+      size: "large",
+    };
+    const airportB: Airport = {
+      iata: "SGA",
+      icao: null,
+      name: "Southgate Airport",
+      municipality: "Meridian City B",
+      country: "CN",
+      lat: (1250 - 100) / kmPerDegree,
+      lon: 0,
+      size: "large",
+    };
+    const meridianAirports = [airportA, airportB];
+
+    const leg = estimateLeg(cityA, cityB, meridianAirports);
+    expect(leg.kind).toBe("estimated");
+    if (leg.kind !== "estimated") return;
+    expect(leg.mode).toBe("rail");
+    expect(leg.groundedForLackOfAirport).toBeUndefined();
+    expect(leg.km).toBeGreaterThan(TRANSPORT.flightThresholdKm);
+
+    const { notes } = suggestRoute([cityA, cityB], meridianAirports);
+    expect(notes.join(" ")).not.toMatch(/Every leg/i);
   });
 
   test("without airports the notes are unchanged", () => {
