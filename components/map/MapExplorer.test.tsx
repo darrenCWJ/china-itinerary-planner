@@ -115,7 +115,9 @@ beforeEach(() => {
         ? CHINA_FIXTURE
         : url.startsWith("/api/map/cities")
           ? { available: true, cities: [] }
-          : WORLD_FIXTURE;
+          : url.startsWith("/api/map/airports")
+            ? { airports: [] }
+            : WORLD_FIXTURE;
     return Promise.resolve({ ok: true, status: 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
