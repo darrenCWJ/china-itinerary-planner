@@ -14,8 +14,10 @@ import type { LatLon } from "../geo";
  * The artifact is a static `import` rather than an `fs` read, for the reason
  * lib/server/catalog.ts documents: serverless deployments have a read-only
  * filesystem and no data/ directory, so a path read works locally and fails in
- * production. At ~557KB the file is smaller than data/catalog.json, which is
- * already bundled this way, so this adds no new size concern.
+ * production. At 816KB the file is bigger than data/catalog.json's 569KB, but
+ * that is the same order of magnitude as an artifact this repo already bundles
+ * server-side, so it needs no new mechanism — just more of the one already in
+ * use.
  *
  * Server-only by convention, like lib/server/catalog.ts — importing it from a
  * client component would pull the artifact into the browser bundle.
