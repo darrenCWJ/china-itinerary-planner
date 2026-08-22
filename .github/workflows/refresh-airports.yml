@@ -1,0 +1,50 @@
+# Refreshes data/airports.json from the OurAirports nightly CSV.
+#
+# Commits only when the airport set actually changed. The ingest script
+# preserves the previous `generatedAt` when the data is identical, so an
+# unchanged day produces a byte-identical file and `git diff --quiet` passes —
+# which is what keeps this from opening a commit every morning forever.
+#
+# A commit here triggers a Vercel deploy, so the artifact reaches production
+# without anyone doing anything.
+name: Refresh airports
+
+on:
+  schedule:
+    # 04:10 UTC — after OurAirports' nightly rebuild, off the top of the hour
+    # where GitHub's scheduler is most congested.
+    - cron: "10 4 * * *"
+  workflow_dispatch:
+
+# Least privilege: the job writes one data file and nothing else.
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-airports
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ingest airports
+        run: node scripts/ingest-airports.mjs
+
+      - name: Commit if the data changed
+        run: |
+          if git diff --quiet -- data/airports.json; then
+            echo "No change in the airport set — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/airports.json data/airports-report.md
+          git commit -m "chore: refresh airports from OurAirports"
+          git push
