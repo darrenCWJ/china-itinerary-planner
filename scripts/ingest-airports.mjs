@@ -21,11 +21,20 @@
  * deployed automatically by the workflow.
  *
  * Usage: node scripts/ingest-airports.mjs
+ *
+ * One harmless note on that command. It reads the CSV parser straight out of
+ * lib/csv.ts, relying on Node's native type stripping (stable since Node
+ * 22.18 / 24) so the parser has exactly one definition, tested under
+ * lib/csv.test.ts, rather than a copy here that could drift. Node prints a
+ * MODULE_TYPELESS_PACKAGE_JSON warning for that import because package.json
+ * has no `"type": "module"`; the import still works and the warning is not
+ * worth changing the package's module type for.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseCsv } from '../lib/csv.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,37 +69,8 @@ const SIZE_BY_TYPE = {
 };
 
 // ---------------------------------------------------------------------------
-// CSV
+// Fetch
 // ---------------------------------------------------------------------------
-
-/**
- * Character-scanning CSV parser. Splitting on newlines first would be wrong:
- * OurAirports quotes free-text columns that can contain both commas and
- * newlines, and doubles embedded quotes ("" for a literal ").
- */
-export function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cell = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch !== '"') { cell += ch; continue; }
-      if (text[i + 1] === '"') { cell += '"'; i++; continue; }
-      quoted = false;
-      continue;
-    }
-    if (ch === '"') { quoted = true; continue; }
-    if (ch === ',') { row.push(cell); cell = ''; continue; }
-    if (ch === '\r') continue;
-    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
-    cell += ch;
-  }
-  // A file with no trailing newline still has one row left in hand.
-  if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
-  return rows;
-}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -132,6 +112,12 @@ export function buildAirports(rows) {
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     if (row.length <= 1) continue; // trailing blank line
+    if (row.length !== header.length) {
+      throw new Error(
+        `row ${r + 1} has ${row.length} column(s), expected ${header.length} — ` +
+        `aborting rather than reading undefined out of a ragged row`
+      );
+    }
     const get = (name) => (row[index[name]] ?? '').trim();
     if (get('scheduled_service') !== 'yes') continue;
     const iata = get('iata_code').toUpperCase();
