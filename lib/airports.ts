@@ -7,7 +7,7 @@ import { foldPlaceName } from "./foldPlaceName";
  * Every function takes the airport array as a parameter rather than importing
  * the artifact. That is what keeps this module client-safe: `lib/route.ts`
  * imports it and `lib/route.ts` runs in the browser inside `MapExplorer`, so a
- * bundled 557KB JSON here would ship to every visitor. `lib/server/airports.ts`
+ * bundled 816KB JSON here would ship to every visitor. `lib/server/airports.ts`
  * binds these to the real artifact on the server.
  *
  * A linear scan over ~4,100 entries is microseconds, so there is no index and
@@ -42,9 +42,14 @@ export function findAirport(airports: readonly Airport[], iata: string): Airport
 /**
  * Ranked search over IATA code, airport name and municipality.
  *
- * Scores mirror `searchCities` in lib/server/catalog.ts — exact 3, prefix 2,
- * substring 1 — so the two search surfaces in the app behave alike. Names fold
- * through `foldPlaceName`, so "zurich" finds "Zürich" and "xian" finds "Xi'an".
+ * Scores: exact IATA code 3, name/municipality prefix 2, name/municipality
+ * substring 1. This deliberately differs from `searchCities` in
+ * lib/server/catalog.ts (name/local-name prefix 3, substring 2, province
+ * prefix 1) — a city has no code to match exactly, so it has no exact tier,
+ * while an airport does have one that users actually type. The shared idea
+ * is not an identical score table but "a more specific match ranks higher."
+ * Names fold through `foldPlaceName`, so "zurich" finds "Zürich" and "xian"
+ * finds "Xi'an".
  */
 export function searchAirports(
   airports: readonly Airport[],
@@ -52,9 +57,9 @@ export function searchAirports(
   limit = 12
 ): Airport[] {
   const raw = query.trim();
-  if (raw.length < 1) return [];
   const code = raw.toUpperCase();
   const q = foldPlaceName(raw);
+  if (q.length < 1) return [];
 
   const scored: Array<{ airport: Airport; score: number }> = [];
   for (const airport of airports) {
