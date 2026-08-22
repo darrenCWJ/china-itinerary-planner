@@ -110,7 +110,10 @@ export function AirportInput({
         setHits(json.results);
         setOpen(json.results.length > 0);
       } catch {
-        if (!controller.signal.aborted) setHits([]);
+        if (!controller.signal.aborted) {
+          setHits([]);
+          setOpen(false);
+        }
       }
     }, DEBOUNCE_MS);
     return () => {
@@ -170,7 +173,7 @@ export function AirportInput({
           id={inputId}
           type="text"
           role="combobox"
-          aria-expanded={open}
+          aria-expanded={showList}
           aria-controls={listboxId}
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? optionId(activeIndex) : undefined}

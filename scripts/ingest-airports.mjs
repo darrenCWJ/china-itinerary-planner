@@ -58,9 +58,17 @@ const REQUIRED_COLUMNS = [
   'municipality', 'scheduled_service', 'icao_code', 'iata_code',
 ];
 
-/** Floor and shrink limit. Measured 2026-08-23: 4,134 passed the filter. */
+/** Floor, shrink limit, and growth ceiling. Measured 2026-08-23: 4,134 passed the filter. */
 const MIN_EXPECTED_AIRPORTS = 3_500;
 const MAX_SHRINK_RATIO = 0.10;
+/**
+ * Mirrors MAX_SHRINK_RATIO in the other direction. A shrink guard alone lets
+ * upstream double the list — a bad merge, a filter regression that stops
+ * excluding closed airports — and this script would write and the workflow
+ * would commit it without a second opinion, since nothing else here caps
+ * growth.
+ */
+const MAX_GROWTH_RATIO = 0.10;
 
 const SIZE_BY_TYPE = {
   large_airport: 'large',
@@ -141,6 +149,13 @@ export function buildAirports(rows) {
   return airports;
 }
 
+/**
+ * Everything a corrupt or reshaped upstream feed could slip through
+ * unattended. This is the ONLY gate that runs on the nightly workflow — there
+ * is no CI, so lib/server/airports.test.ts's equivalent per-record checks
+ * only run when a human types `npm test`. Whatever this function does not
+ * catch, the nightly job will commit and Vercel will deploy.
+ */
 export function assertSane(airports, previous) {
   if (airports.length < MIN_EXPECTED_AIRPORTS) {
     throw new Error(`only ${airports.length} airports passed the filter, expected at least ${MIN_EXPECTED_AIRPORTS}`);
@@ -149,6 +164,23 @@ export function assertSane(airports, previous) {
   for (const a of airports) {
     if (seen.has(a.iata)) throw new Error(`duplicate IATA code ${a.iata}`);
     seen.add(a.iata);
+
+    // Belt-and-braces on lat/lon: buildAirports already drops rows with
+    // non-finite coordinates, so this branch should be unreachable. Keeping
+    // it costs nothing and documents the invariant at the one place that is
+    // guaranteed to run unattended.
+    if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon)) {
+      throw new Error(`airport ${a.iata} has non-finite coordinates (lat=${a.lat}, lon=${a.lon})`);
+    }
+    if (!/^[A-Z]{3}$/.test(a.iata)) {
+      throw new Error(`airport record has a malformed IATA code "${a.iata}" — expected three uppercase letters`);
+    }
+    if (!/^[A-Z]{2}$/.test(a.country)) {
+      throw new Error(
+        `airport ${a.iata} has a malformed country code "${a.country}" — expected two uppercase letters ` +
+        `(iso_country may have switched formats upstream, e.g. to alpha-3)`
+      );
+    }
   }
   const before = previous?.airports?.length ?? 0;
   if (before > 0) {
@@ -157,6 +189,13 @@ export function assertSane(airports, previous) {
       throw new Error(
         `airport count fell ${(shrink * 100).toFixed(1)}% (${before} → ${airports.length}), ` +
         `over the ${MAX_SHRINK_RATIO * 100}% limit — upstream may be mid-rebuild`
+      );
+    }
+    const growth = (airports.length - before) / before;
+    if (growth > MAX_GROWTH_RATIO) {
+      throw new Error(
+        `airport count rose ${(growth * 100).toFixed(1)}% (${before} → ${airports.length}), ` +
+        `over the ${MAX_GROWTH_RATIO * 100}% limit — upstream may have changed its filter`
       );
     }
   }

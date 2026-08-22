@@ -148,6 +148,29 @@ describe("AirportInput", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test("a failed fetch after the list was open leaves aria-expanded false, not stuck pointing at an absent listbox", async () => {
+    render(<Harness />);
+    type("Jinan");
+    await screen.findByRole("option", { name: /Jinan Yaoqiang/ });
+    expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "true");
+
+    // A later keystroke's fetch fails outright — the catch branch, not a
+    // zero-result response.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network down");
+      })
+    );
+    type("Jinan airport");
+    // Comfortably past the 300ms debounce, same margin as the other
+    // debounce-dependent tests above.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   describe("displayValue branches (Finding 1)", () => {
     test("a short name passes through unchanged", async () => {
       const onValue = vi.fn();

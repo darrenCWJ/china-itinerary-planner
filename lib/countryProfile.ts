@@ -19,6 +19,10 @@ export interface TransportProfile {
   flightKmh: number;
   railBufferH: number;
   flightBufferH: number;
+  /** Average door-to-door speed between a city centre and its airport — not country-specific. */
+  groundTransferKmh: number;
+  /** Radius searched for a nearby airport, in km — not country-specific. */
+  airportSearchRadiusKm: number;
   /** Generation-time copy: where and how far ahead to book. */
   bookingCopy: string[];
 }
@@ -160,6 +164,8 @@ function chinaProfile(): CountryProfile {
       flightKmh: TRANSPORT.flightKmh,
       railBufferH: TRANSPORT.railBufferH,
       flightBufferH: TRANSPORT.flightBufferH,
+      groundTransferKmh: TRANSPORT.groundTransferKmh,
+      airportSearchRadiusKm: TRANSPORT.airportSearchRadiusKm,
       bookingCopy: [
         "High-speed rail seats open about 15 days ahead on 12306 or Trip.com.",
         "Your passport is the ticket — carry it to collect seats and to board.",
@@ -186,6 +192,8 @@ function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
       flightKmh: TRANSPORT.flightKmh,
       railBufferH: TRANSPORT.railBufferH,
       flightBufferH: TRANSPORT.flightBufferH,
+      groundTransferKmh: TRANSPORT.groundTransferKmh,
+      airportSearchRadiusKm: TRANSPORT.airportSearchRadiusKm,
       bookingCopy: ["Book long-distance transport ahead — fares climb close to the date."],
     },
     tips: [...NEUTRAL_TIPS],
