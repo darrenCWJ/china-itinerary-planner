@@ -122,6 +122,12 @@ export function MapExplorer({
 
   useEffect(() => {
     const controller = new AbortController();
+    // Cleared up front, not just on failure: without this, a country switch
+    // computes the route estimator against the *previous* country's airports
+    // until the new fetch resolves — for adjacent countries that interim can
+    // resolve a wrong-country pair. Clearing first makes the interim the
+    // legacy no-airports path instead, which `estimateLeg` already handles.
+    setAirports([]);
     fetch(`/api/map/airports?country=${encodeURIComponent(countryCode)}`, {
       signal: controller.signal,
     })
@@ -416,9 +422,14 @@ export function MapExplorer({
                   {leg?.kind === "estimated" && (
                     <span
                       className="mx-0.5 text-xs text-[var(--ink-2)]"
+                      // `leg.km` is city-to-city (lib/route.ts), never the
+                      // airport pair's distance — the two can differ by ~300
+                      // km, so the airport codes are labeled as the flight
+                      // and the km called out as city-to-city rather than
+                      // left to read as if they measured the same hop.
                       title={
                         leg.airports
-                          ? `${leg.airports.from.iata} → ${leg.airports.to.iata} · ${leg.km.toLocaleString()} km · ~${leg.hours}h`
+                          ? `Flying ${leg.airports.from.iata} → ${leg.airports.to.iata} · ${leg.km.toLocaleString()} km city-to-city · ~${leg.hours}h`
                           : `${leg.km.toLocaleString()} km · ~${leg.hours}h`
                       }
                     >
