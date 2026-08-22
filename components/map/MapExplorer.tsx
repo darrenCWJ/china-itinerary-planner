@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Topology } from "topojson-specification";
+import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { DESTINATIONS } from "@/lib/data";
 import { latLonOf } from "@/lib/geo";
@@ -67,6 +68,13 @@ export function MapExplorer({
   const [citiesUnavailable, setCitiesUnavailable] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  /**
+   * The country's airports, for the route estimator. Empty until they load,
+   * and empty is exactly the "no airport data" path `estimateLeg` already
+   * handles — so the panel renders correct-but-coarser estimates first and
+   * sharpens when they arrive, rather than waiting.
+   */
+  const [airports, setAirports] = useState<Airport[]>([]);
   const [hover, setHover] = useState<{
     place: MapPlace;
     pos: { x: number; y: number };
@@ -111,6 +119,21 @@ export function MapExplorer({
       });
     return () => controller.abort();
   }, [retryKey, hasDetail]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/map/airports?country=${encodeURIComponent(countryCode)}`, {
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((json: { airports: Airport[] }) => setAirports(json.airports))
+      // Airports only sharpen the estimate — losing them costs precision, not
+      // function, so this failure is silent by design.
+      .catch(() => {
+        if (!controller.signal.aborted) setAirports([]);
+      });
+    return () => controller.abort();
+  }, [countryCode]);
 
   const places = useMemo<MapPlace[]>(() => {
     const curated = DESTINATIONS.filter(
@@ -175,10 +198,10 @@ export function MapExplorer({
       else missing++;
     }
     return {
-      route: routePlaces.length >= 2 ? suggestRoute(routePlaces) : null,
+      route: routePlaces.length >= 2 ? suggestRoute(routePlaces, airports) : null,
       unresolvedCount: missing,
     };
-  }, [selected, placeById]);
+  }, [selected, placeById, airports]);
 
   const togglePlace = (place: MapPlace) => {
     setHover(null);
@@ -393,7 +416,11 @@ export function MapExplorer({
                   {leg?.kind === "estimated" && (
                     <span
                       className="mx-0.5 text-xs text-[var(--ink-2)]"
-                      title={`${leg.km.toLocaleString()} km · ~${leg.hours}h`}
+                      title={
+                        leg.airports
+                          ? `${leg.airports.from.iata} → ${leg.airports.to.iata} · ${leg.km.toLocaleString()} km · ~${leg.hours}h`
+                          : `${leg.km.toLocaleString()} km · ~${leg.hours}h`
+                      }
                     >
                       {leg.mode === "flight" ? "✈️" : "🚄"}
                       <span className="ml-0.5 font-mono text-[10px]">{leg.hours}h</span>
