@@ -777,7 +777,11 @@ describe("the bundled airport artifact", () => {
 
   test("TNA is Jinan's airport, in China", () => {
     const tna = findAirport("TNA");
-    expect(tna?.municipality).toBe("Jinan");
+    // OurAirports qualifies municipalities with a district — the real value is
+    // "Jinan (Licheng)", not "Jinan". Asserting the exact string would pin a
+    // formatting detail of the upstream source that has nothing to do with what
+    // this test is about.
+    expect(tna?.municipality).toContain("Jinan");
     expect(tna?.country).toBe("CN");
   });
 
