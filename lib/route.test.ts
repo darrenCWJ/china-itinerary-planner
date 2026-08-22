@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { estimateLeg, suggestRoute, TRANSPORT, type RoutePlace } from "./route";
+import type { Airport } from "./airports";
 
 const beijing: RoutePlace = { id: "beijing", name: "Beijing", lat: 39.904, lon: 116.407 };
 const xian: RoutePlace = { id: "xian", name: "Xi'an", lat: 34.342, lon: 108.94 };
@@ -146,5 +147,94 @@ describe("suggestRoute", () => {
     const { notes } = suggestRoute([shanghai, { id: "suzhou", name: "Suzhou", lat: 31.299, lon: 120.585 }, village]);
 
     expect(notes.join(" ")).not.toMatch(/Every leg/i);
+  });
+});
+
+/**
+ * Two Chinese cities and their airports, plus a city with no airport at all.
+ * Real coordinates, so the arithmetic below is checkable by hand.
+ */
+const AIRPORTS: Airport[] = [
+  { iata: "PEK", icao: "ZBAA", name: "Beijing Capital International Airport", municipality: "Beijing", country: "CN", lat: 40.080, lon: 116.585, size: "large" },
+  { iata: "URC", icao: "ZWWW", name: "Ürümqi Diwopu International Airport", municipality: "Ürümqi", country: "CN", lat: 43.907, lon: 87.474, size: "large" },
+  { iata: "SHA", icao: "ZSSS", name: "Shanghai Hongqiao International Airport", municipality: "Shanghai", country: "CN", lat: 31.198, lon: 121.336, size: "large" },
+];
+
+/** Far from every airport in the fixture — the forced-rail case. */
+const remote: RoutePlace = { id: "remote", name: "Remote valley", lat: 30.0, lon: 95.0 };
+
+describe("estimateLeg with airports", () => {
+  test("without airports it behaves exactly as before", () => {
+    const without = estimateLeg(beijing, urumqi);
+    const empty = estimateLeg(beijing, urumqi, []);
+    expect(empty).toEqual(without);
+  });
+
+  test("a long leg between two served cities resolves the airport pair", () => {
+    const leg = estimateLeg(beijing, urumqi, AIRPORTS);
+    expect(leg.kind).toBe("estimated");
+    if (leg.kind !== "estimated") return;
+    expect(leg.mode).toBe("flight");
+    expect(leg.airports?.from.iata).toBe("PEK");
+    expect(leg.airports?.to.iata).toBe("URC");
+  });
+
+  test("a flight's hours include ground transfer at both ends", () => {
+    const bare = estimateLeg(beijing, urumqi);
+    const aware = estimateLeg(beijing, urumqi, AIRPORTS);
+    if (bare.kind !== "estimated" || aware.kind !== "estimated") throw new Error("expected estimates");
+    // Both airports are well outside their city centres, so the airport-aware
+    // estimate must be longer than the one that pretends you board downtown.
+    expect(aware.hours).toBeGreaterThan(bare.hours);
+  });
+
+  test("km stays city-to-city even when the flight is airport-to-airport", () => {
+    const bare = estimateLeg(beijing, urumqi);
+    const aware = estimateLeg(beijing, urumqi, AIRPORTS);
+    if (bare.kind !== "estimated" || aware.kind !== "estimated") throw new Error("expected estimates");
+    // The distance the user travels between cities has not changed; only the
+    // duration has. Swapping km to the airport pair would silently restate the
+    // trip's total distance.
+    expect(aware.km).toBe(bare.km);
+  });
+
+  test("a leg into a city with no airport in range is forced to rail", () => {
+    const leg = estimateLeg(beijing, remote, AIRPORTS);
+    expect(leg.kind).toBe("estimated");
+    if (leg.kind !== "estimated") return;
+    expect(leg.mode).toBe("rail");
+    expect(leg.airports).toBeUndefined();
+    // It is far enough that distance alone would have said "fly".
+    expect(leg.km).toBeGreaterThan(TRANSPORT.flightThresholdKm);
+    expect(leg.groundedForLackOfAirport).toBe(true);
+  });
+
+  test("a short leg between two served cities is still rail", () => {
+    const leg = estimateLeg(beijing, { id: "tianjin", name: "Tianjin", lat: 39.084, lon: 117.201 }, AIRPORTS);
+    if (leg.kind !== "estimated") throw new Error("expected an estimate");
+    expect(leg.mode).toBe("rail");
+    expect(leg.groundedForLackOfAirport).toBeUndefined();
+  });
+
+  test("an unlocated place is still unknown, airports or not", () => {
+    expect(estimateLeg(beijing, village, AIRPORTS).kind).toBe("unknown");
+  });
+});
+
+describe("TRANSPORT gains the airport constants", () => {
+  test("reports what the airport-aware estimates assume", () => {
+    expect(TRANSPORT.groundTransferKmh).toBe(60);
+    expect(TRANSPORT.airportSearchRadiusKm).toBe(150);
+  });
+});
+
+describe("suggestRoute with airports", () => {
+  test("notes a leg that had to stay on the ground", () => {
+    const { notes } = suggestRoute([beijing, remote], AIRPORTS);
+    expect(notes.join(" ")).toMatch(/no airport/i);
+  });
+
+  test("without airports the notes are unchanged", () => {
+    expect(suggestRoute([beijing, urumqi], []).notes).toEqual(suggestRoute([beijing, urumqi]).notes);
   });
 });
