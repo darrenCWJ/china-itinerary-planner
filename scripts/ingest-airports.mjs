@@ -33,7 +33,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseCsv } from '../lib/csv.ts';
 
 // ---------------------------------------------------------------------------
@@ -279,8 +279,27 @@ async function main() {
   console.log(`Wrote ${REPORT_PATH}`);
 }
 
-main().catch((error) => {
-  console.error(`\nAirport ingestion failed: ${error.message}`);
-  console.error('Nothing was written — the previous artifact is untouched.');
-  process.exit(1);
-});
+/**
+ * Only runs when this file is invoked directly.
+ *
+ * Unlike its sibling ingest scripts, this module *exports* `buildAirports`
+ * and `assertSane`, so their validation rules can be exercised without a
+ * 12MB network fetch. Without this guard, importing it to check one of those
+ * rules re-runs the entire ingest and rewrites the artifact as a side effect
+ * — not hypothetical; it happened during review.
+ *
+ * Compared as file URLs rather than as paths because on Windows
+ * `process.argv[1]` is a drive path while `import.meta.url` is a `file://`
+ * URL, so comparing them directly would never match and running the script
+ * would silently do nothing.
+ *
+ * `process.argv[1]` is checked for existence first because it is undefined
+ * under `node --eval`, where `pathToFileURL(undefined)` throws.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`\nAirport ingestion failed: ${error.message}`);
+    console.error('Nothing was written — the previous artifact is untouched.');
+    process.exit(1);
+  });
+}
