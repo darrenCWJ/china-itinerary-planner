@@ -19,7 +19,12 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "node",
-          include: ["lib/**/*.test.ts"],
+          // scripts/**: ingest-airports.test.ts exercises buildAirports and
+          // assertSane, the only gate standing between a corrupt upstream feed
+          // and an unattended production deploy. Before this, no include
+          // pattern matched anything under scripts/, so a test file placed
+          // there would sit on disk and never run.
+          include: ["lib/**/*.test.ts", "scripts/**/*.test.ts"],
           environment: "node",
         },
       },

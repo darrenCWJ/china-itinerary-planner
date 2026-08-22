@@ -76,6 +76,29 @@ const SIZE_BY_TYPE = {
   small_airport: 'small',
 };
 
+/** The only sizes `assertSane` accepts on a record — see the gate below. */
+const VALID_SIZES = new Set(['large', 'medium', 'small']);
+
+/**
+ * Size for a CSV `type` value, or `'small'` when the type is unrecognised.
+ *
+ * `SIZE_BY_TYPE[type] ?? 'small'` looks safe but isn't: `SIZE_BY_TYPE` is a
+ * plain object literal, so a `type` of `"constructor"` resolves through the
+ * prototype chain to `Object.prototype.constructor` — a function, and a
+ * function is not nullish, so `?? 'small'` never catches it. The record then
+ * carries a function as `size`, and `JSON.stringify` silently *drops that key
+ * entirely* rather than erroring, producing a committed record with no
+ * `size` at all — which is what fed `NaN` into downstream ranking. Confirmed
+ * against this exact input.
+ *
+ * Same fix as `components/map/mapTypes.ts`'s `isChinaRegion` and
+ * `lib/countryProfile.ts`'s `chinaClimate`: check ownership before indexing,
+ * so an inherited key can never be mistaken for a data value.
+ */
+function sizeForType(type) {
+  return Object.prototype.hasOwnProperty.call(SIZE_BY_TYPE, type) ? SIZE_BY_TYPE[type] : 'small';
+}
+
 // ---------------------------------------------------------------------------
 // Fetch
 // ---------------------------------------------------------------------------
@@ -130,8 +153,15 @@ export function buildAirports(rows) {
     if (get('scheduled_service') !== 'yes') continue;
     const iata = get('iata_code').toUpperCase();
     if (iata.length !== 3) continue;
-    const lat = Number(get('latitude_deg'));
-    const lon = Number(get('longitude_deg'));
+    const latStr = get('latitude_deg');
+    const lonStr = get('longitude_deg');
+    // A blank cell must be rejected before it ever reaches `Number()`:
+    // `Number('')` is `0`, which `Number.isFinite` happily accepts, so a row
+    // with a wiped-out coordinate would otherwise be planted at Null Island
+    // (0, 0) and committed rather than dropped.
+    if (latStr === '' || lonStr === '') continue;
+    const lat = Number(latStr);
+    const lon = Number(lonStr);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     airports.push({
       iata,
@@ -141,7 +171,7 @@ export function buildAirports(rows) {
       country: get('iso_country').toUpperCase(),
       lat,
       lon,
-      size: SIZE_BY_TYPE[get('type')] ?? 'small',
+      size: sizeForType(get('type')),
     });
   }
   // Sorted by IATA so the artifact is stable across runs and a diff is readable.
@@ -171,6 +201,22 @@ export function assertSane(airports, previous) {
     // guaranteed to run unattended.
     if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon)) {
       throw new Error(`airport ${a.iata} has non-finite coordinates (lat=${a.lat}, lon=${a.lon})`);
+    }
+    // Finite is not the same as plausible: `lat: 394.5` is finite and would
+    // sail through every other gate, and haversine's trig is periodic, so it
+    // silently behaves as 34.5° — the airport relocates to a plausible wrong
+    // place rather than erroring, and can go on to win `nearestAirports` for
+    // cities nowhere near it.
+    if (a.lat < -90 || a.lat > 90) {
+      throw new Error(`airport ${a.iata} has an out-of-range latitude ${a.lat} — expected -90..90`);
+    }
+    if (a.lon < -180 || a.lon > 180) {
+      throw new Error(`airport ${a.iata} has an out-of-range longitude ${a.lon} — expected -180..180`);
+    }
+    if (!VALID_SIZES.has(a.size)) {
+      throw new Error(
+        `airport ${a.iata} has an invalid size "${a.size}" — expected one of ${[...VALID_SIZES].join(', ')}`
+      );
     }
     if (!/^[A-Z]{3}$/.test(a.iata)) {
       throw new Error(`airport record has a malformed IATA code "${a.iata}" — expected three uppercase letters`);
