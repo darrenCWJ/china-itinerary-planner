@@ -11,9 +11,29 @@ import {
 describe("the bundled airport artifact", () => {
   test("carries a plausible number of airports and countries", () => {
     const status = airportStatus();
-    expect(status.airports).toBeGreaterThan(3_500);
-    expect(status.countries).toBeGreaterThan(200);
+    // Bands, not floors: current real values are 4,134 airports and 234
+    // countries. A floor alone leaves headroom for a refresh that silently
+    // drops hundreds of records to still pass. An unexplained jump is just as
+    // suspicious as a drop — both mean something upstream changed in a way
+    // nobody reviewed — so this pins both edges. If upstream genuinely moves
+    // outside the band, a human should widen it deliberately, not have the
+    // test go quiet forever.
+    expect(status.airports).toBeGreaterThan(3_900);
+    expect(status.airports).toBeLessThan(4_400);
+    expect(status.countries).toBeGreaterThan(225);
+    expect(status.countries).toBeLessThan(245);
     expect(status.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // Recency is deliberately NOT asserted here. The ingest script preserves
+    // the previous generatedAt when the airport data is unchanged, so the
+    // file stays byte-identical and the nightly workflow has nothing to
+    // commit. An old timestamp is the designed behaviour on a quiet day — a
+    // freshness assertion would fail this suite every day the world's
+    // airports didn't change. Instead, assert only what's true regardless:
+    // the timestamp parses and isn't in the future.
+    const generatedAt = new Date(status.generatedAt);
+    expect(Number.isNaN(generatedAt.getTime())).toBe(false);
+    expect(generatedAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(status.source).toBe("Public domain (OurAirports, regenerated nightly)");
   });
 
   /**
@@ -41,9 +61,12 @@ describe("the bundled airport artifact", () => {
     expect(new Set(all.map((a) => a.iata)).size).toBe(all.length);
   });
 
-  test("every airport has finite coordinates and a two-letter country", () => {
+  test("every airport has finite coordinates, a three-letter IATA code, and a two-letter country", () => {
     for (const a of allAirports()) {
       expect(Number.isFinite(a.lat) && Number.isFinite(a.lon)).toBe(true);
+      // IATA is the primary key later tasks look records up by; a malformed
+      // code here would silently break every downstream lookup.
+      expect(a.iata).toMatch(/^[A-Z]{3}$/);
       expect(a.country).toMatch(/^[A-Z]{2}$/);
     }
   });
