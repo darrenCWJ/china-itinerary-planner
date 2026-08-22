@@ -1,5 +1,6 @@
 import type { CountryCode } from "./countries";
 import { foldPlaceName } from "./foldPlaceName";
+import { haversineKm, type LatLon } from "./geo";
 
 /**
  * Query layer over the worldwide airport set (spec §3).
@@ -29,6 +30,38 @@ export interface Airport {
   lon: number;
   size: AirportSize;
 }
+
+export interface RankedAirport {
+  airport: Airport;
+  /** True great-circle distance in km, rounded — never the ranking score. */
+  km: number;
+}
+
+/**
+ * How far from a place an airport can be and still count as serving it.
+ *
+ * Matches `NEAREST_CITY_MAX_KM` in scripts/ingest-destinations.mjs. Beyond
+ * this, returning "nearest" is worse than returning nothing: a 600km airport
+ * is not this city's airport, and a caller told there is none can say so.
+ */
+export const DEFAULT_AIRPORT_RADIUS_KM = 150;
+
+const DEFAULT_NEAREST_LIMIT = 5;
+
+/**
+ * Distance discount by size, in km. A judgement call, not a fact.
+ *
+ * Straight distance makes London City the airport for London at 13km, ahead of
+ * Heathrow at 23km — technically true and wrong for a trip planner. A flat km
+ * discount rather than a multiplier is what keeps this a tie-breaker: it can
+ * reorder airports within 15km of each other and cannot promote a large
+ * airport 100km away over a medium one next door.
+ */
+const SIZE_BONUS_KM: Record<AirportSize, number> = {
+  large: 15,
+  medium: 0,
+  small: -15,
+};
 
 /** Sort weight for search results at equal score — bigger airports first. */
 const SIZE_RANK: Record<AirportSize, number> = { large: 0, medium: 1, small: 2 };
@@ -82,4 +115,30 @@ export function searchAirports(
       a.airport.iata.localeCompare(b.airport.iata)
   );
   return scored.slice(0, limit).map((s) => s.airport);
+}
+
+/**
+ * Airports within range of a point, best first.
+ *
+ * Ranked rather than single-winner because London genuinely is five airports,
+ * and a caller choosing a departure point needs to see them. Ordering uses the
+ * size-discounted distance; the reported `km` is always the true one.
+ */
+export function nearestAirports(
+  airports: readonly Airport[],
+  at: LatLon,
+  options: { radiusKm?: number; limit?: number } = {}
+): RankedAirport[] {
+  const radiusKm = options.radiusKm ?? DEFAULT_AIRPORT_RADIUS_KM;
+  const limit = options.limit ?? DEFAULT_NEAREST_LIMIT;
+
+  const within: Array<RankedAirport & { rank: number }> = [];
+  for (const airport of airports) {
+    const km = haversineKm(at, airport);
+    if (km > radiusKm) continue;
+    within.push({ airport, km: Math.round(km), rank: km - SIZE_BONUS_KM[airport.size] });
+  }
+  // IATA breaks a rank tie so the order is deterministic across runs.
+  within.sort((a, b) => a.rank - b.rank || a.airport.iata.localeCompare(b.airport.iata));
+  return within.slice(0, limit).map(({ airport, km }) => ({ airport, km }));
 }
