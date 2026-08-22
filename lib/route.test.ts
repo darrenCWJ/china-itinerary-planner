@@ -165,13 +165,20 @@ const remote: RoutePlace = { id: "remote", name: "Remote valley", lat: 30.0, lon
 
 describe("estimateLeg with airports", () => {
   test("without airports it behaves exactly as before", () => {
+    // Both comparisons below pass an explicit `[]` against the parameter's
+    // own default, which already is `[]` — so these two calls are identical
+    // by construction and cannot fail from a change to routing behaviour,
+    // only from the default itself silently becoming non-empty. That is a
+    // real but narrow guard; it does not by itself establish "behaves
+    // exactly as before". The evidence for that property is the 15
+    // pre-existing tests above, with their absolute km/mode/hours
+    // assertions against the pre-Task-6 implementation.
     const withoutFlight = estimateLeg(beijing, urumqi);
     const emptyFlight = estimateLeg(beijing, urumqi, []);
     expect(emptyFlight).toEqual(withoutFlight);
 
-    // A flight pair alone leaves the rail branch of `estimateLeg` unpinned by
-    // this equivalence — cover a rail pair too so the property holds for both
-    // modes, not just the one this test happened to pick first.
+    // Covers the rail branch too, so the default-value guard applies to
+    // both modes, not just the flight pair above.
     const withoutRail = estimateLeg(beijing, shanghai);
     const emptyRail = estimateLeg(beijing, shanghai, []);
     expect(emptyRail).toEqual(withoutRail);
@@ -315,6 +322,68 @@ describe("suggestRoute with airports", () => {
 
     const { notes } = suggestRoute([cityA, cityB], meridianAirports);
     expect(notes.join(" ")).not.toMatch(/Every leg/i);
+  });
+
+  test("estimateLeg falls back to rail when outward airports would make the flight slower than rail (mirror of the inward 'close airports' case above)", () => {
+    // The test above points its airports inward — closer together than the
+    // cities — and pins the case where a long city-to-city hop gets masked
+    // as rail. This test points its airports outward — further apart than
+    // the cities — which is the opposite door: ground transfer to two
+    // distant airports can make the "flight" airportKm picks out slower,
+    // door-to-door, than just taking the train. Distance-on-the-airport-pair
+    // alone cannot see that; it has to be compared against the rail
+    // alternative over the same city-to-city km.
+    //
+    //   cityA lat 0; airportA 100 km south of cityA (outward, away from cityB)
+    //   cityB 1150 km north of cityA; airportB 100 km further north of cityB
+    //   -> city-to-city 1150 km (under the 1200 km threshold on its own)
+    //   -> airport-to-airport 1350 km (over the threshold)
+    //   -> both ground transfers 100 km (well inside the 150 km radius)
+    // Verified numerically: haversineKm gives exactly 1150, 1350 and 100/100
+    // on this meridian.
+    //   flight hours = roundHalf(1350/700 + 2.5 + 200/60) = roundHalf(7.7619) = 8.0
+    //   rail hours   = roundHalf(1150/230 + 0.75)          = roundHalf(5.75)   = 6.0
+    // 8.0 > 6.0, so the leg must come back rail at 6.0 hours — flying here
+    // would be strictly slower than the rail it displaced.
+    const kmPerDegree = (6371 * Math.PI) / 180;
+    const cityA: RoutePlace = { id: "outward-city-a", name: "Outward City A", lat: 0, lon: 0 };
+    const cityB: RoutePlace = {
+      id: "outward-city-b",
+      name: "Outward City B",
+      lat: 1150 / kmPerDegree,
+      lon: 0,
+    };
+    const airportA: Airport = {
+      iata: "OWA",
+      icao: null,
+      name: "Outward Gate A",
+      municipality: "Outward City A",
+      country: "CN",
+      lat: -100 / kmPerDegree,
+      lon: 0,
+      size: "large",
+    };
+    const airportB: Airport = {
+      iata: "OWB",
+      icao: null,
+      name: "Outward Gate B",
+      municipality: "Outward City B",
+      country: "CN",
+      lat: (1150 + 100) / kmPerDegree,
+      lon: 0,
+      size: "large",
+    };
+    const outwardAirports = [airportA, airportB];
+
+    const leg = estimateLeg(cityA, cityB, outwardAirports);
+    expect(leg.kind).toBe("estimated");
+    if (leg.kind !== "estimated") return;
+    expect(leg.mode).toBe("rail");
+    expect(leg.hours).toBe(6);
+    expect(leg.airports).toBeUndefined();
+
+    const { notes } = suggestRoute([cityA, cityB], outwardAirports);
+    expect(notes.join(" ")).not.toMatch(/worth flying/i);
   });
 
   test("without airports the notes are unchanged", () => {

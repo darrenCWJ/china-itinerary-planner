@@ -76,6 +76,10 @@ const FLIGHT_KMH = 700;
  * to the airport. That trip is `GROUND_TRANSFER_KMH` below, added on top for
  * an airport-aware flight, so the two terms are legitimately additive and do
  * not double-count the ride to the airport.
+ *
+ * On the zero-airport branch there is no separate transfer term, so this same
+ * 2.5h is the only non-flight time in that estimate — there it stands in for
+ * door-to-door time, not just gate-side time, and is not an under-count.
  */
 const FLIGHT_BUFFER_H = 2.5;
 
@@ -153,12 +157,27 @@ export function estimateLeg(
   }
 
   const transferH = (fromNear.km + toNear.km) / GROUND_TRANSFER_KMH;
+  const flightHours = roundHalf(airportKm / FLIGHT_KMH + FLIGHT_BUFFER_H + transferH);
+
+  // A distance-only threshold on the airport pair is not sufficient once
+  // ground transfer is counted: two airports sitting well outside their
+  // cities can push airportKm past the threshold — and so pick "flight" —
+  // even though the two transfers add up to more time than the flight's
+  // speed advantage over rail actually buys back. Keep the flight only if
+  // it is genuinely faster door-to-door than the rail alternative over the
+  // same city-to-city km; otherwise this is functionally a rail leg that
+  // happened to resolve two distant airports.
+  const railAlternativeHours = railHours(km);
+  if (flightHours >= railAlternativeHours) {
+    return { kind: "estimated", from, to, km, hours: railAlternativeHours, mode: "rail" };
+  }
+
   return {
     kind: "estimated",
     from,
     to,
     km,
-    hours: roundHalf(airportKm / FLIGHT_KMH + FLIGHT_BUFFER_H + transferH),
+    hours: flightHours,
     mode: "flight",
     airports: { from: toRouteAirport(fromNear.airport), to: toRouteAirport(toNear.airport) },
   };
@@ -250,32 +269,16 @@ export function suggestRoute(
   if (grounded.length > 0) {
     notes.push(
       `${grounded.length} long leg${grounded.length > 1 ? "s have" : " has"} no airport within ` +
-        `${DEFAULT_AIRPORT_RADIUS_KM} km at one end — plan those overland (${grounded
-          .map((l) => `${l.from.name} → ${l.to.name}`)
-          .join(", ")}).`
+        `${DEFAULT_AIRPORT_RADIUS_KM} km at one end — plan ${
+          grounded.length > 1 ? "those" : "it"
+        } overland (${grounded.map((l) => `${l.from.name} → ${l.to.name}`).join(", ")}).`
     );
   }
-  // Requires every leg to be measured *and* rail: with an unmeasurable leg in
-  // the route, "every leg is rail-friendly" is an unsupported claim, not a true
-  // one. `measured.every` alone would assert it over a route it cannot see.
-  //
-  // The mode/rail check alone is not enough either: `l.km` is always the
-  // city-to-city distance, but with airports supplied `mode` was decided on
-  // the airport-to-airport distance instead. A leg can come back "rail" and
-  // ungrounded (both ends have an airport in range) while its own city-to-
-  // city km is still well past FLIGHT_THRESHOLD_KM — calling that hop
-  // "high-speed-rail friendly" is the same lie the grounded guard was added
-  // to kill, just reached through a door the grounded flag cannot see.
-  //
-  // Checking `l.km <= FLIGHT_THRESHOLD_KM` directly is simpler than the old
-  // `!l.groundedForLackOfAirport` check and strictly stronger:
-  //   - `groundedForLackOfAirport` is only ever set when
-  //     `km > FLIGHT_THRESHOLD_KM`, so `km <= FLIGHT_THRESHOLD_KM` already
-  //     implies "not grounded" — the grounded check was redundant here.
-  //   - It also closes the door above, which the grounded flag cannot see,
-  //     because that leg is never grounded at all.
-  // `groundedForLackOfAirport` itself is untouched — the grounded note above
-  // still reads it.
+  // `l.km <= FLIGHT_THRESHOLD_KM` already implies the leg isn't grounded,
+  // since `groundedForLackOfAirport` is only ever set once km exceeds that
+  // threshold. It also catches the case the grounded flag alone can't see:
+  // close airports masking a long city-to-city hop that comes back "rail"
+  // and ungrounded.
   if (
     legs.length > 0 &&
     measured.length === legs.length &&
