@@ -463,7 +463,6 @@ Create `lib/airports.ts`:
 ```ts
 import type { CountryCode } from "./countries";
 import { foldPlaceName } from "./foldPlaceName";
-import { haversineKm, type LatLon } from "./geo";
 
 /**
  * Query layer over the worldwide airport set (spec §3).
@@ -493,38 +492,6 @@ export interface Airport {
   lon: number;
   size: AirportSize;
 }
-
-export interface RankedAirport {
-  airport: Airport;
-  /** True great-circle distance in km, rounded — never the ranking score. */
-  km: number;
-}
-
-/**
- * How far from a place an airport can be and still count as serving it.
- *
- * Matches `NEAREST_CITY_MAX_KM` in scripts/ingest-destinations.mjs. Beyond
- * this, returning "nearest" is worse than returning nothing: a 600km airport
- * is not this city's airport, and a caller told there is none can say so.
- */
-export const DEFAULT_AIRPORT_RADIUS_KM = 150;
-
-const DEFAULT_NEAREST_LIMIT = 5;
-
-/**
- * Distance discount by size, in km. A judgement call, not a fact.
- *
- * Straight distance makes London City the airport for London at 13km, ahead of
- * Heathrow at 23km — technically true and wrong for a trip planner. A flat km
- * discount rather than a multiplier is what keeps this a tie-breaker: it can
- * reorder airports within 15km of each other and cannot promote a large
- * airport 100km away over a medium one next door.
- */
-const SIZE_BONUS_KM: Record<AirportSize, number> = {
-  large: 15,
-  medium: 0,
-  small: -15,
-};
 
 /** Sort weight for search results at equal score — bigger airports first. */
 const SIZE_RANK: Record<AirportSize, number> = { large: 0, medium: 1, small: 2 };
@@ -574,33 +541,11 @@ export function searchAirports(
   );
   return scored.slice(0, limit).map((s) => s.airport);
 }
-
-/**
- * Airports within range of a point, best first.
- *
- * Ranked rather than single-winner because London genuinely is five airports,
- * and a caller choosing a departure point needs to see them. Ordering uses the
- * size-discounted distance; the reported `km` is always the true one.
- */
-export function nearestAirports(
-  airports: readonly Airport[],
-  at: LatLon,
-  options: { radiusKm?: number; limit?: number } = {}
-): RankedAirport[] {
-  const radiusKm = options.radiusKm ?? DEFAULT_AIRPORT_RADIUS_KM;
-  const limit = options.limit ?? DEFAULT_NEAREST_LIMIT;
-
-  const within: Array<RankedAirport & { rank: number }> = [];
-  for (const airport of airports) {
-    const km = haversineKm(at, airport);
-    if (km > radiusKm) continue;
-    within.push({ airport, km: Math.round(km), rank: km - SIZE_BONUS_KM[airport.size] });
-  }
-  // IATA breaks a rank tie so the order is deterministic across runs.
-  within.sort((a, b) => a.rank - b.rank || a.airport.iata.localeCompare(b.airport.iata));
-  return within.slice(0, limit).map(({ airport, km }) => ({ airport, km }));
-}
 ```
+
+`nearestAirports` is deliberately **not** in this task — it lands in Task 3, so
+that its tests get a real red phase. The `LatLon` import is unused until then;
+add it in Task 3 rather than here, or the linter will flag it.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -622,14 +567,14 @@ git commit -m "feat: add pure airport lookup and search"
 ## Task 3: Nearest-airport ranking
 
 **Files:**
+- Modify: `lib/airports.ts` (add `nearestAirports` and its constants)
 - Modify: `lib/airports.test.ts` (append)
-- Already implemented in Task 2: `nearestAirports` in `lib/airports.ts`
 
-`nearestAirports` was written in Task 2 because it shares the module's constants, but its ranking behaviour is the subtle part of this layer and earns its own test cycle and its own review gate.
+The ranking rule here is the subtle part of this layer, so it gets its own red-green cycle and its own review gate rather than riding along with lookup and search.
 
 **Interfaces:**
-- Consumes: `Airport`, `RankedAirport`, `DEFAULT_AIRPORT_RADIUS_KM` from Task 2
-- Produces: verified `nearestAirports(airports, at, { radiusKm?, limit? })`
+- Consumes: `Airport`, `AirportSize` from Task 2; `haversineKm`, `LatLon` from `lib/geo`
+- Produces: `RankedAirport`, `DEFAULT_AIRPORT_RADIUS_KM`, `nearestAirports(airports, at, { radiusKm?, limit? })`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -688,7 +633,89 @@ describe("nearestAirports", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it passes**
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+npx vitest run lib/airports.test.ts
+```
+
+Expected: FAIL — `nearestAirports is not a function` / no export named `nearestAirports`.
+
+- [ ] **Step 3: Write the implementation**
+
+Add the `LatLon` import to `lib/airports.ts`:
+
+```ts
+import { haversineKm, type LatLon } from "./geo";
+```
+
+Add these below the `Airport` interface:
+
+```ts
+export interface RankedAirport {
+  airport: Airport;
+  /** True great-circle distance in km, rounded — never the ranking score. */
+  km: number;
+}
+
+/**
+ * How far from a place an airport can be and still count as serving it.
+ *
+ * Matches `NEAREST_CITY_MAX_KM` in scripts/ingest-destinations.mjs. Beyond
+ * this, returning "nearest" is worse than returning nothing: a 600km airport
+ * is not this city's airport, and a caller told there is none can say so.
+ */
+export const DEFAULT_AIRPORT_RADIUS_KM = 150;
+
+const DEFAULT_NEAREST_LIMIT = 5;
+
+/**
+ * Distance discount by size, in km. A judgement call, not a fact.
+ *
+ * Straight distance makes London City the airport for London at 13km, ahead of
+ * Heathrow at 23km — technically true and wrong for a trip planner. A flat km
+ * discount rather than a multiplier is what keeps this a tie-breaker: it can
+ * reorder airports within 15km of each other and cannot promote a large
+ * airport 100km away over a medium one next door.
+ */
+const SIZE_BONUS_KM: Record<AirportSize, number> = {
+  large: 15,
+  medium: 0,
+  small: -15,
+};
+```
+
+And this at the end of the file:
+
+```ts
+/**
+ * Airports within range of a point, best first.
+ *
+ * Ranked rather than single-winner because London genuinely is five airports,
+ * and a caller choosing a departure point needs to see them. Ordering uses the
+ * size-discounted distance; the reported `km` is always the true one.
+ */
+export function nearestAirports(
+  airports: readonly Airport[],
+  at: LatLon,
+  options: { radiusKm?: number; limit?: number } = {}
+): RankedAirport[] {
+  const radiusKm = options.radiusKm ?? DEFAULT_AIRPORT_RADIUS_KM;
+  const limit = options.limit ?? DEFAULT_NEAREST_LIMIT;
+
+  const within: Array<RankedAirport & { rank: number }> = [];
+  for (const airport of airports) {
+    const km = haversineKm(at, airport);
+    if (km > radiusKm) continue;
+    within.push({ airport, km: Math.round(km), rank: km - SIZE_BONUS_KM[airport.size] });
+  }
+  // IATA breaks a rank tie so the order is deterministic across runs.
+  within.sort((a, b) => a.rank - b.rank || a.airport.iata.localeCompare(b.airport.iata));
+  return within.slice(0, limit).map(({ airport, km }) => ({ airport, km }));
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
 
 ```bash
 npx vitest run lib/airports.test.ts
@@ -696,11 +723,11 @@ npx vitest run lib/airports.test.ts
 
 Expected: PASS, 15 tests total. If "prefers a large airport" fails, the `SIZE_BONUS_KM.large` value is too small for the real LHR/LCY coordinates — verify with the fixture's actual distances before changing it, and change the constant rather than the test.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add lib/airports.test.ts
-git commit -m "test: pin nearest-airport ranking and radius behaviour"
+git add lib/airports.ts lib/airports.test.ts
+git commit -m "feat: rank the airports serving a place by distance and size"
 ```
 
 ---
@@ -987,19 +1014,29 @@ git add .github/workflows/refresh-airports.yml
 git commit -m "ci: refresh airports daily from OurAirports"
 ```
 
-- [ ] **Step 4: Trigger it once by hand after pushing**
+- [ ] **Step 4: Note the post-merge verification (do NOT attempt it now)**
+
+`workflow_dispatch` and `schedule` only fire for workflows present on the
+repository's **default branch**, so neither `gh workflow run` nor the cron can
+reach this file while it lives on a feature branch. There is nothing to verify
+here yet, and trying will fail with "workflow does not exist".
+
+Once this branch merges to `main`, someone must run:
 
 ```bash
 gh workflow run refresh-airports.yml
 ```
 
-Then confirm it succeeded and committed nothing (the data is already current):
+and confirm it succeeded and committed nothing (the data is already current):
 
 ```bash
 gh run list --workflow=refresh-airports.yml --limit 1
 ```
 
-Expected: `completed  success`. **This manual run is required** — a scheduled workflow that has never run is a workflow whose permissions have never been tested.
+Expected: `completed  success`. **This manual run is required before the phase
+is done** — a scheduled workflow that has never run is one whose
+`contents: write` permission has never been tested. Carry it to the
+finishing-the-branch step as a merge gate.
 
 ---
 
