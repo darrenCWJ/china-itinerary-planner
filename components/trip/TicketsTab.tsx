@@ -4,6 +4,7 @@ import { useState } from "react";
 import { TICKET_KINDS, ticketKindMeta } from "@/lib/meta";
 import { sortTickets } from "@/lib/tickets";
 import type { Ticket, TicketKind } from "@/lib/tripShared";
+import { AirportInput } from "./AirportInput";
 
 /** Form payload sent to the tickets API — empty strings become null. */
 export interface TicketDraft {
@@ -311,14 +312,39 @@ function TicketForm({
           Confirmation #
           <input type="text" value={fields.confirmation} onChange={(e) => set({ confirmation: e.target.value })} maxLength={60} className={`${input} font-mono`} />
         </label>
-        <label className={label}>
-          From
-          <input type="text" value={fields.from} onChange={(e) => set({ from: e.target.value })} placeholder="Beijing" maxLength={60} className={input} />
-        </label>
-        <label className={label}>
-          To
-          <input type="text" value={fields.to} onChange={(e) => set({ to: e.target.value })} placeholder="Shanghai" maxLength={60} className={input} />
-        </label>
+        {/*
+          Airports for flights, plain text for everything else. A train's "from"
+          is a station and a hotel's is nothing at all, so offering airport
+          suggestions there would be noise. The field is the same free-text
+          string in both cases — only the affordance differs.
+        */}
+        {fields.kind === "flight" ? (
+          <>
+            <AirportInput
+              label="From"
+              value={fields.from}
+              onChange={(from) => set({ from })}
+              placeholder="Beijing or PEK"
+            />
+            <AirportInput
+              label="To"
+              value={fields.to}
+              onChange={(to) => set({ to })}
+              placeholder="Shanghai or SHA"
+            />
+          </>
+        ) : (
+          <>
+            <label className={label}>
+              From
+              <input type="text" value={fields.from} onChange={(e) => set({ from: e.target.value })} placeholder="Beijing" maxLength={60} className={input} />
+            </label>
+            <label className={label}>
+              To
+              <input type="text" value={fields.to} onChange={(e) => set({ to: e.target.value })} placeholder="Shanghai" maxLength={60} className={input} />
+            </label>
+          </>
+        )}
         <label className={label}>
           Price
           <input type="text" value={fields.price} onChange={(e) => set({ price: e.target.value })} placeholder="¥553" maxLength={30} className={input} />
