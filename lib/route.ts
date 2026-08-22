@@ -70,6 +70,13 @@ const FLIGHT_THRESHOLD_KM = 1200;
 const RAIL_KMH = 230;
 const RAIL_BUFFER_H = 0.75;
 const FLIGHT_KMH = 700;
+/**
+ * Time spent at the airport itself: check-in, security, boarding, taxi and
+ * baggage reclaim. Gate-side only — it does not include getting from the city
+ * to the airport. That trip is `GROUND_TRANSFER_KMH` below, added on top for
+ * an airport-aware flight, so the two terms are legitimately additive and do
+ * not double-count the ride to the airport.
+ */
 const FLIGHT_BUFFER_H = 2.5;
 
 /**
@@ -227,8 +234,14 @@ export function suggestRoute(
   const notes: string[] = [];
   const flights = measured.filter((l) => l.mode === "flight");
   if (flights.length > 0) {
+    // Not "over FLIGHT_THRESHOLD_KM km": with airports supplied, `mode` was
+    // decided on the airport-to-airport distance, but `l.km` here is still
+    // city-to-city — the two can sit on opposite sides of the threshold (see
+    // the all-rail predicate below for the mirror case). Claiming only that
+    // these legs are worth flying stays true regardless of which distance
+    // decided it.
     notes.push(
-      `${flights.length} leg${flights.length > 1 ? "s are" : " is"} over ${FLIGHT_THRESHOLD_KM} km — consider flying (${flights
+      `${flights.length} leg${flights.length > 1 ? "s are" : " is"} worth flying (${flights
         .map((l) => `${l.from.name} → ${l.to.name}`)
         .join(", ")}).`
     );
@@ -245,12 +258,28 @@ export function suggestRoute(
   // Requires every leg to be measured *and* rail: with an unmeasurable leg in
   // the route, "every leg is rail-friendly" is an unsupported claim, not a true
   // one. `measured.every` alone would assert it over a route it cannot see.
-  // A grounded leg is technically rail, but calling a 3,000 km overland hop
-  // "high-speed-rail friendly" is another lie the estimator should not repeat.
+  //
+  // The mode/rail check alone is not enough either: `l.km` is always the
+  // city-to-city distance, but with airports supplied `mode` was decided on
+  // the airport-to-airport distance instead. A leg can come back "rail" and
+  // ungrounded (both ends have an airport in range) while its own city-to-
+  // city km is still well past FLIGHT_THRESHOLD_KM — calling that hop
+  // "high-speed-rail friendly" is the same lie the grounded guard was added
+  // to kill, just reached through a door the grounded flag cannot see.
+  //
+  // Checking `l.km <= FLIGHT_THRESHOLD_KM` directly is simpler than the old
+  // `!l.groundedForLackOfAirport` check and strictly stronger:
+  //   - `groundedForLackOfAirport` is only ever set when
+  //     `km > FLIGHT_THRESHOLD_KM`, so `km <= FLIGHT_THRESHOLD_KM` already
+  //     implies "not grounded" — the grounded check was redundant here.
+  //   - It also closes the door above, which the grounded flag cannot see,
+  //     because that leg is never grounded at all.
+  // `groundedForLackOfAirport` itself is untouched — the grounded note above
+  // still reads it.
   if (
     legs.length > 0 &&
     measured.length === legs.length &&
-    measured.every((l) => l.mode === "rail" && !l.groundedForLackOfAirport)
+    measured.every((l) => l.mode === "rail" && l.km <= FLIGHT_THRESHOLD_KM)
   ) {
     notes.push("Every leg is high-speed-rail friendly — book seats ~15 days ahead on 12306 or Trip.com.");
   }
