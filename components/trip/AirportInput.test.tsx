@@ -16,6 +16,39 @@ const HITS: Airport[] = [
 ];
 
 /**
+ * `"A".repeat(70) (XXL)"` is 76 chars — over the 60-char cap — but its
+ * municipality "Shortcity (XXL)" is only 15, so displayValue should fall back
+ * to it. Exercises Finding 1's second branch.
+ */
+const LONG_NAME_WITH_MUNICIPALITY: Airport = {
+  iata: "XXL",
+  icao: null,
+  name: "A".repeat(70),
+  municipality: "Shortcity",
+  country: "US",
+  lat: 0,
+  lon: 0,
+  size: "large",
+};
+
+/**
+ * `"B".repeat(80) (YYL)"` is 86 chars and there is no municipality to fall
+ * back to, so displayValue must truncate the name so the whole string lands
+ * exactly at the 60-char cap. Exercises Finding 1's third (truncation)
+ * branch, otherwise unreachable against today's artifact.
+ */
+const LONG_NAME_NO_MUNICIPALITY: Airport = {
+  iata: "YYL",
+  icao: null,
+  name: "B".repeat(80),
+  municipality: null,
+  country: "US",
+  lat: 0,
+  lon: 0,
+  size: "large",
+};
+
+/**
  * The component is controlled, so a bare render would never show typed text.
  * This holds the value the way TicketForm does.
  */
@@ -36,11 +69,17 @@ function Harness({ onValue }: { onValue?: (v: string) => void } = {}) {
 const type = (text: string) =>
   fireEvent.change(screen.getByLabelText("From"), { target: { value: text } });
 
-beforeEach(() => {
+/** Swaps the default HITS response for a specific set of results, for tests
+ * that need to exercise a particular airport's display string. */
+function stubSearchResults(results: Airport[]) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({ ok: true, json: async () => ({ results: HITS }) }) as unknown as Response)
+    vi.fn(async () => ({ ok: true, json: async () => ({ results }) }) as unknown as Response)
   );
+}
+
+beforeEach(() => {
+  stubSearchResults(HITS);
 });
 
 afterEach(() => {
@@ -84,6 +123,20 @@ describe("AirportInput", () => {
     type("Jinan");
     fireEvent.mouseDown(await screen.findByRole("option", { name: /Jinan Yaoqiang/ }));
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Real time, past the 300ms debounce. `pick()`'s own synchronous
+    // `setOpen(false); setHits([])` only proves the list closes immediately —
+    // it says nothing about whether the picked value's own query effect run
+    // was suppressed. If it wasn't, the pending timeout fires here, re-queries
+    // the picked string, and silently reopens the dropdown with a second
+    // fetch call. Waiting past the debounce (jsdom's 15s testTimeout and 5s
+    // asyncUtilTimeout leave ample room) is what actually exercises the
+    // suppression guard rather than just `pick()`'s own state updates.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   test("does not query for a one-character value", async () => {
@@ -93,5 +146,79 @@ describe("AirportInput", () => {
     // its chance.
     await new Promise((resolve) => setTimeout(resolve, 450));
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  describe("displayValue branches (Finding 1)", () => {
+    test("a short name passes through unchanged", async () => {
+      const onValue = vi.fn();
+      render(<Harness onValue={onValue} />);
+      type("Jinan");
+      fireEvent.mouseDown(await screen.findByRole("option", { name: /Jinan Yaoqiang/ }));
+      expect(onValue).toHaveBeenLastCalledWith("Jinan Yaoqiang International Airport (TNA)");
+    });
+
+    test("a long name falls back to the municipality", async () => {
+      stubSearchResults([LONG_NAME_WITH_MUNICIPALITY]);
+      const onValue = vi.fn();
+      render(<Harness onValue={onValue} />);
+      type("long");
+      fireEvent.mouseDown(await screen.findByRole("option", { name: /Shortcity/ }));
+      expect(onValue).toHaveBeenLastCalledWith("Shortcity (XXL)");
+    });
+
+    test("a long name with no municipality is truncated to exactly the cap", async () => {
+      stubSearchResults([LONG_NAME_NO_MUNICIPALITY]);
+      const onValue = vi.fn();
+      render(<Harness onValue={onValue} />);
+      type("long");
+      fireEvent.mouseDown(await screen.findByRole("option", { name: /B{20,}/ }));
+      const written = onValue.mock.calls.at(-1)?.[0] as string;
+      expect(written).toBe(`${"B".repeat(54)} (YYL)`);
+      expect(written).toHaveLength(60);
+    });
+  });
+
+  describe("keyboard operability (Finding 2)", () => {
+    test("arrowing to an option and pressing Enter selects it", async () => {
+      const onValue = vi.fn();
+      render(<Harness onValue={onValue} />);
+      type("Jinan");
+      await screen.findAllByRole("option");
+      const input = screen.getByLabelText("From");
+
+      // Two hits: TNA (Jinan) first, PEK (Beijing) second. One ArrowDown moves
+      // the active option from the first to the second.
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onValue).toHaveBeenLastCalledWith("Beijing Capital International Airport (PEK)");
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    });
+
+    test("Escape closes the list without clearing the typed value", async () => {
+      render(<Harness />);
+      type("Jinan");
+      await screen.findByRole("option", { name: /Jinan Yaoqiang/ });
+
+      fireEvent.keyDown(screen.getByLabelText("From"), { key: "Escape" });
+
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("From")).toHaveValue("Jinan");
+    });
+
+    test("aria-activedescendant tracks the active option", async () => {
+      render(<Harness />);
+      type("Jinan");
+      const options = await screen.findAllByRole("option");
+      expect(options).toHaveLength(2);
+      const input = screen.getByLabelText("From");
+
+      // Active index starts at 0: the input should already point at the
+      // first option once the list opens, not leave the property unset.
+      expect(input).toHaveAttribute("aria-activedescendant", options[0].id);
+
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(input).toHaveAttribute("aria-activedescendant", options[1].id);
+    });
   });
 });
