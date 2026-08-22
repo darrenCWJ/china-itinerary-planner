@@ -124,9 +124,58 @@ describe("nearestAirports", () => {
     expect(DEFAULT_AIRPORT_RADIUS_KM).toBe(150);
   });
 
-  test("is deterministic when two airports rank identically", () => {
-    const a = nearestAirports(FIXTURE, london).map((r) => r.airport.iata);
-    const b = nearestAirports([...FIXTURE].reverse(), london).map((r) => r.airport.iata);
-    expect(a).toEqual(b);
+  test("breaks a genuine rank tie alphabetically by IATA, deterministically", () => {
+    // Two airports at identical coordinates and the same size rank exactly
+    // equal (same `km`, same size bonus), so only the `localeCompare`
+    // tiebreaker in `nearestAirports` can decide their order. Reversing the
+    // FIXTURE array (as the old version of this test did) never produces a
+    // real tie: LHR/LCY/LGW rank ~8.5/~12.7/~25.15 — all distinct — so that
+    // version passed even with the tiebreaker deleted. This one does not.
+    const here = { lat: 10, lon: 10 };
+    const tiedAirport = (iata: string): Airport => ({
+      iata,
+      icao: null,
+      name: `${iata} Airport`,
+      municipality: null,
+      country: "ZZ",
+      lat: here.lat,
+      lon: here.lon,
+      size: "medium",
+    });
+    const tied = [tiedAirport("ZAA"), tiedAirport("AAA")];
+
+    const forward = nearestAirports(tied, here).map((r) => r.airport.iata);
+    const reversed = nearestAirports([...tied].reverse(), here).map((r) => r.airport.iata);
+
+    expect(forward).toEqual(["AAA", "ZAA"]);
+    expect(reversed).toEqual(["AAA", "ZAA"]);
+  });
+
+  test("excludes a large airport whose true distance is outside the radius, even though its size-discounted rank would fall inside", () => {
+    // The radius filter must use the true great-circle distance, not the
+    // size-discounted ranking score. A large airport gets a 15km bonus in
+    // `rank`, so a filter that mistakenly compared `rank` to `radiusKm`
+    // (instead of `km`) would let this one through: 155 - 15 = 140 < 150.
+    // But 155km really is outside a 150km radius, so it must be excluded.
+    const kmPerDegree = (6371 * Math.PI) / 180;
+    const farLargeAirport: Airport = {
+      iata: "FAR",
+      icao: null,
+      name: "Far Away International Airport",
+      municipality: null,
+      country: "ZZ",
+      lat: 0,
+      lon: 0,
+      size: "large",
+    };
+    const at = { lat: 155 / kmPerDegree, lon: 0 };
+
+    expect(nearestAirports([farLargeAirport], at, { radiusKm: 150 })).toEqual([]);
+
+    // Companion assertion: widening the radius past the true 155km distance
+    // includes it, proving the boundary sits at the true distance rather
+    // than just that something, somewhere, got filtered.
+    const included = nearestAirports([farLargeAirport], at, { radiusKm: 160 });
+    expect(included.map((r) => r.airport.iata)).toEqual(["FAR"]);
   });
 });
