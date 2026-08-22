@@ -66,8 +66,19 @@ function Harness({ onValue }: { onValue?: (v: string) => void } = {}) {
   );
 }
 
-const type = (text: string) =>
-  fireEvent.change(screen.getByLabelText("From"), { target: { value: text } });
+/**
+ * Fires focus before change: a real user cannot type into a field without
+ * focusing it first, and the component now gates opening the suggestion list
+ * on focus (reviewer finding — see the "focus lifecycle" describe block
+ * below). `fireEvent.change` alone never focuses the element, so every test
+ * that expects the list to open has to go through this helper rather than
+ * dispatching change directly.
+ */
+const type = (text: string) => {
+  const input = screen.getByLabelText("From");
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: text } });
+};
 
 /** Swaps the default HITS response for a specific set of results, for tests
  * that need to exercise a particular airport's display string. */
@@ -98,6 +109,39 @@ describe("AirportInput", () => {
     render(<AirportInput label="From" value="" onChange={onChange} />);
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "Grandma's airstrip" } });
     expect(onChange).toHaveBeenCalledWith("Grandma's airstrip");
+  });
+
+  describe("focus lifecycle (reviewer finding: opens on a field nobody focused)", () => {
+    test("mounting with a prefilled value that matches airports does not open the list", async () => {
+      // Editing a saved ticket prefills `from`/`to` on mount (TicketsTab's
+      // `toFields`). The query effect still runs — the debounce below is what
+      // proves the fetch actually happened — but nobody focused this field, so
+      // the list must never open under it.
+      render(<AirportInput label="From" value="Beijing" onChange={() => {}} />);
+
+      await new Promise((resolve) => setTimeout(resolve, 450));
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    test("blurring during the debounce window does not reopen the list afterwards", async () => {
+      render(<Harness />);
+      const input = screen.getByLabelText("From");
+      type("Jinan");
+
+      // Well inside the 300ms debounce window: the fetch has not fired yet.
+      fireEvent.blur(input);
+
+      // Past the debounce window and the mocked fetch's resolution. If blur
+      // failed to cancel the pending timer, or the response reopened the list
+      // regardless of focus, this is where it would show up.
+      await new Promise((resolve) => setTimeout(resolve, 450));
+
+      expect(input).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
   });
 
   test("offers matching airports once the query is long enough", async () => {

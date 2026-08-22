@@ -89,6 +89,16 @@ export function AirportInput({
    * remembering "a pick just wrote this specific string."
    */
   const lastPickedValueRef = useRef<string | null>(null);
+  /**
+   * Whether the field currently has focus. Read (never rendered) so the
+   * debounced fetch below can tell a value change the user is actively
+   * typing apart from one that landed on an unfocused field — a prefilled
+   * `value` on mount (editing a saved ticket) is the latter, and opening the
+   * list under a field nobody focused would float it over the row beneath
+   * with nothing — no outside-click handler, blur already gone — able to
+   * close it again.
+   */
+  const isFocusedRef = useRef(false);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -108,7 +118,12 @@ export function AirportInput({
         });
         const json: { results: Airport[] } = await res.json();
         setHits(json.results);
-        setOpen(json.results.length > 0);
+        // Gated on focus, not just "results arrived": a blur that lands after
+        // this timer already started the fetch (the window between the debounce
+        // firing and the response resolving) still lands here with the field no
+        // longer focused, and opening the list at that point would be exactly
+        // the reopen-after-blur race this field exists to avoid.
+        if (isFocusedRef.current) setOpen(json.results.length > 0);
       } catch {
         if (!controller.signal.aborted) {
           setHits([]);
@@ -186,7 +201,23 @@ export function AirportInput({
             setActive(0);
           }}
           onKeyDown={onKeyDown}
-          onBlur={() => setOpen(false)}
+          onFocus={() => {
+            isFocusedRef.current = true;
+          }}
+          onBlur={() => {
+            isFocusedRef.current = false;
+            // Cancels the pending debounce outright, not just its eventual
+            // `setOpen` — a fetch that never starts cannot race back open at
+            // all. Without this, a blur inside the 300ms window leaves the
+            // timer alive to fire after the field is no longer focused (the
+            // `isFocusedRef` gate above catches that case too, but there is
+            // no reason to fire the request in the first place).
+            if (debounceRef.current) {
+              clearTimeout(debounceRef.current);
+              debounceRef.current = null;
+            }
+            setOpen(false);
+          }}
           className={inputClass}
         />
       </label>
