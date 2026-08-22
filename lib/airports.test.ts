@@ -9,6 +9,9 @@ export const FIXTURE: Airport[] = [
   { iata: "LCY", icao: "EGLC", name: "London City Airport", municipality: "London", country: "GB", lat: 51.5053, lon: 0.055278, size: "medium" },
   { iata: "LGW", icao: "EGKK", name: "London Gatwick Airport", municipality: "London", country: "GB", lat: 51.1481, lon: -0.190278, size: "large" },
   { iata: "ZRH", icao: "LSZH", name: "Zürich Airport", municipality: "Zurich", country: "CH", lat: 47.4647, lon: 8.54917, size: "large" },
+  { iata: "PVG", icao: "ZSPD", name: "Shanghai Pudong International Airport", municipality: "Shanghai (Pudong)", country: "CN", lat: 31.1434, lon: 121.805, size: "large" },
+  { iata: "SHA", icao: "ZSSS", name: "Shanghai Hongqiao International Airport", municipality: "Shanghai (Minhang)", country: "CN", lat: 31.198104, lon: 121.33426, size: "large" },
+  { iata: "FIH", icao: "FZAA", name: "Ndjili International Airport", municipality: "Kinshasa", country: "CD", lat: -4.38575, lon: 15.4446, size: "large" },
 ];
 
 describe("findAirport", () => {
@@ -27,10 +30,16 @@ describe("findAirport", () => {
 });
 
 describe("searchAirports", () => {
-  test("an exact IATA match outranks any name match", () => {
-    // "LGW" is also a substring of nothing else, but the point is the ordering
-    // rule: a code typed in full is the most specific thing a user can say.
-    expect(searchAirports(FIXTURE, "LGW")[0].iata).toBe("LGW");
+  test("exact IATA, prefix, and substring matches all rank in order", () => {
+    // "sha" hits all three tiers against real airports, so this single
+    // assertion pins the whole ordering and fails if any two tiers swap:
+    //   SHA  — iata === "SHA"                              → exact, score 3
+    //   PVG  — municipality "Shanghai (Pudong)" folds to    → prefix, score 2
+    //          a string that *starts with* "shanghai"
+    //   FIH  — municipality "Kinshasa" folds to a string    → substring, score 1
+    //          that *contains* "sha" but does not start with it
+    const codes = searchAirports(FIXTURE, "sha").map((a) => a.iata);
+    expect(codes).toEqual(["SHA", "PVG", "FIH"]);
   });
 
   test("matches on municipality and returns every airport serving it", () => {
@@ -44,13 +53,6 @@ describe("searchAirports", () => {
     expect(searchAirports(FIXTURE, "zurich")[0].iata).toBe("ZRH");
   });
 
-  test("prefixes outrank substrings", () => {
-    // "Capital" is a substring of Beijing's name; "Jinan" is a prefix of
-    // Jinan's. The prefix match must come first.
-    const codes = searchAirports(FIXTURE, "Jinan").map((a) => a.iata);
-    expect(codes[0]).toBe("TNA");
-  });
-
   test("larger airports come first within the same score", () => {
     const codes = searchAirports(FIXTURE, "London").map((a) => a.iata);
     // LCY is the only medium among the three, so it must not lead.
@@ -59,6 +61,14 @@ describe("searchAirports", () => {
 
   test("an empty query returns nothing", () => {
     expect(searchAirports(FIXTURE, "   ")).toEqual([]);
+  });
+
+  test("a punctuation-only query that folds to empty returns nothing", () => {
+    // Regression: foldPlaceName strips apostrophes entirely, so a raw query
+    // of "'" has raw.length === 1 (passing a raw-length guard) but folds to
+    // "". Every airport's name/municipality starts with "", so an unfolded
+    // length guard would return the entire dataset instead of [].
+    expect(searchAirports(FIXTURE, "'")).toEqual([]);
   });
 
   test("respects the limit", () => {
