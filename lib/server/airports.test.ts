@@ -37,10 +37,14 @@ describe("the bundled airport artifact", () => {
   });
 
   /**
-   * The drift guard. A bad daily refresh should fail CI rather than ship: these
-   * four are among the busiest airports on Earth and will not lose scheduled
-   * service or change code. TNA is here because it is the airport whose absence
-   * prompted this work.
+   * The drift guard. There is no CI for this repo, and the refresh workflow
+   * pushes straight to the default branch unattended — so the only gate a bad
+   * daily refresh actually passes through is `assertSane` in
+   * scripts/ingest-airports.mjs, which runs inside that workflow. These tests
+   * are the local backstop: they run when a human types `npm test`, and catch
+   * whatever `assertSane` doesn't. These four are among the busiest airports
+   * on Earth and will not lose scheduled service or change code. TNA is here
+   * because it is the airport whose absence prompted this work.
    */
   test.each(["TNA", "PEK", "LHR", "JFK"])("still resolves %s", (code) => {
     expect(findAirport(code)).not.toBeNull();
