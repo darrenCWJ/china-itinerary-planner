@@ -15,7 +15,12 @@ import {
 
 describe("sanitizePrefs", () => {
   test("passes a well-formed record through unchanged", () => {
-    const prefs: UserPrefs = { theme: "dark", accent: 210, accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "dark",
+      accent: 210,
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
 
     expect(sanitizePrefs(prefs)).toEqual(prefs);
   });
@@ -25,6 +30,7 @@ describe("sanitizePrefs", () => {
       theme: "light",
       accent: 210,
       accentHues: {},
+      worldView: "globe",
     });
   });
 
@@ -72,6 +78,7 @@ describe("prefs cookie", () => {
       theme: "dark",
       accent: "country",
       accentHues: {},
+      worldView: "globe",
     });
   });
 
@@ -80,18 +87,29 @@ describe("prefs cookie", () => {
       theme: "system",
       accent: 210,
       accentHues: { CN: 200, JP: 40 },
+      worldView: "globe",
     });
   });
 
   test("round-trips every field", () => {
-    const prefs: UserPrefs = { theme: "dark", accent: 300, accentHues: { CN: 12, KR: 200 } };
+    const prefs: UserPrefs = {
+      theme: "dark",
+      accent: 300,
+      accentHues: { CN: 12, KR: 200 },
+      worldView: "globe",
+    };
 
     expect(parsePrefsCookie(serializePrefsCookie(prefs))).toEqual(prefs);
     expect(parsePrefsCookie(serializePrefsCookie(DEFAULT_PREFS))).toEqual(DEFAULT_PREFS);
   });
 
   test("the serialized value is cookie-safe", () => {
-    const value = serializePrefsCookie({ theme: "dark", accent: 10, accentHues: { CN: 1 } });
+    const value = serializePrefsCookie({
+      theme: "dark",
+      accent: 10,
+      accentHues: { CN: 1 },
+      worldView: "globe",
+    });
 
     expect(value).not.toMatch(/[;,\s"\\]/);
   });
@@ -115,6 +133,7 @@ describe("prefs cookie", () => {
       theme: "dark",
       accent: "country",
       accentHues: {},
+      worldView: "globe",
     });
     expect(parsePrefsCookie("theme=dark&hues=CN:200.broken.JP:40").accentHues).toEqual({
       CN: 200,
@@ -125,6 +144,35 @@ describe("prefs cookie", () => {
   test("the cookie name is stable", () => {
     // The first-paint inline script matches this name as a literal.
     expect(PREFS_COOKIE).toBe("cip-prefs");
+  });
+});
+
+describe("worldView", () => {
+  test("defaults to the globe", () => {
+    expect(DEFAULT_PREFS.worldView).toBe("globe");
+  });
+
+  test("keeps an explicit flat choice", () => {
+    expect(sanitizePrefs({ theme: "light", accent: "country", accentHues: {}, worldView: "flat" }).worldView).toBe("flat");
+  });
+
+  test("drops an unrecognised value rather than the whole record", () => {
+    const prefs = sanitizePrefs({ theme: "dark", accent: 210, accentHues: {}, worldView: "hologram" });
+    expect(prefs.worldView).toBe("globe");
+    // One bad field never costs a user the rest of their settings.
+    expect(prefs.theme).toBe("dark");
+    expect(prefs.accent).toBe(210);
+  });
+
+  test("round-trips through the cookie", () => {
+    const prefs: UserPrefs = { theme: "dark", accent: 210, accentHues: {}, worldView: "flat" };
+    expect(parsePrefsCookie(serializePrefsCookie(prefs))).toEqual(prefs);
+  });
+
+  test("reads as the globe when an older cookie has no view field", () => {
+    // Cookies predating this field are live in browsers right now; they must
+    // land on the default rather than on undefined.
+    expect(parsePrefsCookie("theme=dark&accent=210").worldView).toBe("globe");
   });
 });
 
@@ -152,7 +200,12 @@ describe("resolveAccentVars", () => {
     // CN is curated at 30; the user's 200 must win, or the override does
     // nothing for exactly the countries anyone has bothered to curate.
     expect(getCountry("CN").accentHue).toBe(30);
-    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: "country",
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
     const vars = resolveAccentVars(prefs, "CN", "light");
 
     expect(hueOf(vars["--accent-ink"])).toBe(200);
@@ -160,7 +213,12 @@ describe("resolveAccentVars", () => {
   });
 
   test("an override applies only to the country it names", () => {
-    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: "country",
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
 
     expect(hueOf(resolveAccentVars(prefs, "JP", "light")["--accent-ink"])).toBe(
       hueOf(accentColor("JP", "light", "ink"))
@@ -168,7 +226,12 @@ describe("resolveAccentVars", () => {
   });
 
   test("a fixed accent applies everywhere and ignores the override map", () => {
-    const prefs: UserPrefs = { theme: "light", accent: 40, accentHues: { CN: 200, JP: 300 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: 40,
+      accentHues: { CN: 200, JP: 300 },
+      worldView: "globe",
+    };
 
     for (const code of ["CN", "JP", "XZ"]) {
       expect(hueOf(resolveAccentVars(prefs, code, "light")["--accent-ink"])).toBe(40);
@@ -177,7 +240,12 @@ describe("resolveAccentVars", () => {
   });
 
   test("a country code is matched case-insensitively", () => {
-    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: "country",
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
 
     expect(hueOf(resolveAccentVars(prefs, "cn", "light")["--accent-ink"])).toBe(200);
   });
@@ -185,7 +253,12 @@ describe("resolveAccentVars", () => {
   test("the two vars are exactly the override resolver's answer, not a second copy of it", () => {
     // resolveAccentVars must not re-derive the prefs half; if it ever does, the
     // page's tokens and every surface that resolves the hue itself drift apart.
-    const prefs: UserPrefs = { theme: "light", accent: 40, accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: 40,
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
 
     expect(resolveAccentVars(prefs, "CN", "light")).toEqual({
       "--accent-ink": accentColor("CN", "light", "ink", resolveAccentOverride(prefs, "CN")),
@@ -198,10 +271,10 @@ describe("resolveAccentVars", () => {
     // make moves lightness, so the contrast guarantee survives the picker.
     const cases: UserPrefs[] = [
       DEFAULT_PREFS,
-      { theme: "light", accent: "country", accentHues: { CN: 200 } },
-      { theme: "light", accent: 40, accentHues: {} },
-      { theme: "light", accent: 0, accentHues: {} },
-      { theme: "light", accent: 359, accentHues: {} },
+      { theme: "light", accent: "country", accentHues: { CN: 200 }, worldView: "globe" },
+      { theme: "light", accent: 40, accentHues: {}, worldView: "globe" },
+      { theme: "light", accent: 0, accentHues: {}, worldView: "globe" },
+      { theme: "light", accent: 359, accentHues: {}, worldView: "globe" },
     ];
     for (const prefs of cases) {
       for (const theme of ["light", "dark"] as const) {
@@ -243,7 +316,12 @@ describe("the accent gradient a hero paints", () => {
   test("a fixed accent is what the gradient paints, over a per-country override", () => {
     // The defect this replaces: the hero read accentHues directly, so it painted
     // 300 while every token on the page was at 210.
-    const prefs: UserPrefs = { theme: "light", accent: 210, accentHues: { JP: 300 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: 210,
+      accentHues: { JP: 300 },
+      worldView: "globe",
+    };
     const hero = gradient(prefs, "JP");
 
     expect(hueOf(hero.fromColor)).toBe(210);
@@ -252,7 +330,12 @@ describe("the accent gradient a hero paints", () => {
 
   test("a fixed accent is what the gradient paints, over the curated hue", () => {
     expect(getCountry("JP").accentHue).toBe(345);
-    const prefs: UserPrefs = { theme: "light", accent: 210, accentHues: {} };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: 210,
+      accentHues: {},
+      worldView: "globe",
+    };
 
     expect(hueOf(gradient(prefs, "JP").fromColor)).toBe(210);
   });
@@ -263,10 +346,10 @@ describe("the accent gradient a hero paints", () => {
     // stronger than any single hue assertion, and it holds in every mode.
     const cases: UserPrefs[] = [
       DEFAULT_PREFS,
-      { theme: "light", accent: 210, accentHues: { JP: 300 } },
-      { theme: "light", accent: 210, accentHues: {} },
-      { theme: "light", accent: "country", accentHues: { JP: 300 } },
-      { theme: "light", accent: 0, accentHues: {} },
+      { theme: "light", accent: 210, accentHues: { JP: 300 }, worldView: "globe" },
+      { theme: "light", accent: 210, accentHues: {}, worldView: "globe" },
+      { theme: "light", accent: "country", accentHues: { JP: 300 }, worldView: "globe" },
+      { theme: "light", accent: 0, accentHues: {}, worldView: "globe" },
     ];
     for (const prefs of cases) {
       const hero = gradient(prefs, "JP");
@@ -280,7 +363,12 @@ describe("the accent gradient a hero paints", () => {
   test("per-country mode still lets a recoloured country show its own hue", () => {
     // Fixed mode winning must not cost the override its meaning where the user
     // has not pinned one hue everywhere.
-    const prefs: UserPrefs = { theme: "light", accent: "country", accentHues: { JP: 300 } };
+    const prefs: UserPrefs = {
+      theme: "light",
+      accent: "country",
+      accentHues: { JP: 300 },
+      worldView: "globe",
+    };
 
     expect(hueOf(gradient(prefs, "JP").fromColor)).toBe(300);
   });

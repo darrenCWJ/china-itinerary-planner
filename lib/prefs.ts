@@ -20,14 +20,36 @@ export interface UserPrefs {
   accent: "country" | number;
   /** Sparse per-country overrides, ISO alpha-2 to hue. Only what was changed. */
   accentHues: Record<string, number>;
+  worldView: WorldView;
 }
 
-export const DEFAULT_PREFS: UserPrefs = { theme: "light", accent: "country", accentHues: {} };
+/**
+ * Which world-level renderer the picker uses.
+ *
+ * "globe" is the default because choosing one country out of 235 is what this
+ * level is for, and a globe makes the choice spatial. "flat" is a real
+ * alternative rather than a degraded mode: it is what `prefers-reduced-motion`
+ * resolves to, what a low-end device wants, and what someone who simply reads
+ * a rectangular world map faster should be able to pick.
+ */
+export type WorldView = "globe" | "flat";
+
+export const DEFAULT_PREFS: UserPrefs = {
+  theme: "light",
+  accent: "country",
+  accentHues: {},
+  worldView: "globe",
+};
 
 const THEMES: readonly ThemePref[] = ["light", "dark", "system"];
 
 const isTheme = (value: unknown): value is ThemePref =>
   typeof value === "string" && (THEMES as readonly string[]).includes(value);
+
+const WORLD_VIEWS: readonly WorldView[] = ["globe", "flat"];
+
+const isWorldView = (value: unknown): value is WorldView =>
+  typeof value === "string" && (WORLD_VIEWS as readonly string[]).includes(value);
 
 export const isHue = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 359;
@@ -55,6 +77,7 @@ export function sanitizePrefs(value: unknown): UserPrefs {
     theme: isTheme(raw.theme) ? raw.theme : DEFAULT_PREFS.theme,
     accent: isHue(raw.accent) ? raw.accent : "country",
     accentHues,
+    worldView: isWorldView(raw.worldView) ? raw.worldView : DEFAULT_PREFS.worldView,
   };
 }
 
@@ -99,11 +122,12 @@ export function parsePrefsCookie(value: string | undefined | null): UserPrefs {
     theme: fields.theme,
     accent: fields.accent === undefined ? undefined : Number(fields.accent),
     accentHues,
+    worldView: fields.view,
   });
 }
 
 export function serializePrefsCookie(prefs: UserPrefs): string {
-  const parts = [`theme=${prefs.theme}`, `accent=${prefs.accent}`];
+  const parts = [`theme=${prefs.theme}`, `accent=${prefs.accent}`, `view=${prefs.worldView}`];
   const hues = Object.entries(prefs.accentHues).map(([code, hue]) => `${code}:${hue}`);
   if (hues.length > 0) parts.push(`hues=${hues.join(".")}`);
   return parts.join("&");

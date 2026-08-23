@@ -275,13 +275,24 @@ describe("PrefsSchema", () => {
   });
 
   test("an omitted field takes its default", () => {
-    expect(PrefsSchema.parse({})).toEqual({ theme: "light", accent: "country", accentHues: {} });
+    expect(PrefsSchema.parse({})).toEqual({
+      theme: "light",
+      accent: "country",
+      accentHues: {},
+      worldView: "globe",
+    });
   });
 
   test("rejects a theme outside the allowlist", () => {
     expect(PrefsSchema.safeParse({ theme: "purple" }).success).toBe(false);
     expect(PrefsSchema.safeParse({ theme: "<script>alert(1)</script>" }).success).toBe(false);
     expect(PrefsSchema.safeParse({ theme: 1 }).success).toBe(false);
+  });
+
+  test("rejects a worldView outside the allowlist", () => {
+    expect(PrefsSchema.safeParse({ worldView: "hologram" }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ worldView: "<script>alert(1)</script>" }).success).toBe(false);
+    expect(PrefsSchema.safeParse({ worldView: 1 }).success).toBe(false);
   });
 
   test("rejects an accent that is not a hue", () => {

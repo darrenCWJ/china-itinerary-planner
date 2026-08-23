@@ -398,17 +398,32 @@ describe("user prefs", () => {
   });
 
   test("prefs round-trip", () => {
-    const prefs: UserPrefs = { theme: "dark", accent: "country", accentHues: { CN: 200 } };
+    const prefs: UserPrefs = {
+      theme: "dark",
+      accent: "country",
+      accentHues: { CN: 200 },
+      worldView: "globe",
+    };
     setUserPrefs("u1", prefs);
 
     expect(getUserPrefs("u1")).toEqual(prefs);
   });
 
   test("saving again overwrites in place rather than accumulating rows", () => {
-    setUserPrefs("u2", { theme: "light", accent: "country", accentHues: {} });
-    setUserPrefs("u2", { theme: "system", accent: 40, accentHues: { JP: 10 } });
+    setUserPrefs("u2", { theme: "light", accent: "country", accentHues: {}, worldView: "globe" });
+    setUserPrefs("u2", {
+      theme: "system",
+      accent: 40,
+      accentHues: { JP: 10 },
+      worldView: "globe",
+    });
 
-    expect(getUserPrefs("u2")).toEqual({ theme: "system", accent: 40, accentHues: { JP: 10 } });
+    expect(getUserPrefs("u2")).toEqual({
+      theme: "system",
+      accent: 40,
+      accentHues: { JP: 10 },
+      worldView: "globe",
+    });
     const rows = getDb().prepare("SELECT COUNT(*) AS n FROM user_prefs WHERE user_id = ?").get("u2");
     expect((rows as { n: number }).n).toBe(1);
   });
@@ -433,8 +448,8 @@ describe("user prefs", () => {
   });
 
   test("prefs are per user", () => {
-    setUserPrefs("u3", { theme: "dark", accent: 120, accentHues: {} });
-    setUserPrefs("u4", { theme: "light", accent: "country", accentHues: {} });
+    setUserPrefs("u3", { theme: "dark", accent: 120, accentHues: {}, worldView: "globe" });
+    setUserPrefs("u4", { theme: "light", accent: "country", accentHues: {}, worldView: "globe" });
 
     expect(getUserPrefs("u3")?.theme).toBe("dark");
     expect(getUserPrefs("u4")?.theme).toBe("light");

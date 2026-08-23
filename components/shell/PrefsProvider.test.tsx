@@ -90,6 +90,7 @@ describe("PrefsProvider", () => {
       theme: "dark",
       accent: 210,
       accentHues: { CN: 200 },
+      worldView: "globe",
     });
   });
 
@@ -175,7 +176,12 @@ describe("PrefsProvider", () => {
   });
 
   test("saving preferences updates state, the cookie and the server", async () => {
-    const next: UserPrefs = { theme: "dark", accent: 120, accentHues: { JP: 40 } };
+    const next: UserPrefs = {
+      theme: "dark",
+      accent: 120,
+      accentHues: { JP: 40 },
+      worldView: "globe",
+    };
     let save: (p: UserPrefs) => void = () => {};
 
     function Saver() {
@@ -193,7 +199,7 @@ describe("PrefsProvider", () => {
     await act(async () => save(next));
 
     expect(JSON.parse(screen.getByRole("status").textContent!)).toEqual(next);
-    expect(document.cookie).toContain("cip-prefs=theme=dark&accent=120&hues=JP:40");
+    expect(document.cookie).toContain("cip-prefs=theme=dark&accent=120&view=globe&hues=JP:40");
     expect(fetch).toHaveBeenCalledWith(
       "/api/me/prefs",
       expect.objectContaining({ method: "PUT" })
@@ -217,7 +223,7 @@ describe("PrefsProvider", () => {
     );
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
 
-    act(() => save({ theme: "dark", accent: "country", accentHues: {} }));
+    act(() => save({ theme: "dark", accent: "country", accentHues: {}, worldView: "globe" }));
 
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
@@ -260,7 +266,9 @@ describe("PrefsProvider", () => {
       </PrefsProvider>
     );
 
-    await act(async () => save({ theme: "system", accent: "country", accentHues: {} }));
+    await act(async () =>
+      save({ theme: "system", accent: "country", accentHues: {}, worldView: "globe" })
+    );
 
     expect(document.cookie).toContain("theme=system");
     consoleError.mockRestore();
