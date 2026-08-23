@@ -51,6 +51,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** ISO 3166-1 alpha-2 country code. */
+function isAlpha2Code(value: string): boolean {
+  return /^[A-Z]{2}$/.test(value);
+}
+
 interface CountriesObject {
   geometries: { id?: unknown }[];
 }
@@ -104,10 +109,16 @@ export function parseGlobeTopology(raw: unknown): GlobeTopology {
     fail(`topology.objects.${GLOBE_COUNTRIES_OBJECT}.geometries`, "is not an array");
   }
   for (const geometry of countries.geometries as { id?: unknown }[]) {
-    if (!isRecord(geometry) || typeof geometry.id !== "string") {
+    if (!isRecord(geometry)) {
+      fail("topology", `has a corrupt feature (got null or non-object)`);
+    }
+    if (typeof geometry.id !== "string") {
       // Numeric ids mean a raw world-atlas download was committed without the
       // re-key, so nothing on the globe would have a code to select.
       fail("topology", `has a non-string feature id (${String(geometry?.id)}) — the re-key did not run`);
+    }
+    if (!isAlpha2Code(geometry.id)) {
+      fail("topology", `has a feature with an invalid country code (got "${geometry.id}") — must be ISO alpha-2`);
     }
   }
 
@@ -124,6 +135,9 @@ export function parseGlobeTopology(raw: unknown): GlobeTopology {
     }
     if (!entry.code) {
       fail(`points[${index}]`, "code is empty");
+    }
+    if (!isAlpha2Code(entry.code)) {
+      fail(`points[${index}]`, `code is invalid (got "${entry.code}") — must be ISO alpha-2`);
     }
     if (!Number.isFinite(entry.lon)) {
       fail(`points[${index}]`, `lon is not finite (got ${entry.lon})`);

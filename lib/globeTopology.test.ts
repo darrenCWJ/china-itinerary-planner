@@ -96,6 +96,36 @@ describe("parseGlobeTopology", () => {
   it("throws on a null entry in geometries", () => {
     const bad = structuredClone(FIXTURE);
     bad.topology.objects.countries.geometries[0] = null as never;
-    expect(() => parseGlobeTopology(bad)).toThrow(/re-key/);
+    expect(() => parseGlobeTopology(bad)).toThrow(/corrupt/);
+  });
+
+  it("throws on a point with whitespace-only code", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[0] = { code: "   ", name: "Malta", lon: 14.5, lat: 35.9 };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[0\].*code.*invalid/);
+  });
+
+  it("throws on a polygon with empty-string id", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.topology.objects.countries.geometries[0].id = "";
+    expect(() => parseGlobeTopology(bad)).toThrow(/topology.*invalid.*country.*code/);
+  });
+
+  it("throws on a point with lowercase code", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[0] = { code: "mt", name: "Malta", lon: 14.5, lat: 35.9 };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[0\].*code.*invalid.*alpha-2/);
+  });
+
+  it("throws on a point with numeric code", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[1] = { code: "1", name: "Japan", lon: 138, lat: 36 };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[1\].*code.*invalid.*alpha-2/);
+  });
+
+  it("throws on a polygon with non-alpha-2 id", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.topology.objects.countries.geometries[1].id = "france";
+    expect(() => parseGlobeTopology(bad)).toThrow(/topology.*invalid.*country.*code/);
   });
 });
