@@ -10,6 +10,8 @@ import { latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import type { ChinaRegion } from "@/lib/types";
+import { usePrefs } from "@/components/shell/PrefsProvider";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 import { CountryMap, hasDetailLevel } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
@@ -22,11 +24,26 @@ import { regionForProvinceText } from "@/lib/provinces";
  *
  * The world topology is 730KB, so `WorldMap` is a dynamic import as well as a
  * conditional render — the asset *and* the code that parses it stay off any
- * page where the picker is never opened.
+ * page where the picker is never opened. `GlobeLevel` carries the same asset
+ * weight for its own 110m topology, so it is dynamic for the same reason.
  */
 const WorldMap = dynamic(() => import("./WorldMap").then((m) => m.WorldMap), {
   ssr: false,
   loading: () => <div className="h-[420px] animate-pulse rounded-lg bg-[var(--line-1)]/40" />,
+});
+
+const GlobeLevel = dynamic(() => import("./GlobeLevel").then((m) => m.GlobeLevel), {
+  ssr: false,
+  // Square, unlike the flat map's 420px band: the globe is a 600-unit disc in
+  // an 860x620 viewBox, and a letterbox skeleton followed by a disc is a visible
+  // jump. aria-busy so a screen reader is told it is waiting, matching the
+  // skeleton inside WorldMap itself.
+  loading: () => (
+    <div
+      className="aspect-square w-full animate-pulse rounded-lg bg-[var(--line-1)]/40"
+      aria-busy="true"
+    />
+  ),
 });
 
 export type MapLevel = "world" | "country";
@@ -80,6 +97,19 @@ export function MapExplorer({
     pos: { x: number; y: number };
   } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
+
+  const { prefs, setPrefs } = usePrefs();
+  const reducedMotion = useReducedMotion();
+  /**
+   * Reduced motion wins over an explicit globe preference.
+   *
+   * The globe's rotation is direct manipulation, which the guideline does not
+   * forbid — but selecting a country spins it 650ms unprompted, which it does.
+   * Rather than shipping a globe with the spin disabled, which is a worse globe
+   * than the flat map is a map, the preference resolves to flat and the user
+   * keeps a renderer that was designed to be still.
+   */
+  const WorldLevel = prefs.worldView === "flat" || reducedMotion ? WorldMap : GlobeLevel;
 
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
@@ -278,8 +308,25 @@ export function MapExplorer({
           </button>
         </div>
         <div className="mt-3">
-          <WorldMap selectedCountry={countryCode} onSelectCountry={pickCountry} />
+          <WorldLevel selectedCountry={countryCode} onSelectCountry={pickCountry} />
         </div>
+        {/*
+          Hidden under reduced motion: `WorldLevel` above has already resolved
+          to the flat map in that case, and offering a globe the same render
+          then refuses to show would be worse than not offering it.
+        */}
+        {!reducedMotion && (
+          <button
+            type="button"
+            onClick={() =>
+              setPrefs({ ...prefs, worldView: prefs.worldView === "flat" ? "globe" : "flat" })
+            }
+            className="mt-3 min-h-[var(--tap-min)] rounded-lg border px-3 text-sm"
+            style={{ borderColor: "var(--line-1)", color: "var(--accent-ink)" }}
+          >
+            {prefs.worldView === "flat" ? "Show the globe" : "Show a flat map"}
+          </button>
+        )}
       </div>
     );
   }
