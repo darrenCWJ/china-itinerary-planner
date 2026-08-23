@@ -68,11 +68,37 @@ export interface CountrySelectionOptions {
    * happens to be facing the user.
    */
   onFocusOffscreen?: (code: string) => void;
+  /**
+   * Which accent ramp to tint fills with. Defaults to the ramp `usePrefs`
+   * resolved — resolving the theme a second time here would let the map
+   * disagree with the page it sits on. Override only to render a fixed ramp.
+   *
+   * Mirrors `WorldMap`'s own `theme` prop; a caller that overrides one must
+   * pass the same value here, or the fills and the selected-country card
+   * (which still resolves through `WorldMap`) will disagree.
+   */
+  theme?: AccentTheme;
+}
+
+/** Everything spread onto a country's `<g>`, whatever layer draws it. */
+export interface CountryInteractionProps {
+  ref: (node: SVGGElement | null) => void;
+  role: "button";
+  tabIndex: number;
+  "aria-pressed": boolean;
+  "aria-label": string;
+  className: string;
+  onClick: () => void;
+  onKeyDown: (event: React.KeyboardEvent) => void;
+  onFocus: () => void;
+  onBlur: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
 }
 
 export interface CountrySelection {
   /** Everything an interactive country needs, whatever layer draws it. */
-  interactionProps: (code: string, name: string) => Record<string, unknown>;
+  interactionProps: (code: string, name: string) => CountryInteractionProps;
   /** Stroke colour, width and dash for one country's current state. */
   strokeFor: (code: string) => {
     stroke: string;
@@ -106,9 +132,11 @@ export function useCountrySelection({
   selected,
   onSelectCountry,
   onFocusOffscreen,
+  theme: themeOverride,
 }: CountrySelectionOptions): CountrySelection {
   const nodeRefs = useRef(new Map<string, SVGGElement>());
   const { prefs, theme: resolvedTheme } = usePrefs();
+  const theme = themeOverride ?? resolvedTheme;
   const [hoverCode, setHoverCode] = useState<string | null>(null);
   const [focusedCode, setFocusedCode] = useState<string | null>(null);
   const [activeCode, setActiveCode] = useState<string | null>(null);
@@ -167,7 +195,7 @@ export function useCountrySelection({
    * 235 countries the same colour and erase the only thing the tint says.
    */
   const fillFor = (code: string): string =>
-    accentColor(code, resolvedTheme, "fill", prefs.accentHues[code]);
+    accentColor(code, theme, "fill", prefs.accentHues[code]);
 
   return {
     tabStop,
