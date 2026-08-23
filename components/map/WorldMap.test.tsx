@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { geoArea } from "d3-geo";
 import { useState } from "react";
+import { feature } from "topojson-client";
+import type { GeometryCollection, Topology } from "topojson-specification";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
 import { WorldMap } from "./WorldMap";
@@ -16,38 +19,71 @@ import { WorldMap } from "./WorldMap";
  * keyboard order something the test states rather than something it discovers.
  */
 
-/** Absolute (untransformed) TopoJSON arcs, one closed CCW ring per country. */
+/**
+ * Absolute (untransformed) TopoJSON arcs, one closed ring per country, wound so
+ * that d3 reads the *rectangle* as the interior — south-west, north-west,
+ * north-east, south-east, close.
+ *
+ * The winding is load-bearing and was wrong until Task 8. Reversed, d3 reads
+ * each ring as the whole sphere minus the rectangle (`geoArea` 4π), which
+ * Mercator renders indistinguishably from the correct shape and which makes
+ * every country permanently front-facing on a globe. The guard test below
+ * pins it.
+ *
+ * Six countries, deliberately spanning both hemispheres: at any rotation some
+ * are on the far side of the globe, which is the only way a test can reach the
+ * back-face behaviour at all. At d3's default rotation FR/MT/PE face the viewer
+ * and JP/SG/NZ do not.
+ *
+ * Name order is France, Japan, Malta, New Zealand, Peru, Singapore — Singapore
+ * stays last, so the End-key and arrow-order tests are untouched by the two
+ * additions.
+ */
 const WORLD_FIXTURE = {
   topology: {
     type: "Topology",
     arcs: [
       [
         [0, 44],
-        [4, 44],
-        [4, 48],
         [0, 48],
+        [4, 48],
+        [4, 44],
         [0, 44],
       ],
       [
         [136, 34],
-        [140, 34],
-        [140, 38],
         [136, 38],
+        [140, 38],
+        [140, 34],
         [136, 34],
       ],
       [
         [103.6, 1.2],
-        [103.9, 1.2],
-        [103.9, 1.4],
         [103.6, 1.4],
+        [103.9, 1.4],
+        [103.9, 1.2],
         [103.6, 1.2],
       ],
       [
         [14.4, 35.8],
-        [14.6, 35.8],
-        [14.6, 36.0],
         [14.4, 36.0],
+        [14.6, 36.0],
+        [14.6, 35.8],
         [14.4, 35.8],
+      ],
+      [
+        [172, -42],
+        [172, -40],
+        [176, -40],
+        [176, -42],
+        [172, -42],
+      ],
+      [
+        [-77, -12],
+        [-77, -8],
+        [-73, -8],
+        [-73, -12],
+        [-77, -12],
       ],
     ],
     objects: {
@@ -58,6 +94,8 @@ const WORLD_FIXTURE = {
           { type: "Polygon", id: "JP", arcs: [[1]], properties: { name: "Japan" } },
           { type: "Polygon", id: "SG", arcs: [[2]], properties: { name: "Singapore" } },
           { type: "Polygon", id: "MT", arcs: [[3]], properties: { name: "Malta" } },
+          { type: "Polygon", id: "NZ", arcs: [[4]], properties: { name: "New Zealand" } },
+          { type: "Polygon", id: "PE", arcs: [[5]], properties: { name: "Peru" } },
         ],
       },
     },
@@ -99,6 +137,32 @@ function Picker({ onSelect }: { onSelect?: (code: string) => void }) {
 }
 
 describe("WorldMap", () => {
+  /**
+   * The fixture's rings were wound inside-out from the day it was written, and
+   * every assertion in this file passed anyway.
+   *
+   * d3 reads a ring's winding as which side is the interior, so
+   * east-north-west-south described "the whole sphere except this rectangle" —
+   * `geoArea` 12.56 steradians (4π) with bounds [[-180,-90],[180,90]] for each
+   * of the four. Mercator never clips a whole feature, so it emitted a correct
+   * ~322-character rectangle and nothing noticed.
+   *
+   * It matters because the globe's projection DOES clip: with these rings every
+   * country paints the entire disc and none is ever on the far side, so the
+   * back-face tests this fixture exists to support would be green and hollow.
+   */
+  test("the fixture describes countries, not the whole sphere minus a country", () => {
+    const collection = feature(
+      WORLD_FIXTURE.topology as unknown as Topology,
+      WORLD_FIXTURE.topology.objects.countries as GeometryCollection
+    );
+
+    for (const f of collection.features) {
+      // A real country is a rounding error against 4π = 12.566 steradians.
+      expect(geoArea(f), `${f.id} covers the whole sphere — its ring is reversed`).toBeLessThan(1);
+    }
+  });
+
   test("fetches the topology only once the picker opens", async () => {
     render(<Picker />);
 
@@ -242,9 +306,11 @@ describe("WorldMap", () => {
     const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
     const codes = [...picker.querySelectorAll("option")].map((o) => o.getAttribute("value"));
 
-    // Placeholder, then France, Japan, Malta, Singapore — polygon and point
-    // countries alike, so the map is never the only route to a selection.
-    expect(codes).toEqual(["", "FR", "JP", "MT", "SG"]);
+    // Placeholder, then France, Japan, Malta, New Zealand, Peru, Singapore —
+    // polygon and point countries alike, so the map is never the only route to
+    // a selection. NZ and PE are the far-hemisphere pair: on a globe they are
+    // routinely on the back face, and this list must reach them anyway.
+    expect(codes).toEqual(["", "FR", "JP", "MT", "NZ", "PE", "SG"]);
   });
 
   test("the list mirrors the selection without adding 235 tab stops", async () => {
