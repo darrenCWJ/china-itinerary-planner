@@ -283,11 +283,6 @@ export function GlobeLevel({
   const cancelSpin = () => {
     if (spinFrame.current !== null) cancelAnimationFrame(spinFrame.current);
     spinFrame.current = null;
-    // The focus the cancelled spin was carrying dies with it. Left set, it is
-    // delivered by whatever next changes `mounted` — including the user's own
-    // drag, which snatches the caret to a country the moment their gesture
-    // brings it round, and on a real page scrolls it into view under them.
-    pendingFocus.current = null;
   };
 
   /**
@@ -339,11 +334,8 @@ export function GlobeLevel({
     // Turning the globe to it is what makes the roving ring cover all 235
     // rather than only whichever hemisphere happens to be facing the user.
     onFocusOffscreen: (code) => {
-      // `turnTo` first: it goes through `spinTo`, which calls `cancelSpin` to
-      // drop whatever the previous spin was carrying — so a target recorded
-      // before the spin exists would be erased by the spin that serves it.
-      turnTo(code);
       pendingFocus.current = code;
+      turnTo(code);
     },
     theme: themeOverride,
   });
@@ -360,8 +352,9 @@ export function GlobeLevel({
    * The gate narrows that but does not close it: a target recorded and then
    * left set survives the spin it belonged to, and the next thing to change
    * `mounted` delivers it — which is the user's own drag, if they grab the
-   * globe rather than waiting for it. `cancelSpin` clearing the ref is what
-   * actually closes it, and `onPointerDown` calls `cancelSpin` first thing.
+   * globe rather than waiting for it. What closes it is `onPointerDown`
+   * clearing the ref: a pointer on the globe ends the keyboard's journey,
+   * while a spin merely replacing another usually exists to finish it.
    */
   useEffect(() => {
     const code = pendingFocus.current;
@@ -449,6 +442,17 @@ export function GlobeLevel({
     // NOT `touch-action: none`, which would trap vertical scrolling over a
     // 620-unit-tall element.
     cancelSpin();
+    // A pointer on the globe ends the keyboard's journey. Left set, the target
+    // a cancelled spin was carrying is delivered by the next thing to change
+    // `mounted` — which is now this drag, snatching the caret to a country the
+    // moment the user's own gesture brings it round (and, on a real page,
+    // scrolling it into view under their hand). It is cleared *here* and not in
+    // `cancelSpin`: three of that function's four callers immediately start a
+    // new spin, and two of those exist precisely to deliver this target —
+    // `onFocusOffscreen`, and Enter on a parked caret, which reaches
+    // `pickCountry` and re-aims the same journey. Clearing there strands the
+    // caret on the <svg> with no country under it and every later key dead.
+    pendingFocus.current = null;
     // Capture is claimed *before* the ref is armed, and defensively: assigning
     // first meant a throw out of `setPointerCapture` left a drag nothing could
     // ever end. jsdom implements neither capture method, and a browser without
