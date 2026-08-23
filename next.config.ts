@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:asset(world-countries.json|world-globe.json|china-provinces.json)",
+        source: "/:asset(world-countries\\.json|world-globe\\.json|china-provinces\\.json)",
         headers: [
           {
             key: "Cache-Control",

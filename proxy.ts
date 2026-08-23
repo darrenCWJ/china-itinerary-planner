@@ -48,7 +48,17 @@ export async function proxy(req: NextRequest) {
   const url = req.nextUrl.clone();
   url.pathname = "/login";
   url.search = `?next=${encodeURIComponent(req.nextUrl.pathname + req.nextUrl.search)}`;
-  return NextResponse.redirect(url);
+
+  // no-store: a cached redirect is worse than an uncached one. next.config.ts
+  // puts a 24h public cache on the topology assets, and without this header
+  // that cache rides along on THIS redirect whenever the request is
+  // signed-out — an expired session, a prefetch, a shared link. The browser
+  // (or a shared/corporate proxy) then has a day-long redirect to /login
+  // parked under the asset's URL: the picker's fetch follows it, the parser
+  // chokes on login HTML, and the picker's own "Try again" button hits that
+  // same cached redirect instead of a fresh request. no-store keeps every
+  // redirect this wall issues live, so signing in actually fixes it.
+  return NextResponse.redirect(url, { headers: { "Cache-Control": "no-store" } });
 }
 
 // Static-asset boundary: this matcher only exempts favicon.ico by name.
