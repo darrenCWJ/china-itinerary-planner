@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
@@ -112,39 +112,51 @@ const A_CATALOG_PLACE: MapPlace = {
  * a slow one, and sent two rounds of fixes at the timeout instead.
  *
  * Raising a budget only moves the threshold; the test still races the machine,
- * and the next busy CI box moves it back. Resolving the component up front
- * removes the race outright: WorldMap is imported once, here, and `dynamic()`
- * hands it straight back, so nothing in this file suspends and no assertion
- * depends on how loaded the CPU is.
+ * and the next busy CI box moves it back. Resolving the components up front
+ * removes the race outright: both are imported once, here, and `dynamic()`
+ * hands the right one straight back, so nothing in this file suspends and no
+ * assertion depends on how loaded the CPU is.
+ *
+ * A previous version of this mock said exactly that and then did the opposite.
+ * Extended to tell the two renderers apart, it began returning a wrapper that
+ * started at `useState(null)`, ran the loader in an effect and rendered
+ * nothing until the promise landed — which is precisely the deferral the mock
+ * exists to delete, reintroduced under a docblock claiming it was gone. That
+ * is how the wall clock got back in, and the symptom was then treated as a
+ * budget problem twice over. Anything added here must hand a component back
+ * *synchronously*.
+ *
+ * Dispatch reads the loader's own source, which survives Vite's transform as
+ * `__vite_ssr_dynamic_import__("/components/map/GlobeLevel.tsx").then((m) =>
+ * m.GlobeLevel)` — the component's name appears whether or not the specifier
+ * is rewritten. It throws rather than guessing when a loader matches neither
+ * name or both: with two dynamic imports, a mock that quietly fell back to one
+ * of them would render the flat map in the globe's place and every globe
+ * assertion here would pass against the wrong component.
  *
  * What is given up is coverage of the `loading` fallback, which no test here
  * asserts on.
- *
- * Resolves both world-level components up front and dispatches on which
- * loader `dynamic()` was handed, by running it and reading the module it
- * resolves.
- *
- * The previous version returned `WorldMap` for every call, which was safe
- * only while `MapExplorer` had exactly one `dynamic()` import. With two, an
- * undispatched mock renders the flat map in the globe's place and every globe
- * assertion here passes against the wrong component.
  */
-vi.mock("next/dynamic", () => ({
-  default: (loader: () => Promise<unknown>) => {
-    const Resolved = (props: Record<string, unknown>) => {
-      const [Component, setComponent] = useState<ComponentType<Record<string, unknown>> | null>(
-        null
-      );
-      useEffect(() => {
-        void loader().then((mod) =>
-          setComponent(() => mod as ComponentType<Record<string, unknown>>)
+vi.mock("next/dynamic", async () => {
+  const { WorldMap } = await import("./WorldMap");
+  const { GlobeLevel } = await import("./GlobeLevel");
+  const byName: Record<string, ComponentType<Record<string, unknown>>> = {
+    WorldMap: WorldMap as unknown as ComponentType<Record<string, unknown>>,
+    GlobeLevel: GlobeLevel as unknown as ComponentType<Record<string, unknown>>,
+  };
+  return {
+    default: (loader: () => Promise<unknown>) => {
+      const source = loader.toString();
+      const matched = Object.keys(byName).filter((name) => source.includes(name));
+      if (matched.length !== 1) {
+        throw new Error(
+          `next/dynamic mock matched ${matched.length} components for this loader, expected 1: ${source}`
         );
-      }, []);
-      return Component ? <Component {...props} /> : null;
-    };
-    return Resolved;
-  },
-}));
+      }
+      return byName[matched[0]];
+    },
+  };
+});
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -213,19 +225,6 @@ async function settle(): Promise<void> {
   }
 }
 
-/**
- * `findBy*`'s default 1000ms wait, used for anything that must observe a
- * world-level renderer's dynamic import resolving (see the `next/dynamic`
- * mock's docblock above). That import goes through real module resolution —
- * an actual event-loop turn, not a microtask `settle()` can drain — and on an
- * idle machine it clears in well under 300ms, but a full-suite run with every
- * core busy can push it past the default budget, which is exactly the shape
- * of flake this mock's docblock warns about. Raised, not removed: the wait is
- * still bounded, and vitest's own testTimeout is still the backstop for a
- * genuine hang.
- */
-const RESOLVE_TIMEOUT = { timeout: 3000 };
-
 function Harness({
   country = "CN",
   level = "country",
@@ -269,10 +268,8 @@ describe("MapExplorer", () => {
   test("carries a world-level pick down into that country's level", async () => {
     render(<Harness level="world" />);
 
-    // findBy*, not settle(): the dynamic-imported world renderer resolves
-    // through a real module import, which needs an event-loop turn settle()'s
-    // microtask draining cannot observe (see the mock's docblock above).
-    fireEvent.click(await screen.findByRole("button", { name: /Japan/ }, RESOLVE_TIMEOUT));
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Japan/ }));
 
     // Japan has no detail level, so the same shell shows the fallback.
     await settle();
@@ -369,24 +366,25 @@ describe("MapExplorer", () => {
     unmount();
 
     render(<Harness level="world" prefs={flatPrefs} />);
-    // findBy*, not settle(): WorldMap only mounts (and only then fetches)
-    // once its dynamic import resolves, which needs a real event-loop turn
-    // that settle()'s microtask draining cannot observe.
-    await screen.findByRole("group", { name: /World map/ }, RESOLVE_TIMEOUT);
+    // The mock hands the renderer back synchronously, so mounting it — and
+    // the fetch it starts — is all inside settle()'s reach.
+    await settle();
+    screen.getByRole("group", { name: /World map/ });
     expect(requested("/world-countries.json")).toBe(true);
   });
 
   test("renders the globe by default", async () => {
     render(<Harness level="world" />);
-    // findBy*, not settle(): see the note on the previous test.
-    await screen.findByRole("group", { name: /World globe/ }, RESOLVE_TIMEOUT);
+    await settle();
+    screen.getByRole("group", { name: /World globe/ });
     // The globe fetches its own asset; the flat map fetches world-countries.json.
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain(GLOBE_TOPOLOGY_PATH);
   });
 
   test("renders the flat map when the user has chosen it", async () => {
     render(<Harness level="world" prefs={{ ...DEFAULT_PREFS, worldView: "flat" }} />);
-    await screen.findByRole("group", { name: /World map/ }, RESOLVE_TIMEOUT);
+    await settle();
+    screen.getByRole("group", { name: /World map/ });
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain(WORLD_TOPOLOGY_PATH);
   });
 
@@ -395,7 +393,8 @@ describe("MapExplorer", () => {
     // for the default globe state. Hard-coding the toggle to never render
     // must fail this test.
     render(<Harness level="world" />);
-    await screen.findByRole("group", { name: /World globe/ }, RESOLVE_TIMEOUT);
+    await settle();
+    screen.getByRole("group", { name: /World globe/ });
 
     // Toggle should be present and offer to switch to flat map
     expect(screen.getByRole("button", { name: "Show a flat map" })).toBeInTheDocument();
@@ -406,7 +405,8 @@ describe("MapExplorer", () => {
     render(
       <Harness level="world" prefs={{ ...DEFAULT_PREFS, worldView: "flat" }} />
     );
-    await screen.findByRole("group", { name: /World map/ }, RESOLVE_TIMEOUT);
+    await settle();
+    screen.getByRole("group", { name: /World map/ });
 
     // Toggle should be present and offer to switch to globe
     expect(screen.getByRole("button", { name: "Show the globe" })).toBeInTheDocument();
@@ -424,7 +424,8 @@ describe("MapExplorer", () => {
       }))
     );
     render(<Harness level="world" prefs={{ ...DEFAULT_PREFS, worldView: "globe" }} />);
-    await screen.findByRole("group", { name: /World map/ }, RESOLVE_TIMEOUT);
+    await settle();
+    screen.getByRole("group", { name: /World map/ });
 
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain(WORLD_TOPOLOGY_PATH);
     expect(screen.queryByRole("button", { name: /flat map|globe/i })).not.toBeInTheDocument();
