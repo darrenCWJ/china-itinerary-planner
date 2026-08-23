@@ -1,0 +1,30 @@
+# The repo's test suite, run on every push and pull request.
+#
+# Until this existed, every invariant test in the repo was advisory: the only
+# workflow was refresh-airports.yml, which runs an ingest and commits, and
+# nothing anywhere ran `npm test`. The daily airport refresh could commit a
+# reshaped artifact and the globe build could commit an asset missing 61
+# countries, and in both cases the tests written to catch exactly that would
+# sit on disk unexecuted.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # legacy-peer-deps: .npmrc sets it, and `npm ci` honours it. Kept
+      # explicit here so a future .npmrc change surfaces as a CI failure
+      # rather than a mystery resolution difference against local installs.
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
