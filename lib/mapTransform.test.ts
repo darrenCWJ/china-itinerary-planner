@@ -181,3 +181,16 @@ describe("IDENTITY_TRANSFORM", () => {
     expect(apply(IDENTITY_TRANSFORM, [123, 456])).toEqual([123, 456]);
   });
 });
+
+import { MAP_VIEW_H, MAP_VIEW_W } from "./mapView";
+
+/**
+ * The fixtures below are hand-computed against an 860x620 viewBox and are
+ * meaningless if that changes. They used to copy the numbers as local
+ * literals, which meant a change to the real constants left every expectation
+ * silently measuring a viewBox the app no longer uses.
+ */
+test("the hand-computed fixtures are pinned to the real viewBox", () => {
+  expect(MAP_VIEW_W).toBe(860);
+  expect(MAP_VIEW_H).toBe(620);
+});
