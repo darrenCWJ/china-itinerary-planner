@@ -61,6 +61,17 @@ import {
  * country instead of silently no-op'ing, the globe turns to it, and focus is
  * applied once the rotation has brought the node into being.
  *
+ * **A spin can outlive the node the caret was on.** The origin country crosses
+ * the limb part-way through, its node is removed, and a removed element takes
+ * the caret with it — neither browsers nor jsdom fire `blur` or `focusout` for
+ * a focused element that is deleted, so `document.activeElement` falls back to
+ * <body>. On the real asset that leaves a gap on 18 of the 104 arrow
+ * transitions that need a spin, up to ~104ms in which an arrow key reaches no
+ * handler at all and is silently swallowed. The `<svg>` therefore takes
+ * `tabIndex={-1}` and holds the caret for the duration — focusable so it can,
+ * -1 so it never becomes a Tab stop, and running the pending country's key
+ * handler so the keys keep working while its node does not exist.
+ *
  * **The point layer needs a guard the flat map does not.** `geoPath` clips
  * polygon geometry at the limb and returns null beyond it, but a bare
  * `projection([lon, lat])` does not clip at all — centred on China it places
@@ -256,6 +267,7 @@ export function GlobeLevel({
     ]);
   }, [view]);
 
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const spinFrame = useRef<number | null>(null);
   const drag = useRef<{
     id: number;
@@ -271,6 +283,11 @@ export function GlobeLevel({
   const cancelSpin = () => {
     if (spinFrame.current !== null) cancelAnimationFrame(spinFrame.current);
     spinFrame.current = null;
+    // The focus the cancelled spin was carrying dies with it. Left set, it is
+    // delivered by whatever next changes `mounted` — including the user's own
+    // drag, which snatches the caret to a country the moment their gesture
+    // brings it round, and on a real page scrolls it into view under them.
+    pendingFocus.current = null;
   };
 
   /**
@@ -322,8 +339,11 @@ export function GlobeLevel({
     // Turning the globe to it is what makes the roving ring cover all 235
     // rather than only whichever hemisphere happens to be facing the user.
     onFocusOffscreen: (code) => {
-      pendingFocus.current = code;
+      // `turnTo` first: it goes through `spinTo`, which calls `cancelSpin` to
+      // drop whatever the previous spin was carrying — so a target recorded
+      // before the spin exists would be erased by the spin that serves it.
       turnTo(code);
+      pendingFocus.current = code;
     },
     theme: themeOverride,
   });
@@ -336,16 +356,48 @@ export function GlobeLevel({
    * unconditional version fires on every frame of a drag too, which would yank
    * focus back to the last keyboard-visited country while the user is turning
    * the globe with the mouse.
+   *
+   * The gate narrows that but does not close it: a target recorded and then
+   * left set survives the spin it belonged to, and the next thing to change
+   * `mounted` delivers it — which is the user's own drag, if they grab the
+   * globe rather than waiting for it. `cancelSpin` clearing the ref is what
+   * actually closes it, and `onPointerDown` calls `cancelSpin` first thing.
    */
   useEffect(() => {
     const code = pendingFocus.current;
-    if (!code || !mounted.has(code)) return;
+    if (!code) return;
+    if (!mounted.has(code)) {
+      // Mid-journey, and the node the caret was on may already have crossed
+      // the limb and been removed — which drops focus to <body> silently. Park
+      // it on the map instead, so every frame of the spin keeps the keyboard
+      // on an element that answers. Only from <body>: focus that is somewhere
+      // real (a still-facing country, the A-Z picker) belongs to the user.
+      if (document.activeElement === document.body) svgRef.current?.focus();
+      return;
+    }
     pendingFocus.current = null;
     refocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `refocus` is
     // recreated every render; depending on it would re-focus on every frame of
     // a drag and fight the user for the caret.
   }, [mounted]);
+
+  /**
+   * Keys that arrive while the caret is parked on the `<svg>` itself.
+   *
+   * Parking stops focus falling to <body>, but an arrow key still has to *do*
+   * something, and the country it logically belongs to has no node to carry a
+   * handler yet — so the svg runs that country's handler on its behalf.
+   * Gated on the event's own target, so a key pressed on a country is handled
+   * by that country and only bubbles through here.
+   */
+  const onParkedKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const parked = pendingFocus.current;
+    if (!parked) return;
+    const name = entries.find((entry) => entry.code === parked)?.name ?? parked;
+    interactionProps(parked, name).onKeyDown(event);
+  };
 
   /**
    * The globe opens showing whatever is already chosen, and turns when the
@@ -361,19 +413,54 @@ export function GlobeLevel({
   }, [selected, topo]);
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    // One pointer owns the globe at a time. A second finger landing mid-drag
-    // would otherwise re-anchor `from` to the current rotation and take the
-    // gesture over — the globe jumps, the first finger's remaining travel is
-    // ignored because `onPointerMove` gates on the id, and its eventual
-    // pointerup never reaches `endDrag`, so the click it generates is judged
-    // by whichever gesture last wrote the suppression flag.
-    if (drag.current) return;
+    // Only a gesture's primary pointer rotates, and for a mouse only its main
+    // button. Without this a right- or middle-click starts a rotation drag,
+    // which is also the likeliest way into the lockout below: the context menu
+    // it opens can swallow the pointerup, and the drag then never ends.
+    if (!event.isPrimary) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const held = drag.current;
+    if (held) {
+      // One pointer owns the globe at a time. A second finger landing mid-drag
+      // would otherwise re-anchor `from` to the current rotation and take the
+      // gesture over — the globe jumps, the first finger's remaining travel is
+      // ignored because `onPointerMove` gates on the id, and its eventual
+      // pointerup never reaches `endDrag`, so the click it generates is judged
+      // by whichever gesture last wrote the suppression flag.
+      //
+      // Unless the held pointer is provably gone. `endDrag` is the only thing
+      // that clears `drag.current` and it needs a matching pointerup or
+      // pointercancel, so a terminating event that never arrives would strand
+      // the ref and reject every later gesture for the life of the component —
+      // rotation dead until a remount. Two things prove it gone: the same id
+      // pressing again (a pointer cannot press twice without releasing), and
+      // the element saying it no longer captures it. `hasPointerCapture` is
+      // absent in jsdom, and absence is not a denial, so that clause can only
+      // ever release the lock, never create one.
+      const stale =
+        held.id === event.pointerId ||
+        event.currentTarget.hasPointerCapture?.(held.id) === false;
+      if (!stale) return;
+    }
     // No pointerType gate. `DayBuilder` gates on `!== "mouse"` because tap is
     // its touch path; here that would make the globe unrotatable on every
     // phone. `touch-action: pan-y` below is what keeps the page scrollable —
     // NOT `touch-action: none`, which would trap vertical scrolling over a
     // 620-unit-tall element.
     cancelSpin();
+    // Capture is claimed *before* the ref is armed, and defensively: assigning
+    // first meant a throw out of `setPointerCapture` left a drag nothing could
+    // ever end. jsdom implements neither capture method, and a browser without
+    // pointer capture still delivers pointermove to the element under the
+    // pointer — so losing it costs precision on a fast drag, not the drag.
+    // Release is implicit on pointerup and pointercancel, so there is none to
+    // do; `onLostPointerCapture` below covers the involuntary case.
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      // A globe that cannot capture still turns. Nothing to recover from.
+    }
     drag.current = {
       id: event.pointerId,
       x: event.clientX,
@@ -381,11 +468,6 @@ export function GlobeLevel({
       from: rotation,
       moved: false,
     };
-    // jsdom implements neither capture method, and a browser without pointer
-    // capture still delivers pointermove to the element under the pointer — so
-    // losing it costs precision on a fast drag, not the drag. Release is
-    // implicit on pointerup and pointercancel, so there is none to do.
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -419,12 +501,19 @@ export function GlobeLevel({
   return (
     <div className="relative">
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${MAP_VIEW_W} ${MAP_VIEW_H}`}
         className="h-auto w-full touch-pan-y select-none"
         // A group, not an image: `role="img"` would drop every country button
         // out of the accessibility tree, which is where `ChinaMap` is wrong.
         role="group"
         aria-label="World globe — pick a country"
+        // -1, never 0: the caret is parked here while a spin is carrying it to
+        // a country that has no node yet, and a 0 would put the whole map in
+        // the Tab order twice — once as the svg and once as the roving country
+        // stop that `useCountrySelection` maintains.
+        tabIndex={-1}
+        onKeyDown={onParkedKeyDown}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={(event) => endDrag(event, false)}
@@ -432,6 +521,13 @@ export function GlobeLevel({
         // Without it the drag origin is left stale and the globe keeps turning
         // under a pointer it no longer owns.
         onPointerCancel={(event) => endDrag(event, true)}
+        // Capture can be revoked without a pointerup ever being delivered, and
+        // this is the only notice the page gets that the gesture is over.
+        // Treated as a cancel, for the same reason: nothing the page did not
+        // finish generates a click to swallow. After a normal release this
+        // fires *after* `onPointerUp` has already cleared the ref, so the id
+        // no longer matches and the suppression flag it set is left alone.
+        onLostPointerCapture={(event) => endDrag(event, true)}
         // Capture phase, so the flag is consumed by the gesture's own click
         // wherever it lands — over a country or over empty space — and the
         // country's handler never runs for it. A flag cleared only by a

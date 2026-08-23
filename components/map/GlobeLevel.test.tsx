@@ -86,17 +86,33 @@ function advance(ms: number) {
   });
 }
 
+/** Frames a stepped spin is driven in, so `ZOOM_MS / 40` is one ~16ms frame. */
+const SPIN_FRAMES = 40;
+
 /**
- * Runs the tween out. Returns how many frames are still pending — must be 0.
+ * Runs the tween out a frame at a time. Returns how many frames are still
+ * pending — must be 0. `onFrame` observes the globe after every one of them.
  *
  * Asserts up front that something was actually in flight: a spin that never
  * started and a spin that has finished both leave zero pending frames, and a
  * helper that cannot tell them apart turns "the globe never moved" into a
  * silent pass.
+ *
+ * Stepping matters as much as running out. A single `advance(ZOOM_MS)` drove
+ * `t` straight to 1 on the first iteration, collapsing the tween to one frame,
+ * so no test ever observed its middle — where the origin country's node
+ * unmounts at the limb and the target's does not exist yet. Deleting the "wait
+ * until the node exists" gate in `GlobeLevel.tsx` left all 20 tests green
+ * against the jumped version; against the stepped one it does not.
  */
-function runSpin(): number {
+function runSpin(onFrame?: () => void): number {
   expect(frames.size, "expected a spin to be in flight").toBeGreaterThan(0);
-  for (let i = 0; i < 10 && frames.size > 0; i++) advance(ZOOM_MS);
+  // Three tweens' worth of headroom, so a spin re-targeted part-way through
+  // still runs out rather than being reported as still pending.
+  for (let i = 0; i < SPIN_FRAMES * 3 && frames.size > 0; i++) {
+    advance(ZOOM_MS / SPIN_FRAMES);
+    onFrame?.();
+  }
   return frames.size;
 }
 
@@ -104,13 +120,19 @@ function runSpin(): number {
  * jsdom reports every element as 0x0, so the component's client-pixel to
  * viewBox-unit conversion falls back to 1:1 and `dx` reads directly as viewBox
  * units — `90 / GLOBE_R` degrees each.
+ *
+ * `isPrimary` is spelled out because jsdom's `PointerEvent` defaults it to
+ * `false`, which no browser does for the pointer that begins a gesture: the
+ * first pointer of a type is always its own type's primary. Left at the
+ * default, every drag in this file would be simulating a second finger.
  */
 function dragGlobe(
   svg: Element,
   dx: number,
   { pointerType = "mouse", cancel = false }: { pointerType?: string; cancel?: boolean } = {}
 ) {
-  fireEvent.pointerDown(svg, { pointerId: 1, pointerType, clientX: 0, clientY: 0 });
+  const down = { pointerId: 1, pointerType, isPrimary: true, clientX: 0, clientY: 0 };
+  fireEvent.pointerDown(svg, down);
   fireEvent.pointerMove(svg, { pointerId: 1, pointerType, clientX: dx, clientY: 0 });
   if (cancel) fireEvent.pointerCancel(svg, { pointerId: 1, pointerType });
   else fireEvent.pointerUp(svg, { pointerId: 1, pointerType, clientX: dx, clientY: 0 });
@@ -317,7 +339,13 @@ describe("GlobeLevel", () => {
     await settle();
     const svg = container.querySelector("svg")!;
 
-    fireEvent.pointerDown(svg, { pointerId: 1, pointerType: "touch", clientX: 10, clientY: 10 });
+    fireEvent.pointerDown(svg, {
+      pointerId: 1,
+      pointerType: "touch",
+      isPrimary: true,
+      clientX: 10,
+      clientY: 10,
+    });
     fireEvent.pointerMove(svg, { pointerId: 1, pointerType: "touch", clientX: 11, clientY: 10 });
     fireEvent.pointerUp(svg, { pointerId: 1, pointerType: "touch", clientX: 11, clientY: 10 });
     fireEvent.click(country("France"));
@@ -366,10 +394,10 @@ describe("GlobeLevel", () => {
     const svg = container.querySelector("svg")!;
     const touch = { pointerType: "touch", clientY: 0 };
 
-    fireEvent.pointerDown(svg, { ...touch, pointerId: 1, clientX: 0 });
+    fireEvent.pointerDown(svg, { ...touch, pointerId: 1, isPrimary: true, clientX: 0 });
     fireEvent.pointerMove(svg, { ...touch, pointerId: 1, clientX: -100 });
     // A second finger lands and drags the other way. It owns nothing.
-    fireEvent.pointerDown(svg, { ...touch, pointerId: 2, clientX: 500 });
+    fireEvent.pointerDown(svg, { ...touch, pointerId: 2, isPrimary: false, clientX: 500 });
     fireEvent.pointerMove(svg, { ...touch, pointerId: 2, clientX: 600 });
     fireEvent.pointerMove(svg, { ...touch, pointerId: 1, clientX: -200 });
     fireEvent.pointerUp(svg, { ...touch, pointerId: 1, clientX: -200 });
@@ -377,6 +405,111 @@ describe("GlobeLevel", () => {
     // The first finger's full 200 units of travel is what turned the globe.
     expect(country("New Zealand")).toBeInTheDocument();
     expect(noCountry("France")).not.toBeInTheDocument();
+  });
+
+  test("recovers from a gesture whose pointerup never arrived", async () => {
+    // `drag.current` is cleared only by `endDrag`, which itself needs a
+    // pointerup or pointercancel carrying the held id. A terminating event that
+    // never arrives — capture claimed by a browser gesture, a context menu
+    // eating the release, a throw out of `setPointerCapture` — strands the ref,
+    // and from then on every press is rejected and the globe never turns again.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+    const mouse = { pointerId: 1, pointerType: "mouse", clientY: 0 };
+
+    // A press and a drag, and then nothing at all: no up, no cancel.
+    fireEvent.pointerDown(svg, { ...mouse, isPrimary: true, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...mouse, clientX: -200 });
+    expect(noCountry("Peru")).not.toBeInTheDocument();
+
+    // A complete second press-drag-release on the same pointer — which is what
+    // a mouse always is, and proof the held gesture is long gone.
+    dragGlobe(svg, -200);
+
+    // It turned the globe the rest of the way round rather than being ignored.
+    expect(country("Peru")).toBeInTheDocument();
+  });
+
+  test("starts no rotation from a right-click or a non-primary pointer", async () => {
+    // A secondary button currently begins a rotation drag, and the context menu
+    // it opens is the likeliest way for a pointerup to go missing — the lockout
+    // above, entered by an ordinary right-click on the map.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 2,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: "mouse", clientX: 420, clientY: 0 });
+
+    // +420 is the drag the point-layer test uses to bring Peru round and take
+    // Singapore away. Neither happened, so nothing rotated.
+    expect(country("Singapore")).toBeInTheDocument();
+    expect(noCountry("Peru")).not.toBeInTheDocument();
+
+    // Nor does a pointer that is not its type's primary — a second finger
+    // reports exactly this, and it must not be able to arm a drag either.
+    fireEvent.pointerDown(svg, {
+      pointerId: 2,
+      pointerType: "touch",
+      isPrimary: false,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: "touch", clientX: 420, clientY: 0 });
+
+    expect(country("Singapore")).toBeInTheDocument();
+    expect(noCountry("Peru")).not.toBeInTheDocument();
+  });
+
+  test("hands the globe back when the browser takes pointer capture away", async () => {
+    // The browser-side half of the same recovery: capture can be revoked
+    // without a pointerup ever being delivered, and `lostpointercapture` is the
+    // only notice the page gets that the gesture is over.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+    const touch = { pointerType: "touch", clientY: 0 };
+
+    fireEvent.pointerDown(svg, { ...touch, pointerId: 1, isPrimary: true, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...touch, pointerId: 1, clientX: -200 });
+    fireEvent.lostPointerCapture(svg, { ...touch, pointerId: 1 });
+
+    // A fresh finger, under an id the stranded gesture would have rejected.
+    fireEvent.pointerDown(svg, { ...touch, pointerId: 2, isPrimary: true, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...touch, pointerId: 2, clientX: -200 });
+    fireEvent.pointerUp(svg, { ...touch, pointerId: 2, clientX: -200 });
+
+    expect(country("Peru")).toBeInTheDocument();
+  });
+
+  test("keeps a pen that lands mid-drag from stealing the gesture", async () => {
+    // The half of "one pointer owns the globe" that `isPrimary` cannot cover: a
+    // pen is the primary pointer of its own type, so a rule about second
+    // fingers says nothing about it — and the finger has not let go.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+    const touch = { pointerType: "touch", clientY: 0 };
+    const pen = { pointerType: "pen", clientY: 0 };
+
+    fireEvent.pointerDown(svg, { ...touch, pointerId: 1, isPrimary: true, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...touch, pointerId: 1, clientX: -200 });
+    fireEvent.pointerDown(svg, { ...pen, pointerId: 2, isPrimary: true, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...pen, pointerId: 2, clientX: 400 });
+    // The finger's full travel is what turned the globe; the pen's +400 the
+    // other way would have left Peru on the far side.
+    fireEvent.pointerMove(svg, { ...touch, pointerId: 1, clientX: -400 });
+    fireEvent.pointerUp(svg, { ...touch, pointerId: 1, clientX: -400 });
+
+    expect(country("Peru")).toBeInTheDocument();
   });
 
   test("turns the globe when the keyboard moves to a country on the far side", async () => {
@@ -394,6 +527,106 @@ describe("GlobeLevel", () => {
     const newZealand = country("New Zealand");
     expect(newZealand).toHaveAttribute("tabindex", "0");
     expect(document.activeElement).toBe(newZealand);
+  });
+
+  test("never leaves focus on the page body part-way through a spin", async () => {
+    // The origin country's node unmounts as it crosses the limb, and neither
+    // jsdom nor a browser fires `blur` or `focusout` when a focused element is
+    // removed — `document.activeElement` falls back to <body>, where an arrow
+    // keypress reaches no handler and is silently swallowed. Measured against
+    // the real `public/world-globe.json`, 18 of the 104 arrow transitions that
+    // need a spin have such a gap, the worst about 104ms of dead zone for a
+    // keyboard user holding an arrow key down.
+    //
+    // `fireEvent.keyDown` does not move focus, which is why the far-side test
+    // above never reached this: the origin has to actually hold the caret.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    // Malta facing and New Zealand far behind it — the configuration where the
+    // origin leaves the disc before the target arrives on it.
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    expect(document.activeElement).toBe(malta);
+
+    fireEvent.keyDown(malta, { key: "ArrowRight" });
+
+    const bothGone = () =>
+      noCountry("Malta") === null && noCountry("New Zealand") === null;
+    let strandedFrames = 0;
+    let sawNeitherNode = false;
+    runSpin(() => {
+      if (document.activeElement === document.body) strandedFrames++;
+      if (bothGone()) sawNeitherNode = true;
+    });
+
+    // Without this the test could pass on geometry rather than on the fix.
+    expect(sawNeitherNode, "expected a frame with neither node mounted").toBe(true);
+    expect(strandedFrames).toBe(0);
+    expect(document.activeElement).toBe(country("New Zealand"));
+    // Parked on the map, never inserted into the Tab order.
+    expect(svg).toHaveAttribute("tabindex", "-1");
+  });
+
+  test("keeps arrow keys working while the caret is parked mid-spin", async () => {
+    // Parking the caret is only half of it: the country the key logically
+    // belongs to still has no node to carry a handler, so a key pressed in the
+    // gap would land on the <svg> and stop there. The svg runs that country's
+    // handler on its behalf, which is what turns "focus is not on <body>" into
+    // "the arrow key still does something".
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand
+
+    // Step to the frame where Malta's node has gone and New Zealand's does not
+    // exist yet — the dead zone the caret is parked through.
+    let parked = false;
+    for (let i = 0; i < SPIN_FRAMES && !parked; i++) {
+      advance(ZOOM_MS / SPIN_FRAMES);
+      parked = document.activeElement === svg;
+    }
+    expect(parked, "expected the caret to be parked on the map").toBe(true);
+
+    // Back one, onto the country whose node just left the disc — so the move
+    // is provably to something unmounted, and the globe has to turn round.
+    fireEvent.keyDown(svg, { key: "ArrowLeft" }); // New Zealand → Malta
+    expect(runSpin()).toBe(0);
+
+    expect(document.activeElement).toBe(country("Malta"));
+  });
+
+  test("does not steal the caret back when a drag cancels the spin it belonged to", async () => {
+    // `cancelSpin` stops the tween, but the focus target the spin was carrying
+    // used to outlive it — so the focus was delivered by the *user's own drag*
+    // instead, the caret jumping to a country the moment their gesture brought
+    // it round. On a real page `.focus()` on an SVG node scrolls it into view
+    // as well, so the map moves under the hand that is moving it.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    // Japan and Malta are 91° apart, so one turn of the globe can hold both —
+    // which is what makes the caret's owner still be here at the end.
+    dragGlobe(svg, -120); // Malta just off the disc, Japan dead centre
+    const japan = country("Japan");
+    act(() => japan.focus());
+    fireEvent.keyDown(japan, { key: "ArrowRight" }); // Japan → Malta, far side
+    expect(frames.size).toBe(1);
+
+    // The user grabs the globe rather than waiting, and turns Malta into view
+    // themselves.
+    dragGlobe(svg, 220);
+
+    expect(frames.size).toBe(0);
+    expect(country("Malta")).toBeInTheDocument();
+    expect(document.activeElement).toBe(country("Japan"));
   });
 
   test("cancels an in-flight spin when it unmounts, rather than leaking it", async () => {
