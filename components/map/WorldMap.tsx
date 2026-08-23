@@ -3,17 +3,24 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
 import type { GeometryCollection } from "topojson-specification";
-import { accentColor, type AccentTheme } from "@/lib/accent";
-import { getCountry } from "@/lib/countries";
+import { type AccentTheme } from "@/lib/accent";
 import {
   WORLD_COUNTRIES_OBJECT,
   fetchWorldTopology,
   type WorldTopology,
 } from "@/lib/isoTopology";
-import { CountryHero } from "@/components/shell/CountryHero";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { MAP_VIEW_H, MAP_VIEW_W, buildFitProjection, makeProjector } from "./mapShared";
+import {
+  CountryPicker,
+  SelectedCountryCard,
+  WorldLevelError,
+  WorldLevelSkeleton,
+  countryLabel,
+  useCountrySelection,
+  type Entry,
+} from "./worldLevelShared";
 
 /**
  * World level of the two-level picker (spec §6): every country as a selectable
@@ -70,11 +77,6 @@ const POINT_R = 4.5;
 /** Transparent hit circle: the visible dot is smaller than a usable target. */
 const POINT_HIT_R = 9;
 
-/** Tint strength by state. Hue carries identity; opacity carries interaction. */
-const FILL_BASE = 0.5;
-const FILL_HOVER = 0.75;
-const FILL_SELECTED = 0.95;
-
 interface Shape {
   code: string;
   name: string;
@@ -92,12 +94,6 @@ interface PointMark {
   hitR: number;
 }
 
-/** One keyboard stop per country, whichever layer it is selected through. */
-interface Entry {
-  code: string;
-  name: string;
-}
-
 export interface WorldMapProps {
   /** ISO alpha-2 of the country currently chosen, if any. */
   selectedCountry?: string | null;
@@ -110,29 +106,19 @@ export interface WorldMapProps {
   theme?: AccentTheme;
 }
 
-/** Curated names beat the topology's ("Türkiye", not "Turkey"). */
-function countryLabel(code: string, topologyName: string): string {
-  const curated = getCountry(code).name;
-  return curated && curated !== code ? curated : topologyName;
-}
-
 export function WorldMap({
   selectedCountry = null,
   onSelectCountry,
   theme: themeOverride,
 }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const nodeRefs = useRef(new Map<string, SVGGElement>());
   const pickerId = useId();
-  const { prefs, theme: resolvedTheme } = usePrefs();
+  const { theme: resolvedTheme } = usePrefs();
   const theme = themeOverride ?? resolvedTheme;
 
   const [world, setWorld] = useState<WorldTopology | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [hoverCode, setHoverCode] = useState<string | null>(null);
-  const [focusedCode, setFocusedCode] = useState<string | null>(null);
-  const [activeCode, setActiveCode] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -251,14 +237,6 @@ export function WorldMap({
 
   const selected = (selectedCountry ?? "").trim().toUpperCase() || null;
 
-  /**
-   * Per-country hue overrides are honoured; a *fixed* accent is deliberately
-   * not. "One accent everywhere" (spec §4.3) applied to this map would paint
-   * 235 countries the same colour and erase the only thing the tint says.
-   */
-  const fillFor = (code: string): string =>
-    accentColor(code, theme, "fill", prefs.accentHues[code]);
-
   const entries = topo?.entries ?? [];
 
   /** Only a country the map actually drew gets a card; a stray code gets none. */
@@ -281,140 +259,16 @@ export function WorldMap({
     ]);
   }, [view]);
 
-  /**
-   * Roving tabindex: the map is one tab stop, and arrows move within it.
-   *
-   * `ChinaMap` makes every curated marker a tab stop, which is fine for thirty
-   * of them and indefensible for 235 — a keyboard user would tab a quarter of
-   * the way round the world to reach the control after the map. Enter/Space to
-   * select is unchanged from that pattern; only which element is reachable by
-   * Tab differs.
-   */
-  const tabStop =
-    (activeCode && mounted.has(activeCode) ? activeCode : null) ??
-    (selected && mounted.has(selected) ? selected : null) ??
-    entries.find((entry) => mounted.has(entry.code))?.code ??
-    null;
+  const { interactionProps, strokeFor, opacityFor, fillFor } = useCountrySelection({
+    entries,
+    indexOf: topo?.indexOf ?? new Map(),
+    mounted,
+    selected,
+    onSelectCountry,
+  });
 
-  const focusEntry = (index: number) => {
-    if (entries.length === 0) return;
-    const wrapped = ((index % entries.length) + entries.length) % entries.length;
-    const next = entries[wrapped];
-    setActiveCode(next.code);
-    nodeRefs.current.get(next.code)?.focus();
-  };
-
-  const stepFor = (key: string): number => {
-    if (key === "ArrowRight" || key === "ArrowDown") return 1;
-    if (key === "ArrowLeft" || key === "ArrowUp") return -1;
-    return 0;
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent, code: string) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelectCountry(code);
-      return;
-    }
-    const from = topo?.indexOf.get(code) ?? 0;
-    const step = stepFor(event.key);
-    if (step !== 0) {
-      event.preventDefault();
-      focusEntry(from + step);
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      focusEntry(0);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      focusEntry(entries.length - 1);
-    }
-  };
-
-  /** Everything an interactive country needs, whatever layer draws it. */
-  const interactionProps = (code: string, name: string) => {
-    const isSelected = code === selected;
-    return {
-      ref: (node: SVGGElement | null) => {
-        if (node) nodeRefs.current.set(code, node);
-        else nodeRefs.current.delete(code);
-      },
-      role: "button",
-      tabIndex: code === tabStop ? 0 : -1,
-      "aria-pressed": isSelected,
-      "aria-label": `${name}${isSelected ? " (selected)" : ""}`,
-      className: "cursor-pointer",
-      onClick: () => onSelectCountry(code),
-      onKeyDown: (event: React.KeyboardEvent) => handleKeyDown(event, code),
-      onFocus: () => {
-        setActiveCode(code);
-        setFocusedCode(code);
-      },
-      onBlur: () => setFocusedCode((current) => (current === code ? null : current)),
-      onMouseEnter: () => setHoverCode(code),
-      onMouseLeave: () => setHoverCode((current) => (current === code ? null : current)),
-    };
-  };
-
-  const strokeFor = (code: string) => {
-    const isSelected = code === selected;
-    const isFocused = code === focusedCode;
-    return {
-      stroke: isSelected || isFocused ? "var(--ink-0)" : "var(--paper)",
-      strokeWidth: isSelected ? 1.6 : isFocused ? 1.2 : 0.4,
-      // Dashed marks keyboard focus apart from selection, so the two states are
-      // still distinguishable when they land on the same country.
-      strokeDasharray: isFocused && !isSelected ? "3 2" : undefined,
-    };
-  };
-
-  const opacityFor = (code: string): number => {
-    if (code === selected) return FILL_SELECTED;
-    if (code === hoverCode) return FILL_HOVER;
-    return FILL_BASE;
-  };
-
-  if (loadError) {
-    return (
-      <div
-        className="rounded-xl border p-6 text-center"
-        style={{ borderColor: "var(--line-1)", background: "var(--raise)" }}
-      >
-        <p className="text-sm" style={{ color: "var(--ink-2)" }}>
-          Couldn&apos;t load the world map. You can still search for a country.
-        </p>
-        <button
-          type="button"
-          onClick={() => setRetryKey((k) => k + 1)}
-          className="mt-3 min-h-[var(--tap-min)] rounded-lg border px-4 text-sm font-medium"
-          style={{ borderColor: "var(--line-1)", color: "var(--accent-ink)" }}
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  if (!view) {
-    return (
-      <div
-        className="animate-pulse rounded-xl border p-6"
-        style={{ borderColor: "var(--line-1)", background: "var(--surf-1)" }}
-        aria-busy="true"
-      >
-        <div
-          className="h-[420px] rounded-lg"
-          style={{ background: "var(--surf-2)" }}
-        />
-        <p className="mt-3 text-center text-sm" style={{ color: "var(--ink-2)" }}>
-          Unrolling the world…
-        </p>
-      </div>
-    );
-  }
+  if (loadError) return <WorldLevelError onRetry={() => setRetryKey((k) => k + 1)} />;
+  if (!view) return <WorldLevelSkeleton />;
 
   return (
     <div ref={containerRef} className="relative">
@@ -475,63 +329,13 @@ export function WorldMap({
         ))}
       </svg>
 
-      {/*
-        The pointer target that meets `--tap-min` for the 76 countries whose only
-        shape on the map is a ~22px circle at desktop and ~6px at 375px — see the
-        docblock for why the circle itself cannot grow. Every country the map drew
-        is here, so this is the equivalent control WCAG 2.2 AA 2.5.8 allows and
-        the guaranteed path spec §6 requires, not a shortcut for small ones only.
-      */}
-      <div className="mt-3">
-        <label
-          htmlFor={pickerId}
-          className="block font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--ink-2)]"
-        >
-          Or pick from the list
-        </label>
-        <select
-          id={pickerId}
-          // Empty when the chosen country is not one the map drew, which is the
-          // same condition that withholds its hero card.
-          value={selectedEntry?.code ?? ""}
-          onChange={(event) => {
-            const code = event.target.value;
-            if (code) onSelectCountry(code);
-          }}
-          className="mt-1 min-h-[var(--tap-min)] w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 text-sm text-[var(--ink-0)]"
-        >
-          <option value="">Every country, A–Z…</option>
-          {entries.map((entry) => (
-            <option key={entry.code} value={entry.code}>
-              {entry.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/*
-        The chosen country's imagery (spec §4.4).
-
-        The ground is a fixed dark value and not `--ink-0`, which is what it was
-        while the shell pinned light. Everything above the scrim here is literal
-        white — `text-white` below, and `white/70` on the eyebrow — so the ground
-        has to stay dark in *both* ramps. `--ink-0` inverts to near-white under
-        `data-theme="dark"` and would have put white type on a white band. This
-        is the light ramp's own `--ink-0` value, frozen: the band is unchanged in
-        light and reads as an elevated dark surface on dark paper.
-      */}
-      {selectedEntry && (
-        <CountryHero
-          countryCode={selectedEntry.code}
-          theme={theme}
-          className="mt-3 rounded-xl bg-[#17263b] px-4 py-3 text-white"
-        >
-          <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/70">
-            Selected
-          </p>
-          <p className="font-display text-lg font-bold">{selectedEntry.name}</p>
-        </CountryHero>
-      )}
+      <CountryPicker
+        id={pickerId}
+        entries={entries}
+        selectedCode={selectedEntry?.code ?? ""}
+        onSelectCountry={onSelectCountry}
+      />
+      <SelectedCountryCard entry={selectedEntry} theme={theme} />
     </div>
   );
 }
