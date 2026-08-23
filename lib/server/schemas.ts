@@ -327,4 +327,8 @@ export const PrefsSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).default("light"),
   accent: z.union([z.literal("country"), HueSchema]).default("country"),
   accentHues: z.record(z.string().regex(/^[A-Z]{2}$/), HueSchema).default({}),
+  // Listed explicitly because unknown keys are stripped by default: without
+  // this, a saved worldView choice would round-trip through the cookie but be
+  // silently discarded on every cross-device sync through this route.
+  worldView: z.enum(["globe", "flat"]).default("globe"),
 });
