@@ -34,13 +34,13 @@ const WorldMap = dynamic(() => import("./WorldMap").then((m) => m.WorldMap), {
 
 const GlobeLevel = dynamic(() => import("./GlobeLevel").then((m) => m.GlobeLevel), {
   ssr: false,
-  // Square, unlike the flat map's 420px band: the globe is a 600-unit disc in
-  // an 860x620 viewBox, and a letterbox skeleton followed by a disc is a visible
-  // jump. aria-busy so a screen reader is told it is waiting, matching the
-  // skeleton inside WorldMap itself.
+  // Aspect ratio matches the globe's viewBox (860x620): the skeleton preserves
+  // the globe's proportions so no visible resize occurs on swap-in. aria-busy
+  // so a screen reader is told it is waiting, matching the skeleton inside
+  // WorldMap itself.
   loading: () => (
     <div
-      className="aspect-square w-full animate-pulse rounded-lg bg-[var(--line-1)]/40"
+      className="aspect-[860/620] w-full animate-pulse rounded-lg bg-[var(--line-1)]/40"
       aria-busy="true"
     />
   ),

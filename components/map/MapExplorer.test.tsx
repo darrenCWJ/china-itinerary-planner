@@ -380,6 +380,28 @@ describe("MapExplorer", () => {
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain(WORLD_TOPOLOGY_PATH);
   });
 
+  test("shows the toggle to switch renderers when reduced motion is not active (globe is default)", async () => {
+    // Diagnostic test: verifies the toggle exists with the correct label
+    // for the default globe state. Hard-coding the toggle to never render
+    // must fail this test.
+    render(<Harness level="world" />);
+    await screen.findByRole("group", { name: /World globe/ }, RESOLVE_TIMEOUT);
+
+    // Toggle should be present and offer to switch to flat map
+    expect(screen.getByRole("button", { name: "Show a flat map" })).toBeInTheDocument();
+  });
+
+  test("shows the toggle with correct label when the user has chosen the flat map", async () => {
+    // Verifies the toggle label changes based on the current renderer state
+    render(
+      <Harness level="world" prefs={{ ...DEFAULT_PREFS, worldView: "flat" }} />
+    );
+    await screen.findByRole("group", { name: /World map/ }, RESOLVE_TIMEOUT);
+
+    // Toggle should be present and offer to switch to globe
+    expect(screen.getByRole("button", { name: "Show the globe" })).toBeInTheDocument();
+  });
+
   test("falls back to the flat map under prefers-reduced-motion", async () => {
     // An explicit globe preference loses to the system request, and the toggle
     // that would re-offer it is withdrawn rather than left lying.
