@@ -73,9 +73,11 @@ export interface CountrySelectionOptions {
    * resolved — resolving the theme a second time here would let the map
    * disagree with the page it sits on. Override only to render a fixed ramp.
    *
-   * Mirrors `WorldMap`'s own `theme` prop; a caller that overrides one must
-   * pass the same value here, or the fills and the selected-country card
-   * (which still resolves through `WorldMap`) will disagree.
+   * Must pass the same override the component received (via `WorldMap`'s
+   * `themeOverride` prop). Both this hook and every accent surface resolve
+   * the theme the same way (`themeOverride ?? resolvedTheme`), so all
+   * surfaces agree because they derive from the same input — not because
+   * they are handed the same computed value.
    */
   theme?: AccentTheme;
 }
@@ -203,7 +205,7 @@ export function useCountrySelection({
     refocus: () => {
       if (activeCode) nodeRefs.current.get(activeCode)?.focus();
     },
-    interactionProps: (code: string, name: string) => {
+    interactionProps: (code: string, name: string): CountryInteractionProps => {
       const isSelected = code === selected;
       return {
         ref: (node: SVGGElement | null) => {
