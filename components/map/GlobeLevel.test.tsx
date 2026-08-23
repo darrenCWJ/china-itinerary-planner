@@ -52,6 +52,30 @@ function installFrameDriver() {
   vi.spyOn(performance, "now").mockImplementation(() => clock);
 }
 
+/**
+ * Flush the mount effect, the fetch it starts, and the renders that follow —
+ * then let the test query synchronously.
+ *
+ * Used instead of `findBy*` throughout this file, for the reason
+ * `MapExplorer.test.tsx` documents and one more that is specific to the globe.
+ * `findBy*` resolves from a MutationObserver, which fires on the commit's DOM
+ * change — but React flushes passive effects *after* that, so on a loaded
+ * machine a `findByRole` can return with the countries painted and the
+ * `[selected, topo]` effect that starts the opening spin not yet run. Every
+ * assertion about that spin then reads a globe that never moved. Draining to a
+ * fixed point inside `act` flushes effects as well as microtasks, which takes
+ * the clock out of the assertion entirely.
+ */
+async function settle(): Promise<void> {
+  let previous = "";
+  for (let i = 0; i < 10 && document.body.innerHTML !== previous; i++) {
+    previous = document.body.innerHTML;
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
 /** Runs every frame scheduled right now, `ms` later on the component's clock. */
 function advance(ms: number) {
   clock += ms;
@@ -62,8 +86,16 @@ function advance(ms: number) {
   });
 }
 
-/** Runs the tween out. Returns how many frames are still pending — must be 0. */
+/**
+ * Runs the tween out. Returns how many frames are still pending — must be 0.
+ *
+ * Asserts up front that something was actually in flight: a spin that never
+ * started and a spin that has finished both leave zero pending frames, and a
+ * helper that cannot tell them apart turns "the globe never moved" into a
+ * silent pass.
+ */
 function runSpin(): number {
+  expect(frames.size, "expected a spin to be in flight").toBeGreaterThan(0);
   for (let i = 0; i < 10 && frames.size > 0; i++) advance(ZOOM_MS);
   return frames.size;
 }
@@ -84,6 +116,9 @@ function dragGlobe(
   else fireEvent.pointerUp(svg, { pointerId: 1, pointerType, clientX: dx, clientY: 0 });
 }
 
+const country = (name: string | RegExp) => screen.getByRole("button", { name });
+const noCountry = (name: string | RegExp) => screen.queryByRole("button", { name });
+const picker = () => screen.getByRole("combobox", { name: /pick from the list/i });
 const tabStops = () =>
   screen.getAllByRole("button").filter((el) => el.getAttribute("tabindex") === "0");
 
@@ -109,7 +144,7 @@ afterEach(() => {
 describe("GlobeLevel", () => {
   test("fetches the globe asset, not the flat one", async () => {
     render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("combobox", { name: /pick from the list/i });
+    await settle();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(GLOBE_TOPOLOGY_PATH);
@@ -119,9 +154,9 @@ describe("GlobeLevel", () => {
     // `entries` must not be a function of rotation: a country on the back of
     // the globe has no SVG node, and the list is how it stays reachable.
     render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
 
-    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
-    const codes = [...picker.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+    const codes = [...picker().querySelectorAll("option")].map((o) => o.getAttribute("value"));
 
     expect(codes).toEqual(["", "FR", "JP", "MT", "NZ", "PE", "SG"]);
   });
@@ -132,11 +167,12 @@ describe("GlobeLevel", () => {
     // visible focus indicator (WCAG 2.2 AA 2.4.7 and 2.4.11), and `aria-hidden`
     // on a focusable element is its own violation.
     render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
-    expect(screen.getByRole("button", { name: "Japan" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New Zealand" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Peru" })).not.toBeInTheDocument();
+    expect(country("France")).toBeInTheDocument();
+    expect(country("Japan")).toBeInTheDocument();
+    expect(noCountry("New Zealand")).not.toBeInTheDocument();
+    expect(noCountry("Peru")).not.toBeInTheDocument();
   });
 
   test("keeps a point-layer country off the disc rather than floating it on top", async () => {
@@ -144,15 +180,15 @@ describe("GlobeLevel", () => {
     // guard, Singapore's circle projects onto the middle of the disc, drawn
     // over Europe and fully clickable, from the other side of the planet.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     // Turn the Pacific away: Malta stays facing and keeps its point, Singapore
     // does not — and Peru, which was on the far side, comes round.
     dragGlobe(container.querySelector("svg")!, 420);
 
-    expect(screen.getByRole("button", { name: "Malta" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Peru" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Singapore" })).not.toBeInTheDocument();
+    expect(country("Malta")).toBeInTheDocument();
+    expect(country("Peru")).toBeInTheDocument();
+    expect(noCountry("Singapore")).not.toBeInTheDocument();
   });
 
   test("draws the ocean as a circle, so the fill guard measures countries only", async () => {
@@ -160,7 +196,7 @@ describe("GlobeLevel", () => {
     // assert an oklch fill. A <path fill="var(--surf-2)"> sphere would break
     // them for a reason that has nothing to do with what they check.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     const sphere = container.querySelector(`circle[r="${GLOBE_R}"]`);
     expect(sphere).toBeInTheDocument();
@@ -173,7 +209,7 @@ describe("GlobeLevel", () => {
 
   test("tints from the accent ramp, never a literal colour", async () => {
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     const paths = [...container.querySelectorAll("path")];
     expect(paths.length).toBeGreaterThan(0);
@@ -185,15 +221,15 @@ describe("GlobeLevel", () => {
     // A-Z list must show it, not highlight something invisible.
     const onSelect = vi.fn();
     render(<GlobeLevel onSelectCountry={onSelect} />);
+    await settle();
 
-    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
-    fireEvent.change(picker, { target: { value: "NZ" } });
+    fireEvent.change(picker(), { target: { value: "NZ" } });
 
     expect(onSelect).toHaveBeenCalledWith("NZ");
-    expect(screen.queryByRole("button", { name: /New Zealand/ })).not.toBeInTheDocument();
+    expect(noCountry(/New Zealand/)).not.toBeInTheDocument();
 
     expect(runSpin()).toBe(0);
-    expect(screen.getByRole("button", { name: /New Zealand/ })).toBeInTheDocument();
+    expect(country(/New Zealand/)).toBeInTheDocument();
   });
 
   test("eases the spin over frames and schedules none once it lands", async () => {
@@ -201,10 +237,10 @@ describe("GlobeLevel", () => {
     // MapExplorer.test.tsx's `settle()` to its cap or, worse, have every
     // assertion in this file read a frame that happened to be mid-flight.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
+    await settle();
     expect(frames.size).toBe(0);
 
-    fireEvent.change(picker, { target: { value: "NZ" } });
+    fireEvent.change(picker(), { target: { value: "NZ" } });
     expect(frames.size).toBe(1);
 
     const japan = () => container.querySelector('[aria-label="Japan"] path')!.getAttribute("d");
@@ -222,7 +258,7 @@ describe("GlobeLevel", () => {
     // The keyboard trap. tabIndex 0 on a country with no rendered node leaves
     // the map with no tab stop at all, and Shift+Tab cannot re-enter it.
     render(<GlobeLevel selectedCountry="NZ" onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     expect(tabStops()).toHaveLength(1);
     expect(tabStops()[0]).toHaveAttribute("aria-label", "France");
@@ -237,10 +273,10 @@ describe("GlobeLevel", () => {
     // hero card. Pruning entries by rotation reads to a user as "the app forgot
     // which country I picked".
     render(<GlobeLevel selectedCountry="nz" onSelectCountry={() => {}} />);
+    await settle();
 
-    const picker = await screen.findByRole("combobox", { name: /pick from the list/i });
-    expect(picker).toHaveValue("NZ");
-    expect(screen.queryByRole("button", { name: /New Zealand/ })).not.toBeInTheDocument();
+    expect(picker()).toHaveValue("NZ");
+    expect(noCountry(/New Zealand/)).not.toBeInTheDocument();
     expect(screen.getByText("Selected")).toBeInTheDocument();
   });
 
@@ -248,27 +284,27 @@ describe("GlobeLevel", () => {
     // Re-selecting something already in view must not re-centre the map under
     // the user — the spin is for countries that cannot be seen.
     render(<GlobeLevel selectedCountry="JP" onSelectCountry={() => {}} />);
-    const japan = await screen.findByRole("button", { name: "Japan (selected)" });
+    await settle();
 
     expect(frames.size).toBe(0);
-    expect(japan).toHaveAttribute("tabindex", "0");
+    expect(country("Japan (selected)")).toHaveAttribute("tabindex", "0");
   });
 
   test("rotates on a pointer drag and does not select on release", async () => {
     const onSelect = vi.fn();
     const { container } = render(<GlobeLevel onSelectCountry={onSelect} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     dragGlobe(container.querySelector("svg")!, -200);
     // The globe turned: New Zealand was on the far side and now is not.
-    expect(screen.getByRole("button", { name: "New Zealand" })).toBeInTheDocument();
+    expect(country("New Zealand")).toBeInTheDocument();
 
     // A drag that happens to end over a country is a drag, not a click.
-    fireEvent.click(screen.getByRole("button", { name: "Japan" }));
+    fireEvent.click(country("Japan"));
     expect(onSelect).not.toHaveBeenCalled();
 
     // Exactly one click is swallowed — the one the gesture generated.
-    fireEvent.click(screen.getByRole("button", { name: "Japan" }));
+    fireEvent.click(country("Japan"));
     expect(onSelect).toHaveBeenCalledWith("JP");
   });
 
@@ -278,13 +314,13 @@ describe("GlobeLevel", () => {
     // still, so a one-unit wobble must not swallow the tap it belongs to.
     const onSelect = vi.fn();
     const { container } = render(<GlobeLevel onSelectCountry={onSelect} />);
-    const france = await screen.findByRole("button", { name: "France" });
+    await settle();
     const svg = container.querySelector("svg")!;
 
     fireEvent.pointerDown(svg, { pointerId: 1, pointerType: "touch", clientX: 10, clientY: 10 });
     fireEvent.pointerMove(svg, { pointerId: 1, pointerType: "touch", clientX: 11, clientY: 10 });
     fireEvent.pointerUp(svg, { pointerId: 1, pointerType: "touch", clientX: 11, clientY: 10 });
-    fireEvent.click(france);
+    fireEvent.click(country("France"));
 
     expect(onSelect).toHaveBeenCalledWith("FR");
   });
@@ -295,11 +331,11 @@ describe("GlobeLevel", () => {
     // swallow the next genuine tap instead of the gesture's own.
     const onSelect = vi.fn();
     const { container } = render(<GlobeLevel onSelectCountry={onSelect} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
     dragGlobe(container.querySelector("svg")!, 50, { pointerType: "touch", cancel: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "France" }));
+    fireEvent.click(country("France"));
     expect(onSelect).toHaveBeenCalledWith("FR");
   });
 
@@ -309,7 +345,7 @@ describe("GlobeLevel", () => {
     // every phone. The globe claims horizontal drags from any pointer type and
     // leaves vertical scrolling to the page through `touch-action: pan-y`.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
     const svg = container.querySelector("svg")!;
 
     expect(svg).toHaveClass("touch-pan-y");
@@ -317,7 +353,7 @@ describe("GlobeLevel", () => {
 
     dragGlobe(svg, -200, { pointerType: "touch" });
 
-    expect(screen.getByRole("button", { name: "New Zealand" })).toBeInTheDocument();
+    expect(country("New Zealand")).toBeInTheDocument();
   });
 
   test("ignores a second finger landing part-way through a drag", async () => {
@@ -326,7 +362,7 @@ describe("GlobeLevel", () => {
     // is dropped, and its pointerup never reaches `endDrag` — so the click it
     // generates is judged by whichever gesture last wrote the flag.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
     const svg = container.querySelector("svg")!;
     const touch = { pointerType: "touch", clientY: 0 };
 
@@ -339,8 +375,8 @@ describe("GlobeLevel", () => {
     fireEvent.pointerUp(svg, { ...touch, pointerId: 1, clientX: -200 });
 
     // The first finger's full 200 units of travel is what turned the globe.
-    expect(screen.getByRole("button", { name: "New Zealand" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "France" })).not.toBeInTheDocument();
+    expect(country("New Zealand")).toBeInTheDocument();
+    expect(noCountry("France")).not.toBeInTheDocument();
   });
 
   test("turns the globe when the keyboard moves to a country on the far side", async () => {
@@ -348,14 +384,14 @@ describe("GlobeLevel", () => {
     // node took focus; the globe is the renderer that can do something about
     // it, and focus lands once the rotation has brought the node into being.
     render(<GlobeLevel onSelectCountry={() => {}} />);
-    const malta = await screen.findByRole("button", { name: "Malta" });
+    await settle();
 
     // France, Japan, Malta, New Zealand, Peru, Singapore — one step past Malta.
-    fireEvent.keyDown(malta, { key: "ArrowRight" });
-    expect(screen.queryByRole("button", { name: "New Zealand" })).not.toBeInTheDocument();
+    fireEvent.keyDown(country("Malta"), { key: "ArrowRight" });
+    expect(noCountry("New Zealand")).not.toBeInTheDocument();
 
     expect(runSpin()).toBe(0);
-    const newZealand = screen.getByRole("button", { name: "New Zealand" });
+    const newZealand = country("New Zealand");
     expect(newZealand).toHaveAttribute("tabindex", "0");
     expect(document.activeElement).toBe(newZealand);
   });
@@ -364,7 +400,7 @@ describe("GlobeLevel", () => {
     // The picker is mounted and unmounted as the level changes, and a frame
     // still queued against a gone component is a leak the next level pays for.
     const { unmount } = render(<GlobeLevel selectedCountry="NZ" onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
     expect(frames.size).toBe(1);
 
     unmount();
@@ -377,21 +413,23 @@ describe("GlobeLevel", () => {
     // rather than silently presenting the first country as chosen — and it
     // must not send the globe spinning toward a country that does not exist.
     render(<GlobeLevel selectedCountry="ZZ" onSelectCountry={() => {}} />);
-    await screen.findByRole("button", { name: "France" });
+    await settle();
 
-    expect(screen.getByRole("combobox", { name: /pick from the list/i })).toHaveValue("");
+    expect(picker()).toHaveValue("");
     expect(frames.size).toBe(0);
   });
 
   test("offers a retry instead of crashing when the asset is missing", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
     render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
 
-    expect(await screen.findByText(/Couldn't load the world map/)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn't load the world map/)).toBeInTheDocument();
 
     serveFixture();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
-    expect(await screen.findByRole("button", { name: "France" })).toBeInTheDocument();
+    expect(country("France")).toBeInTheDocument();
   });
 });
