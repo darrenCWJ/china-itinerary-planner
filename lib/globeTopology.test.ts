@@ -74,4 +74,28 @@ describe("parseGlobeTopology", () => {
   it("publishes the path the client fetches", () => {
     expect(GLOBE_TOPOLOGY_PATH).toBe("/world-globe.json");
   });
+
+  it("throws on a point with non-finite lon", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[0] = { code: "MT", name: "Malta", lon: NaN, lat: 35.9 };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[0\].*lon.*finite/);
+  });
+
+  it("throws on a point with non-finite lat", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[1] = { code: "JP", name: "Japan", lon: 138, lat: Infinity };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[1\].*lat.*finite/);
+  });
+
+  it("throws on a point with empty code", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.points[0] = { code: "", name: "Malta", lon: 14.5, lat: 35.9 };
+    expect(() => parseGlobeTopology(bad)).toThrow(/points\[0\].*code.*empty/);
+  });
+
+  it("throws on a null entry in geometries", () => {
+    const bad = structuredClone(FIXTURE);
+    bad.topology.objects.countries.geometries[0] = null as never;
+    expect(() => parseGlobeTopology(bad)).toThrow(/re-key/);
+  });
 });
