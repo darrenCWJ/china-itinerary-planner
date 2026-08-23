@@ -148,7 +148,16 @@ export function WorldMap({
     return () => controller.abort();
   }, [retryKey]);
 
-  const view = useMemo(() => {
+  /**
+   * Topology-derived half: everything that does not depend on the projection.
+   *
+   * Split from the projection work below because the globe re-projects every
+   * frame while this does not. `feature()` decoding the whole topology, the
+   * 235-entry `localeCompare` sort and the index `Map` cost roughly the same as
+   * a frame of path generation, and re-running them on every pointermove is the
+   * difference between a globe that turns and one that stutters.
+   */
+  const topo = useMemo(() => {
     if (!world) return null;
 
     const collection = feature(
@@ -162,27 +171,66 @@ export function WorldMap({
         typeof f.id === "string"
     );
 
-    const fitTo = features.filter((f) => f.id !== UNFITTED);
+    const pointCodes = new Set(world.smallCountries.map((c) => c.code));
+
+    /**
+     * One stop per country, in name order — derived from the *features*, not
+     * from the paths that got drawn.
+     *
+     * This is the load-bearing change. Deriving it from `shapes` made the list
+     * a function of the projection, which is harmless under Mercator (every
+     * feature draws) and wrong under any projection that clips: countries would
+     * drop out of the roving tabindex and the A-Z list as the globe turned, and
+     * `selectedEntry` below would go undefined mid-rotation, blanking the
+     * `<select>` and unmounting the hero card for a country the user had
+     * deliberately chosen. Which side of the planet is facing the user is not
+     * allowed to change what exists.
+     */
+    const entries: Entry[] = [
+      ...features
+        .filter((f) => !pointCodes.has(f.id))
+        .map((f) => ({ code: f.id, name: countryLabel(f.id, f.properties.name) })),
+      ...world.smallCountries.map((c) => ({
+        code: c.code,
+        name: countryLabel(c.code, c.name),
+      })),
+    ].sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      features,
+      pointCodes,
+      smallCountries: world.smallCountries,
+      entries,
+      indexOf: new Map(entries.map((e, i) => [e.code, i])),
+    };
+  }, [world]);
+
+  /**
+   * Projection-derived half: the path strings and point positions, which the
+   * flat map computes once and the globe recomputes every frame.
+   */
+  const view = useMemo(() => {
+    if (!topo) return null;
+
+    const fitTo = topo.features.filter((f) => f.id !== UNFITTED);
     const { projection, pathGen } = buildFitProjection(
-      fitTo.length > 0 ? fitTo : features
+      fitTo.length > 0 ? fitTo : topo.features
     );
     const project = makeProjector(projection);
 
-    const pointCodes = new Set(world.smallCountries.map((c) => c.code));
-
     const shapes: Shape[] = [];
-    for (const f of features) {
+    for (const f of topo.features) {
       const d = pathGen(f);
       if (!d) continue;
       shapes.push({
         code: f.id,
         name: countryLabel(f.id, f.properties.name),
         d,
-        interactive: !pointCodes.has(f.id),
+        interactive: !topo.pointCodes.has(f.id),
       });
     }
 
-    const placed = world.smallCountries.map((c) => {
+    const placed = topo.smallCountries.map((c) => {
       const [x, y] = project(c.lon, c.lat);
       return { code: c.code, name: countryLabel(c.code, c.name), x, y };
     });
@@ -198,20 +246,8 @@ export function WorldMap({
     const hitRadii = nonOverlappingRadii(placed, POINT_HIT_R);
     const points: PointMark[] = placed.map((p, i) => ({ ...p, hitR: hitRadii[i] }));
 
-    // One stop per country, in name order: arrow keys then walk the world
-    // predictably instead of following whatever order the asset happens to hold.
-    const entries: Entry[] = [
-      ...shapes.filter((s) => s.interactive).map((s) => ({ code: s.code, name: s.name })),
-      ...points.map((p) => ({ code: p.code, name: p.name })),
-    ].sort((a, b) => a.name.localeCompare(b.name));
-
-    return {
-      shapes,
-      points,
-      entries,
-      indexOf: new Map(entries.map((e, i) => [e.code, i])),
-    };
-  }, [world]);
+    return { shapes, points };
+  }, [topo]);
 
   const selected = (selectedCountry ?? "").trim().toUpperCase() || null;
 
@@ -223,10 +259,27 @@ export function WorldMap({
   const fillFor = (code: string): string =>
     accentColor(code, theme, "fill", prefs.accentHues[code]);
 
-  const entries = view?.entries ?? [];
+  const entries = topo?.entries ?? [];
 
   /** Only a country the map actually drew gets a card; a stray code gets none. */
   const selectedEntry = selected ? entries.find((entry) => entry.code === selected) : undefined;
+
+  /**
+   * The codes with a node on screen right now.
+   *
+   * Identical to `entries` under Mercator, where every feature draws. Under a
+   * clipping projection it is a strict subset, and the distinction is what
+   * keeps the map in the tab order: `tabStop` must name a *mounted* element,
+   * because `tabIndex 0` on a country that is not rendered leaves the whole map
+   * with no tab stop at all and Shift+Tab unable to re-enter it.
+   */
+  const mounted = useMemo(() => {
+    if (!view) return new Set<string>();
+    return new Set([
+      ...view.shapes.filter((s) => s.interactive).map((s) => s.code),
+      ...view.points.map((p) => p.code),
+    ]);
+  }, [view]);
 
   /**
    * Roving tabindex: the map is one tab stop, and arrows move within it.
@@ -238,9 +291,9 @@ export function WorldMap({
    * Tab differs.
    */
   const tabStop =
-    (activeCode && view?.indexOf.has(activeCode) ? activeCode : null) ??
-    (selected && view?.indexOf.has(selected) ? selected : null) ??
-    entries[0]?.code ??
+    (activeCode && mounted.has(activeCode) ? activeCode : null) ??
+    (selected && mounted.has(selected) ? selected : null) ??
+    entries.find((entry) => mounted.has(entry.code))?.code ??
     null;
 
   const focusEntry = (index: number) => {
@@ -263,7 +316,7 @@ export function WorldMap({
       onSelectCountry(code);
       return;
     }
-    const from = view?.indexOf.get(code) ?? 0;
+    const from = topo?.indexOf.get(code) ?? 0;
     const step = stepFor(event.key);
     if (step !== 0) {
       event.preventDefault();
