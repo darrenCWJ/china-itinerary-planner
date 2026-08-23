@@ -104,10 +104,10 @@ export function parseGlobeTopology(raw: unknown): GlobeTopology {
     fail(`topology.objects.${GLOBE_COUNTRIES_OBJECT}.geometries`, "is not an array");
   }
   for (const geometry of countries.geometries as { id?: unknown }[]) {
-    if (typeof geometry.id !== "string") {
+    if (!isRecord(geometry) || typeof geometry.id !== "string") {
       // Numeric ids mean a raw world-atlas download was committed without the
       // re-key, so nothing on the globe would have a code to select.
-      fail("topology", `has a non-string feature id (${String(geometry.id)}) — the re-key did not run`);
+      fail("topology", `has a non-string feature id (${String(geometry?.id)}) — the re-key did not run`);
     }
   }
 
@@ -121,6 +121,15 @@ export function parseGlobeTopology(raw: unknown): GlobeTopology {
       typeof entry.lat !== "number"
     ) {
       fail(`points[${index}]`, "is not { code, name, lon, lat }");
+    }
+    if (!entry.code) {
+      fail(`points[${index}]`, "code is empty");
+    }
+    if (!Number.isFinite(entry.lon)) {
+      fail(`points[${index}]`, `lon is not finite (got ${entry.lon})`);
+    }
+    if (!Number.isFinite(entry.lat)) {
+      fail(`points[${index}]`, `lat is not finite (got ${entry.lat})`);
     }
     return { code: entry.code, name: entry.name, lon: entry.lon, lat: entry.lat };
   });
