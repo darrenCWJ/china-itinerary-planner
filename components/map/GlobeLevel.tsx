@@ -69,8 +69,30 @@ import {
  * transitions that need a spin, up to ~104ms in which an arrow key reaches no
  * handler at all and is silently swallowed. The `<svg>` therefore takes
  * `tabIndex={-1}` and holds the caret for the duration — focusable so it can,
- * -1 so it never becomes a Tab stop, and running the pending country's key
+ * -1 so it never becomes a Tab stop, and running the active country's key
  * handler so the keys keep working while its node does not exist.
+ *
+ * **One country owns the caret, and the hook is the one that names it.** All
+ * three of those — park, run-the-handler, deliver-once-mounted — need to know
+ * *which* country the caret belongs to, and that country is
+ * `useCountrySelection`'s `activeCode`: the value `focusEntry` writes on every
+ * move and the value `refocus` focuses. This file keeps no second copy of it.
+ * It used to, as a `pendingFocus` ref written only from `onFocusOffscreen` —
+ * which the hook calls only when the destination is *unmounted*, so a single
+ * arrow key onto a country that happened to be facing the viewer moved
+ * `activeCode` and left `pendingFocus` on the country before it. From there
+ * the parking aimed at one country while `refocus()` fired at another, and
+ * both of the defects the parking exists to prevent came straight back. What
+ * this file does track is a boolean: whether the *keyboard* or the *pointer*
+ * is driving. A boolean cannot name the wrong country.
+ *
+ * `document` is read here — `activeElement` and `body`, by `caretIsOurs` and
+ * by the effect that calls it — because asking where the caret actually is has
+ * no other answer. Every one of those reads happens while that effect is
+ * running, so nothing touches `document` during render or at module scope and
+ * the file still renders on the server. Earlier notes on this file said it had
+ * no `document` reference at all; that stopped being true when the caret
+ * needed parking.
  *
  * **The point layer needs a guard the flat map does not.** `geoPath` clips
  * polygon geometry at the limb and returns null beyond it, but a bare
@@ -275,10 +297,19 @@ export function GlobeLevel({
     y: number;
     from: Rotation;
     moved: boolean;
+    /** Whether the press that began this gesture reported a button held. */
+    pressed: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
-  /** A country the keyboard has moved to that has no node yet. */
-  const pendingFocus = useRef<string | null>(null);
+  /**
+   * Whether the keyboard, rather than the pointer, is currently moving the
+   * globe — and so whether the caret is this component's to place.
+   *
+   * Deliberately a boolean and not a country code: the country is
+   * `activeCode`, and a second place to write a code is a second place for it
+   * to go stale (see the docblock). All this says is *who is driving*.
+   */
+  const keyboardDriving = useRef(false);
 
   const cancelSpin = () => {
     if (spinFrame.current !== null) cancelAnimationFrame(spinFrame.current);
@@ -324,72 +355,108 @@ export function GlobeLevel({
     onSelectCountry(code);
   };
 
-  const { interactionProps, strokeFor, opacityFor, fillFor, refocus } = useCountrySelection({
-    entries,
-    indexOf: topo?.indexOf ?? new Map(),
-    mounted,
-    selected,
-    onSelectCountry: pickCountry,
-    // A country on the far side has no node, so focus would land nowhere.
-    // Turning the globe to it is what makes the roving ring cover all 235
-    // rather than only whichever hemisphere happens to be facing the user.
-    onFocusOffscreen: (code) => {
-      pendingFocus.current = code;
-      turnTo(code);
-    },
-    theme: themeOverride,
-  });
+  const { interactionProps, strokeFor, opacityFor, fillFor, refocus, activeCode } =
+    useCountrySelection({
+      entries,
+      indexOf: topo?.indexOf ?? new Map(),
+      mounted,
+      selected,
+      onSelectCountry: pickCountry,
+      // A country on the far side has no node, so focus would land nowhere.
+      // Turning the globe to it is what makes the roving ring cover all 235
+      // rather than only whichever hemisphere happens to be facing the user.
+      //
+      // The code is not kept: `activeCode` already carries it, and the hook has
+      // just set it to this very country. All this records is that the caret is
+      // now the keyboard's to place.
+      onFocusOffscreen: (code) => {
+        keyboardDriving.current = true;
+        turnTo(code);
+      },
+      theme: themeOverride,
+    });
+
+  /**
+   * Whether the caret is still somewhere this component is entitled to move it
+   * from.
+   *
+   * Inside the `<svg>` it is: on a country, or parked on the map itself.
+   * `<body>` counts too, but only because that is where a *deleted* node
+   * leaves it — nothing fires `blur` for a focused element that is removed, so
+   * `<body>` is this map's own lost caret rather than a place the user chose.
+   *
+   * Anywhere else is somewhere the user went while the globe was still
+   * turning: the A-Z picker, a control past the map. Delivering a spin's focus
+   * there drags them back into a map they had already left, ~650ms after they
+   * left it.
+   */
+  const caretIsOurs = (): boolean => {
+    const svg = svgRef.current;
+    const active = document.activeElement;
+    return !!svg && !!active && (active === document.body || svg.contains(active));
+  };
 
   /**
    * The other half of it: the node does not exist at the moment the spin
    * starts, so focus is applied once the rotation has brought it into being.
    *
-   * Gated on a *pending* target rather than run on every rotation change. The
-   * unconditional version fires on every frame of a drag too, which would yank
-   * focus back to the last keyboard-visited country while the user is turning
-   * the globe with the mouse.
+   * One rule, enforced after every change to `mounted`: while the keyboard is
+   * driving, the caret belongs on `activeCode`'s node if that node exists, and
+   * on the `<svg>` if it does not. Both branches read the same `activeCode`,
+   * and `refocus()` focuses that same `activeCode`, so there is nothing here
+   * that can come to disagree with anything else about which country is meant.
    *
-   * The gate narrows that but does not close it: a target recorded and then
-   * left set survives the spin it belonged to, and the next thing to change
-   * `mounted` delivers it — which is the user's own drag, if they grab the
-   * globe rather than waiting for it. What closes it is `onPointerDown`
-   * clearing the ref: a pointer on the globe ends the keyboard's journey,
-   * while a spin merely replacing another usually exists to finish it.
+   * Gated on the keyboard driving rather than run on every rotation change.
+   * The unconditional version fires on every frame of a drag too, which would
+   * yank focus to the last keyboard-visited country while the user is turning
+   * the globe with the mouse. `onPointerDown` clearing the flag is what ends
+   * the keyboard's journey: a pointer on the globe means the pointer is
+   * driving, while a spin merely replacing another usually exists to finish
+   * what the keyboard started.
    */
   useEffect(() => {
-    const code = pendingFocus.current;
-    if (!code) return;
-    if (!mounted.has(code)) {
-      // Mid-journey, and the node the caret was on may already have crossed
-      // the limb and been removed — which drops focus to <body> silently. Park
-      // it on the map instead, so every frame of the spin keeps the keyboard
-      // on an element that answers. Only from <body>: focus that is somewhere
-      // real (a still-facing country, the A-Z picker) belongs to the user.
-      if (document.activeElement === document.body) svgRef.current?.focus();
+    if (!keyboardDriving.current) return;
+    if (!activeCode) return;
+    if (!caretIsOurs()) {
+      // The user moved on mid-spin. Their caret is theirs now.
+      keyboardDriving.current = false;
       return;
     }
-    pendingFocus.current = null;
-    refocus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `refocus` is
-    // recreated every render; depending on it would re-focus on every frame of
-    // a drag and fight the user for the caret.
+    if (mounted.has(activeCode)) {
+      refocus();
+      return;
+    }
+    // Mid-journey, and the node the caret was on may already have crossed the
+    // limb and been removed — which drops focus to <body> silently. Park it on
+    // the map instead, so every frame of the spin keeps the keyboard on an
+    // element that answers.
+    if (document.activeElement === document.body) svgRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately not
+    // `activeCode` or `refocus`: this enforces the rule when the *set of drawn
+    // countries* changes, which is the only event that can invalidate it. A
+    // keyboard move onto a country that is already drawn is focused by the
+    // hook itself and needs nothing from here.
   }, [mounted]);
 
   /**
    * Keys that arrive while the caret is parked on the `<svg>` itself.
    *
    * Parking stops focus falling to <body>, but an arrow key still has to *do*
-   * something, and the country it logically belongs to has no node to carry a
-   * handler yet — so the svg runs that country's handler on its behalf.
+   * something, and the country it logically belongs to may have no node to
+   * carry a handler — so the svg runs that country's handler on its behalf.
    * Gated on the event's own target, so a key pressed on a country is handled
    * by that country and only bubbles through here.
+   *
+   * The country is `activeCode`, which is set by the first focus or arrow key
+   * and never returns to null. Keyed off a separately-tracked target instead,
+   * this went dead — silently, and for every key including Enter — as soon as
+   * that target was cleared while the caret was still parked.
    */
   const onParkedKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
     if (event.target !== event.currentTarget) return;
-    const parked = pendingFocus.current;
-    if (!parked) return;
-    const name = entries.find((entry) => entry.code === parked)?.name ?? parked;
-    interactionProps(parked, name).onKeyDown(event);
+    if (!activeCode) return;
+    const name = entries.find((entry) => entry.code === activeCode)?.name ?? activeCode;
+    interactionProps(activeCode, name).onKeyDown(event);
   };
 
   /**
@@ -442,17 +509,18 @@ export function GlobeLevel({
     // NOT `touch-action: none`, which would trap vertical scrolling over a
     // 620-unit-tall element.
     cancelSpin();
-    // A pointer on the globe ends the keyboard's journey. Left set, the target
+    // A pointer on the globe ends the keyboard's journey. Left set, the focus
     // a cancelled spin was carrying is delivered by the next thing to change
     // `mounted` — which is now this drag, snatching the caret to a country the
     // moment the user's own gesture brings it round (and, on a real page,
     // scrolling it into view under their hand). It is cleared *here* and not in
-    // `cancelSpin`: three of that function's four callers immediately start a
-    // new spin, and two of those exist precisely to deliver this target —
-    // `onFocusOffscreen`, and Enter on a parked caret, which reaches
-    // `pickCountry` and re-aims the same journey. Clearing there strands the
-    // caret on the <svg> with no country under it and every later key dead.
-    pendingFocus.current = null;
+    // `cancelSpin`: of that function's three call sites exactly one — `spinTo`
+    // — immediately starts a new spin, and the journeys that reach it exist
+    // precisely to deliver this focus (`onFocusOffscreen`, and Enter on a
+    // parked caret, which reaches `pickCountry` and re-aims the same journey).
+    // Clearing there strands the caret on the <svg> mid-journey with nothing
+    // left to bring it home.
+    keyboardDriving.current = false;
     // Capture is claimed *before* the ref is armed, and defensively: assigning
     // first meant a throw out of `setPointerCapture` left a drag nothing could
     // ever end. jsdom implements neither capture method, and a browser without
@@ -471,12 +539,29 @@ export function GlobeLevel({
       y: event.clientY,
       from: rotation,
       moved: false,
+      pressed: event.buttons > 0,
     };
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const held = drag.current;
     if (!held || held.id !== event.pointerId) return;
+    // The other half of the lost-pointerup recovery. `onPointerDown`'s stale
+    // escape restores the ability to *start* a gesture, but it does not end
+    // the stranded one, and a mouse keeps `pointerId 1` for its whole life —
+    // so after a release the page never saw, every buttonless hover across the
+    // map goes on rotating it under a finger that is not pressed. `buttons` is
+    // the only thing in a pointermove that says the press is over, and it ends
+    // the gesture at the first move. Believed only when the press that began
+    // the gesture reported a button held: jsdom's `PointerEvent` defaults
+    // `buttons` to 0 on every event, and a 0 that was always 0 is silence, not
+    // a release — the same rule `hasPointerCapture` gets above.
+    if (held.pressed && event.buttons === 0) {
+      // No `suppressClick`: a gesture whose release was never delivered
+      // generates no click, so there is none to swallow.
+      drag.current = null;
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     // Client pixels are not viewBox units; the SVG renders `w-full`. A zero
     // width means the element has not been laid out yet — dividing by it would

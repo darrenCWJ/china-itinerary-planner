@@ -113,6 +113,22 @@ export interface CountrySelection {
   fillFor: (code: string) => string;
   /** The one code carrying `tabIndex 0`, or null when nothing is mounted. */
   tabStop: string | null;
+  /**
+   * The country the roving ring is on — the one and only country the caret
+   * belongs to, and exactly what `refocus` targets.
+   *
+   * Exposed because the globe has to act on it while it has no node: park the
+   * caret on the map on its behalf, run its key handler on its behalf, and
+   * deliver focus to it once a spin brings its node into being. Every one of
+   * those needs a country code, and this is the only one in the system —
+   * `focusEntry` writes it on *every* move, mounted or not, so a renderer that
+   * reads it here cannot end up aiming at a different country than the one
+   * `refocus` will focus. A renderer that kept its own copy could, and did.
+   *
+   * The flat map ignores it: everything it draws is always mounted, so the
+   * `?.focus()` in `focusEntry` always lands.
+   */
+  activeCode: string | null;
   /** Re-focus whatever is active; the globe calls this after a spin lands. */
   refocus: () => void;
 }
@@ -201,6 +217,7 @@ export function useCountrySelection({
 
   return {
     tabStop,
+    activeCode,
     fillFor,
     refocus: () => {
       if (activeCode) nodeRefs.current.get(activeCode)?.focus();

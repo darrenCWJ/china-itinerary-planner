@@ -138,6 +138,25 @@ function dragGlobe(
   else fireEvent.pointerUp(svg, { pointerId: 1, pointerType, clientX: dx, clientY: 0 });
 }
 
+/**
+ * Drives a keyboard journey to the far side as far as the frame where the
+ * caret is parked on the `<svg>` — Malta's node gone, New Zealand's not drawn
+ * yet — and leaves the rest of the spin still in flight.
+ *
+ * The state four of the tests below start from, and the only one in which the
+ * caret is on the map rather than on a country. Asserts that it was reached:
+ * a spin whose geometry stopped producing a gap would otherwise turn every one
+ * of those tests into a silent pass.
+ */
+function spinUntilParked(svg: Element) {
+  let parked = false;
+  for (let i = 0; i < SPIN_FRAMES && !parked; i++) {
+    advance(ZOOM_MS / SPIN_FRAMES);
+    parked = document.activeElement === svg;
+  }
+  expect(parked, "expected the caret to be parked on the map").toBe(true);
+}
+
 const country = (name: string | RegExp) => screen.getByRole("button", { name });
 const noCountry = (name: string | RegExp) => screen.queryByRole("button", { name });
 const picker = () => screen.getByRole("combobox", { name: /pick from the list/i });
@@ -665,6 +684,180 @@ describe("GlobeLevel", () => {
     expect(frames.size).toBe(0);
     expect(country("Malta")).toBeInTheDocument();
     expect(document.activeElement).toBe(country("Japan"));
+  });
+
+  test("survives an arrow, from the parked caret, onto a country already on the disc", async () => {
+    // The desync. `onFocusOffscreen` fires only for an *unmounted* destination,
+    // so one arrow key onto a country that happens to be facing the viewer
+    // moves the caret and the roving ring together while leaving any
+    // separately-tracked "pending" target on the country before it. From then
+    // on the parking protects the wrong country: the spin lands, the stale
+    // target is delivered and forgotten, and when the country actually holding
+    // the caret crosses the limb its node is deleted with nothing left watching
+    // — `document.activeElement` falls to <body> and stays there. That is the
+    // very defect the parking exists to close, re-opened and no longer bounded
+    // by the length of a spin.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand, far side
+    spinUntilParked(svg);
+
+    // France, Japan, Malta, New Zealand, Peru, Singapore: one step on from the
+    // country the parked caret stands for is Peru, which is on the disc right
+    // now — so the hook focuses it directly and never reports it offscreen.
+    const peru = country("Peru");
+    fireEvent.keyDown(svg, { key: "ArrowRight" }); // New Zealand → Peru
+    expect(document.activeElement).toBe(peru);
+
+    // The spin to New Zealand was never re-aimed, so it runs on: New Zealand
+    // arrives, and then Peru — the country actually holding the caret — leaves.
+    let strandedFrames = 0;
+    expect(
+      runSpin(() => {
+        if (document.activeElement === document.body) strandedFrames++;
+      })
+    ).toBe(0);
+
+    expect(noCountry("Peru"), "expected Peru to have left the disc").toBe(null);
+    expect(strandedFrames).toBe(0);
+    expect(document.activeElement).toBe(svg);
+
+    // And the keyboard is still alive on the country it is standing for: back
+    // one from Peru is New Zealand, which the spin brought round.
+    fireEvent.keyDown(svg, { key: "ArrowLeft" }); // Peru → New Zealand
+    expect(document.activeElement).toBe(country("New Zealand"));
+  });
+
+  test("keeps every key alive after Home lands the parked caret on a country that then leaves", async () => {
+    // The same desync, reached by the other door and stranding the caret rather
+    // than dropping it. Home moves to a mounted country, so again nothing tells
+    // the renderer the caret changed hands; that country then crosses the limb
+    // and the caret parks on the map, the spin lands, the stale target is
+    // cleared, and the re-focus it triggers aims at a node that has already
+    // been deleted. The caret is left on the <svg> with nothing recorded under
+    // it, and every key the parked handler exists to serve — arrows, Home, End,
+    // Enter, Space — is silently dead until the user Tabs out and back.
+    const onSelect = vi.fn();
+    const { container } = render(<GlobeLevel onSelectCountry={onSelect} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand, far side
+    spinUntilParked(svg);
+
+    const france = country("France");
+    fireEvent.keyDown(svg, { key: "Home" }); // → France, still on the disc
+    expect(document.activeElement).toBe(france);
+
+    expect(runSpin()).toBe(0);
+
+    // France left with the caret on it, so the map holds it — and holds it for
+    // France, not for the country the abandoned spin was carrying.
+    expect(noCountry("France"), "expected France to have left the disc").toBe(null);
+    expect(document.activeElement).toBe(svg);
+
+    // Enter needs no geometry to prove the point: the parked caret still knows
+    // whose it is, so it still selects.
+    fireEvent.keyDown(svg, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("FR");
+
+    // And selecting turns the globe back, which lands the caret on the country.
+    expect(runSpin()).toBe(0);
+    expect(document.activeElement).toBe(country("France"));
+  });
+
+  test("leaves the caret in the A-Z list when the user picks from it mid-spin", async () => {
+    // Only a pointerdown on the globe used to call the keyboard's journey off,
+    // so for the ~650ms of a spin the caret was still the map's to take — and
+    // it took it, out of the <select> the user had just used, the moment the
+    // country it was carrying came round.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand, far side
+    spinUntilParked(svg);
+
+    // The user gives up waiting and uses the guaranteed path instead.
+    act(() => picker().focus());
+    fireEvent.change(picker(), { target: { value: "NZ" } });
+
+    expect(runSpin()).toBe(0);
+
+    expect(country("New Zealand")).toBeInTheDocument();
+    expect(document.activeElement).toBe(picker());
+  });
+
+  test("leaves the caret on a control outside the map when the user tabs to it mid-spin", async () => {
+    // The same guard from the other side: focus that has left the map entirely
+    // is not the map's to move back, however sure the map is about where it was
+    // sending it.
+    const { container } = render(
+      <>
+        <GlobeLevel onSelectCountry={() => {}} />
+        <button type="button">Somewhere else</button>
+      </>
+    );
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand, far side
+    spinUntilParked(svg);
+
+    const elsewhere = screen.getByRole("button", { name: "Somewhere else" });
+    act(() => elsewhere.focus());
+
+    expect(runSpin()).toBe(0);
+
+    expect(country("New Zealand")).toBeInTheDocument();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  test("stops following a pointer that is no longer pressed", async () => {
+    // The half of the lost-pointerup recovery `onPointerDown` cannot reach. Its
+    // stale escape restores the ability to *start* a gesture; it does not end
+    // the stranded one. `onPointerMove` gates on the pointer id alone, and a
+    // mouse keeps `pointerId 1` for its whole life — so after a release the
+    // page never saw, every buttonless hover across the map goes on rotating it
+    // under a cursor with no button held.
+    const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+    const mouse = { pointerId: 1, pointerType: "mouse", clientY: 0 };
+    const japan = () => container.querySelector('[aria-label="Japan"] path')!.getAttribute("d");
+
+    // A real press reports `buttons: 1`; this is what a browser sends and what
+    // jsdom leaves at 0 unless a test says otherwise.
+    fireEvent.pointerDown(svg, { ...mouse, isPrimary: true, buttons: 1, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...mouse, buttons: 1, clientX: -100 });
+    const afterPress = japan();
+
+    // The release goes missing — a context menu, capture claimed elsewhere —
+    // and the cursor simply moves on across the map.
+    fireEvent.pointerMove(svg, { ...mouse, buttons: 0, clientX: -300 });
+    expect(japan()).toBe(afterPress);
+    fireEvent.pointerMove(svg, { ...mouse, buttons: 0, clientX: -500 });
+    expect(japan()).toBe(afterPress);
+
+    // And the globe is not dead: the next real press turns it again.
+    fireEvent.pointerDown(svg, { ...mouse, isPrimary: true, buttons: 1, clientX: 0 });
+    fireEvent.pointerMove(svg, { ...mouse, buttons: 1, clientX: -100 });
+    fireEvent.pointerUp(svg, { ...mouse, buttons: 0, clientX: -100 });
+    expect(japan()).not.toBe(afterPress);
   });
 
   test("cancels an in-flight spin when it unmounts, rather than leaking it", async () => {
