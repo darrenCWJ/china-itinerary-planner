@@ -473,6 +473,12 @@ describe("GlobeLevel", () => {
     // The browser-side half of the same recovery: capture can be revoked
     // without a pointerup ever being delivered, and `lostpointercapture` is the
     // only notice the page gets that the gesture is over.
+    //
+    // This and the same-id re-press above are the whole of the recovery that a
+    // test can reach. `onPointerDown`'s third route — the element reporting it
+    // no longer captures the held pointer — is unreachable here for the same
+    // reason `setPointerCapture` always was: jsdom implements neither method,
+    // so the clause reads `undefined === false` and is inert under test.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
     await settle();
     const svg = container.querySelector("svg")!;
@@ -600,6 +606,38 @@ describe("GlobeLevel", () => {
     expect(runSpin()).toBe(0);
 
     expect(document.activeElement).toBe(country("Malta"));
+  });
+
+  test("selects from the parked caret and still lands focus on the country", async () => {
+    // Enter is the key most likely to be pressed at the end of a keyboard
+    // journey, and it does not go through `onFocusOffscreen` — it goes through
+    // `pickCountry`, which turns the globe, which cancels the spin. Whatever
+    // clears the pending focus target must not be on that path, or the caret is
+    // left on the map with no country under it and every later key dead.
+    const onSelect = vi.fn();
+    const { container } = render(<GlobeLevel onSelectCountry={onSelect} />);
+    await settle();
+    const svg = container.querySelector("svg")!;
+
+    dragGlobe(svg, 420);
+    const malta = country("Malta");
+    act(() => malta.focus());
+    fireEvent.keyDown(malta, { key: "ArrowRight" }); // Malta → New Zealand
+
+    let parked = false;
+    for (let i = 0; i < SPIN_FRAMES && !parked; i++) {
+      advance(ZOOM_MS / SPIN_FRAMES);
+      parked = document.activeElement === svg;
+    }
+    expect(parked, "expected the caret to be parked on the map").toBe(true);
+
+    fireEvent.keyDown(svg, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("NZ");
+
+    expect(runSpin()).toBe(0);
+
+    // The country it selected is the country it left the caret on.
+    expect(document.activeElement).toBe(country("New Zealand"));
   });
 
   test("does not steal the caret back when a drag cancels the spin it belonged to", async () => {
