@@ -336,4 +336,31 @@ describe("WorldMap", () => {
     // rather than silently presenting the first country as chosen.
     expect(screen.getByRole("combobox", { name: /pick from the list/i })).toHaveValue("");
   });
+
+  /**
+   * `theme` is documented as an override of the ramp `PrefsProvider` resolved —
+   * override only to render a fixed ramp, and the whole point is that the map
+   * then matches that ramp rather than the page's. That guarantee broke when
+   * country selection started resolving its own `usePrefs()` theme instead of
+   * taking the caller's: the override still reached the selected-country card,
+   * just not the fills next to it. Two renders, two ramps, and the fills had
+   * better not be the same set.
+   */
+  test("honours an explicit theme override in the country fills", async () => {
+    const light = render(<WorldMap theme="light" onSelectCountry={() => {}} />);
+    await screen.findByRole("button", { name: "France" });
+    const lightFills = [...light.container.querySelectorAll("path")].map((p) =>
+      p.getAttribute("fill")
+    );
+    light.unmount();
+
+    const dark = render(<WorldMap theme="dark" onSelectCountry={() => {}} />);
+    await screen.findByRole("button", { name: "France" });
+    const darkFills = [...dark.container.querySelectorAll("path")].map((p) =>
+      p.getAttribute("fill")
+    );
+
+    expect(lightFills.length).toBeGreaterThan(0);
+    expect(darkFills).not.toEqual(lightFills);
+  });
 });

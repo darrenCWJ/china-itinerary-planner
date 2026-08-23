@@ -265,6 +265,7 @@ export function WorldMap({
     mounted,
     selected,
     onSelectCountry,
+    theme: themeOverride,
   });
 
   if (loadError) return <WorldLevelError onRetry={() => setRetryKey((k) => k + 1)} />;
