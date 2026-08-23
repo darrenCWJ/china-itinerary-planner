@@ -3,7 +3,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
 import type { GeometryCollection } from "topojson-specification";
-import { type AccentTheme } from "@/lib/accent";
 import {
   WORLD_COUNTRIES_OBJECT,
   fetchWorldTopology,
@@ -12,6 +11,7 @@ import {
 import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { MAP_VIEW_H, MAP_VIEW_W, buildFitProjection, makeProjector } from "./mapShared";
+import type { WorldLevelProps } from "./worldLevel";
 import {
   CountryPicker,
   SelectedCountryCard,
@@ -94,23 +94,18 @@ interface PointMark {
   hitR: number;
 }
 
-export interface WorldMapProps {
-  /** ISO alpha-2 of the country currently chosen, if any. */
-  selectedCountry?: string | null;
-  onSelectCountry: (code: string) => void;
-  /**
-   * Which accent ramp to tint with. Defaults to the ramp `PrefsProvider`
-   * resolved — resolving the theme a second time here would let the map
-   * disagree with the page it sits on. Override only to render a fixed ramp.
-   */
-  theme?: AccentTheme;
-}
+/**
+ * Re-exported rather than redeclared: the props are now the shared
+ * `WorldLevelProps`, which `GlobeLevel` satisfies too, and the old name keeps
+ * every existing importer working.
+ */
+export type { WorldLevelProps as WorldMapProps } from "./worldLevel";
 
 export function WorldMap({
   selectedCountry = null,
   onSelectCountry,
   theme: themeOverride,
-}: WorldMapProps) {
+}: WorldLevelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pickerId = useId();
   const { theme: resolvedTheme } = usePrefs();
