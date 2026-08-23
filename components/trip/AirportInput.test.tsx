@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Airport } from "@/lib/airports";
 import { AirportInput } from "./AirportInput";
 
@@ -80,6 +80,57 @@ const type = (text: string) => {
   fireEvent.change(input, { target: { value: text } });
 };
 
+/**
+ * Drain to a fixed point — pending effects, the promises they started, and the
+ * renders those cause — then let the test query synchronously.
+ *
+ * Kept identical to the helper in `components/map/MapExplorer.test.tsx` and
+ * `lib/useTripPayload.test.tsx` so the three read as one pattern. Their
+ * docblocks carry the general argument: a wait measured against a wall clock
+ * cannot tell "has not finished yet" apart from "is never going to happen", so
+ * it reports the second when it means the first.
+ */
+async function settle(): Promise<void> {
+  let previous = "";
+  for (let i = 0; i < 10 && document.body.innerHTML !== previous; i++) {
+    previous = document.body.innerHTML;
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
+/**
+ * Wait out the component's 300ms debounce, then drain.
+ *
+ * Every wait in this file is this shape, because everything the component does
+ * hangs off one real `setTimeout(…, DEBOUNCE_MS)`. The sleep is what lets that
+ * timer *fire*; `settle()` is what makes its consequences *land*. Splitting
+ * the wait along that seam is the whole point of the helper.
+ *
+ * A bare 450ms sleep used to be the entire wait, and its 150ms over the
+ * debounce looked like headroom. It is not headroom, because both timers are
+ * read off the same blocked clock: starve the event loop past 450ms and the
+ * debounce (due at +300) and the sleep (due at +450) come due together and run
+ * back to back inside one timers phase. The sleep then resolves in the very
+ * turn the fetch was issued, with the promise settlement and React's re-render
+ * still queued behind it, and the assertion reads a DOM exactly one commit
+ * stale. That was measured, not assumed: at the moment of the failing
+ * assertion `fetch` had already been called once, and a single `act` flush —
+ * no further wall-clock time at all — flipped `aria-expanded` back to "false".
+ *
+ * What survives is only the half of the old sleep that is a real guarantee: a
+ * timer due at +450 runs after one due at +300 however slow the machine,
+ * because ordering does not depend on speed. Waiting for the work itself is
+ * then `settle()`'s job, and it waits for the work rather than racing a clock.
+ * vitest's own testTimeout stays as the backstop for a genuine hang, which is
+ * the only thing a timeout should be catching.
+ */
+async function pastDebounce(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await settle();
+}
+
 /** Swaps the default HITS response for a specific set of results, for tests
  * that need to exercise a particular airport's display string. */
 function stubSearchResults(results: Airport[]) {
@@ -119,7 +170,11 @@ describe("AirportInput", () => {
       // the list must never open under it.
       render(<AirportInput label="From" value="Beijing" onChange={() => {}} />);
 
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      // The last two assertions are assertions of absence, so they would hold
+      // just as well against a response this test had simply not waited for.
+      // Draining is what makes them mean "the results came back and the list
+      // stayed shut" rather than "nothing has happened yet".
+      await pastDebounce();
 
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
@@ -136,8 +191,10 @@ describe("AirportInput", () => {
 
       // Past the debounce window and the mocked fetch's resolution. If blur
       // failed to cancel the pending timer, or the response reopened the list
-      // regardless of focus, this is where it would show up.
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      // regardless of focus, this is where it would show up — and the drain is
+      // what guarantees such a reopen would already be committed by the time
+      // the assertions run, rather than still sitting in React's queue.
+      await pastDebounce();
 
       expect(input).toHaveAttribute("aria-expanded", "false");
       expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
@@ -147,39 +204,41 @@ describe("AirportInput", () => {
   test("offers matching airports once the query is long enough", async () => {
     render(<Harness />);
     type("Jinan");
-    // Appears only after the 300ms debounce and the fetch resolve; findBy*
-    // polls for up to testing-library's own 1000ms default -- nothing here
-    // configures asyncUtilTimeout, so that default is the real budget.
-    expect(await screen.findByRole("option", { name: /Jinan Yaoqiang/ })).toBeInTheDocument();
+    // The option appears only after the 300ms debounce and the fetch resolve,
+    // so the query has to come after `pastDebounce()` — but it is then a plain
+    // synchronous `getByRole`, with no poll budget standing between the
+    // component's work and the assertion.
+    await pastDebounce();
+    expect(screen.getByRole("option", { name: /Jinan Yaoqiang/ })).toBeInTheDocument();
   });
 
   test("picking an option writes name and code into the field", async () => {
     const onValue = vi.fn();
     render(<Harness onValue={onValue} />);
     type("Jinan");
+    await pastDebounce();
     // mouseDown, not click: the component commits on mouseDown so that blur
     // cannot close the list first.
-    fireEvent.mouseDown(await screen.findByRole("option", { name: /Jinan Yaoqiang/ }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Jinan Yaoqiang/ }));
     expect(onValue).toHaveBeenLastCalledWith("Jinan Yaoqiang International Airport (TNA)");
   });
 
   test("closes the list after a pick rather than re-querying the new value", async () => {
     render(<Harness />);
     type("Jinan");
-    fireEvent.mouseDown(await screen.findByRole("option", { name: /Jinan Yaoqiang/ }));
+    await pastDebounce();
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Jinan Yaoqiang/ }));
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
 
-    // Real time, past the 300ms debounce. `pick()`'s own synchronous
+    // Past the debounce a second time. `pick()`'s own synchronous
     // `setOpen(false); setHits([])` only proves the list closes immediately —
     // it says nothing about whether the picked value's own query effect run
     // was suppressed. If it wasn't, the pending timeout fires here, re-queries
-    // the picked string, and silently reopens the dropdown with a second
-    // fetch call. Waiting past the debounce (vitest's 5000ms default
-    // testTimeout, the only budget in force here, leaves ample room) is what
-    // actually exercises the suppression guard rather than just `pick()`'s own
-    // state updates.
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    // the picked string, and silently reopens the dropdown with a second fetch
+    // call. Both assertions below are again assertions of absence, so the
+    // drain is what rules out a reopen that had merely not been committed yet.
+    await pastDebounce();
 
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -188,16 +247,20 @@ describe("AirportInput", () => {
   test("does not query for a one-character value", async () => {
     render(<Harness />);
     type("J");
-    // Comfortably past the 300ms debounce: if a request were coming, it has had
-    // its chance.
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    // A value this short schedules no debounce at all, so there is no timer
+    // for the sleep to be ordered after and nothing for the drain to flush.
+    // Here the elapsed time *is* the assertion — a request had its chance and
+    // did not appear — and more time can only strengthen that, so this is the
+    // one wait in the file with no race to lose. It goes through the same
+    // helper anyway, so the file has exactly one way of waiting.
+    await pastDebounce();
     expect(fetch).not.toHaveBeenCalled();
   });
 
   test("a failed fetch after the list was open leaves aria-expanded false, not stuck pointing at an absent listbox", async () => {
     render(<Harness />);
     type("Jinan");
-    await screen.findByRole("option", { name: /Jinan Yaoqiang/ });
+    await pastDebounce();
     expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "true");
 
     // A later keystroke's fetch fails outright — the catch branch, not a
@@ -209,9 +272,10 @@ describe("AirportInput", () => {
       })
     );
     type("Jinan airport");
-    // Comfortably past the 300ms debounce, same margin as the other
-    // debounce-dependent tests above.
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    // The wait `pastDebounce()` was written for: the catch branch's
+    // `setHits([]); setOpen(false)` is a React update landing outside `act`,
+    // so under load it is still queued at the moment a bare sleep resolves.
+    await pastDebounce();
 
     expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
@@ -222,7 +286,8 @@ describe("AirportInput", () => {
       const onValue = vi.fn();
       render(<Harness onValue={onValue} />);
       type("Jinan");
-      fireEvent.mouseDown(await screen.findByRole("option", { name: /Jinan Yaoqiang/ }));
+      await pastDebounce();
+      fireEvent.mouseDown(screen.getByRole("option", { name: /Jinan Yaoqiang/ }));
       expect(onValue).toHaveBeenLastCalledWith("Jinan Yaoqiang International Airport (TNA)");
     });
 
@@ -231,7 +296,8 @@ describe("AirportInput", () => {
       const onValue = vi.fn();
       render(<Harness onValue={onValue} />);
       type("long");
-      fireEvent.mouseDown(await screen.findByRole("option", { name: /Shortcity/ }));
+      await pastDebounce();
+      fireEvent.mouseDown(screen.getByRole("option", { name: /Shortcity/ }));
       expect(onValue).toHaveBeenLastCalledWith("Shortcity (XXL)");
     });
 
@@ -240,7 +306,8 @@ describe("AirportInput", () => {
       const onValue = vi.fn();
       render(<Harness onValue={onValue} />);
       type("long");
-      fireEvent.mouseDown(await screen.findByRole("option", { name: /B{20,}/ }));
+      await pastDebounce();
+      fireEvent.mouseDown(screen.getByRole("option", { name: /B{20,}/ }));
       const written = onValue.mock.calls.at(-1)?.[0] as string;
       expect(written).toBe(`${"B".repeat(54)} (YYL)`);
       expect(written).toHaveLength(60);
@@ -252,7 +319,8 @@ describe("AirportInput", () => {
       const onValue = vi.fn();
       render(<Harness onValue={onValue} />);
       type("Jinan");
-      await screen.findAllByRole("option");
+      await pastDebounce();
+      expect(screen.getAllByRole("option")).toHaveLength(2);
       const input = screen.getByLabelText("From");
 
       // Two hits: TNA (Jinan) first, PEK (Beijing) second. One ArrowDown moves
@@ -267,7 +335,8 @@ describe("AirportInput", () => {
     test("Escape closes the list without clearing the typed value", async () => {
       render(<Harness />);
       type("Jinan");
-      await screen.findByRole("option", { name: /Jinan Yaoqiang/ });
+      await pastDebounce();
+      expect(screen.getByRole("option", { name: /Jinan Yaoqiang/ })).toBeInTheDocument();
 
       fireEvent.keyDown(screen.getByLabelText("From"), { key: "Escape" });
 
@@ -278,7 +347,8 @@ describe("AirportInput", () => {
     test("aria-activedescendant tracks the active option", async () => {
       render(<Harness />);
       type("Jinan");
-      const options = await screen.findAllByRole("option");
+      await pastDebounce();
+      const options = screen.getAllByRole("option");
       expect(options).toHaveLength(2);
       const input = screen.getByLabelText("From");
 
