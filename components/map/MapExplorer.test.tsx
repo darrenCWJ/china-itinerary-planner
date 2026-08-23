@@ -180,13 +180,23 @@ function requested(path: string): boolean {
  * then let the test query synchronously.
  *
  * Used instead of `findBy*` throughout this file. Those poll against a
- * wall-clock budget, and mounting this component is ~165ms of real CPU (jsdom
- * plus d3-geo projection). That is comfortably inside the budget on an idle
- * machine and comfortably outside it when the full suite has every core busy,
- * which is exactly the shape of the flake: it never reproduced on this file
- * alone, only in a full run. Nothing here was ever slow to *settle* — it was
- * slow to *compute*, and a poll timeout cannot tell those apart, so it reported
- * "Unable to find role=…" as though the element were missing.
+ * wall-clock budget, and mounting this component is real CPU work (jsdom plus
+ * d3-geo projection) rather than anything that waits. That is comfortably
+ * inside the budget on an idle machine and can fall outside it when the full
+ * suite has every core busy, which is exactly the shape of the flake: it never
+ * reproduced on this file alone, only in a full run. Nothing here was ever slow
+ * to *settle* — it was slow to *compute*, and a poll timeout cannot tell those
+ * apart, so it reported "Unable to find role=…" as though the element were
+ * missing.
+ *
+ * The "~165ms" this note used to quote for that mount was measured off the
+ * first test in the file, and was mostly not the mount: the bulk of it was the
+ * one-time jsdom environment warmup that every file's first role query used to
+ * pay, which now happens in vitest.setup.ts instead. Removing it from this file
+ * takes the first test from ~347ms to ~164ms. The sibling tests that mount and
+ * settle the same world level land at ~35-45ms; the first test stays longer
+ * than they do because it also pays React's first render and the world
+ * renderer's first module evaluation, neither of which the setup warmup covers.
  *
  * Draining to a fixed point removes the clock from the assertion entirely. The
  * work still takes however long it takes; the test simply waits for it rather
