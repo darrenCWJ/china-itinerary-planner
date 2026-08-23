@@ -7,6 +7,7 @@ import {
   type MapTransform,
   type PixelBounds,
 } from "@/lib/mapTransform";
+import { MAP_VIEW_H, MAP_VIEW_PAD, MAP_VIEW_W } from "@/lib/mapView";
 
 /**
  * Machinery both map levels share (spec §6): the fit-extent projection, the
@@ -15,12 +16,10 @@ import {
  * differ only in which features they draw — everything here is level-agnostic.
  */
 
-/** One viewBox for every level, so a zoom transform means the same thing. */
-export const MAP_VIEW_W = 860;
-export const MAP_VIEW_H = 620;
-
-/** Inset of the fitted extent, so coastlines aren't flush against the edge. */
-const MAP_VIEW_PAD = 10;
+// Re-exported rather than moved outright: nine call sites across CountryMap
+// and WorldMap import these from here, and the geometry modules under lib/
+// cannot import from a "use client" module. One definition, two doors.
+export { MAP_VIEW_H, MAP_VIEW_W } from "@/lib/mapView";
 
 /** Zoom transition length. Marker visibility is timed against it. */
 export const ZOOM_MS = 650;
