@@ -148,7 +148,8 @@ describe("AirportInput", () => {
     render(<Harness />);
     type("Jinan");
     // Appears only after the 300ms debounce and the fetch resolve; findBy*
-    // polls for up to the 5s asyncUtilTimeout set in vitest.setup.ts.
+    // polls for up to testing-library's own 1000ms default -- nothing here
+    // configures asyncUtilTimeout, so that default is the real budget.
     expect(await screen.findByRole("option", { name: /Jinan Yaoqiang/ })).toBeInTheDocument();
   });
 
@@ -174,9 +175,10 @@ describe("AirportInput", () => {
     // it says nothing about whether the picked value's own query effect run
     // was suppressed. If it wasn't, the pending timeout fires here, re-queries
     // the picked string, and silently reopens the dropdown with a second
-    // fetch call. Waiting past the debounce (jsdom's 15s testTimeout and 5s
-    // asyncUtilTimeout leave ample room) is what actually exercises the
-    // suppression guard rather than just `pick()`'s own state updates.
+    // fetch call. Waiting past the debounce (vitest's 5000ms default
+    // testTimeout, the only budget in force here, leaves ample room) is what
+    // actually exercises the suppression guard rather than just `pick()`'s own
+    // state updates.
     await new Promise((resolve) => setTimeout(resolve, 450));
 
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
