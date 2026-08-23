@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   GLOBE_TOPOLOGY_PATH,
@@ -6,6 +8,7 @@ import {
   globeReachableCodes,
   parseGlobeTopology,
 } from "./globeTopology";
+import { parseWorldTopology, worldCountryCodes } from "./isoTopology";
 
 /**
  * A two-polygon, two-point fixture. `MT` is the case the whole module exists
@@ -127,5 +130,58 @@ describe("parseGlobeTopology", () => {
     const bad = structuredClone(FIXTURE);
     bad.topology.objects.countries.geometries[1].id = "france";
     expect(() => parseGlobeTopology(bad)).toThrow(/topology.*invalid.*country.*code/);
+  });
+});
+
+const GLOBE_ASSET = join(process.cwd(), "public", "world-globe.json");
+const WORLD_ASSET = join(process.cwd(), "public", "world-countries.json");
+
+/**
+ * Both assets are committed build artefacts, not source: `npm ci` does not
+ * produce them and their build scripts need network egress. Skip rather than
+ * fail when they are absent, exactly as lib/isoTopology.test.ts does, so a
+ * checkout without them is honest about what went unchecked rather than red
+ * for the wrong reason.
+ */
+const hasAssets = existsSync(GLOBE_ASSET) && existsSync(WORLD_ASSET);
+const globe = hasAssets ? parseGlobeTopology(JSON.parse(readFileSync(GLOBE_ASSET, "utf8"))) : null;
+const world = hasAssets ? parseWorldTopology(JSON.parse(readFileSync(WORLD_ASSET, "utf8"))) : null;
+
+describe.skipIf(!hasAssets)("the committed globe asset", () => {
+  /**
+   * THE test of this phase.
+   *
+   * The failure it exists for is not loud. A globe built by recomputing its
+   * point layer from the 110m topology parses cleanly, renders 174 real
+   * `role="button"` controls, and looks entirely correct — while Singapore,
+   * Malta, Hong Kong, Macau and 57 other countries have silently stopped
+   * existing in the picker. Nothing else in the suite notices.
+   */
+  it("reaches every country the flat map draws", () => {
+    const reachable = globeReachableCodes(globe!);
+    const reference = worldCountryCodes(world!);
+    const missing = [...reference].filter((code) => !reachable.has(code)).sort();
+
+    expect(missing, `unreachable on the globe: ${missing.join(", ")}`).toEqual([]);
+    expect(reachable.size).toBe(reference.size);
+  });
+
+  it("carries a point for every code 110m has no polygon for", () => {
+    // The inverse of lib/isoTopology.test.ts:163, which asserts the opposite
+    // direction and must stay pointed at the 50m asset only.
+    const polygons = globePolygonCodes(globe!);
+    const points = globePointCodes(globe!);
+    const orphans = [...worldCountryCodes(world!)]
+      .filter((code) => !polygons.has(code) && !points.has(code))
+      .sort();
+
+    expect(orphans, `neither polygon nor point: ${orphans.join(", ")}`).toEqual([]);
+  });
+
+  it("is coarse enough to rotate at 60fps", () => {
+    // 110m is not an optimisation, it is the shippable resolution: measured in
+    // production with every node mounted, 110m is p95 13.1ms and 50m is 60.6ms.
+    // A 50m-sized asset committed here would be a 21fps globe.
+    expect(readFileSync(GLOBE_ASSET).byteLength).toBeLessThan(200_000);
   });
 });

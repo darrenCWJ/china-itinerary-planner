@@ -32,7 +32,7 @@
 
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { geoArea, geoCentroid } from 'd3-geo';
 import { feature } from 'topojson-client';
 import { ISO_NUMERIC_TO_ALPHA2 } from '../lib/countries.ts';
@@ -76,7 +76,7 @@ const SMALL_COUNTRY_MAX_KM2 = 15_000;
  * Their ISO counterparts, where any exist, are documented in lib/isoTopology's
  * SEARCH_ONLY.
  */
-const EXPECTED_UNKEYED = [
+export const EXPECTED_UNKEYED = [
   'Indian Ocean Ter.',
   'Kosovo',
   'N. Cyprus',
@@ -128,7 +128,7 @@ async function fetchSource() {
  * AU and let whichever came second win — Australia replaced by two uninhabited
  * sand cays. Merging into one MultiPolygon keeps both shapes under one code.
  */
-function rekeyGeometries(geometries) {
+export function rekeyGeometries(geometries) {
   const byCode = new Map();
   const unkeyed = [];
 
@@ -187,7 +187,7 @@ function mergeGeometry(a, b) {
 // Point layer
 // ---------------------------------------------------------------------------
 
-function buildSmallCountries(topology) {
+export function buildSmallCountries(topology) {
   const collection = feature(topology, topology.objects.countries);
   const small = [];
 
@@ -290,7 +290,13 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(`\nbuild-world-topology failed: ${error.message}`);
-  process.exitCode = 1;
-});
+// Entry-point guard, matching scripts/ingest-airports.mjs. Without it,
+// importing this module to reuse `rekeyGeometries` — which
+// build-globe-topology.mjs now does — would refetch world-atlas and rewrite
+// public/world-countries.json as an import side effect.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`\nbuild-world-topology failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
