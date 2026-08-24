@@ -111,19 +111,33 @@ Generated for real from `cities500` with the full 7-field record
 |---|---|
 | cities | **59,073** |
 | countries / shards | **246** |
-| total raw | **5.95 MB** |
-| total gzipped | **1.41 MB** |
-| largest shard | **AR — 89.4 KB raw, 20.5 KB gzipped** |
-| median shard | **10.9 KB** |
+| total raw | **6.45 MB** |
+| total gzipped | **1.44 MB** |
+| largest shard | **AR — 96,899 B raw** |
+| Peru shard | **84,592 B raw / 19,152 B gzipped** |
+| median shard | **11.5 KB** |
 | smallest shard | NU — 102 B, 1 city |
 
-The largest single fetch a user ever makes is therefore **20.5 KB gzipped**,
-and the median is under 11 KB. This is the number that validates §3.2: shards
+**These figures include a second GeoNames fetch that the ingest must do.**
+`a1` is the raw GeoNames admin-1 *code*, and it becomes `CatalogHit.province` /
+`MapCity.province`, which `components/plan/PlaceSearch.tsx:220-222` renders
+directly to the user. Shipping raw codes would print `"22"` as a province of
+Japan. So the ingest also fetches `admin1CodesASCII.txt` (151,536 B, 3,865 rows,
+same host and licence) and resolves codes to names — Japan's rows then read
+`"a1":"Kyoto"`, not `"a1":"22"`.
+
+Resolving names is what moved the totals from 5.95 MB / 1.41 MB (measured with
+raw codes, in an earlier revision of this document) to the figures above. The
+7-field record shape is unchanged.
+
+The largest single fetch a user ever makes is therefore **~21 KB gzipped**,
+and the median shard is 11.5 KB. This is the number that validates §3.2: shards
 are small enough that on-demand fetching needs no loading state beyond what the
 map already has.
 
-> An earlier estimate in this document said ~4.5 MB raw / ~1.15 MB gzipped. The
-> measured figures above are ~32% larger and supersede it.
+> This document has carried two superseded size figures. An early *estimate*
+> said ~4.5 MB / ~1.15 MB gz; a first measurement said 5.95 MB / 1.41 MB gz but
+> used raw admin-1 codes. The table above supersedes both.
 
 **246 countries, not 244.** `cities15000` has 244; `cities500` adds **IO**
 (British Indian Ocean Territory, 2 cities) and **TK** (Tokelau, 3). Any count
@@ -143,24 +157,37 @@ the attractions layer, not the city catalog.
 New `scripts/ingest-cities.mjs`, modelled on `scripts/ingest-airports.mjs`:
 
 1. Fetch and unzip `cities500.zip` from GeoNames (12.9 MB zipped, 38 MB TSV).
-2. Score every row (§2.1).
-3. Rank within country; keep top 750.
-4. Deduplicate against the existing 695 Wikidata cities (§3.3).
-5. Enrich the top 30 per country (§4).
-6. Emit shards, index, and `data/cities-report.md`.
+2. Fetch `admin1CodesASCII.txt` (151,536 B) to resolve admin-1 codes to names (§2.2).
+3. Score every row (§2.1).
+4. Rank within country; keep top 750.
+5. Deduplicate against the existing 695 Wikidata cities (§3.3).
+6. Enrich the top 30 per country (§4).
+7. Emit shards, indexes, and `data/cities-report.md`.
 
 Daily `.github/workflows/refresh-cities.yml`, mirroring `refresh-airports.yml`:
-scheduled cron, `contents: write` least privilege, a concurrency group, and a
-`git diff --quiet` guard so an unchanged day produces no commit. A commit
-triggers a Vercel deploy, so the artifact reaches production unattended.
+scheduled cron, `contents: write` least privilege, and a concurrency group.
+A commit triggers a Vercel deploy, so the artifact reaches production unattended.
+
+**The change guard must be `git status --porcelain`, not `git diff --quiet`.**
+`refresh-airports.yml` gets away with `git diff --quiet` because it watches one
+always-tracked file. This job writes 246 shards, and a country GeoNames newly
+covers arrives as an **untracked** file, which `git diff` cannot see. The guard
+is only meaningful if every artifact is byte-stable on a quiet day, so each
+emitter must preserve its previous `generatedAt` when the payload is unchanged —
+otherwise the job commits ~10 MB and redeploys production nightly for nothing.
 
 ### 3.2 Storage
 
 ```
-public/cities/PE.json        750 rows, 76.6 KB raw / 18.3 KB gz  (measured)
+public/cities/PE.json        750 rows, 84,592 B raw / 19,152 B gz (measured)
 public/cities/index.json     246 × { code, count, generatedAt }
-data/cities-index.json       bundled: id → { name, country, lat, lon }
+data/cities-index.json       bundled: [id, name, country, lat, lon, admin1] tuples
 ```
+
+The bundled index carries **six** fields, not four. `resolveDestinations` must
+build a `Destination`, and `region` is required — which needs `admin1`. Stored
+as positional tuples rather than an object map it is *smaller* than the
+four-field object form would be, despite carrying more.
 
 Per-country static shards, the pattern `public/china-provinces.json` already
 uses and the one `map-subsystem-constraints` recommends for per-country data.
