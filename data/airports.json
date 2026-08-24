@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-22T17:37:18.923Z",
+ "generatedAt": "2026-08-24T04:58:12.368Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -21058,8 +21058,8 @@
    "name": "Eugenio Maria De Hostos Airport",
    "municipality": "Mayaguez",
    "country": "PR",
-   "lat": 18.255699157714844,
-   "lon": -67.14849853515625,
+   "lat": 18.255699,
+   "lon": -67.148499,
    "size": "medium"
   },
   {
