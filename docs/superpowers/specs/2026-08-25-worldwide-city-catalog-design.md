@@ -249,12 +249,19 @@ Phase 3 is not done until all three are open.
 | gate | location | change |
 |---|---|---|
 | catalog allowlist | `components/plan/PlaceSearch.tsx:44` | delete `CATALOG_COUNTRIES`; scope search to the active country's shard |
-| defaulting hack | `components/DestinationStep.tsx:69,121,126`, `components/map/MapExplorer.tsx:178`, `lib/tripShared.ts:24` | all 16 curated destinations gain explicit `country: "CN"`; remove the `?? "CN"` fallback so a future destination cannot silently claim China |
+| defaulting hack | `components/DestinationStep.tsx:69,121,126`, `components/map/MapExplorer.tsx:178` | all 16 curated destinations gain explicit `country: "CN"`; remove the `?? "CN"` fallback at these **four** sites so a future destination cannot silently claim China |
 | China-only route | `lib/server/catalog.ts:241`, `app/api/map/cities/route.ts` | `mapCities(country)` and `?country=PE`; `MapExplorer.togglePlace` resolves against the cities loaded for that country |
 
 `searchCities`, `mapCities` and `resolveDestinations` keep their names and return
 types. Only their bodies and one signature change, so callers outside these
 gates do not move.
+
+**`lib/tripShared.ts:24` is deliberately NOT a gate-2 site.** An earlier revision
+of this document listed it. It is `data.input.country ?? "CN"` — a *persistence
+backfill* for `TripInput.country`, which is optional because trips saved before
+the field existed carry none. That is not a country scope. Removing it would
+reclassify every legacy trip as country-less rather than Chinese, silently
+breaking saved trips. It stays, and `lib/tripShared.test.ts` already pins it.
 
 **Acceptance test for the phase:** a user picks Peru on the globe, sees Peruvian
 cities, taps one, and it appears in their plan with day counts and a route leg.
