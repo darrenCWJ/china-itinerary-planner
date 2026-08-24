@@ -97,15 +97,37 @@ and works where alternate-name data is sparse:
   **Naivasha** (safari), Wajir, Kisumu — resort towns surfacing above larger
   administrative cities.
 
-**Chosen cutoff: pool = `cities500`, keep top 750 per country** → ~59,000
-cities, 244 countries, ~4.5 MB raw / ~1.15 MB gzipped. That captures **13 of
-the 14 destinations** the ≥15,000 filter excluded entirely — every one but
-Giverny. (Santorini is an island, not a GeoNames city; it is represented by its
-main towns Fira and Oia, both of which make the cut.)
+**Chosen cutoff: pool = `cities500`, keep top 750 per country.** That captures
+**13 of the 14 destinations** the ≥15,000 filter excluded entirely — every one
+but Giverny. (Santorini is an island, not a GeoNames city; it is represented by
+its main towns Fira and Oia, both of which make the cut.)
 
-> These MB figures are estimates, scaled from a measured 3-field record to the
-> full 8-field shape. Measure exactly during implementation and record the real
-> numbers in `data/cities-report.md`.
+### 2.2 Measured output (not estimated)
+
+Generated for real from `cities500` with the full 7-field record
+(`id, n, lat, lon, a1, p, tz`):
+
+| metric | value |
+|---|---|
+| cities | **59,073** |
+| countries / shards | **246** |
+| total raw | **5.95 MB** |
+| total gzipped | **1.41 MB** |
+| largest shard | **AR — 89.4 KB raw, 20.5 KB gzipped** |
+| median shard | **10.9 KB** |
+| smallest shard | NU — 102 B, 1 city |
+
+The largest single fetch a user ever makes is therefore **20.5 KB gzipped**,
+and the median is under 11 KB. This is the number that validates §3.2: shards
+are small enough that on-demand fetching needs no loading state beyond what the
+map already has.
+
+> An earlier estimate in this document said ~4.5 MB raw / ~1.15 MB gzipped. The
+> measured figures above are ~32% larger and supersede it.
+
+**246 countries, not 244.** `cities15000` has 244; `cities500` adds **IO**
+(British Indian Ocean Territory, 2 cities) and **TK** (Tokelau, 3). Any count
+assertion in the ingest gate must use 246.
 
 **Known limitation:** ranking is a heuristic validated by spot-check (11 towns,
 4 countries), not a proof. Giverny (1,503/15,363) stays out. That is acceptable:
@@ -135,8 +157,8 @@ triggers a Vercel deploy, so the artifact reaches production unattended.
 ### 3.2 Storage
 
 ```
-public/cities/PE.json        ~750 rows, ~60 KB   fetched on drill-down
-public/cities/index.json     244 × { code, count, generatedAt }
+public/cities/PE.json        750 rows, 76.6 KB raw / 18.3 KB gz  (measured)
+public/cities/index.json     246 × { code, count, generatedAt }
 data/cities-index.json       bundled: id → { name, country, lat, lon }
 ```
 
@@ -175,7 +197,7 @@ real bug.
 
 GeoNames carries name, coordinates, population, admin-1 and timezone. It carries
 no descriptions, no images, no interest tags. A naive port would trade 695 rich
-cities for 59,000 thin ones — a regression in feel even as it is a coverage win.
+cities for 59,073 thin ones — a regression in feel even as it is a coverage win.
 
 Enrichment is a separate layer keyed by GeoNames id, stored apart from the base
 shard so a re-ingest never discards it:
@@ -255,7 +277,7 @@ one item in this design with legal weight.
    bytes zipped; 38 MB unzipped TSV). Airports is far smaller. The
    commit-on-change guard limits deploys, not the download.
 2. **Attribution is a licence obligation** (§7).
-3. **~59,000 cities across 244 shards is a large new surface**, and Phase 4
+3. **59,073 cities across 246 shards is a large new surface**, and Phase 4
    depends on all of it.
 4. **The composite score is a heuristic** validated by spot-check, not proof
    (§2.1).
