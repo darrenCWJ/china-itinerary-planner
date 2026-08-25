@@ -235,3 +235,60 @@ export function parseAdmin1Codes(text) {
   }
   return codes;
 }
+
+// ---------------------------------------------------------------------------
+// Ranking
+// ---------------------------------------------------------------------------
+
+/**
+ * Cities kept per country. Measured: 750 from cities500 captures 13 of the 14
+ * destinations a population >= 15,000 filter excluded entirely (all but
+ * Giverny, which is a place you visit from Vernon rather than sleep in, and so
+ * belongs in the attractions layer). Total across 246 countries: 59,073.
+ */
+export const CITIES_PER_COUNTRY = 750;
+
+/**
+ * The composite notability score, §2.1: `altNameCount + 2 * log10(population)`.
+ *
+ * `altNameCount` is the size of the alternate-names column already in the
+ * dump — no second source and no extra fetch. Alone it is not a clean
+ * separator (tourist towns run 9-26, communes 0-12, and they overlap); ranked
+ * within a country it separates well, because it is compared against a local
+ * baseline rather than a global threshold.
+ *
+ * Population is clamped to 1. `Math.log10(0)` is `-Infinity`, and adding any
+ * finite alternate-name count to `-Infinity` is still `-Infinity`, so without
+ * the clamp all 30,648 unpopulated rows tie at the bottom and the id tiebreak
+ * — not notability — decides which of them make a small country's cut.
+ */
+export function cityScore(row) {
+  return row.altNameCount + 2 * Math.log10(Math.max(1, row.population));
+}
+
+/**
+ * Every country's kept rows, in ranking order.
+ *
+ * A Map, not an object: "CO" is a real country code and "constructor" is a
+ * real string, and a plain object cannot tell an inherited member from a
+ * missing key — see `parseAdmin1Codes` for the same reasoning.
+ *
+ * The id tiebreak is not cosmetic. GeoNames reorders rows between nightly
+ * rebuilds, so two rows with an identical score would otherwise swap places
+ * and rewrite a shard that carries no new data — which the daily workflow
+ * would then commit.
+ */
+export function topPerCountry(rows, perCountry = CITIES_PER_COUNTRY) {
+  const byCountry = new Map();
+  for (const row of rows) {
+    const list = byCountry.get(row.country);
+    if (list) list.push(row);
+    else byCountry.set(row.country, [row]);
+  }
+  const kept = new Map();
+  for (const [country, list] of byCountry) {
+    list.sort((a, b) => cityScore(b) - cityScore(a) || a.id.localeCompare(b.id));
+    kept.set(country, list.slice(0, perCountry));
+  }
+  return kept;
+}
