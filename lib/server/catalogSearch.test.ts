@@ -118,8 +118,8 @@ describe("searchCities — country scoping", () => {
     // The Wikidata half of the catalog is all-China and always will be: the
     // 695 keep their QIDs so their enrichment survives, and everywhere else is
     // served from a GeoNames shard the client fetches. Returning them for a
-    // Peru trip is the bug PlaceSearch's CATALOG_COUNTRIES allowlist used to
-    // paper over.
+    // Peru trip is the bug the China-only allowlist PlaceSearch used to hold
+    // papered over (deleted in Task 13).
     expect(names("luoyang", "CN")).toEqual(["Luoyang"]);
     expect(names("luoyang", "PE")).toEqual([]);
   });

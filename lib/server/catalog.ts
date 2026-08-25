@@ -201,8 +201,8 @@ function normaliseCountryCode(country: string): string {
  *
  * The country is required and unrecognised values return nothing rather than
  * everything: failing open would serve the whole China catalog to a request
- * that named no country, which is the bug `PlaceSearch`'s CATALOG_COUNTRIES
- * allowlist existed to paper over.
+ * that named no country, which is the bug the China-only allowlist
+ * `PlaceSearch` used to hold existed to paper over (deleted in Task 13).
  *
  * The GeoNames half of the catalog is not searched here. It lives in
  * per-country files under `public/`, which a lambda cannot read (spec §3.2),

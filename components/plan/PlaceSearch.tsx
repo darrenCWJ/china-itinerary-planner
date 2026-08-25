@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rankPlaces, type RankedPlace, type SearchableCurated } from "@/lib/placeSearch";
+import { fetchCityShard, type CityShardRow } from "@/lib/cityShard";
+import { curatedPlaceNames } from "@/lib/curatedNames";
+import { foldPlaceName } from "@/lib/foldPlaceName";
+import { rankPlaces, type RankedPlace, type SearchableCurated, type SearchableHit } from "@/lib/placeSearch";
 import type { CatalogHit } from "@/lib/tripShared";
 
 /**
@@ -31,8 +34,11 @@ export interface PickedPlace {
    * open `country` on every pick, of every kind, curated included.
    *
    * DestinationStep rebuilds this array itself and its curated and off-map
-   * branches still answer the second question; see the note there. Reconciling
-   * them is Task 13’s, which owns this component.
+   * branches still answer the second question; see the note there. Task 13 —
+   * the change that made this component search the open country’s shard —
+   * deliberately left that divergence alone rather than widening its blast
+   * radius, so the two producers still disagree and no later task in this
+   * phase owns reconciling them.
    */
   country: string;
 }
@@ -49,9 +55,15 @@ interface Props {
 
 /** Below this the catalog is not worth a request; one letter matches everything. */
 const MIN_QUERY = 2;
-/** Countries the catalog actually covers. One, for now. */
-const CATALOG_COUNTRIES = new Set(["CN"]);
 const DEBOUNCE_MS = 300;
+/**
+ * Shard rows handed to the ranker per keystroke. A shard holds at most 750
+ * cities (measured: AR, the largest of the 246 committed shards) and the ranker
+ * slices to ten, so this only bounds the work, never the answer: it is applied
+ * after the substring filter, in population order, so what it drops is always
+ * smaller than what it keeps.
+ */
+const SHARD_CANDIDATES = 60;
 
 export function PlaceSearch({
   curated,
@@ -63,36 +75,70 @@ export function PlaceSearch({
 }: Props) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<CatalogHit[]>([]);
+  const [shard, setShard] = useState<CityShardRow[]>([]);
   const [active, setActive] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Same shape as CatalogSearch's fetch: debounce, then abort in flight so a
-  // slow older response cannot overwrite a newer one after further typing.
+  /**
+   * The open country's GeoNames cities, fetched once per country.
+   *
+   * Keyed on the country rather than the query: a shard holds every city the
+   * country has and is small with it — `lib/cityShard.ts` records 21.6 KB
+   * gzipped for the largest and under 12 KB for the median — so one fetch
+   * answers every keystroke from memory. `public/` is unreadable from a
+   * lambda, which is why this is a static asset the browser fetches rather
+   * than a second API leg.
+   *
+   * Cleared up front, not just on failure — the same reason MapExplorer's
+   * airports effect clears first. Between a country switch and the new shard
+   * landing, the previous country's cities are wrong answers, not stale ones.
+   */
+  useEffect(() => {
+    const controller = new AbortController();
+    // Functional, not `setShard([])`: a fresh `[]` is a new reference and
+    // re-renders even when the shard was already empty. React bails out when
+    // the updater returns the previous value, which keeps the failure path a
+    // true no-op — including in tests, where that stray render lands in a
+    // microtask outside `act` and prints a warning about nothing happening.
+    const clear = () => setShard((previous) => (previous.length === 0 ? previous : []));
+    clear();
+    fetchCityShard(country, controller.signal)
+      .then((loaded) => setShard(loaded.cities))
+      // A country with no shard, an offline fetch, a login-wall redirect whose
+      // HTML fails to parse, or a shard whose envelope names a different
+      // country than the URL asked for: the off-map row is still the
+      // guaranteed path to any place, so this failure is silent by design.
+      .catch(() => {
+        if (!controller.signal.aborted) clear();
+      });
+    return () => controller.abort();
+  }, [country]);
+
+  /**
+   * The Wikidata half, which only China has. Debounced, then aborted in flight
+   * so a slow older response cannot overwrite a newer one after further typing.
+   *
+   * There is no allowlist in front of this any more. The China-only allowlist
+   * that used to sit here existed because the catalog was China-only and its
+   * rows carried no country, so querying it under a Japan scope offered Chinese
+   * cities for a Japan trip. `searchCities` takes the country now and answers
+   * with that country's cities or with nothing, so the request is correct for
+   * every country and the allowlist has nothing left to protect.
+   */
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim().length < MIN_QUERY) {
       setHits([]);
       return;
     }
-    /**
-     * The catalog is China-only — lib/server/catalog.ts calls it "the full
-     * all-China dataset" and its rows carry no country. Querying it while the
-     * step is scoped to another country offered Chinese cities for a Japan trip,
-     * directly contradicting the scoping this component and CountryMap both
-     * claim in comments. Off CN the off-map row is the honest path, and it still
-     * works, so nothing is lost but the wrong answers.
-     */
-    if (!CATALOG_COUNTRIES.has(country.trim().toUpperCase())) {
-      setHits([]);
-      return;
-    }
     const controller = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/destinations?q=${encodeURIComponent(query.trim())}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/destinations?q=${encodeURIComponent(query.trim())}&country=${encodeURIComponent(country)}`,
+          { signal: controller.signal }
+        );
         const json: { available: boolean; results: CatalogHit[] } = await res.json();
         setHits(json.results);
       } catch {
@@ -112,20 +158,66 @@ export function PlaceSearch({
     [selected]
   );
 
+  /**
+   * Names a curated card already covers, so a shard row cannot re-offer them.
+   *
+   * The ingest's `dropCatalogDuplicates` only removes rows that duplicate a
+   * `data/catalog.json` QID city — and a curated destination with no
+   * catalog.json row of its own keeps its GeoNames row through the ingest, so
+   * it has to be suppressed here instead. `rankPlaces` does not dedupe by name
+   * across kinds either (`lib/placeSearch.ts:127-142` concatenates with no
+   * cross-kind check), so without this the picker can offer a bare "Yangshuo"
+   * chip beside the curated "Guilin & Yangshuo" card.
+   *
+   * `curatedPlaceNames` rather than the `curated` prop, because the prop
+   * already excludes visited destinations — and a place the traveller has been
+   * to should still not appear twice. Its names arrive already folded, so the
+   * membership test below folds the shard row and nothing else.
+   */
+  const suppressed = useMemo(() => curatedPlaceNames(country), [country]);
+
+  /**
+   * The shard rows worth ranking. Filtered here rather than inside `rankPlaces`
+   * so the fold runs once per row per query instead of once per render, and
+   * so the ranker never sees more than `SHARD_CANDIDATES` rows.
+   */
+  const shardHits = useMemo<SearchableHit[]>(() => {
+    if (query.trim().length < MIN_QUERY) return [];
+    const q = foldPlaceName(query);
+    const matched: SearchableHit[] = [];
+    for (const row of shard) {
+      const folded = foldPlaceName(row.n);
+      if (!folded.includes(q)) continue;
+      if (suppressed.has(folded)) continue;
+      // GeoNames' `name` column is already the local endonym, so there is no
+      // second spelling to show beside it.
+      matched.push({ qid: row.id, name: row.n, localName: null, province: row.a1 });
+      if (matched.length >= SHARD_CANDIDATES) break;
+    }
+    return matched;
+  }, [shard, query, suppressed]);
+
+  /**
+   * Wikidata hits first, GeoNames rows second. `rankPlaces` breaks a score tie
+   * by input index, so a city that has a researched description and an
+   * attraction count outranks a bare shard row that matched just as well.
+   */
+  const catalogHits = useMemo<SearchableHit[]>(
+    () => [
+      ...hits.map((h) => ({
+        qid: h.qid,
+        name: h.name,
+        localName: h.localName,
+        province: h.province,
+      })),
+      ...shardHits,
+    ],
+    [hits, shardHits]
+  );
+
   const results = useMemo(
-    () =>
-      rankPlaces(
-        query,
-        curated,
-        hits.map((h) => ({
-          qid: h.qid,
-          name: h.name,
-          localName: h.localName,
-          province: h.province,
-        })),
-        { selectedIds, selectedOffMapNames }
-      ),
-    [query, curated, hits, selectedIds, selectedOffMapNames]
+    () => rankPlaces(query, curated, catalogHits, { selectedIds, selectedOffMapNames }),
+    [query, curated, catalogHits, selectedIds, selectedOffMapNames]
   );
 
   // Clamp rather than reset: the list reshuffles as results arrive, and jumping

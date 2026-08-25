@@ -116,9 +116,10 @@ export function DestinationStep({
           // doc in components/plan/PlaceSearch.tsx, whose own producer stamps
           // the open country on every kind, curated included. This branch and
           // the off-map one below instead report the destination's own country,
-          // so they are the divergent two. That divergence predates this task;
-          // reconciling it belongs to Task 13, which owns PlaceSearch. Nothing
-          // here changes their behaviour.
+          // so they are the divergent two. That divergence predates the
+          // worldwide-catalog work and outlived it: Task 13 scoped PlaceSearch
+          // to the open country's shard without touching these two branches,
+          // and no later task in the phase owns reconciling them either.
           return [{
             id,
             name: curatedHit.name,
@@ -134,9 +135,10 @@ export function DestinationStep({
         }
         const hit = extras[id];
         if (hit) {
-          // The catalog is still China-only at this commit: PlaceSearch still
-          // holds CATALOG_COUNTRIES = new Set(["CN"]) and lib/server/catalog
-          // still fills LEGACY_CATALOG_COUNTRY. Task 13 is what widens it.
+          // The *Wikidata* half of the catalog is still China-only —
+          // lib/server/catalog still fills LEGACY_CATALOG_COUNTRY — but the
+          // picker is not: since Task 13 it also searches the open country's
+          // GeoNames shard, so `extras` can hold a Peruvian city.
           //
           // And this stamps whichever country is open *now* — not the one that
           // was open at pick time. `extras` is keyed by qid alone and is never
