@@ -126,12 +126,23 @@ export function DestinationStep({
             kind: "curated" as const,
             lat: curatedHit.lat,
             lon: curatedHit.lon,
+            localName: curatedHit.localName,
+            province: null,
             country: curatedHit.country,
           }];
         }
         const off = offMap.find((d) => d.id === id);
         if (off) {
-          return [{ id, name: off.name, kind: "off-map" as const, lat: null, lon: null, country: off.country }];
+          return [{
+            id,
+            name: off.name,
+            kind: "off-map" as const,
+            lat: null,
+            lon: null,
+            localName: off.localName,
+            province: null,
+            country: off.country,
+          }];
         }
         const hit = extras[id];
         if (hit) {
@@ -145,7 +156,16 @@ export function DestinationStep({
           // cleared on a country change, while `country` sits in this memo's
           // dependency array, so every catalog pick is re-stamped, retroactively,
           // each time the scope changes.
-          return [{ id, name: hit.name, kind: "catalog" as const, lat: null, lon: null, country }];
+          return [{
+            id,
+            name: hit.name,
+            kind: "catalog" as const,
+            lat: null,
+            lon: null,
+            localName: hit.localName,
+            province: hit.province,
+            country,
+          }];
         }
         return [];
       }),
@@ -179,11 +199,20 @@ export function DestinationStep({
     }
     // A catalog pick from search carries only what the ranked row held; the page
     // keeps the full hit, and goToPlan resolves activities before generating.
+    //
+    // `localName` and `province` are carried rather than nulled: `extras` is
+    // keyed by qid with last-write-wins, and since Task 13 this producer and
+    // `MapExplorer.togglePlace` can emit the same worldwide id. The map sends
+    // the shard row's admin-1; nulling it here made the same city two different
+    // shapes depending on which surface added it, and let a re-pick through
+    // search downgrade what the map had already stored. `description`,
+    // `population` and `attractionCount` stay empty because a ranked row never
+    // held them — the enrichment fetch in `addCatalog` is what fills the blurb.
     onAddCatalog({
       qid: place.id,
       name: place.name,
-      localName: null,
-      province: null,
+      localName: place.localName,
+      province: place.province,
       description: null,
       population: null,
       attractionCount: 0,

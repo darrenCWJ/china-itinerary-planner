@@ -41,6 +41,13 @@ import {
 export const DETAILED_COUNTRY = "CN";
 
 /**
+ * Chips the country-level fallback renders before it stops and defers to
+ * search. A worldwide shard holds up to 750 cities and this list has no
+ * virtualisation, no scroll cap and no filter.
+ */
+const MAX_LIST_PLACES = 60;
+
+/**
  * Whether a country has a drawable detail map. The caller needs this too — it
  * is what decides whether the China topology is worth fetching — so it lives
  * here rather than being re-derived from a string comparison at each site.
@@ -116,9 +123,17 @@ function CountryPlaceList({
   onTogglePlace: (place: MapPlace) => void;
 }) {
   const { name, code } = getCountry(country);
-  // `getCountry` is total: an unrecognised code comes back with an empty name,
-  // and naming nothing is better than printing a bare two-letter code.
+  // `getCountry` is total and never throws. For a country outside its curated
+  // 24-entry table `name` is the uppercased code itself (lib/countries.ts:153,
+  // `curated?.name ?? known`), so this reads "PE" rather than "Peru". The `||`
+  // chain is the guard for the genuinely unrecognisable case, where both are "".
   const label = name || code || "this country";
+  // A country's shard holds up to 750 cities and this list is a flat row of
+  // chips with no virtualisation — which was fine when it held a handful of
+  // curated places and, outside China, always zero. `places` arrives in
+  // population order, so the cap keeps the largest and search reaches the rest.
+  const shown = places.slice(0, MAX_LIST_PLACES);
+  const remainder = places.length - shown.length;
 
   return (
     <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--surf-1)]/50 p-5">
@@ -128,9 +143,9 @@ function CountryPlaceList({
           ? `Tap a place to add it, or search above for anywhere else in ${label}.`
           : `No map for ${label} yet — search above to add places, and they'll show up in your plan the same way.`}
       </p>
-      {places.length > 0 && (
+      {shown.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
-          {places.map((place) => {
+          {shown.map((place) => {
             const isSelected = selected.includes(place.id);
             return (
               <li key={place.id}>
@@ -153,6 +168,11 @@ function CountryPlaceList({
             );
           })}
         </ul>
+      )}
+      {remainder > 0 && (
+        <p className="mt-2 text-xs text-[var(--ink-2)]">
+          {remainder} more in {label} — search above to find them by name.
+        </p>
       )}
     </div>
   );

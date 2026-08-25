@@ -39,6 +39,26 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
   const band = bandsForMonth(month)[0];
   const population = formatPopulation(place.population);
 
+  /**
+   * Where the card says the place is.
+   *
+   * "<region> China" is a claim about China, and `place.region` is only one of
+   * China's seven when the place is Chinese — `MapExplorer` puts the admin-1
+   * name there for every other country, and 439 of the 58,742 committed shard
+   * rows carry no admin-1 at all. Unguarded, a Peruvian city with a null
+   * province rendered a bare " China". The fallback stays for the case it was
+   * written for: every curated Chinese destination has `province: null` and one
+   * of the seven regions.
+   *
+   * Joined rather than concatenated so the "· <level>" suffix cannot be left
+   * hanging off an origin that resolved to nothing.
+   */
+  const origin =
+    place.province ?? (isChinaRegion(place.region) ? `${place.region} China` : place.region);
+  const originLine = [origin, place.level === "curated" ? "" : place.level]
+    .filter((part) => part !== "")
+    .join(" · ");
+
   const left = Math.min(Math.max(position.x - POPUP_W / 2, 8), containerWidth - POPUP_W - 8);
   const showAbove = position.y > 190;
 
@@ -60,10 +80,11 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
           <span className="font-kai text-xs text-[var(--seal)]">{place.localName}</span>
         )}
       </div>
-      <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
-        {place.province ?? `${place.region} China`}
-        {place.level !== "curated" && ` · ${place.level}`}
-      </p>
+      {originLine !== "" && (
+        <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
+          {originLine}
+        </p>
+      )}
 
       <div className="mt-2 flex items-center gap-2">
         <span

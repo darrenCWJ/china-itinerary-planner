@@ -28,6 +28,26 @@ export interface PickedPlace {
   lat: number | null;
   lon: number | null;
   /**
+   * What the picked row itself displayed, carried through so the `CatalogHit`
+   * the wizard stores under this id matches the one the map's tap would store.
+   *
+   * `app/plan/page.tsx` keeps `extras` keyed by qid with last-write-wins, and
+   * since Task 13 both this component and `MapExplorer.togglePlace` can emit
+   * the same worldwide id. The map sent the shard row's admin-1; this path
+   * hard-coded `province: null` in `DestinationStep.addPlace` and threw away
+   * the `a1` the row had just rendered beside the city's name — so the same
+   * city ended up shaped two different ways depending on which surface added
+   * it, and a re-pick through search silently downgraded what the map stored.
+   *
+   * `population`, `description` and `attractionCount` stay null/0 on this path
+   * and that is not a discard: a `RankedPlace` never held them. Description in
+   * particular is filled at the merge point by the lazy enrichment fetch that
+   * Task 15 adds to `addCatalog`, which is where a fetch belongs — not here,
+   * per keystroke.
+   */
+  localName: string | null;
+  province: string | null;
+  /**
    * ISO alpha-2 of the *country being planned* — the scope that is open in the
    * picker, not the country the place itself sits in. Those are two different
    * questions and this field answers only the first: this component stamps the
@@ -352,6 +372,8 @@ export function PlaceSearch({
       kind: place.kind,
       lat: coords?.lat ?? null,
       lon: coords?.lon ?? null,
+      localName: place.localName,
+      province: place.province,
       country,
     });
     setQuery("");

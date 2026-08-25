@@ -210,7 +210,7 @@ describe("PlaceSearch keyboard path", () => {
 
   test("refuses to add a place that is already selected", () => {
     const { input, onAdd } = setup([
-      { id: "hangzhou", name: "Hangzhou", kind: "curated", lat: 30.25, lon: 120.16, country: "CN" },
+      { id: "hangzhou", name: "Hangzhou", kind: "curated", lat: 30.25, lon: 120.16, localName: "杭州", province: null, country: "CN" },
     ]);
     fireEvent.change(input, { target: { value: "hangzhou" } });
 
@@ -223,7 +223,7 @@ describe("PlaceSearch keyboard path", () => {
 
   test("removes a selected place through its own control", () => {
     const { onRemove } = setup([
-      { id: "harbin", name: "Harbin", kind: "curated", lat: 45.8, lon: 126.5, country: "CN" },
+      { id: "harbin", name: "Harbin", kind: "curated", lat: 45.8, lon: 126.5, localName: null, province: null, country: "CN" },
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Harbin" }));
@@ -393,6 +393,15 @@ describe("PlaceSearch country scoping", () => {
       name: "Cusco",
       kind: "catalog",
       country: "PE",
+      // The admin-1 the row displayed, carried into the pick rather than
+      // dropped. `app/plan/page.tsx` keys `extras` by qid with last-write-wins
+      // and `MapExplorer.togglePlace` writes the same city with its province
+      // filled in, so nulling it here made the same Cusco two different shapes
+      // depending on which surface added it — and let a re-pick through search
+      // silently downgrade what the map had stored. Cusco's is "Cuzco
+      // Department" and Lima's is "Lima Province", so a cross-wire is visible.
+      localName: null,
+      province: "Cuzco Department",
     });
   });
 

@@ -226,3 +226,34 @@ describe("CountryMap — countries with no detail level", () => {
     expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
   });
 });
+
+describe("CountryPlaceList — a country with a full shard", () => {
+  test("caps the chip list and says how many more there are", () => {
+    // Before the worldwide catalog this list held at most a handful of curated
+    // places and, outside China, always zero. A Peruvian shard hands it 750,
+    // and nothing here bounded the render.
+    const many = Array.from({ length: 200 }, (_, i) =>
+      place({ id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog" })
+    );
+    renderMap({ country: "PE", topology: null, places: many });
+
+    expect(screen.getAllByRole("button")).toHaveLength(60);
+    // The head of the list, not an arbitrary 60 of it: `places` arrives in
+    // population order, so the cap has to keep the largest cities.
+    expect(screen.getByRole("button", { name: "City 0" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "City 59" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "City 60" })).not.toBeInTheDocument();
+    expect(screen.getByText(/140 more/)).toBeInTheDocument();
+  });
+
+  test("says nothing about a remainder when everything fits", () => {
+    renderMap({
+      country: "PE",
+      topology: null,
+      places: [place({ id: "G1", name: "Lima", kind: "catalog" })],
+    });
+
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByText(/more/)).not.toBeInTheDocument();
+  });
+});

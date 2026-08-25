@@ -5,11 +5,11 @@ import { foldPlaceName } from "./foldPlaceName";
 /**
  * Place names a curated destination already covers, keyed by country.
  *
- * One list, three readers. `lib/server/catalog.ts` filters the Wikidata
- * catalog with it and `PlaceSearch` filters the open country's GeoNames shard
- * with it; `MapExplorer` (the map's markers) is the one that still has to be
- * switched over. Two of the three run in the browser, which is why the list
- * lives in a client-safe leaf rather than inside lib/server/catalog.ts: a
+ * One list, three readers, all three wired as of Task 14. `lib/server/catalog.ts`
+ * filters the Wikidata catalog with it; `PlaceSearch` filters the open
+ * country's GeoNames shard with it; `MapExplorer` filters the same shard again
+ * for the map's markers. Two of the three run in the browser, which is why the
+ * list lives in a client-safe leaf rather than inside lib/server/catalog.ts: a
  * server-only home would force the browser halves to keep a second copy, and a
  * second copy of the list is how the three answers drift apart.
  *
