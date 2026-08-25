@@ -6886,10 +6886,12 @@ export async function GET(req: NextRequest) {
 **Files:**
 - Create: `components/plan/GeoNamesCredit.tsx`
 - Create: `components/plan/GeoNamesCredit.test.tsx`
-- Modify: `components/DestinationStep.tsx:1-12` (imports), `:251-269` (the search block)
-- Modify: `app/plan/page.tsx` (the wizard footer at `:277`)
-- Modify: `components/TripView.tsx` (the end of `PageMain`'s children)
-- Modify: `app/b/[code]/page.tsx:35-37` (the briefing footer)
+- Modify: `components/DestinationStep.tsx:1-12` (imports), and the search block — **re-anchored against HEAD after Tasks 13-14 moved it ~30 lines: the block opens at `:298` (`<div className="mt-4 space-y-3">`), `<PlaceSearch` is at `:299`, and `<FeasibilityCounter>` is at `:315`. The credit goes under the feasibility counter, i.e. after `:315`. The plan's original `:251-269` is now the map/cards view toggle — do NOT use it.**
+- Modify: `app/plan/page.tsx` (the wizard footer, which opens at `:279` and closes at `:324`; `DestinationStep` is mounted under `{step === 1 && (` at `:239`)
+- Modify: `components/TripView.tsx` — **there are FIVE `<PageMain>` blocks (`:117`, `:125`, `:133`, `:168`, `:188`); the first four are early-return loading/error states. The credit belongs in the real trip view only: the block opening at `:188` and closing at `:328`, as its last child.**
+- Modify: `app/b/[code]/page.tsx` (the briefing footer, which opens at `:36`)
+
+> **Line numbers re-anchored 2026-08-26 against the post-Task-14 tree.** Verify each with `grep -n` before editing rather than trusting the number — Tasks 13 and 14 added ~30 lines to `DestinationStep.tsx` alone, and this task is the phase's merge gate.
 
 **Interfaces:**
 - Consumes: nothing.
@@ -6897,7 +6899,7 @@ export async function GET(req: NextRequest) {
 
 Spec §7, in full: GeoNames is **CC BY 4.0** — attribution required. This differs from OurAirports and Natural Earth, both public domain, and it is the app's first attribution-required source. The app must carry a **visible** GeoNames credit in the UI, not only a line in `data/cities-report.md`. This is a licence obligation, not a nicety, and is the one item in this design with legal weight.
 
-**Four surfaces, not one.** Rendering it only inside `DestinationStep` puts it on exactly one wizard step — `app/plan/page.tsx:238` mounts that component under `{step === 1 && (`, so step 0 and the generated plan on step 2 carry nothing. Worse, `components/TripView.tsx:230` renders `data.destinationNames` on the **shared trip page**, which a view-only member reaches by join code and may never leave: for a Peru trip every city name on it is GeoNames data, and that member never opens `/plan` at all. `app/b/[code]/page.tsx` is the same again for a bearer-link briefing. So the credit goes in four places:
+**Four surfaces, not one.** Rendering it only inside `DestinationStep` puts it on exactly one wizard step — `app/plan/page.tsx:239` mounts that component under `{step === 1 && (`, so step 0 and the generated plan on step 2 carry nothing. Worse, `components/TripView.tsx:230` renders `data.destinationNames` on the **shared trip page**, which a view-only member reaches by join code and may never leave: for a Peru trip every city name on it is GeoNames data, and that member never opens `/plan` at all. `app/b/[code]/page.tsx` is the same again for a bearer-link briefing. So the credit goes in four places:
 
 | surface | where | why |
 |---|---|---|
