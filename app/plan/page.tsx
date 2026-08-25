@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
+import { mergeCatalogHit } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
 import { seasonOfMonth } from "@/lib/months";
 import { WIZARD_STEPS, canAdvance } from "@/lib/wizard";
@@ -88,9 +89,45 @@ export default function PlanPage() {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
 
+  /**
+   * Adds a catalog city to the trip and remembers what the producer knew.
+   *
+   * `mergeCatalogHit`, not a wholesale overwrite: search and the map both write
+   * this key, and only the map's hit carries a population, a blurb and an
+   * attraction count. See lib/catalogExtras.ts — the rule lives there because
+   * no test file may live under app/.
+   *
+   * `selected` is still deduped by id alone, and that is deliberate. A Wikidata
+   * `Q…` and a GeoNames `G…` for the same city are two ids, but a `CatalogHit`
+   * carries no coordinates, so the only key available here is the name — and
+   * `PlaceSearch`'s measurements against the committed data say name alone
+   * folds 32 genuinely different Chinese cities into one (the two Yushus are
+   * 2,852 km apart). Both producers already dedupe on strictly better keys:
+   * search on name-plus-province (Task 13), the map on 25 km of haversine
+   * distance (Task 14). A third, blinder pass here would drop real cities to
+   * catch the residue.
+   */
   const addCatalog = (hit: CatalogHit) => {
-    setExtras((prev) => ({ ...prev, [hit.qid]: hit }));
+    // Read for the fetch decision only; the state writes below use the updater
+    // form so they cannot race a second pick in the same tick.
+    const merged = mergeCatalogHit(extras[hit.qid], hit);
+    setExtras((prev) => ({ ...prev, [hit.qid]: mergeCatalogHit(prev[hit.qid], hit) }));
     setSelected((prev) => (prev.includes(hit.qid) ? prev : [...prev, hit.qid]));
+    // A city outside the build-time top 30 arrives with no description; the
+    // first time anyone selects it, fetch one (spec §4). Fire-and-forget: the
+    // pick is already committed above and a missing blurb is an accepted
+    // state, so nothing here is allowed to block or to fail loudly.
+    if (merged.description !== null) return;
+    void fetch(`/api/cities/enrich?ids=${encodeURIComponent(hit.qid)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { enrichment?: Record<string, { description: string | null }> } | null) => {
+        const description = json?.enrichment?.[hit.qid]?.description ?? null;
+        if (description === null) return;
+        setExtras((prev) =>
+          prev[hit.qid] ? { ...prev, [hit.qid]: { ...prev[hit.qid], description } } : prev
+        );
+      })
+      .catch(() => {});
   };
 
   const removeCatalog = (qid: string) => {
