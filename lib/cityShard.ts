@@ -202,8 +202,9 @@ export function shardRowToMapCity(row: CityShardRow, enrichment: CityEnrichmentI
     province: row.a1,
     lat: row.lat,
     lon: row.lon,
-    // 0 is a real population for 30,648 rows and must not become `null`, which
-    // means "unknown" to marker sizing and to lib/feasibility.
+    // 0 is a real population for 4,721 of the 58,742 committed shard rows —
+    // a place the dump carries no figure for — and must not become `null`,
+    // which means "unknown" to marker sizing and to lib/feasibility.
     population: row.p,
     level: cityLevel(row.p),
     // GeoNames has no attractions layer; the QID catalog is the only source of
