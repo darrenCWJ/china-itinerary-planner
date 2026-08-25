@@ -699,13 +699,16 @@ export function assertAdmin1Sane(admin1Codes) {
 // ---------------------------------------------------------------------------
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
+/**
+ * Defaults for `run()`'s `dataDir`/`shardDir` parameters — production's real
+ * values. The five file paths under each (catalog, shard index, city index,
+ * enrich targets, report) are derived from whichever `dataDir`/`shardDir`
+ * `run()` actually receives, not from these constants directly, so a test can
+ * point them at a scratch directory and never touch `data/` or
+ * `public/cities/`.
+ */
 const DATA_DIR = join(ROOT_DIR, 'data');
 const SHARD_DIR = join(ROOT_DIR, 'public', 'cities');
-const CATALOG_PATH = join(DATA_DIR, 'catalog.json');
-const SHARD_INDEX_PATH = join(SHARD_DIR, 'index.json');
-const CITY_INDEX_PATH = join(DATA_DIR, 'cities-index.json');
-const ENRICH_TARGETS_PATH = join(DATA_DIR, 'cities-enrich-targets.json');
-const REPORT_PATH = join(DATA_DIR, 'cities-report.md');
 
 const CITIES_URL = 'https://download.geonames.org/export/dump/cities500.zip';
 const CITIES_MEMBER = 'cities500.txt';
@@ -876,20 +879,56 @@ function buildReport({ shards, total, generatedAt, largest }) {
 }
 
 // ---------------------------------------------------------------------------
-// main
+// Fetching the two network sources
 // ---------------------------------------------------------------------------
 
-async function main() {
-  mkdirSync(DATA_DIR, { recursive: true });
-  mkdirSync(SHARD_DIR, { recursive: true });
-
+/** Real `loadCitiesTsv`: fetch the zip, inflate it, decode the one member we want. */
+async function fetchCitiesTsv() {
   console.log(`Fetching ${CITIES_URL} …`);
   const archive = await fetchSource(CITIES_URL, { binary: true });
   console.log(`  ${archive.length} bytes; inflating ${CITIES_MEMBER}`);
-  const tsv = readZipMember(archive, CITIES_MEMBER).toString('utf8');
+  return readZipMember(archive, CITIES_MEMBER).toString('utf8');
+}
 
+/** Real `loadAdmin1Text`: fetch admin1CodesASCII.txt as-is. */
+async function fetchAdmin1Text() {
   console.log(`Fetching ${ADMIN1_URL} …`);
-  const admin1Codes = parseAdmin1Codes(await fetchSource(ADMIN1_URL, { binary: false }));
+  return fetchSource(ADMIN1_URL, { binary: false });
+}
+
+// ---------------------------------------------------------------------------
+// run — the seam between the pure build and its network/filesystem edges
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything `node scripts/ingest-cities.mjs` does, minus the entry guard.
+ *
+ * `loadCitiesTsv`/`loadAdmin1Text` and `dataDir`/`shardDir` are injectable so
+ * a test can drive the real gate-then-write ordering end to end — fake
+ * network responses in, real `assertSane`/`assertAdmin1Sane` gates, real
+ * `writeFileAtomic` calls out — without refetching 13.5 MB from GeoNames and
+ * without touching `data/` or `public/cities/`. The entry guard below calls
+ * `run()` with no arguments, so every parameter defaults to the real
+ * implementation and production behaviour is unchanged.
+ */
+export async function run({
+  loadCitiesTsv = fetchCitiesTsv,
+  loadAdmin1Text = fetchAdmin1Text,
+  dataDir = DATA_DIR,
+  shardDir = SHARD_DIR,
+} = {}) {
+  const catalogPath = join(dataDir, 'catalog.json');
+  const shardIndexPath = join(shardDir, 'index.json');
+  const cityIndexPath = join(dataDir, 'cities-index.json');
+  const enrichTargetsPath = join(dataDir, 'cities-enrich-targets.json');
+  const reportPath = join(dataDir, 'cities-report.md');
+
+  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(shardDir, { recursive: true });
+
+  const tsv = await loadCitiesTsv();
+
+  const admin1Codes = parseAdmin1Codes(await loadAdmin1Text());
   // Gated before anything reads it: a reshaped file parses to a near-empty Map
   // and every `a1` becomes null, which no later check would notice.
   assertAdmin1Sane(admin1Codes);
@@ -900,12 +939,12 @@ async function main() {
 
   // The existing catalog is read here rather than imported, so no import
   // attribute is needed and the pure functions stay testable without it.
-  const catalog = readJson(CATALOG_PATH);
+  const catalog = readJson(catalogPath);
   const catalogCities = catalog?.cities ?? [];
   console.log(`  deduplicating against ${catalogCities.length} Wikidata cities`);
 
   const { shards, targets, total } = buildCities(rows, admin1Codes, catalogCities);
-  const previousIndex = readJson(SHARD_INDEX_PATH);
+  const previousIndex = readJson(shardIndexPath);
   assertSane(shards, previousIndex);
 
   const now = new Date().toISOString();
@@ -916,7 +955,7 @@ async function main() {
 
   for (const country of [...shards.keys()].sort()) {
     const cities = shards.get(country);
-    const path = join(SHARD_DIR, `${country}.json`);
+    const path = join(shardDir, `${country}.json`);
     const payload = shardPayload(country, cities, readJson(path), now);
     if (payload.generatedAt === now) changed++;
     const json = JSON.stringify(payload);
@@ -932,10 +971,10 @@ async function main() {
   // country disappear, so this only ever cleans up after an aborted run — but
   // an orphan file under public/ is a URL the client can still fetch.
   const wanted = new Set([...shards.keys()].map((code) => `${code}.json`));
-  for (const entry of readdirSync(SHARD_DIR)) {
+  for (const entry of readdirSync(shardDir)) {
     if (entry === 'index.json' || entry === 'enrich') continue;
     if (!wanted.has(entry)) {
-      rmSync(join(SHARD_DIR, entry), { force: true });
+      rmSync(join(shardDir, entry), { force: true });
       console.log(`  removed stale shard ${entry}`);
     }
   }
@@ -951,28 +990,28 @@ async function main() {
   // index.json is indented: it is the one generated file whose diff a human
   // reads. Everything else here is compact, because megabytes of it are
   // committed and indentation would be pure overhead.
-  const shardIndex = stampedPayload(readJson(SHARD_INDEX_PATH), {
+  const shardIndex = stampedPayload(readJson(shardIndexPath), {
     source: SOURCE_LICENSE,
     countries,
   }, now);
-  writeFileAtomic(SHARD_INDEX_PATH, JSON.stringify(shardIndex, null, 1));
+  writeFileAtomic(shardIndexPath, JSON.stringify(shardIndex, null, 1));
 
   // Bundled, never fetched: public/ is unreadable from a Vercel lambda, so
   // this is the only thing resolveDestinations can read a picked city out of.
   // Tuples rather than objects — 3.5 MB instead of 4.35 MB for the same data,
   // and it is parsed once per cold start.
   writeFileAtomic(
-    CITY_INDEX_PATH,
+    cityIndexPath,
     JSON.stringify(
-      stampedPayload(readJson(CITY_INDEX_PATH), { source: SOURCE_LICENSE, cities: indexRows }, now)
+      stampedPayload(readJson(cityIndexPath), { source: SOURCE_LICENSE, cities: indexRows }, now)
     )
   );
 
   writeFileAtomic(
-    ENRICH_TARGETS_PATH,
+    enrichTargetsPath,
     JSON.stringify(
       stampedPayload(
-        readJson(ENRICH_TARGETS_PATH),
+        readJson(enrichTargetsPath),
         { targets: Object.fromEntries([...targets.keys()].sort().map((c) => [c, targets.get(c)])) },
         now
       )
@@ -984,13 +1023,13 @@ async function main() {
   // reads. It is still committed alongside a real change. `shardIndex`'s
   // timestamp, not `now`, so a quiet day does not rewrite this either.
   writeFileAtomic(
-    REPORT_PATH,
+    reportPath,
     buildReport({ shards, total, generatedAt: shardIndex.generatedAt, largest })
   );
 
-  console.log(`Wrote ${shards.size} shards to ${SHARD_DIR} (${changed} changed)`);
-  console.log(`Wrote ${CITY_INDEX_PATH} (${indexRows.length} cities)`);
-  console.log(`Wrote ${ENRICH_TARGETS_PATH}, ${SHARD_INDEX_PATH}, ${REPORT_PATH}`);
+  console.log(`Wrote ${shards.size} shards to ${shardDir} (${changed} changed)`);
+  console.log(`Wrote ${cityIndexPath} (${indexRows.length} cities)`);
+  console.log(`Wrote ${enrichTargetsPath}, ${shardIndexPath}, ${reportPath}`);
 }
 
 /**
@@ -998,7 +1037,10 @@ async function main() {
  *
  * Without this guard, importing the module to test one of its rules re-runs
  * the whole ingest and rewrites 246 files as an import side effect — not
- * hypothetical; it happened during review of ingest-airports.mjs.
+ * hypothetical; it happened during review of ingest-airports.mjs. `run()` is
+ * exported and can be called directly with fake loaders for exactly that kind
+ * of test; this guard is what keeps a plain `import` from doing the same
+ * thing with the real ones.
  *
  * Compared as file URLs rather than as paths because on Windows
  * `process.argv[1]` is a drive path while `import.meta.url` is a `file://`
@@ -1008,7 +1050,7 @@ async function main() {
  * throws.
  */
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
+  run().catch((error) => {
     console.error(`\nCity ingestion failed: ${error.message}`);
     console.error('Nothing was written — the previous artifacts are untouched.');
     process.exit(1);
