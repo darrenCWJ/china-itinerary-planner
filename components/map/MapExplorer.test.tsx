@@ -59,7 +59,13 @@ const WORLD_FIXTURE = {
   points: [],
 };
 
-/** One province, so the China level has something to draw. */
+/**
+ * Two provinces, one per region the tests zoom into: Beijing for North and
+ * Hubei for Central. `ChinaLevel` only offers a region's zoom control when a
+ * province of that region is in the topology, and only shows catalog markers
+ * once a region is open — at country level it draws curated picks alone — so
+ * the region a city test zooms into has to be drawable.
+ */
 const CHINA_FIXTURE = {
   type: "Topology",
   arcs: [
@@ -70,6 +76,13 @@ const CHINA_FIXTURE = {
       [116, 40.5],
       [116, 39.5],
     ],
+    [
+      [109, 29.5],
+      [115, 29.5],
+      [115, 33],
+      [109, 33],
+      [109, 29.5],
+    ],
   ],
   objects: {
     provinces: {
@@ -79,6 +92,11 @@ const CHINA_FIXTURE = {
           type: "Polygon",
           arcs: [[0]],
           properties: { adcode: 110000, name: "北京市" },
+        },
+        {
+          type: "Polygon",
+          arcs: [[1]],
+          properties: { adcode: 420000, name: "湖北省" },
         },
       ],
     },
@@ -237,6 +255,121 @@ const DE_SHARD = {
   ],
 };
 
+/**
+ * China's shard, and the only fixture in this file where the catalog leg is not
+ * empty — so it is the only one that exercises the merge as a merge.
+ *
+ * Every row but Zhangjiajie's is lifted byte-for-byte from the committed
+ * `public/cities/CN.json`, and every catalog city below from `data/catalog.json`
+ * with `mapCities`' shaping applied. All of them resolve to Central China, the
+ * region `CHINA_FIXTURE` draws Hubei for, because `ChinaLevel` only renders
+ * catalog markers inside an open region.
+ *
+ *  - `Jingzhou` is a duplicate: 5.3 km from catalog Q71247 of the same name.
+ *    It is in the shard precisely because it cleared the ingest's 5 km dedup
+ *    radius (`scripts/ingest-cities.mjs`), which is why the client has to catch
+ *    it too.
+ *  - `Heshan` is not: Hunan's Heshan is 631.3 km from the catalog's Heshan in
+ *    Laibin, Guangxi. Two different cities that share a romanisation, and both
+ *    have to survive.
+ *  - `Enshi` has no catalog namesake at all — the plain shard row, present to
+ *    keep "deleted the whole shard leg" from passing the suppression test.
+ *  - `Zhangjiajie` is the one invented row. The committed shard has none, and
+ *    `lib/curatedNames.ts` says why it holds the name open anyway: the nightly
+ *    re-ingest can promote a name that misses today's cut, and the curated
+ *    "Zhangjiajie" card is already on the map.
+ */
+const CN_SHARD = {
+  country: "CN",
+  generatedAt: "2026-08-25T09:23:00.949Z",
+  source: "GeoNames cities500 (CC BY 4.0)",
+  cities: [
+    {
+      id: "G1805540",
+      n: "Jingzhou",
+      lat: 30.35028,
+      lon: 112.19028,
+      a1: "Hubei",
+      p: 1_052_282,
+      tz: "Asia/Shanghai",
+    },
+    {
+      id: "G1808316",
+      n: "Heshan",
+      lat: 28.56938,
+      lon: 112.34733,
+      a1: "Hunan",
+      p: 1_249_807,
+      tz: "Asia/Shanghai",
+    },
+    {
+      id: "G1811720",
+      n: "Enshi",
+      lat: 30.3,
+      lon: 109.48333,
+      a1: "Hubei",
+      p: 279_185,
+      tz: "Asia/Shanghai",
+    },
+    {
+      // Capitalised, which is what pins the fold: `curatedPlaceNames` answers
+      // folded names, so a suppression that compared `row.n` raw would let
+      // "Zhangjiajie" straight through.
+      id: "G1815456",
+      n: "Zhangjiajie",
+      lat: 29.12548,
+      lon: 110.48442,
+      a1: "Hunan",
+      p: 1_517_027,
+      tz: "Asia/Shanghai",
+    },
+  ],
+};
+
+/**
+ * What `/api/map/cities?country=CN` answers: `mapCities` shaping over three
+ * rows of `data/catalog.json`. Wuhan has no shard row of any name, so it is the
+ * one city that can only have come from this leg.
+ */
+const CN_CATALOG = [
+  {
+    qid: "Q71247",
+    name: "Jingzhou",
+    localName: "荆州市",
+    province: "Hubei",
+    lat: 30.324444444,
+    lon: 112.236111111,
+    population: 5_231_180,
+    level: "prefecture",
+    attractionCount: 3,
+    blurb: "Jingzhou is a prefecture-level city in southern Hubei province, China.",
+  },
+  {
+    qid: "Q1359423",
+    name: "Heshan",
+    localName: "合山市",
+    province: "Laibin",
+    lat: 23.81635,
+    lon: 108.88475,
+    population: 98_938,
+    level: "county",
+    attractionCount: 0,
+    blurb: "Heshan is a county-level city of central Guangxi, China.",
+  },
+  {
+    qid: "Q11746",
+    name: "Wuhan",
+    localName: "武汉市",
+    province: "Hubei",
+    lat: 30.595,
+    lon: 114.2975,
+    population: 12_326_518,
+    level: "prefecture",
+    attractionCount: 7,
+    blurb: "Wuhan is the capital of Hubei, China.",
+  },
+];
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -245,23 +378,30 @@ beforeEach(() => {
     const body =
       href === CHINA_TOPOLOGY_PATH
         ? CHINA_FIXTURE
-        : href.startsWith("/api/map/cities")
-          ? { available: true, cities: [] }
-          : href.startsWith("/api/map/airports")
-            ? { airports: [] }
-            : href === "/cities/PE.json"
-              ? PE_SHARD
-              : href === "/cities/enrich/PE.json"
-                ? PE_ENRICHMENT
-                : href === "/cities/DE.json"
-                  ? DE_SHARD
-                  // Every other country's shard and enrichment file — Japan's
-                  // and China's included — 404s. That is the honest answer for
-                  // the four codes with no shard at all, and the map has to
-                  // keep working through it.
-                  : href.startsWith("/cities/")
-                    ? null
-                    : WORLD_FIXTURE;
+        // China is the only country whose catalog leg answers with anything,
+        // which is exactly why it is the only country whose merge can be
+        // observed. Every other country keeps the empty answer it had.
+        : href === "/api/map/cities?country=CN"
+          ? { available: true, cities: CN_CATALOG }
+          : href.startsWith("/api/map/cities")
+            ? { available: true, cities: [] }
+            : href.startsWith("/api/map/airports")
+              ? { airports: [] }
+              : href === "/cities/PE.json"
+                ? PE_SHARD
+                : href === "/cities/enrich/PE.json"
+                  ? PE_ENRICHMENT
+                  : href === "/cities/DE.json"
+                    ? DE_SHARD
+                    : href === "/cities/CN.json"
+                      ? CN_SHARD
+                      // Every other country's shard and enrichment file —
+                      // Japan's and China's enrichment included — 404s. That is
+                      // the honest answer for the four codes with no shard at
+                      // all, and the map has to keep working through it.
+                      : href.startsWith("/cities/")
+                        ? null
+                        : WORLD_FIXTURE;
     return Promise.resolve({
       ok: body !== null,
       status: body === null ? 404 : 200,
@@ -359,6 +499,7 @@ function Harness({
   level = "country",
   prefs,
   onAddCatalog = () => {},
+  onToggleSelect = () => {},
 }: {
   country?: string;
   level?: MapLevel;
@@ -371,6 +512,8 @@ function Harness({
    */
   prefs?: UserPrefs;
   onAddCatalog?: (hit: unknown) => void;
+  /** Curated markers report through this one; catalog markers never do. */
+  onToggleSelect?: (id: string) => void;
 }) {
   const [activeCountry, setCountry] = useState(country);
   const [activeLevel, setLevel] = useState<MapLevel>(level);
@@ -389,7 +532,7 @@ function Harness({
         level={activeLevel}
         onCountryChange={setCountry}
         onLevelChange={setLevel}
-        onToggleSelect={() => {}}
+        onToggleSelect={onToggleSelect}
         onAddCatalog={onAddCatalog}
         onRemoveCatalog={() => {}}
         onReorder={() => {}}
@@ -708,6 +851,102 @@ describe("MapExplorer", () => {
     await settle();
 
     expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * China is the only country where both legs of the merge answer, so it is the
+   * only country where any of this is observable. Every other test in this file
+   * runs against an empty `/api/map/cities`, which is why the catalog spread,
+   * the curated-name suppression and the duplicate filter all needed a CN
+   * fixture before a mutation to any of them could fail anything.
+   *
+   * `ChinaLevel` shows curated picks alone until a region is open, so each of
+   * these zooms into Central China first — where `CHINA_FIXTURE` draws Hubei
+   * and where every fixture city resolves.
+   */
+  async function openCentralChina() {
+    render(<Harness country="CN" />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
+    await settle();
+  }
+
+  test("draws one marker for a city both legs answer with", async () => {
+    // Jingzhou is in the shard at 30.35028,112.19028 and in the catalog at
+    // 30.324444444,112.236111111 — 5.3 km apart, the same city twice. Drawn
+    // twice it is two `role="button"`s a screen reader reads as two cities, two
+    // ids `togglePlace` resolves separately, and a plan that spends days in
+    // Jingzhou twice with a 5 km leg between the copies.
+    await openCentralChina();
+
+    expect(screen.getAllByRole("button", { name: "Jingzhou" })).toHaveLength(1);
+  });
+
+  test("keeps the surviving Jingzhou's QID, not the GeoNames row's id", async () => {
+    // Which of the two is dropped matters: the catalog row carries the QID that
+    // `resolveDestinations` sends down the Wikidata branch, plus the attraction
+    // count and blurb the GeoNames row has none of.
+    const onAddCatalog = vi.fn();
+    render(<Harness country="CN" onAddCatalog={onAddCatalog} />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Jingzhou" }));
+
+    expect(onAddCatalog).toHaveBeenCalledTimes(1);
+    expect(onAddCatalog.mock.calls[0][0]).toEqual({
+      qid: "Q71247",
+      name: "Jingzhou",
+      localName: "荆州市",
+      province: "Hubei",
+      description: "Jingzhou is a prefecture-level city in southern Hubei province, China.",
+      population: 5_231_180,
+      attractionCount: 3,
+    });
+  });
+
+  test("keeps both of two distant cities that share a name", async () => {
+    // The overcorrection guard. Hunan's Heshan and the catalog's Heshan in
+    // Laibin, Guangxi are 631.3 km apart — a shared romanisation, not a
+    // duplicate — so a filter keyed on the name alone would delete a real city
+    // from the map. In the committed data 32 of the 51 shard rows that share a
+    // folded name with a catalog city are distinct places like these, the
+    // widest being the two Yushus at 2,852 km.
+    await openCentralChina();
+
+    expect(screen.getAllByRole("button", { name: "Heshan" })).toHaveLength(2);
+  });
+
+  test("draws a catalog city the shard has no row for", async () => {
+    // The other half of the merge. Wuhan comes only from /api/map/cities, so
+    // dropping the catalog spread loses it — and every other test in this file
+    // answers that endpoint with an empty list, which is what made the spread
+    // deletable without failing anything.
+    await openCentralChina();
+
+    expect(screen.getByRole("button", { name: "Wuhan" })).toBeInTheDocument();
+  });
+
+  test("offers a place the curated set already covers once, as the curated card", async () => {
+    // `curatedPlaceNames` folds, so the shard's capitalised "Zhangjiajie" only
+    // matches through `foldPlaceName` — and the curated "Zhangjiajie" marker is
+    // already on this map, so an unsuppressed shard row draws a second one
+    // under the same aria-label. Enshi is asserted in the same test because a
+    // shard leg deleted outright would otherwise pass this on its own.
+    const onToggleSelect = vi.fn();
+    render(<Harness country="CN" onToggleSelect={onToggleSelect} />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
+    await settle();
+
+    expect(screen.getAllByRole("button", { name: "Zhangjiajie" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Enshi" })).toBeInTheDocument();
+
+    // And the one that survived is the curated card, which reports through
+    // `onToggleSelect`; a catalog marker would have gone to `onAddCatalog`.
+    fireEvent.click(screen.getByRole("button", { name: "Zhangjiajie" }));
+    expect(onToggleSelect).toHaveBeenCalledWith("zhangjiajie");
   });
 
   test("keeps working for a country whose shard 404s", async () => {

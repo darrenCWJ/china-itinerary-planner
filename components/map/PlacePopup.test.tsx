@@ -71,6 +71,27 @@ describe("PlacePopup — where it says a place is", () => {
     expect(screen.queryByText(/China/)).not.toBeInTheDocument();
   });
 
+  test("prefers a Chinese catalog city's province over its region", () => {
+    // The one shape where the two fields genuinely disagree, and so the only
+    // one that pins the `place.province ??` precedence. Outside China
+    // `MapExplorer` sets `region: c.province ?? ""` (MapExplorer.tsx), which is
+    // why Cusco above carries the same string twice and cannot tell the two
+    // apart; inside China it sets the seven-region label instead, so a Jiangsu
+    // city arrives with `province: "Jiangsu"` and `region: "East"`. Dropping
+    // the precedence renders "East China" over the province the catalog knows.
+    show(
+      place({
+        id: "Q57947",
+        name: "Nantong",
+        province: "Jiangsu",
+        region: "East",
+      })
+    );
+
+    expect(screen.getByText("Jiangsu · prefecture")).toBeInTheDocument();
+    expect(screen.queryByText(/China/)).not.toBeInTheDocument();
+  });
+
   test("says nothing about a country for a shard city with no admin-1 at all", () => {
     show(place({ id: "G3936456", name: "Somewhere in Peru" }));
 

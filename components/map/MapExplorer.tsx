@@ -6,7 +6,7 @@ import type { Topology } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { DESTINATIONS } from "@/lib/data";
-import { latLonOf } from "@/lib/geo";
+import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import type { ChinaRegion } from "@/lib/types";
@@ -21,6 +21,7 @@ import {
   fetchCityShard,
   shardRowToMapCity,
   type CityEnrichmentIndex,
+  type CityShardRow,
 } from "@/lib/cityShard";
 import { curatedPlaceNames } from "@/lib/curatedNames";
 import { foldPlaceName } from "@/lib/foldPlaceName";
@@ -53,6 +54,67 @@ const GlobeLevel = dynamic(() => import("./GlobeLevel").then((m) => m.GlobeLevel
     />
   ),
 });
+
+/**
+ * How near two places of the same name have to be before they are one place.
+ *
+ * 25 km, not the ingest's `DEDUP_RADIUS_KM = 5`. GeoNames puts a Chinese
+ * prefecture-level city's point on the urban seat and Wikidata puts it on the
+ * administrative centroid, and the gap between the two is what these rows are
+ * made of: every duplicate measured lands between 5.0 km (Qinzhou, Dezhou) and
+ * 18.7 km (Tacheng), so 5 km is exactly the gate they all cleared. 25 km still
+ * leaves daylight above the widest of them and well below the nearest pair
+ * that must survive — Longnan's two points, 42.9 km apart.
+ */
+const SAME_CITY_KM = 25;
+
+/**
+ * Shard rows that are a second marker for a city the catalog already answered.
+ *
+ * The sibling of `dropCatalogDuplicates` in `scripts/ingest-cities.mjs`, not a
+ * reuse of it: that one is a Node build script reading the GeoNames dump's row
+ * shape, it cannot be imported into a "use client" bundle, and it runs at a
+ * different radius. A re-ingest would not help here anyway — it would leave the
+ * client just as defenceless against the next catalog row that lands beside a
+ * shard row already shipped.
+ *
+ * The two legs are concatenated below, and China is the one country where both
+ * of them answer — so without this a duplicate draws twice: two
+ * `<g role="button">` with the same `aria-label`, which a screen reader reads
+ * out as two cities, and two ids that `togglePlace` resolves separately, so the
+ * plan allocates days to Nantong twice with a ~5 km route leg between the
+ * copies. Search offers one Nantong (Task 13); this is the same catalog's other
+ * surface, and the two have to agree.
+ *
+ * Keyed on distance, not on the admin-1 string, because `MapCity` carries
+ * coordinates on both sides and the strings disagree. Measured against
+ * data/catalog.json and public/cities/CN.json with the real `foldPlaceName`
+ * and `haversineKm`: of the 19 duplicate rows, 6 would slip through a
+ * name-plus-admin-1 test because the catalog labels them by prefecture where
+ * the shard labels them by province (Pizhou/Xuzhou, Xingning/Meizhou,
+ * Laizhou/Yantai, Laohekou/Xiangyang, plus Yining and Tacheng in Xinjiang) —
+ * and that test would also wrongly fold Liaoning's two Jinzhous, 229.5 km
+ * apart under one province label. Name alone is worse again: 32 of the 51
+ * shard rows sharing a folded name with a catalog city are genuinely different
+ * places, the widest being the two Yushus at 2,852 km.
+ *
+ * The shard row is the one dropped. The catalog row carries the QID that
+ * `resolveDestinations` sends down the Wikidata branch, plus its attraction
+ * count and blurb; the GeoNames row carries none of that.
+ */
+function dropCatalogTwins(rows: CityShardRow[], catalog: MapCity[]): CityShardRow[] {
+  const byFoldedName = new Map<string, MapCity[]>();
+  for (const city of catalog) {
+    const key = foldPlaceName(city.name);
+    const found = byFoldedName.get(key);
+    if (found) found.push(city);
+    else byFoldedName.set(key, [city]);
+  }
+  return rows.filter((row) => {
+    const twins = byFoldedName.get(foldPlaceName(row.n));
+    return !twins?.some((twin) => haversineKm(twin, row) <= SAME_CITY_KM);
+  });
+}
 
 export type MapLevel = "world" | "country";
 
@@ -196,15 +258,19 @@ export function MapExplorer({
         // Yangshuo — a curated destination — has no catalog.json row, so its
         // row survives and would draw beside "Guilin & Yangshuo".
         const suppressed = curatedPlaceNames(countryCode);
-        const shardCities = (shardRes?.cities ?? [])
-          .filter((row) => !suppressed.has(foldPlaceName(row.n)))
-          .map((row) => shardRowToMapCity(row, enrichment));
-        // China is the one country that gets both halves: ~680 Wikidata cities
-        // plus the 413 GeoNames rows its shard keeps after dedup, so its map
-        // goes from ~680 markers to ~1,090. That is deliberate — those 413 are
-        // Chinese cities the QID catalog never covered, and coverage is the
-        // point of the phase. `MAX_LIST_PLACES` does not apply: China has a
-        // detail level, so it renders ChinaLevel rather than CountryPlaceList.
+        const shardCities = dropCatalogTwins(
+          (shardRes?.cities ?? []).filter((row) => !suppressed.has(foldPlaceName(row.n))),
+          catalogRes.cities
+        ).map((row) => shardRowToMapCity(row, enrichment));
+        // China is the one country that gets both halves, and they are not
+        // disjoint. Measured on the committed data: /api/map/cities answers CN
+        // with 676 Wikidata cities, and of the shard's 413 rows 3 fold to a
+        // curated name and 19 more are `dropCatalogTwins` duplicates, so 391
+        // join them — 1,067 catalog markers rather than the 1,086 a plain
+        // concatenation draws. The 391 are Chinese cities the QID catalog never
+        // covered, and that coverage is the point of the phase.
+        // `MAX_LIST_PLACES` does not apply: China has a detail level, so it
+        // renders ChinaLevel rather than CountryPlaceList.
         setCities([...catalogRes.cities, ...shardCities]);
         // Unavailable only when BOTH sources failed. A country the Wikidata
         // catalog has never covered is the normal case for 245 of them, and
