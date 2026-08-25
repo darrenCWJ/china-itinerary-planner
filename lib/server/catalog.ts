@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import bundledCatalogJson from "../../data/catalog.json";
+import { curatedPlaceNames } from "../curatedNames";
 import { DESTINATIONS } from "../data";
 import { foldPlaceName } from "../foldPlaceName";
 import { regionForProvinceText } from "../provinces";
 import type { CatalogHit, MapCity } from "../tripShared";
-import type { Activity, ChinaRegion, CountryCode, Destination, Interest } from "../types";
+import type { Activity, CountryCode, Destination, Interest } from "../types";
+import { cityIndexEntry, isGeoNamesId, type CityIndexEntry } from "./cityIndex";
 
 export interface CatalogCity {
   qid: string;
@@ -179,27 +181,36 @@ export function catalogStatus(): { available: boolean; generatedAt?: string; cit
   };
 }
 
-/** Curated destinations already cover these — hide them from catalog search. */
-const CURATED_NAMES = new Set(
-  [
-    ...DESTINATIONS.map((d) => d.name),
-    "Guilin",
-    "Yangshuo",
-    "Kunming",
-    "Dali",
-    "Lijiang",
-    "Zhangjiajie",
-  ].map(foldPlaceName)
-);
+/** Normalised the way `getCountry` normalises, so " cn " and "CN" agree. */
+function normaliseCountryCode(country: string): string {
+  const code = typeof country === "string" ? country.trim().toUpperCase() : "";
+  return /^[A-Z]{2}$/.test(code) ? code : "";
+}
 
-export function searchCities(query: string, limit = 25): CatalogHit[] {
+/**
+ * Ranked search over the Wikidata catalog, scoped to one country.
+ *
+ * The country is required and unrecognised values return nothing rather than
+ * everything: failing open would serve the whole China catalog to a request
+ * that named no country, which is the bug `PlaceSearch`'s CATALOG_COUNTRIES
+ * allowlist existed to paper over.
+ *
+ * The GeoNames half of the catalog is not searched here. It lives in
+ * per-country files under `public/`, which a lambda cannot read (spec §3.2),
+ * so the client searches the shard it already fetched and merges the two
+ * result sets in `rankPlaces`.
+ */
+export function searchCities(query: string, country: string, limit = 25): CatalogHit[] {
   const catalog = loadCatalog();
   if (!catalog) return [];
+  const wanted = normaliseCountryCode(country);
+  if (wanted === "") return [];
   const q = foldPlaceName(query);
   if (q.length < 1) return [];
+  const curated = curatedPlaceNames(wanted);
 
   const scored = catalog.cities
-    .filter((c) => !CURATED_NAMES.has(foldPlaceName(c.name)))
+    .filter((c) => c.country === wanted && !curated.has(foldPlaceName(c.name)))
     .map((c) => {
       const name = foldPlaceName(c.name);
       const zh = c.localName ?? "";
@@ -230,7 +241,17 @@ export function searchCities(query: string, limit = 25): CatalogHit[] {
   });
 }
 
-function regionFor(province: string | null, cityName: string): ChinaRegion {
+/**
+ * A region label meaningful inside this city's own country.
+ *
+ * `regionForProvinceText` is a China-only keyword table and its `?? "Central"`
+ * fallback is one of China's own seven regions — which `mapTypes.isChinaRegion`
+ * then accepts, giving a Swiss town a Chinese month-fit rather than the
+ * neutral one the guard exists to produce. Outside China the admin-1 name IS
+ * the region label (see `Destination.region`, lib/types.ts:57-63).
+ */
+function regionFor(country: string, province: string | null, cityName: string): string {
+  if (country !== "CN") return province ?? "";
   return regionForProvinceText(`${province ?? ""} ${cityName}`) ?? "Central";
 }
 
@@ -264,14 +285,21 @@ const GENERIC_ACTIVITIES = (cityName: string): Activity[] => [
 ];
 
 /**
- * Every catalog city in map-marker form. Curated destinations are filtered
- * out — the map renders those from the richer curated data instead.
+ * The Wikidata catalog's cities for one country, in map-marker form.
+ *
+ * Curated destinations are filtered out — the map renders those from the
+ * richer curated data instead. Every city in this catalog is Chinese, so this
+ * is empty for every country but CN; the map merges in the GeoNames shard it
+ * fetched for whichever country is open (spec §5, gate 3).
  */
-export function mapCities(): MapCity[] {
+export function mapCities(country: string): MapCity[] {
   const catalog = loadCatalog();
   if (!catalog) return [];
+  const wanted = normaliseCountryCode(country);
+  if (wanted === "") return [];
+  const curated = curatedPlaceNames(wanted);
   return catalog.cities
-    .filter((c) => !CURATED_NAMES.has(foldPlaceName(c.name)))
+    .filter((c) => c.country === wanted && !curated.has(foldPlaceName(c.name)))
     .map((c): MapCity => ({
       qid: c.qid,
       name: c.name,
@@ -318,7 +346,7 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
     id: city.qid,
     name: city.name,
     localName: city.localName,
-    region: regionFor(city.province, city.name),
+    region: regionFor(city.country, city.province, city.name),
     country: city.country,
     lat: city.lat,
     lon: city.lon,
@@ -335,13 +363,59 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
   };
 }
 
-/** Resolve any mix of curated ids and catalog qids into Destination objects. */
+/**
+ * A plannable Destination from nothing but a bundled index entry.
+ *
+ * GeoNames carries no descriptions, no images and no attractions, and the
+ * shard that would carry enrichment is under `public/`, which a lambda cannot
+ * read. So this builds from the six fields the index has — which is enough,
+ * because a city with no catalogued attractions already takes this path today
+ * through `GENERIC_ACTIVITIES`, and the wizard's enrichment call fills the
+ * description in on the client.
+ */
+export function geoNamesCityToDestination(entry: CityIndexEntry): Destination {
+  const activities = GENERIC_ACTIVITIES(entry.name);
+  return {
+    id: entry.id,
+    name: entry.name,
+    localName: null,
+    // The admin-1 name, or nothing. Never "Central": that is one of China's
+    // seven, and `mapTypes.isChinaRegion` would accept it.
+    region: entry.region ?? "",
+    country: entry.country,
+    lat: entry.lat,
+    lon: entry.lon,
+    emoji: "📍",
+    tagline: entry.region ? `${entry.name}, ${entry.region}` : entry.name,
+    knownFor: [],
+    bestSeasons: ["spring", "autumn"],
+    seasonNotes: {},
+    foods: [],
+    suggestedDays: [1, 2],
+    activities,
+  };
+}
+
+/**
+ * Resolve any mix of curated ids, Wikidata qids and GeoNames ids into
+ * Destination objects.
+ *
+ * Three namespaces, checked in order of specificity. The GeoNames branch is
+ * keyed on the `G` prefix rather than on a failed catalog lookup, because
+ * §3.3's whole point is that the namespaces stay distinguishable: a bare
+ * integer or an unprefixed id must resolve to nothing rather than to whichever
+ * source happens to hold that string.
+ */
 export function resolveDestinations(ids: string[]): Destination[] {
   const catalog = loadCatalog();
   return ids
     .map((id) => {
       const curated = DESTINATIONS.find((d) => d.id === id);
       if (curated) return curated;
+      if (isGeoNamesId(id)) {
+        const entry = cityIndexEntry(id);
+        return entry ? geoNamesCityToDestination(entry) : undefined;
+      }
       const city = catalog?.cities.find((c) => c.qid === id);
       return city ? catalogCityToDestination(city) : undefined;
     })
