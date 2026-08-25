@@ -711,3 +711,292 @@ describe("buildCities", () => {
     expect(shards.has("CN")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// assertSane
+// ---------------------------------------------------------------------------
+
+import {
+  EXPECTED_COUNTRIES,
+  REQUIRED_CITIES,
+  REQUIRED_COUNTRY_CODES,
+  REQUIRED_DEDUPED,
+  assertAdmin1Sane,
+  assertSane,
+} from "./ingest-cities.mjs";
+
+interface ShardRow {
+  id: string;
+  n: string;
+  lat: number;
+  lon: number;
+  a1: string | null;
+  p: number;
+  tz: string;
+}
+
+/** A shard row that passes every per-record check, so a test can break one. */
+function shardRow(over: Partial<ShardRow> & Pick<ShardRow, "id">): ShardRow {
+  return { n: `City ${over.id}`, lat: 10, lon: 20, a1: null, p: 1_000, tz: "UTC", ...over };
+}
+
+/** Synthetic two-letter codes, AA, AB, AC … — a deterministic filler alphabet. */
+function syntheticCountryCode(i: number): string {
+  const a = "A".charCodeAt(0);
+  return String.fromCharCode(a + (Math.floor(i / 26) % 26), a + (i % 26));
+}
+
+/**
+ * A shard set shaped like the real one, so each test below reaches the gate it
+ * is actually aiming at.
+ *
+ * The countries `assertSane` names — the three destination fixtures' countries
+ * and the two territories that only `cities500` has — are seeded FIRST, and the
+ * synthetic alphabet then fills up to exactly `countries` shards. Seeding them
+ * afterwards instead would return `countries` plus however many of them the
+ * synthetic range happened to miss (PE, JP and TK all fall outside AA..JL), and
+ * `assertSane` compares `shards.size` against 246 exactly rather than against a
+ * floor — so an off-by-two fixture would make every test here read the wrong
+ * gate.
+ *
+ * Fixture invariant (spec §6): every required city is in the shard its country
+ * names, or these tests are green and hollow.
+ */
+function saneShards(options: { countries?: number; perCountry?: number } = {}) {
+  const countries = options.countries ?? EXPECTED_COUNTRIES;
+  const perCountry = options.perCountry ?? 300;
+  const shards = new Map<string, ShardRow[]>();
+  let seed = 1;
+  const filler = () => {
+    const base = seed++ * 100_000;
+    return Array.from({ length: perCountry }, (_, i) =>
+      shardRow({ id: `G${base + i + 1}`, p: perCountry - i })
+    );
+  };
+
+  for (const code of REQUIRED_COUNTRY_CODES) shards.set(code, filler());
+  for (const required of REQUIRED_CITIES) {
+    shards.set(required.country, [
+      shardRow({ id: required.id, n: required.name, p: 10_000_000 }),
+      ...filler(),
+    ]);
+  }
+  for (let c = 0; shards.size < countries; c++) {
+    const code = syntheticCountryCode(c);
+    if (!shards.has(code)) shards.set(code, filler());
+  }
+  return shards;
+}
+
+/** admin1CodesASCII.txt yields 3,865 entries; anything near that passes. */
+function saneAdmin1(size = 3_865): Map<string, string> {
+  const codes = new Map<string, string>();
+  for (let i = 0; i < size; i++) codes.set(`XX.${i}`, `Region ${i}`);
+  return codes;
+}
+
+function previousIndex(shards: Map<string, ShardRow[]>) {
+  return { countries: [...shards].map(([code, list]) => ({ code, count: list.length })) };
+}
+
+describe("assertSane", () => {
+  test("passes a shard set shaped like the real one", () => {
+    expect(() => assertSane(saneShards(), null)).not.toThrow();
+  });
+
+  test("names the four known destinations the design was validated against", () => {
+    // Cusco, Zermatt and Kyoto must be IN a shard; Jinan must be OUT of one,
+    // because it is deduped in favour of Wikidata's Q170247. Both directions
+    // are fixtures, and stating them here is what stops the list drifting.
+    expect(REQUIRED_CITIES.map((c) => c.name).sort()).toEqual(["Cusco", "Kyoto", "Zermatt"]);
+    expect(REQUIRED_DEDUPED).toEqual([
+      { country: "CN", id: "G1805753", name: "Jinan", qid: "Q170247" },
+    ]);
+  });
+
+  test("aborts when a known destination drops out of its shard", () => {
+    const shards = saneShards();
+    shards.set(
+      "PE",
+      shards.get("PE")!.filter((r) => r.id !== "G3941584")
+    );
+    expect(() => assertSane(shards, null)).toThrow(/Cusco \(G3941584\) is missing from the PE shard/);
+  });
+
+  test("aborts when a deduplicated city reappears", () => {
+    // If dedup silently stops working, Jinan comes back as G1805753 alongside
+    // Q170247 and the map draws two Jinans a kilometre apart.
+    const shards = saneShards();
+    shards.set("CN", [shardRow({ id: "G1805753", n: "Jinan" }), ...shards.get("CN")!]);
+    expect(() => assertSane(shards, null)).toThrow(/Jinan \(G1805753\) is in the CN shard/);
+  });
+
+  test("aborts when the country count moves off 246", () => {
+    // Spec §2.2: the gate's count assertion is 246 exactly, with a tolerance of
+    // 2 for a territory GeoNames adds or retires — not a floor. A floor cannot
+    // catch a FIRST run, and `previous` is null exactly then.
+    expect(() => assertSane(saneShards({ countries: 200 }), null)).toThrow(
+      /200 countries produced a shard, expected 246/
+    );
+    expect(() => assertSane(saneShards({ countries: 300 }), null)).toThrow(
+      /300 countries produced a shard, expected 246/
+    );
+  });
+
+  test("accepts one territory appearing or disappearing, but not three", () => {
+    expect(() => assertSane(saneShards({ countries: 247 }), null)).not.toThrow();
+    expect(() => assertSane(saneShards({ countries: 244 }), null)).not.toThrow();
+    expect(() => assertSane(saneShards({ countries: 243 }), null)).toThrow(/expected 246/);
+  });
+
+  test("aborts when a country only cities500 has is missing, whatever the total", () => {
+    // The check that actually tells the two dumps apart. cities15000 has 244
+    // countries, which is INSIDE the +/-2 tolerance above — so a run that
+    // fetched the wrong dump would pass the count and fail here instead. IO
+    // (2 cities) and TK (3) are the two cities500 adds.
+    expect(REQUIRED_COUNTRY_CODES).toEqual(["IO", "TK"]);
+    for (const code of REQUIRED_COUNTRY_CODES) {
+      const shards = saneShards();
+      shards.delete(code);
+      shards.set("ZZ", [shardRow({ id: "G424242" })]); // keep the total on 246
+      expect(() => assertSane(shards, null)).toThrow(
+        new RegExp(`${code} has no shard`)
+      );
+    }
+  });
+
+  test("aborts when the total city count falls below the floor", () => {
+    expect(() => assertSane(saneShards({ perCountry: 10 }), null)).toThrow(
+      /passed the filter, expected at least/
+    );
+  });
+
+  test("aborts when a country present in the previous run has disappeared", () => {
+    // §6 names this explicitly. A country that vanishes takes its whole
+    // drill-down with it, and the total can stay inside the 10% band while it
+    // happens — so the count checks cannot catch this on their own.
+    const before = saneShards();
+    const after = saneShards();
+    after.delete("AB");
+    expect(() => assertSane(after, previousIndex(before))).toThrow(
+      /1 country present last run is gone: AB/
+    );
+  });
+
+  test("accepts a country that is newly present", () => {
+    // Coverage may only grow: cities500 added IO and TK over cities15000.
+    const before = saneShards();
+    const after = saneShards();
+    after.set("ZZ", [shardRow({ id: "G999999" })]);
+    expect(() => assertSane(after, previousIndex(before))).not.toThrow();
+  });
+
+  test("aborts when the total shrinks more than the limit", () => {
+    const before = saneShards({ perCountry: 300 });
+    const after = saneShards({ perCountry: 260 });
+    expect(() => assertSane(after, previousIndex(before))).toThrow(/city count fell/);
+  });
+
+  test("aborts when the total grows more than the limit", () => {
+    const before = saneShards({ perCountry: 260 });
+    const after = saneShards({ perCountry: 300 });
+    expect(() => assertSane(after, previousIndex(before))).toThrow(/city count rose/);
+  });
+
+  test("accepts drift inside the limit", () => {
+    const before = saneShards({ perCountry: 300 });
+    const after = saneShards({ perCountry: 290 });
+    expect(() => assertSane(after, previousIndex(before))).not.toThrow();
+  });
+
+  test("aborts on a duplicate id inside one shard", () => {
+    const shards = saneShards();
+    shards.get("PE")!.push(shardRow({ id: "G3941584" }));
+    expect(() => assertSane(shards, null)).toThrow(/duplicate city id G3941584 in PE/);
+  });
+
+  test("aborts on an id that is not a GeoNames id", () => {
+    // A bare integer or a Q-id here would merge two namespaces silently, which
+    // §3.3 calls out as a real bug: MapExplorer.togglePlace resolves taps by
+    // matching this field against the catalog's Wikidata QIDs.
+    const shards = saneShards();
+    shards.get("PE")![0] = shardRow({ id: "Q170247" });
+    expect(() => assertSane(shards, null)).toThrow(/malformed city id "Q170247"/);
+    const numeric = saneShards();
+    numeric.get("PE")![0] = shardRow({ id: "3941584" });
+    expect(() => assertSane(numeric, null)).toThrow(/malformed city id "3941584"/);
+  });
+
+  test("aborts on an out-of-range coordinate", () => {
+    // Finite is not plausible: lat 394.5 is finite, and haversine's trig is
+    // periodic, so it silently behaves as 34.5 — the city relocates to a
+    // believable wrong place rather than erroring.
+    const lat = saneShards();
+    lat.get("PE")![0] = shardRow({ id: "G3941584", lat: 394.5 });
+    expect(() => assertSane(lat, null)).toThrow(/out-of-range latitude/);
+    const lon = saneShards();
+    lon.get("PE")![0] = shardRow({ id: "G3941584", lon: -200 });
+    expect(() => assertSane(lon, null)).toThrow(/out-of-range longitude/);
+  });
+
+  test("accepts the coordinate extremes", () => {
+    const shards = saneShards();
+    shards.get("PE")![1] = shardRow({ id: "G777", lat: -90, lon: 180 });
+    expect(() => assertSane(shards, null)).not.toThrow();
+  });
+
+  test("aborts on an empty name", () => {
+    const shards = saneShards();
+    shards.get("PE")![1] = shardRow({ id: "G777", n: "  " });
+    expect(() => assertSane(shards, null)).toThrow(/G777 has an empty name/);
+  });
+
+  test("aborts on a negative or non-finite population", () => {
+    const shards = saneShards();
+    shards.get("PE")![1] = shardRow({ id: "G777", p: Number.NaN });
+    expect(() => assertSane(shards, null)).toThrow(/G777 has a non-finite or negative population/);
+  });
+
+  test("aborts on a malformed country code", () => {
+    const shards = saneShards();
+    shards.set("PER", [shardRow({ id: "G777" })]);
+    expect(() => assertSane(shards, null)).toThrow(/malformed country code "PER"/);
+  });
+
+  test("aborts when a shard exceeds the per-country cut", () => {
+    const shards = saneShards();
+    shards.set(
+      "PE",
+      Array.from({ length: 800 }, (_, i) => shardRow({ id: `G${900_000 + i}`, p: 800 - i }))
+    );
+    expect(() => assertSane(shards, null)).toThrow(/PE has 800 cities, over the 750 limit/);
+  });
+
+  test("aborts when a shard is not in descending population order", () => {
+    // Display order is a promise the UI relies on rather than re-sorting, and
+    // a shard that quietly stops honouring it looks like a ranking bug in the
+    // browser instead of a build bug here.
+    const shards = saneShards();
+    shards.set("PE", [
+      shardRow({ id: "G3941584", n: "Cusco", p: 5 }),
+      shardRow({ id: "G777", p: 900 }),
+    ]);
+    expect(() => assertSane(shards, null)).toThrow(/PE is not in descending population order/);
+  });
+});
+
+describe("assertAdmin1Sane", () => {
+  test("accepts the real file's shape", () => {
+    expect(() => assertAdmin1Sane(saneAdmin1())).not.toThrow();
+  });
+
+  test("aborts when admin1CodesASCII.txt reshapes into almost nothing", () => {
+    // The second network source this ingest grew, and the only one no other
+    // check covers. A reshaped file parses to a near-empty Map, every `a1`
+    // silently becomes null, and 59,073 cities lose their province label —
+    // which no count, coordinate or fixture check would notice, because the
+    // shards are otherwise perfect. The daily job then commits and deploys it.
+    expect(() => assertAdmin1Sane(saneAdmin1(0))).toThrow(/only 0 admin-1 names/);
+    expect(() => assertAdmin1Sane(saneAdmin1(1_200))).toThrow(/expected about 3,865/);
+  });
+});
