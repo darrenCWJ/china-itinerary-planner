@@ -112,6 +112,13 @@ export function DestinationStep({
       selected.flatMap((id): PickedPlace[] => {
         const curatedHit = DESTINATIONS.find((d) => d.id === id);
         if (curatedHit) {
+          // `PickedPlace.country` means "the country being planned" — see its
+          // doc in components/plan/PlaceSearch.tsx, whose own producer stamps
+          // the open country on every kind, curated included. This branch and
+          // the off-map one below instead report the destination's own country,
+          // so they are the divergent two. That divergence predates this task;
+          // reconciling it belongs to Task 13, which owns PlaceSearch. Nothing
+          // here changes their behaviour.
           return [{
             id,
             name: curatedHit.name,
@@ -127,8 +134,15 @@ export function DestinationStep({
         }
         const hit = extras[id];
         if (hit) {
-          // The catalog is worldwide now, so a hit belongs to whichever country
-          // was open when it was picked — not, as this line used to say, China.
+          // The catalog is still China-only at this commit: PlaceSearch still
+          // holds CATALOG_COUNTRIES = new Set(["CN"]) and lib/server/catalog
+          // still fills LEGACY_CATALOG_COUNTRY. Task 13 is what widens it.
+          //
+          // And this stamps whichever country is open *now* — not the one that
+          // was open at pick time. `extras` is keyed by qid alone and is never
+          // cleared on a country change, while `country` sits in this memo's
+          // dependency array, so every catalog pick is re-stamped, retroactively,
+          // each time the scope changes.
           return [{ id, name: hit.name, kind: "catalog" as const, lat: null, lon: null, country }];
         }
         return [];

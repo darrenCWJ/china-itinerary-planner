@@ -31,6 +31,12 @@ describe("catalogCityToDestination", () => {
     expect(dest.suggestedDays[0]).toBeGreaterThanOrEqual(1);
   });
 
+  test("carries the city's own country rather than assuming the legacy default", () => {
+    // "JP" and not "CN" on purpose: with a CN fixture this assertion would pass
+    // even if the mapping hard-coded the legacy default, and prove nothing.
+    expect(catalogCityToDestination(city({ country: "JP" })).country).toBe("JP");
+  });
+
   test("maps provinces to app regions", () => {
     expect(catalogCityToDestination(city({ province: "Gansu" })).region).toBe("Northwest");
     expect(catalogCityToDestination(city({ province: "Zhejiang" })).region).toBe("East");

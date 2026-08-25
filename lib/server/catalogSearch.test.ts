@@ -51,7 +51,7 @@ fs.writeFileSync(fixturePath, JSON.stringify(FIXTURE), "utf8");
 process.env.CIP_CATALOG_PATH = fixturePath;
 
 // Imported after the override so the loader reads the fixture, not data/.
-const { searchCities } = await import("./catalog");
+const { resolveDestinations, searchCities } = await import("./catalog");
 
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -80,6 +80,67 @@ describe("searchCities — folding", () => {
     expect(names("luoyang")).toEqual(["Luoyang"]);
     expect(names("taian")).not.toContain("Luoyang");
     expect(names("zzzz")).toEqual([]);
+  });
+});
+
+/**
+ * The only branch production actually takes. Every one of the 695 cities in
+ * data/catalog.json omits `country`, and scripts/ingest-destinations.mjs emits
+ * no such key, so `LEGACY_CATALOG_COUNTRY` — not a value read off the artifact
+ * — is what every real read resolves to. The typed `CatalogCity` fixtures
+ * elsewhere all supply `country`, so they exercise the other branch.
+ *
+ * A raw JSON artifact is what makes this testable without a cast: a JSON
+ * literal is not typed as `CatalogCity`, so it may legally omit the field.
+ * `resolveDestinations` rather than `searchCities` because `CatalogHit` carries
+ * no country; this routes loadCatalog -> catalogCityToDestination and exposes
+ * the resolved value directly.
+ */
+describe("catalog country default — the field the artifact does not carry", () => {
+  const originalCatalogPath = process.env.CIP_CATALOG_PATH;
+
+  afterAll(() => {
+    process.env.CIP_CATALOG_PATH = originalCatalogPath;
+  });
+
+  test("fills CN for a country-less artifact, all the way through to a Destination", () => {
+    const countryless = {
+      generatedAt: "2026-01-01",
+      source: "test",
+      cities: [
+        {
+          qid: "Q1",
+          name: "Nanjing",
+          localName: "南京",
+          province: "Jiangsu",
+          lat: 32.06,
+          lon: 118.8,
+          population: 8000000,
+          description: null,
+          interests: [],
+          image: null,
+          level: "prefecture",
+        },
+      ],
+      attractions: [],
+    };
+    const file = path.join(os.tmpdir(), `cip-countryless-catalog-${process.pid}.json`);
+    fs.writeFileSync(file, JSON.stringify(countryless));
+    // Pin a distinct mtime: loadCatalog caches on mtimeMs, and two fixtures
+    // written in the same clock tick would silently serve the earlier one's
+    // cache, which would make this assertion prove nothing about this file.
+    const stamp = new Date("2020-01-01T00:00:00Z");
+    fs.utimesSync(file, stamp, stamp);
+    process.env.CIP_CATALOG_PATH = file;
+
+    try {
+      const resolved = resolveDestinations(["Q1"]);
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].country).toBe("CN");
+    } finally {
+      fs.unlinkSync(file);
+    }
   });
 });
 
