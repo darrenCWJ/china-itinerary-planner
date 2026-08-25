@@ -50,6 +50,8 @@
  */
 
 import { inflateRawSync } from 'node:zlib';
+import { foldPlaceName } from '../lib/foldPlaceName.ts';
+import { haversineKm } from '../lib/geo.ts';
 
 // ---------------------------------------------------------------------------
 // ZIP
@@ -291,4 +293,51 @@ export function topPerCountry(rows, perCountry = CITIES_PER_COUNTRY) {
     kept.set(country, list.slice(0, perCountry));
   }
   return kept;
+}
+
+// ---------------------------------------------------------------------------
+// Deduplication against the existing Wikidata catalog
+// ---------------------------------------------------------------------------
+
+/**
+ * How close two records have to be to be the same city, given their names
+ * already match. Cities are a few kilometres across and the two sources place
+ * their centres differently — GeoNames puts Jinan at 36.66833/116.99722 and
+ * Wikidata at 36.6667/116.9833, 1.2 km apart. 5 km covers that disagreement
+ * without reaching the next town.
+ */
+export const DEDUP_RADIUS_KM = 5;
+
+/**
+ * The GeoNames rows that are NOT already in the Wikidata catalog.
+ *
+ * The 695 existing China cities keep their Wikidata QIDs so their descriptions,
+ * images and interest tags survive and no trip data migrates — which means a
+ * GeoNames row for the same place is a duplicate, and the QID record is the
+ * richer one. Both halves of the test are needed: name alone collapses the two
+ * distinct Peruvian Cuscos 1,400 km apart, and distance alone collapses a city
+ * with its neighbouring district.
+ *
+ * Names fold through `foldPlaceName`, the same fold search uses, because the
+ * two sources disagree about apostrophes and diacritics: 23 of the 695 catalog
+ * names carry an apostrophe and 2 carry diacritics.
+ *
+ * Indexed by folded name so this is one pass rather than 695 x 750 haversines
+ * per country, and stable: the kept rows come back in the order they arrived,
+ * which is ranking order and is what decides who gets enriched.
+ */
+export function dropCatalogDuplicates(rows, catalogCities) {
+  if (catalogCities.length === 0) return [...rows];
+  const byName = new Map();
+  for (const city of catalogCities) {
+    const key = foldPlaceName(city.name);
+    const list = byName.get(key);
+    if (list) list.push(city);
+    else byName.set(key, [city]);
+  }
+  return rows.filter((row) => {
+    const twins = byName.get(foldPlaceName(row.name));
+    if (!twins) return true;
+    return !twins.some((twin) => haversineKm(row, twin) <= DEDUP_RADIUS_KM);
+  });
 }

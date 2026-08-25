@@ -412,3 +412,106 @@ describe("topPerCountry", () => {
     expect(topPerCountry([]).size).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// dropCatalogDuplicates
+// ---------------------------------------------------------------------------
+
+import { DEDUP_RADIUS_KM, dropCatalogDuplicates } from "./ingest-cities.mjs";
+
+/** Jinan as data/catalog.json really holds it (Q170247). */
+const JINAN_QID = { name: "Jinan", lat: 36.666666666, lon: 116.983333333 };
+
+describe("dropCatalogDuplicates", () => {
+  test("drops a GeoNames row that is the same city as an existing QID record", () => {
+    // GeoNames' Jinan is G1805753 at 36.66833/116.99722 — 1.2 km from the
+    // catalog's Q170247. Keeping both would put two Jinans on the map, and the
+    // QID one is the record with a description, an image and interest tags.
+    const rows = [
+      scorable({ id: "G1805753", name: "Jinan", country: "CN", lat: 36.66833, lon: 116.99722 }),
+    ];
+    expect(dropCatalogDuplicates(rows, [JINAN_QID])).toEqual([]);
+  });
+
+  test("keeps a row that shares a name with a QID city far away", () => {
+    // Name-only matching collapses genuinely distinct places that share a
+    // name — GeoNames has two Peruvian cities called Cusco, 1,400 km apart.
+    // Stated here with a second "Jinan" placed in Shenzhen, ~1,500 km south,
+    // because the catalog this dedups against is all-China.
+    const rows = [scorable({ id: "G1", name: "Jinan", country: "CN", lat: 22.5, lon: 114.0 })];
+    expect(dropCatalogDuplicates(rows, [JINAN_QID]).map((r: ScorableRow) => r.id)).toEqual(["G1"]);
+  });
+
+  test("keeps a row that is nearby but a different place", () => {
+    // Deliberately placed ~5 METRES from Jinan, not 40 km: distance alone
+    // would collapse the two, so what keeps this row is the name — and stating
+    // that at zero distance is the only way the test says so. Do NOT "fix"
+    // these coordinates to a realistic separation between a city and its
+    // neighbouring district: that makes the test pass against a distance-only
+    // implementation too, and it stops proving the name check exists.
+    const rows = [
+      scorable({ id: "G1", name: "Zhangqiu", country: "CN", lat: 36.6667, lon: 116.9833 }),
+    ];
+    expect(dropCatalogDuplicates(rows, [JINAN_QID]).map((r: ScorableRow) => r.id)).toEqual(["G1"]);
+  });
+
+  test("folds the name before comparing, so punctuation and accents cannot hide a duplicate", () => {
+    // 23 of the 695 catalog cities carry an apostrophe and 2 carry diacritics.
+    // GeoNames spells them differently, and an unfolded compare would let both
+    // spellings through as separate cities.
+    const rows = [
+      scorable({ id: "G1", name: "Xi'an", country: "CN", lat: 34.26, lon: 108.93 }),
+      scorable({ id: "G2", name: "Ürümqi", country: "CN", lat: 43.8, lon: 87.6 }),
+    ];
+    const catalog = [
+      { name: "Xian", lat: 34.26, lon: 108.93 },
+      { name: "Urumqi", lat: 43.8, lon: 87.6 },
+    ];
+    expect(dropCatalogDuplicates(rows, catalog)).toEqual([]);
+  });
+
+  test("treats the radius as inclusive at its boundary and exclusive past it", () => {
+    // One degree of latitude is 111.195 km, so 5/111.195 degrees is exactly
+    // the radius. Stated as a computed offset rather than a magic literal so
+    // the test says what it is testing.
+    const degreesPerKm = 1 / 111.19492664455873;
+    const atLimit = scorable({
+      id: "G1",
+      name: "Jinan",
+      country: "CN",
+      lat: JINAN_QID.lat + DEDUP_RADIUS_KM * degreesPerKm,
+      lon: JINAN_QID.lon,
+    });
+    const pastLimit = scorable({
+      id: "G2",
+      name: "Jinan",
+      country: "CN",
+      lat: JINAN_QID.lat + DEDUP_RADIUS_KM * 1.2 * degreesPerKm,
+      lon: JINAN_QID.lon,
+    });
+    expect(dropCatalogDuplicates([atLimit], [JINAN_QID])).toEqual([]);
+    expect(dropCatalogDuplicates([pastLimit], [JINAN_QID]).map((r: ScorableRow) => r.id)).toEqual(["G2"]);
+  });
+
+  test("is a no-op when there is nothing to dedup against", () => {
+    // Every country but China: the QID catalog is all-China, so 245 of the 246
+    // shards take this path.
+    const rows = [scorable({ id: "G1", country: "PE" }), scorable({ id: "G2", country: "PE" })];
+    expect(dropCatalogDuplicates(rows, []).map((r: ScorableRow) => r.id)).toEqual(["G1", "G2"]);
+  });
+
+  test("preserves the input order of what it keeps", () => {
+    // The caller hands it ranking order and expects ranking order back —
+    // reordering here would silently change which 30 cities get enriched.
+    const rows = [
+      scorable({ id: "G3", name: "Gamma", country: "CN" }),
+      scorable({ id: "G1", name: "Alpha", country: "CN" }),
+      scorable({ id: "G2", name: "Beta", country: "CN" }),
+    ];
+    expect(dropCatalogDuplicates(rows, []).map((r: ScorableRow) => r.id)).toEqual(["G3", "G1", "G2"]);
+  });
+
+  test("the radius is 5 km", () => {
+    expect(DEDUP_RADIUS_KM).toBe(5);
+  });
+});
