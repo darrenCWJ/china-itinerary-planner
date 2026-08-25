@@ -154,4 +154,23 @@ describe("resolveDestinations", () => {
     expect(resolved.map((d) => d.id)).toEqual(["beijing", "G2657928"]);
     expect(resolved.map((d) => d.country)).toEqual(["CN", "CH"]);
   });
+
+  test("drops a well-formed GeoNames id that the index does not hold", () => {
+    // The only id shape that reaches the GeoNames branch and finds nothing.
+    // "definitely-not-real" and "nope" above both fail `isGeoNamesId` and go
+    // down the *catalog* branch instead, so neither exercises the missing-entry
+    // arm — mutate it to `geoNamesCityToDestination(entry!)` and they stay
+    // green while this throws. G999999999 is absent from all 58,742 rows of
+    // data/cities-index.json.
+    //
+    // Worth its own test because a dropped id is a city the user picked
+    // silently vanishing from their plan: dropping is the intended answer, and
+    // throwing would take the rest of the ids down with it.
+    expect(() => resolveDestinations(["G999999999"])).not.toThrow();
+    expect(resolveDestinations(["G999999999"])).toEqual([]);
+    expect(resolveDestinations(["beijing", "G999999999", "G2657928"]).map((d) => d.id)).toEqual([
+      "beijing",
+      "G2657928",
+    ]);
+  });
 });
