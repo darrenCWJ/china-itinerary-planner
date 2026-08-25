@@ -341,3 +341,60 @@ export function dropCatalogDuplicates(rows, catalogCities) {
     return !twins.some((twin) => haversineKm(row, twin) <= DEDUP_RADIUS_KM);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Shard construction
+// ---------------------------------------------------------------------------
+
+/**
+ * Cities per country that get a Wikipedia summary and image at build time.
+ * Measured total across 246 countries: 6,244 — fewer than 246 x 30 because
+ * most countries have fewer than 30 cities in cities500. Everything else is
+ * enriched lazily on first selection.
+ */
+export const ENRICH_PER_COUNTRY = 30;
+
+/**
+ * The per-country shards, plus the enrichment target list ranking order would
+ * otherwise throw away.
+ *
+ * Order of operations is load-bearing: cut to `perCountry` FIRST, dedup
+ * SECOND. Reversing them lets China backfill the 337 slots its QID cities
+ * occupy with rank-751-and-below rows — 750 GeoNames cities on top of 695
+ * Wikidata ones, which is not what "top 750 per country" means.
+ *
+ * `shards` are in display order (population descending) because §3.2 says the
+ * score decides inclusion only and must never surface in the UI. `targets` are
+ * in ranking order because notability, not size, is what makes a description
+ * worth fetching ahead of time.
+ */
+export function buildCities(rows, admin1Codes, catalogCities, perCountry = CITIES_PER_COUNTRY) {
+  const ranked = topPerCountry(rows, perCountry);
+  const shards = new Map();
+  const targets = new Map();
+  let total = 0;
+  for (const country of [...ranked.keys()].sort()) {
+    const kept = dropCatalogDuplicates(ranked.get(country), catalogCities);
+    // An empty shard is a file the client would fetch and learn nothing from.
+    if (kept.length === 0) continue;
+    targets.set(country, kept.slice(0, ENRICH_PER_COUNTRY).map((row) => row.id));
+    const display = [...kept].sort((a, b) => b.population - a.population || a.id.localeCompare(b.id));
+    shards.set(
+      country,
+      display.map((row) => ({
+        id: row.id,
+        n: row.name,
+        lat: row.lat,
+        lon: row.lon,
+        // `?? null`, not `?? row.admin1Code`: this value is rendered to the
+        // user as a province, and "22" is not a province of Japan. A Map
+        // lookup, so a code spelled "constructor" cannot resolve to a function.
+        a1: admin1Codes.get(`${country}.${row.admin1Code}`) ?? null,
+        p: row.population,
+        tz: row.timezone,
+      }))
+    );
+    total += display.length;
+  }
+  return { shards, targets, total };
+}
