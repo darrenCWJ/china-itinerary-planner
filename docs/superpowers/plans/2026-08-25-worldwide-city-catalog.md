@@ -62,7 +62,7 @@
 | `lib/data/north.ts`, `lib/data/east.ts`, `lib/data/west.ts`, `lib/data/south.ts` | Modify | Explicit `country: "CN"` on all 16 destinations. |
 | `lib/data/destinations.test.ts` | Create | Node-project tests that all sixteen curated destinations name a country and that it is `CN`. |
 | `lib/tripShared.ts` | Modify | Comment only — `tripCountry`'s `?? "CN"` is a persistence backfill and stays. |
-| `lib/tripShared.test.ts` | **Modify** | Already exists with 13 tests, including the currency-pivot regressions (`Critical 1`, `J-C1`). Task 10 **appends to its `tripCountry` docblock only** — it must not be recreated. |
+| `lib/tripShared.test.ts` | **Modify** | Already exists with 12 tests, including the currency-pivot regressions (`Critical 1`, `J-C1`). Task 10 **appends to its `tripCountry` docblock only** — it must not be recreated. |
 | `lib/wall.test.ts` | Modify | Pin the wall's behaviour for `/cities/*.json`. |
 | `components/plan/PlaceSearch.tsx` | Modify | Delete `CATALOG_COUNTRIES`; search the active country's shard. |
 | `components/plan/PlaceSearch.test.tsx` | Modify | Invert the "does not offer Chinese cities" assertion into shard scoping. |
@@ -4237,7 +4237,7 @@ export function cityIndexStatus(): { cities: number; generatedAt: string } {
 - Modify: `lib/tripShared.ts:17-25` (comment only)
 - Modify: `lib/server/catalog.ts:8` (import), `:19` (`CatalogCity.country`), `:68-82` (`normaliseCatalog`), `:292` (`catalogCityToDestination`'s returned object)
 - Test: `lib/data/destinations.test.ts` (create)
-- Test: `lib/tripShared.test.ts` — **already exists with 13 tests; append to one docblock only. Do NOT create or overwrite it.**
+- Test: `lib/tripShared.test.ts` — **already exists with 12 tests; append to one docblock only. Do NOT create or overwrite it.**
 
 **Interfaces:**
 - Consumes: `CountryCode` (`lib/countries.ts:2`, `export type CountryCode = string`).
@@ -4306,7 +4306,7 @@ describe("DESTINATIONS", () => {
 });
 ```
 
-  **`lib/tripShared.test.ts` already exists** — 127 lines, 13 tests, including the currency-pivot regressions this project's memory records as `Critical 1` and `J-C1`. Do **not** create it, and do not overwrite it: the two `tripCountry` cases this task would have added are already there verbatim —
+  **`lib/tripShared.test.ts` already exists** — 127 lines, 12 tests, including the currency-pivot regressions this project's memory records as `Critical 1` and `J-C1`. Do **not** create it, and do not overwrite it: the two `tripCountry` cases this task would have added are already there verbatim —
 
   ```typescript
   test("reads a trip saved before the field existed as China", () => {
@@ -4330,7 +4330,7 @@ describe("DESTINATIONS", () => {
   npx vitest run --project node lib/data/destinations.test.ts lib/tripShared.test.ts
   ```
 
-  Expected: `lib/tripShared.test.ts` passes all 13 of its existing tests (the comment added above changes no behaviour; if the count is not 13, the file was overwritten — restore it from git before going on). `lib/data/destinations.test.ts` fails on **two** of its four tests: `every destination names its country explicitly` with `destinations with no ISO alpha-2 country: beijing, xian, qingdao, harbin, shanghai, hangzhou, suzhou, xiamen, chengdu, chongqing, guilin, zhangjiajie, yunnan, sanya, guangzhou, shenzhen`, and `all sixteen are in China` with `expected [ undefined ] to equal [ 'CN' ]`.
+  Expected: `lib/tripShared.test.ts` passes all **12** of its existing tests (the comment added above changes no behaviour; if the count *drops*, the file was overwritten — check `git diff` and restore only the lost cases). `lib/data/destinations.test.ts` fails on **three** of its four tests — `getDestination still resolves by id` also asserts `country`: `every destination names its country explicitly` with `destinations with no ISO alpha-2 country: beijing, xian, qingdao, harbin, shanghai, hangzhou, suzhou, xiamen, chengdu, chongqing, guilin, zhangjiajie, yunnan, sanya, guangzhou, shenzhen`, and `all sixteen are in China` with `expected [ undefined ] to equal [ 'CN' ]`.
 
 - [ ] **Step 3: Make `country` required and answer it everywhere**
 
