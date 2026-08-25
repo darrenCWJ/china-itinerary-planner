@@ -4,11 +4,11 @@ import { foldPlaceName } from "./foldPlaceName";
 import { curatedPlaceNames } from "./curatedNames";
 
 /**
- * One list, three readers. `lib/server/catalog.ts` filters the Wikidata
- * catalog with it, `PlaceSearch` filters the GeoNames shard with it, and
- * `MapExplorer` filters the map's markers with it — and before this module
- * existed only the first of those did, so a curated card and a bare shard row
- * for the same place could both be offered at once.
+ * One list, written for three readers. `lib/server/catalog.ts` filters the
+ * Wikidata catalog with it today; `PlaceSearch` (the GeoNames shard) and
+ * `MapExplorer` (the map's markers) are still to be switched over. Before this
+ * module existed the list was private to the first of those, so a curated card
+ * and a bare shard row for the same place could both be offered at once.
  */
 
 describe("curatedPlaceNames", () => {
@@ -20,10 +20,11 @@ describe("curatedPlaceNames", () => {
   });
 
   test("covers the places a curated destination plans but does not name", () => {
-    // "Guilin & Yangshuo" is one card. Yangshuo has no catalog.json row of its
-    // own, so it survives the ingest's dedup and lands in the CN shard — and
-    // without this list the picker offers a bare "Yangshuo" chip beside the
-    // curated card that already plans three days there.
+    // "Guilin & Yangshuo" is one card, so a shard row spelled plainly
+    // "Yangshuo" would be offered as a second chip beside it. Of these six,
+    // only "Dali" is in the committed public/cities/CN.json today — the rest
+    // are forward defence against a nightly re-ingest that promotes one of
+    // them into China's cut. See lib/curatedNames.ts for the measurement.
     for (const name of ["Guilin", "Yangshuo", "Kunming", "Dali", "Lijiang", "Zhangjiajie"]) {
       expect(curatedPlaceNames("CN").has(foldPlaceName(name))).toBe(true);
     }

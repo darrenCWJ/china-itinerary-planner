@@ -66,6 +66,15 @@ const FIXTURE: Catalog = {
     // empty corpus and would pass with no blocklist at all — the assertion
     // needs something present that has to be filtered OUT.
     city({ qid: "Q8", name: "Dali", province: "Yunnan", country: "CN", lat: 25.6, lon: 100.27 }),
+    // Carries an ISO alpha-3 where an alpha-2 belongs, which is the one thing
+    // no real row can: all 695 cities in data/catalog.json omit `country`
+    // entirely and resolve to "CN" at the read boundary. `CatalogCity.country`
+    // is `CountryCode = string` and `withCityDefaults` does not validate, so
+    // this is a legal fixture — and without it "a malformed country is empty"
+    // is satisfied by an implementation with no validation at all: "CHN" would
+    // simply match no row and the assertion would pass anyway. This row is
+    // what makes deleting the validation observable.
+    city({ qid: "Q9", name: "Bogota", province: "Cundinamarca", country: "CHN", lat: 4.7, lon: -74.1 }),
   ],
   attractions: [],
 };
@@ -142,6 +151,15 @@ describe("searchCities — country scoping", () => {
     expect(names("luoyang", "")).toEqual([]);
     expect(names("luoyang", "CHN")).toEqual([]);
   });
+
+  test("an alpha-3 is rejected rather than matched against a row that carries one", () => {
+    // The half the assertion above cannot make. Q9 is the only row whose
+    // `country` is a three-letter code, so it is reachable if and only if
+    // "CHN" survives normalisation. Drop the validation and this fails while
+    // every other assertion in the file stays green.
+    expect(names("bogota", "CHN")).toEqual([]);
+    expect(names("bogota", "CO")).toEqual([]);
+  });
 });
 
 /**
@@ -178,6 +196,13 @@ describe("mapCities — country scoping", () => {
     // parse must draw nothing, not the whole China catalog.
     expect(mapCities("")).toEqual([]);
     expect(mapCities("CHN")).toEqual([]);
+  });
+
+  test("an alpha-3 is rejected rather than matched against a row that carries one", () => {
+    // `searchCities`'s Bogota assertion, made again here because `mapCities`
+    // is a second copy of the same filter: without this, deleting only
+    // `mapCities`'s normalisation would draw a marker and nothing would say so.
+    expect(markers("CHN")).toEqual([]);
   });
 });
 

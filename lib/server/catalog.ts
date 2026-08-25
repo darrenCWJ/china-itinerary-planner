@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import bundledCatalogJson from "../../data/catalog.json";
+import { getCountry } from "../countries";
 import { curatedPlaceNames } from "../curatedNames";
 import { DESTINATIONS } from "../data";
 import { foldPlaceName } from "../foldPlaceName";
@@ -181,10 +182,18 @@ export function catalogStatus(): { available: boolean; generatedAt?: string; cit
   };
 }
 
-/** Normalised the way `getCountry` normalises, so " cn " and "CN" agree. */
+/**
+ * Normalised through `getCountry`, so " cn " and "CN" agree and anything that
+ * is not a country code — "CHN", "C", a non-string — comes back as `""`.
+ *
+ * `getCountry` rather than a local trim/uppercase/regex: `lib/countries.ts`
+ * owns what an acceptable code is, and `lib/cityShard.ts` — the client half of
+ * this same country scoping — already asks it through `isCountryCode`. A
+ * second copy of the rule here would let the two halves drift apart on the one
+ * value this whole phase scopes everything by.
+ */
 function normaliseCountryCode(country: string): string {
-  const code = typeof country === "string" ? country.trim().toUpperCase() : "";
-  return /^[A-Z]{2}$/.test(code) ? code : "";
+  return getCountry(country).code;
 }
 
 /**
