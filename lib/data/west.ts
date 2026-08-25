@@ -9,6 +9,7 @@ export const WEST_DESTINATIONS: Destination[] = [
     name: "Chengdu",
     localName: "成都",
     region: "Southwest",
+    country: "CN",
     emoji: "🐼",
     tagline: "Pandas, peppercorns and teahouse life",
     knownFor: [
@@ -84,6 +85,7 @@ export const WEST_DESTINATIONS: Destination[] = [
     name: "Chongqing",
     localName: "重庆",
     region: "Southwest",
+    country: "CN",
     emoji: "🌶️",
     tagline: "Cyberpunk mountain city of hotpot and neon",
     knownFor: [
@@ -158,6 +160,7 @@ export const WEST_DESTINATIONS: Destination[] = [
     name: "Guilin & Yangshuo",
     localName: "桂林·阳朔",
     region: "South",
+    country: "CN",
     emoji: "🏞️",
     tagline: "Karst peaks and the Li River — the ¥20-note landscape",
     knownFor: [
@@ -233,6 +236,7 @@ export const WEST_DESTINATIONS: Destination[] = [
     name: "Zhangjiajie",
     localName: "张家界",
     region: "Central",
+    country: "CN",
     emoji: "⛰️",
     tagline: "The floating mountains that inspired Avatar",
     knownFor: [
@@ -297,6 +301,7 @@ export const WEST_DESTINATIONS: Destination[] = [
     name: "Yunnan (Kunming · Dali · Lijiang)",
     localName: "云南",
     region: "Southwest",
+    country: "CN",
     emoji: "🌄",
     tagline: "Eternal spring — old towns, snow mountains and lake loops",
     knownFor: [

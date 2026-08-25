@@ -173,9 +173,9 @@ export function MapExplorer({
 
   const places = useMemo<MapPlace[]>(() => {
     const curated = DESTINATIONS.filter(
-      // Curated data carries no country until PR4's pivot, so an absent one
-      // means China — the country every existing destination is in.
-      (d) => !visited.includes(d.id) && (d.country ?? "CN") === countryCode
+      // Every destination states its own country, so there is no default here
+      // that a non-Chinese destination could fall through.
+      (d) => !visited.includes(d.id) && d.country === countryCode
     ).flatMap(
       (d): MapPlace[] => {
         // A place with no coordinates cannot be drawn on a map or routed

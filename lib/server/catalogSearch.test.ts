@@ -16,6 +16,7 @@ import type { Catalog, CatalogCity } from "./catalog";
 const city = (over: Partial<CatalogCity> & Pick<CatalogCity, "qid" | "name">): CatalogCity => ({
   localName: null,
   province: "Shandong",
+  country: "CN",
   lat: 36.6,
   lon: 117.0,
   population: 7_000_000,

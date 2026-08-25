@@ -116,7 +116,9 @@ export default function PlanPage() {
       // union. Nothing reads it for a place with no coordinates, so this is a
       // placeholder, not a claim.
       region: "Central",
-      country: "CN",
+      // The country that is actually open. Hard-coding "CN" here put every
+      // hand-typed place in China regardless of the trip it was typed into.
+      country,
       lat: null,
       lon: null,
       emoji: "📍",

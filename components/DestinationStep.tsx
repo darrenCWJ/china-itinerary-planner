@@ -60,13 +60,13 @@ export function DestinationStep({
   const countryLabel = activeCountry.name || activeCountry.code || "this country";
 
   /**
-   * Curated data carries no country until PR4's pivot, so an absent one means
-   * China. Offers are scoped: browsing Japan must not offer Chinese cities.
-   * Resolution of *already picked* ids still reads the whole set below, so
-   * switching country never orphans a chip.
+   * Offers are scoped: browsing Japan must not offer Chinese cities. Every
+   * destination states its own country now, so there is no default to get
+   * wrong. Resolution of *already picked* ids still reads the whole set below,
+   * so switching country never orphans a chip.
    */
   const countryDestinations = useMemo(
-    () => DESTINATIONS.filter((d) => (d.country ?? "CN") === activeCountry.code),
+    () => DESTINATIONS.filter((d) => d.country === activeCountry.code),
     [activeCountry.code]
   );
 
@@ -118,20 +118,22 @@ export function DestinationStep({
             kind: "curated" as const,
             lat: curatedHit.lat,
             lon: curatedHit.lon,
-            country: curatedHit.country ?? "CN",
+            country: curatedHit.country,
           }];
         }
         const off = offMap.find((d) => d.id === id);
         if (off) {
-          return [{ id, name: off.name, kind: "off-map" as const, lat: null, lon: null, country: off.country ?? "CN" }];
+          return [{ id, name: off.name, kind: "off-map" as const, lat: null, lon: null, country: off.country }];
         }
         const hit = extras[id];
         if (hit) {
-          return [{ id, name: hit.name, kind: "catalog" as const, lat: null, lon: null, country: "CN" }];
+          // The catalog is worldwide now, so a hit belongs to whichever country
+          // was open when it was picked — not, as this line used to say, China.
+          return [{ id, name: hit.name, kind: "catalog" as const, lat: null, lon: null, country }];
         }
         return [];
       }),
-    [selected, extras, offMap]
+    [selected, extras, offMap, country]
   );
 
   /**

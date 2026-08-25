@@ -9,6 +9,7 @@ export const SOUTH_DESTINATIONS: Destination[] = [
     name: "Sanya",
     localName: "三亚",
     region: "South",
+    country: "CN",
     emoji: "🏖️",
     tagline: "China's tropical beach playground on Hainan island",
     knownFor: [
@@ -85,6 +86,7 @@ export const SOUTH_DESTINATIONS: Destination[] = [
     name: "Guangzhou",
     localName: "广州",
     region: "South",
+    country: "CN",
     emoji: "🥟",
     tagline: "Cantonese food capital on the Pearl River",
     knownFor: [
@@ -159,6 +161,7 @@ export const SOUTH_DESTINATIONS: Destination[] = [
     name: "Shenzhen",
     localName: "深圳",
     region: "South",
+    country: "CN",
     emoji: "🎮",
     tagline: "Tech metropolis of gadgets, gaming and theme parks",
     knownFor: [

@@ -9,6 +9,7 @@ function city(overrides: Partial<CatalogCity> = {}): CatalogCity {
     name: "Luoyang",
     localName: "洛阳",
     province: "Henan",
+    country: "CN",
     lat: 34.6,
     lon: 112.4,
     population: 7000000,
