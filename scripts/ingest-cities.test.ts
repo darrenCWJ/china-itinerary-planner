@@ -418,9 +418,61 @@ describe("topPerCountry", () => {
 // ---------------------------------------------------------------------------
 
 import { DEDUP_RADIUS_KM, dropCatalogDuplicates } from "./ingest-cities.mjs";
+import { haversineKm } from "@/lib/geo";
 
 /** Jinan as data/catalog.json really holds it (Q170247). */
 const JINAN_QID = { name: "Jinan", lat: 36.666666666, lon: 116.983333333 };
+
+/**
+ * The smallest double strictly greater than a positive `x` — one bit up in
+ * the IEEE 754 representation, i.e. the very next representable number.
+ */
+function nextDoubleUp(x: number): number {
+  const buf = new ArrayBuffer(8);
+  const asFloat = new Float64Array(buf);
+  const asBits = new BigUint64Array(buf);
+  asFloat[0] = x;
+  asBits[0] = asBits[0] + BigInt(1);
+  return asFloat[0];
+}
+
+/**
+ * Derives the tightest possible pair of fixtures for pinning `<=` in
+ * `dropCatalogDuplicates`: a latitude whose real haversine distance from the
+ * origin is bit-exact `DEDUP_RADIUS_KM`, and the very next representable
+ * latitude past it.
+ *
+ * Exact 5.000000...km is NOT reachable near real coordinates — bisecting
+ * near Jinan's actual ~36.7N lands on 4.999999999999912, and the next
+ * representable latitude there jumps straight past to 5.0000000000007025,
+ * skipping over the tie entirely (floating-point ULPs at that magnitude are
+ * coarser than the distance function's own precision). Bisecting from the
+ * equator/prime-meridian instead works: latitude doubles are far smaller in
+ * magnitude there, so adjacent representable values sit close enough
+ * together that the computed distance actually lands exactly on the double
+ * `5`, with the next representable latitude landing a few femtometres past
+ * it — nowhere near the 1 km slack the old fixture used.
+ *
+ * Bisecting with the real `haversineKm` (the same function
+ * `dropCatalogDuplicates` calls internally) rather than hand-deriving trig
+ * keeps this self-consistent with whatever a given JS engine's
+ * Math.sin/cos/asin actually return, on whatever machine runs this suite.
+ */
+function findBoundaryLatitudes(): { atLimitLat: number; justPastLimitLat: number } {
+  const origin = { lat: 0, lon: 0 };
+  let lo = 0; // distance 0 km — certainly within the radius
+  let hi = DEDUP_RADIUS_KM; // degrees: ~555 km, certainly past the radius
+  // Bisection over representable doubles terminates once lo and hi are
+  // adjacent — (lo + hi) / 2 then rounds back to whichever endpoint it's
+  // closer to, and the loop stops.
+  while (true) {
+    const mid = (lo + hi) / 2;
+    if (mid === lo || mid === hi) break;
+    if (haversineKm(origin, { lat: mid, lon: 0 }) <= DEDUP_RADIUS_KM) lo = mid;
+    else hi = mid;
+  }
+  return { atLimitLat: lo, justPastLimitLat: nextDoubleUp(lo) };
+}
 
 describe("dropCatalogDuplicates", () => {
   test("drops a GeoNames row that is the same city as an existing QID record", () => {
@@ -471,26 +523,34 @@ describe("dropCatalogDuplicates", () => {
   });
 
   test("treats the radius as inclusive at its boundary and exclusive past it", () => {
-    // One degree of latitude is 111.195 km, so 5/111.195 degrees is exactly
-    // the radius. Stated as a computed offset rather than a magic literal so
-    // the test says what it is testing.
-    const degreesPerKm = 1 / 111.19492664455873;
-    const atLimit = scorable({
-      id: "G1",
-      name: "Jinan",
-      country: "CN",
-      lat: JINAN_QID.lat + DEDUP_RADIUS_KM * degreesPerKm,
-      lon: JINAN_QID.lon,
-    });
-    const pastLimit = scorable({
-      id: "G2",
-      name: "Jinan",
-      country: "CN",
-      lat: JINAN_QID.lat + DEDUP_RADIUS_KM * 1.2 * degreesPerKm,
-      lon: JINAN_QID.lon,
-    });
-    expect(dropCatalogDuplicates([atLimit], [JINAN_QID])).toEqual([]);
-    expect(dropCatalogDuplicates([pastLimit], [JINAN_QID]).map((r: ScorableRow) => r.id)).toEqual(["G2"]);
+    // A prior version of this test placed `atLimit` at a computed offset from
+    // JINAN_QID that *looked* boundary-exact but whose true haversine
+    // distance was 4.999999999999912 km — strictly inside the radius under
+    // both `<=` and `<`. It could not fail even with the implementation's
+    // `<=` mutated to `<`; it asserted nothing about the boundary at all.
+    //
+    // This version fixes that by deriving fixtures whose distance from a
+    // synthetic catalog city at the origin (0, 0) is bit-exact
+    // `DEDUP_RADIUS_KM`, via `findBoundaryLatitudes` above — using (0, 0)
+    // rather than JINAN_QID's real coordinates is what makes hitting that
+    // exact tie possible at all (see that function's comment). Asserting the
+    // computed distances explicitly documents exactly what is pinned, rather
+    // than leaving the reader to assume a bit-exact 5.000000 km that ordinary
+    // lat/lon arithmetic cannot generally produce.
+    const { atLimitLat, justPastLimitLat } = findBoundaryLatitudes();
+    const origin = { name: "Jinan", lat: 0, lon: 0 };
+
+    expect(haversineKm(origin, { lat: atLimitLat, lon: 0 })).toBe(DEDUP_RADIUS_KM);
+    expect(haversineKm(origin, { lat: justPastLimitLat, lon: 0 })).toBeGreaterThan(DEDUP_RADIUS_KM);
+
+    const atLimit = scorable({ id: "G1", name: "Jinan", country: "CN", lat: atLimitLat, lon: 0 });
+    const pastLimit = scorable({ id: "G2", name: "Jinan", country: "CN", lat: justPastLimitLat, lon: 0 });
+
+    // At the tie, `<=` must drop the row as a duplicate. This is the
+    // assertion an implementation using `<` instead of `<=` fails.
+    expect(dropCatalogDuplicates([atLimit], [origin])).toEqual([]);
+    // One representable double past the tie, the row must survive.
+    expect(dropCatalogDuplicates([pastLimit], [origin]).map((r: ScorableRow) => r.id)).toEqual(["G2"]);
   });
 
   test("is a no-op when there is nothing to dedup against", () => {
