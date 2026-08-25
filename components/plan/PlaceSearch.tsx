@@ -24,7 +24,16 @@ export interface PickedPlace {
   /** Null for off-map places — hand-typed, no location attached (spec §5.6). */
   lat: number | null;
   lon: number | null;
-  /** ISO alpha-2 of the country being planned. */
+  /**
+   * ISO alpha-2 of the *country being planned* — the scope that is open in the
+   * picker, not the country the place itself sits in. Those are two different
+   * questions and this field answers only the first: this component stamps the
+   * open `country` on every pick, of every kind, curated included.
+   *
+   * DestinationStep rebuilds this array itself and its curated and off-map
+   * branches still answer the second question; see the note there. Reconciling
+   * them is Task 13’s, which owns this component.
+   */
   country: string;
 }
 

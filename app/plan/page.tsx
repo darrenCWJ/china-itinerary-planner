@@ -115,7 +115,7 @@ export default function PlanPage() {
       // Region is required — a plain string now that PR3 retired the Region
       // union. Nothing reads it for a place with no coordinates, so this is a
       // placeholder, not a claim.
-      region: "Central",
+      region: "",
       // The country that is actually open. Hard-coding "CN" here put every
       // hand-typed place in China regardless of the trip it was typed into.
       country,

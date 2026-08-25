@@ -94,7 +94,11 @@ function withLocalName<T extends LegacyNamed>(row: T): T {
 const LEGACY_CATALOG_COUNTRY: CountryCode = "CN";
 
 function withCityDefaults(row: CatalogCity): CatalogCity {
-  const legacy = row as CatalogCity & { country?: CountryCode };
+  // `Omit` matters: in a plain intersection the required `country` wins over
+  // the optional one, so `legacy.country` would still be non-nullable and the
+  // default below would be dead weight the compiler never checks. Written this
+  // way, dropping the `??` is a type error.
+  const legacy = row as Omit<CatalogCity, "country"> & { country?: CountryCode };
   return { ...withLocalName(row), country: legacy.country ?? LEGACY_CATALOG_COUNTRY };
 }
 
