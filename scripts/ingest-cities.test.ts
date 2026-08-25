@@ -575,3 +575,139 @@ describe("dropCatalogDuplicates", () => {
     expect(DEDUP_RADIUS_KM).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildCities
+// ---------------------------------------------------------------------------
+
+import { ENRICH_PER_COUNTRY, buildCities } from "./ingest-cities.mjs";
+
+/**
+ * Mirrors spec §2.2's seven-field shard record. `buildCities` returns a bare
+ * `Map` from a `.mjs` module with no type info, so a callback consuming a
+ * shard row needs this annotation to avoid TS7006 implicit-any — the same
+ * pattern `ScorableRow` already establishes above for `topPerCountry`.
+ */
+interface ShardRow {
+  id: string;
+  n: string;
+  lat: number;
+  lon: number;
+  a1: string | null;
+  p: number;
+  tz: string;
+}
+
+const ADMIN1 = parseAdmin1Codes(
+  ["CH.VS\tValais\tValais\t2658205", "PE.08\tCusco\tCusco\t3937483"].join("\n")
+);
+
+describe("buildCities", () => {
+  test("emits the seven-field record with the admin-1 code resolved to a name", () => {
+    const { shards } = buildCities(
+      [scorable({ id: "G2657928", name: "Zermatt", country: "CH", admin1Code: "VS", lat: 46.01998, lon: 7.74863, population: 6_629, timezone: "Europe/Zurich" })],
+      ADMIN1,
+      []
+    );
+    expect(shards.get("CH")).toEqual([
+      {
+        id: "G2657928",
+        n: "Zermatt",
+        lat: 46.01998,
+        lon: 7.74863,
+        a1: "Valais",
+        p: 6_629,
+        tz: "Europe/Zurich",
+      },
+    ]);
+  });
+
+  test("leaves a1 null when the admin-1 code has no entry rather than shipping the raw code", () => {
+    // 117 real rows have a blank admin1 column, and some codes have no row in
+    // admin1CodesASCII.txt. `a1` becomes CatalogHit.province and is rendered to
+    // the user — "22" is not a province of Japan, and null renders as nothing.
+    const { shards } = buildCities(
+      [scorable({ id: "G1", country: "CH", admin1Code: "ZZ" }), scorable({ id: "G2", country: "CH", admin1Code: "" })],
+      ADMIN1,
+      []
+    );
+    expect(shards.get("CH")!.map((r: ShardRow) => r.a1)).toEqual([null, null]);
+  });
+
+  test("sorts each shard by population descending, not by score", () => {
+    // §3.2: ranking decides inclusion only. Dunkirk outranks Lyon on score
+    // because wartime fame inflates alternate names; the user must never see
+    // that.
+    const dunkirk = scorable({ id: "G1", name: "Dunkirk", country: "FR", altNameCount: 40, population: 87_000 });
+    const lyon = scorable({ id: "G2", name: "Lyon", country: "FR", altNameCount: 20, population: 522_000 });
+    const { shards } = buildCities([dunkirk, lyon], ADMIN1, []);
+    expect(shards.get("FR")!.map((r: ShardRow) => r.n)).toEqual(["Lyon", "Dunkirk"]);
+  });
+
+  test("breaks an equal-population display tie by id so a rebuild is byte-stable", () => {
+    const { shards } = buildCities(
+      [
+        scorable({ id: "G9", country: "FR", population: 500 }),
+        scorable({ id: "G2", country: "FR", population: 500 }),
+      ],
+      ADMIN1,
+      []
+    );
+    expect(shards.get("FR")!.map((r: ShardRow) => r.id)).toEqual(["G2", "G9"]);
+  });
+
+  test("applies the per-country cut before deduplication, not after", () => {
+    // Order matters: cutting after dedup would let a China shard backfill the
+    // 337 slots the QID cities occupy with rank-751-and-below rows, quietly
+    // handing China 750 GeoNames cities *plus* 695 QID ones.
+    const rows = [
+      scorable({ id: "G1", name: "Jinan", country: "CN", lat: 36.66833, lon: 116.99722, population: 4_335_989, altNameCount: 70 }),
+      scorable({ id: "G2", name: "Elsewhere", country: "CN", population: 10 }),
+    ];
+    const { shards } = buildCities(rows, ADMIN1, [{ name: "Jinan", lat: 36.6667, lon: 116.9833 }], 1);
+    // Rank 1 was Jinan and dedup removed it; rank 2 does not move up, so the
+    // country produces no shard at all rather than a one-city one.
+    expect(shards.has("CN")).toBe(false);
+  });
+
+  test("names the top thirty by RANK, not by population, as enrichment targets", () => {
+    // The disagreement is the point: a photogenic village outranks a bigger
+    // dull town on score, and it is the village whose description a traveller
+    // wants at build time rather than after a lazy fetch.
+    const village = scorable({ id: "G1", name: "Zermatt", country: "CH", altNameCount: 22, population: 6_629 });
+    const town = scorable({ id: "G2", name: "Bulle", country: "CH", altNameCount: 3, population: 23_000 });
+    const { shards, targets } = buildCities([village, town], ADMIN1, []);
+    expect(shards.get("CH")!.map((r: ShardRow) => r.n)).toEqual(["Bulle", "Zermatt"]);
+    expect(targets.get("CH")).toEqual(["G1", "G2"]);
+  });
+
+  test("caps the enrichment target list at thirty per country", () => {
+    expect(ENRICH_PER_COUNTRY).toBe(30);
+    const rows = Array.from({ length: 40 }, (_, i) =>
+      scorable({ id: `G${100 + i}`, country: "CH", altNameCount: 40 - i })
+    );
+    expect(buildCities(rows, ADMIN1, []).targets.get("CH")).toHaveLength(30);
+  });
+
+  test("reports the total across every country", () => {
+    const rows = [
+      scorable({ id: "G1", country: "CH" }),
+      scorable({ id: "G2", country: "PE" }),
+      scorable({ id: "G3", country: "PE" }),
+    ];
+    const { total, shards } = buildCities(rows, ADMIN1, []);
+    expect(total).toBe(3);
+    expect([...shards.keys()].sort()).toEqual(["CH", "PE"]);
+  });
+
+  test("drops a country whose every row was deduplicated rather than emitting an empty shard", () => {
+    // An empty shard is a file the client fetches, parses and learns nothing
+    // from; absent from the index it is never requested.
+    const { shards } = buildCities(
+      [scorable({ id: "G1", name: "Jinan", country: "CN", lat: 36.6667, lon: 116.9833 })],
+      ADMIN1,
+      [{ name: "Jinan", lat: 36.6667, lon: 116.9833 }]
+    );
+    expect(shards.has("CN")).toBe(false);
+  });
+});
