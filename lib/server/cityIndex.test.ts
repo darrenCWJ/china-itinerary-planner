@@ -52,9 +52,12 @@ describe("readCityIndex", () => {
   });
 
   test("drops a malformed tuple rather than emitting a half-city", () => {
-    // Degrades rather than throws: this parses at module load, and a throw
-    // here takes down every route that imports the catalog, including the ones
-    // that never touch a GeoNames city.
+    // Degrades rather than throws. The index is built lazily, on the first
+    // resolve, so a throw here would surface inside a request that is already
+    // resolving a GeoNames city — it cannot fire at module load, and routes
+    // like `/api/trips` never enter this path at all. On that narrower path,
+    // one malformed row should still cost that one city rather than the whole
+    // resolve.
     const index = readCityIndex({
       cities: [
         ["G1", "Fine", "PE", 1, 2, null],
@@ -107,7 +110,28 @@ describe.skipIf(!hasAsset)("the bundled city index", () => {
     const status = cityIndexStatus();
     expect(status.cities).toBeGreaterThan(55_000);
     expect(status.cities).toBeLessThan(63_000);
-    expect(status.generatedAt).not.toBe("");
+    // Not `not.toBe("")` — that passes for any non-empty string, so swapping
+    // `generatedAt` for `artifact.source` would survive it. Assert the shape
+    // the way lib/server/airports.test.ts:25,33-35 does: it looks like an ISO
+    // timestamp, it parses, and it is not in the future. This subsumes the
+    // non-empty check. Recency is deliberately not asserted, for the reason
+    // that file gives — the ingest preserves the previous timestamp when the
+    // data is unchanged, so an old value is designed behaviour.
+    expect(status.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const generatedAt = new Date(status.generatedAt);
+    expect(Number.isNaN(generatedAt.getTime())).toBe(false);
+    expect(generatedAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("memoises the map, so a second resolve is not a second 58,742-row build", () => {
+    // `toBe`, not `toEqual`: the memo hands back the identical entry object,
+    // while a Map rebuilt per call hands back an equal copy. `toEqual` would
+    // pass either way and observe nothing — dropping the memo entirely leaves
+    // every other test in this file green.
+    //
+    // This lives inside the artifact guard on purpose. With no artifact both
+    // sides are `null`, and `toBe` would pass vacuously.
+    expect(cityIndexEntry("G3941584")).toBe(cityIndexEntry("G3941584"));
   });
 
   it("resolves the destinations the design was validated against", () => {
