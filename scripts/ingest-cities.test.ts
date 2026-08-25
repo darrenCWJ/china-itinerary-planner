@@ -102,6 +102,49 @@ describe("readZipMember", () => {
     const zip = zipWith([{ name: "cities500.txt", contents: "x", method: 12 }]);
     expect(() => readZipMember(zip, "cities500.txt")).toThrow(/unsupported zip compression method 12/);
   });
+
+  test("throws when the central directory overstates a stored member's compressedSize", () => {
+    // A lying central directory, not a lying local header: the local header
+    // and the real payload bytes agree with each other (24 bytes, genuinely
+    // present), only the central directory's compressedSize claim is wrong —
+    // exactly what a truncated-in-transit or tampered archive looks like.
+    // `Buffer.subarray` silently CLAMPS an out-of-range end instead of
+    // throwing, so an unvalidated slice would splice the archive's own
+    // central-directory and EOCD bytes onto the genuine 24 bytes and hand the
+    // caller a wrong-but-plausible-looking payload with no error at all.
+    const name = "cities500.txt";
+    const nameBuf = Buffer.from(name, "utf8");
+    const body = Buffer.from("twenty-four byte body!!!", "utf8"); // 24 bytes
+    expect(body.length).toBe(24);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(0, 8); // method 0 (stored)
+    local.writeUInt32LE(body.length, 18); // local header tells the truth
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBuf.copy(local, 30);
+
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(0, 10); // method 0 (stored)
+    central.writeUInt32LE(100_000, 20); // the lie: claims 100,000 bytes
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(0, 42); // local header offset
+    nameBuf.copy(central, 46);
+
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 8);
+    eocd.writeUInt16LE(1, 10);
+    eocd.writeUInt32LE(central.length, 12);
+    eocd.writeUInt32LE(local.length + body.length, 16);
+
+    const zip = Buffer.concat([local, body, central, eocd]);
+    expect(() => readZipMember(zip, name)).toThrow(/corrupt zip/);
+  });
 });
 
 // ---------------------------------------------------------------------------
