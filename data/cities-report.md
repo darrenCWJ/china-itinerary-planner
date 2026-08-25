@@ -12,9 +12,10 @@ Largest shard: AR at 94.5 KB raw.
 
 ## Attribution
 
-GeoNames data is licensed CC BY 4.0. The application carries a visible
-credit in `components/plan/GeoNamesCredit.tsx`; this file is not a
-substitute for it.
+GeoNames data is licensed CC BY 4.0, which requires a visible credit. That
+credit is REQUIRED and NOT YET RENDERED IN THE UI — it lands with Task 16
+("The visible GeoNames CC BY 4.0 credit", `components/plan/GeoNamesCredit.tsx`)
+of the worldwide city catalog plan; this file is not a substitute for it.
 
 ## Most cities by country
 
