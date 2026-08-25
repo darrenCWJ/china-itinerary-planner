@@ -61,8 +61,15 @@ export interface Destination {
    * catalog's vocabulary in the type system.
    */
   region: string;
-  /** ISO alpha-2. Absent on the curated data, which is all China. */
-  country?: CountryCode;
+  /**
+   * ISO alpha-2, required.
+   *
+   * It was optional while the app was China-only, and four separate call sites
+   * read an absent one as `"CN"`. Required is what makes the compiler enforce
+   * spec §5's rule that "a future destination cannot silently claim China":
+   * there is no longer anywhere to omit it, so no default can be wrong.
+   */
+  country: CountryCode;
   /**
    * City-centre coordinates for the map view. null = an off-map place, one
    * hand-typed with no location attached: it still takes days, nights and

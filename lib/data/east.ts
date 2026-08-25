@@ -9,6 +9,7 @@ export const EAST_DESTINATIONS: Destination[] = [
     name: "Shanghai",
     localName: "上海",
     region: "East",
+    country: "CN",
     emoji: "🌆",
     tagline: "China's dazzling modern metropolis",
     knownFor: [
@@ -91,6 +92,7 @@ export const EAST_DESTINATIONS: Destination[] = [
     name: "Hangzhou",
     localName: "杭州",
     region: "East",
+    country: "CN",
     emoji: "🍃",
     tagline: "Heaven on earth — West Lake, tea fields and temples",
     knownFor: [
@@ -160,6 +162,7 @@ export const EAST_DESTINATIONS: Destination[] = [
     name: "Suzhou",
     localName: "苏州",
     region: "East",
+    country: "CN",
     emoji: "🏮",
     tagline: "Classical gardens and silk canals of the Yangtze delta",
     knownFor: [
@@ -234,6 +237,7 @@ export const EAST_DESTINATIONS: Destination[] = [
     name: "Xiamen",
     localName: "厦门",
     region: "South",
+    country: "CN",
     emoji: "🏝️",
     tagline: "Laid-back island city with colonial charm and sea air",
     knownFor: [

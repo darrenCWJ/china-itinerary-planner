@@ -34,6 +34,13 @@ describe("tripCountry", () => {
     // Every trip in the store predates `country`. They are all China trips, so
     // an absent field is an explicit CN rather than an unknown — which is what
     // lets the field arrive with no backfill.
+    //
+    // Deliberately NOT one of the defaults the worldwide catalog removed. Those
+    // were country *scopes* — "which places may we offer" — and a wrong default
+    // there silently offered Chinese cities for a Japanese trip. This one is a
+    // *persistence* backfill for a field that did not exist when some rows were
+    // written; deleting it would reclassify every legacy trip as country-less
+    // rather than as Chinese. See lib/tripShared.ts's docblock.
     expect(tripCountry(tripData({}))).toBe("CN");
   });
 

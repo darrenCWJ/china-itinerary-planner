@@ -9,6 +9,7 @@ export const NORTH_DESTINATIONS: Destination[] = [
     name: "Beijing",
     localName: "北京",
     region: "North",
+    country: "CN",
     emoji: "🏯",
     tagline: "Imperial capital — dynasties, ducks and the Great Wall",
     knownFor: [
@@ -100,6 +101,7 @@ export const NORTH_DESTINATIONS: Destination[] = [
     name: "Xi'an",
     localName: "西安",
     region: "Northwest",
+    country: "CN",
     emoji: "🗿",
     tagline: "Ancient capital of the Terracotta Army and Silk Road flavours",
     knownFor: [
@@ -177,6 +179,7 @@ export const NORTH_DESTINATIONS: Destination[] = [
     name: "Qingdao",
     localName: "青岛",
     region: "East",
+    country: "CN",
     emoji: "🍺",
     tagline: "Beer, beaches and Bavarian leftovers on the Yellow Sea",
     knownFor: [
@@ -251,6 +254,7 @@ export const NORTH_DESTINATIONS: Destination[] = [
     name: "Harbin",
     localName: "哈尔滨",
     region: "Northeast",
+    country: "CN",
     emoji: "❄️",
     tagline: "Ice city of the north — frozen palaces and Russian heritage",
     knownFor: [

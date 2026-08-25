@@ -19,6 +19,13 @@ export interface TripData {
  * saved before the field existed is a China trip, so an absent country is an
  * explicit "CN" rather than an unknown — which is what removes the need for a
  * backfill. No caller should ever see `undefined` here.
+ *
+ * This `?? "CN"` is deliberately NOT one of the defaults the worldwide catalog
+ * removed. Those were country *scopes* — "which places may we offer" — and a
+ * wrong default there silently offered Chinese cities for a Japanese trip.
+ * This one is a *persistence* backfill for a field that did not exist when
+ * some rows were written, and deleting it would reclassify every legacy trip
+ * as country-less rather than as Chinese. lib/tripShared.test.ts pins it.
  */
 export function tripCountry(data: TripData): CountryCode {
   return data.input.country ?? "CN";

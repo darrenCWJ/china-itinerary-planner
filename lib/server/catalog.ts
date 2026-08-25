@@ -5,7 +5,7 @@ import { DESTINATIONS } from "../data";
 import { foldPlaceName } from "../foldPlaceName";
 import { regionForProvinceText } from "../provinces";
 import type { CatalogHit, MapCity } from "../tripShared";
-import type { Activity, ChinaRegion, Destination, Interest } from "../types";
+import type { Activity, ChinaRegion, CountryCode, Destination, Interest } from "../types";
 
 export interface CatalogCity {
   qid: string;
@@ -17,6 +17,17 @@ export interface CatalogCity {
    */
   localName: string | null;
   province: string | null;
+  /**
+   * ISO alpha-2. The on-disk artifact predates this field and every one of its
+   * 695 cities is Chinese; `normaliseCatalog` fills `"CN"` at the read
+   * boundary, so an artifact generated before the worldwide catalog keeps
+   * working without a re-ingest — the same accommodation `chineseName` gets.
+   *
+   * The default lives here and only here. This task removes the same default
+   * from four UI call sites for the reason spec §5 gives: a value that is
+   * inferred in five places cannot be trusted in any of them.
+   */
+  country: CountryCode;
   lat: number;
   lon: number;
   population: number | null;
@@ -73,10 +84,24 @@ function withLocalName<T extends LegacyNamed>(row: T): T {
   return { ...rest, localName: row.localName ?? chineseName ?? null } as T;
 }
 
+/**
+ * Every city in the Wikidata catalog is Chinese and always will be: the 695
+ * keep their QIDs so their enrichment survives a worldwide re-ingest, and
+ * every other country is served from a GeoNames shard instead. The artifact
+ * predates the field, so it is filled here — the one read boundary — rather
+ * than defaulted at each of the places that reads it.
+ */
+const LEGACY_CATALOG_COUNTRY: CountryCode = "CN";
+
+function withCityDefaults(row: CatalogCity): CatalogCity {
+  const legacy = row as CatalogCity & { country?: CountryCode };
+  return { ...withLocalName(row), country: legacy.country ?? LEGACY_CATALOG_COUNTRY };
+}
+
 function normaliseCatalog(raw: Catalog): Catalog {
   return {
     ...raw,
-    cities: raw.cities.map(withLocalName),
+    cities: raw.cities.map(withCityDefaults),
     attractions: raw.attractions.map(withLocalName),
   };
 }
@@ -290,6 +315,7 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
     name: city.name,
     localName: city.localName,
     region: regionFor(city.province, city.name),
+    country: city.country,
     lat: city.lat,
     lon: city.lon,
     emoji: "📍",
