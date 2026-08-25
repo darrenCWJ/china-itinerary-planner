@@ -2,7 +2,7 @@
  * The one discriminator between the GeoNames and Wikidata id namespaces.
  *
  * Its own leaf module rather than a member of lib/server/cityIndex.ts: that
- * file static-imports the 3.5 MB data/cities-index.json, so importing the
+ * file static-imports the 3.65 MB data/cities-index.json, so importing the
  * predicate from it drags the whole artifact into every bundle that wants
  * nothing but a regex. `app/api/cities/enrich/route.ts` (Task 15) is exactly
  * that case — it validates ids and never resolves a city.
