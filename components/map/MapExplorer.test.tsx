@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
@@ -158,22 +158,151 @@ vi.mock("next/dynamic", async () => {
   };
 });
 
+/**
+ * Peru's first row and its Cusco row, lifted byte-for-byte from the committed
+ * `public/cities/PE.json` (Lima is index 0 of 750, Cusco index 7). Every field
+ * differs between the two, so a cross-wire — the wrong row under a name, or
+ * one row's admin-1 pasted onto the other — is visible rather than absorbed.
+ */
+const PE_SHARD = {
+  country: "PE",
+  generatedAt: "2026-08-25T09:23:00.949Z",
+  source: "GeoNames cities500 (CC BY 4.0)",
+  cities: [
+    {
+      id: "G3936456",
+      n: "Lima",
+      lat: -12.04318,
+      lon: -77.02824,
+      a1: "Lima Province",
+      p: 7_737_002,
+      tz: "America/Lima",
+    },
+    {
+      id: "G3941584",
+      n: "Cusco",
+      lat: -13.53188,
+      lon: -71.96701,
+      a1: "Cuzco Department",
+      p: 428_450,
+      tz: "America/Lima",
+    },
+  ],
+};
+
+/**
+ * Only Cusco is enriched. A fixture that gave every row a description would
+ * pass even if the index were ignored and one blurb pasted onto everything, so
+ * Lima's `null` is what makes the merge's key observable.
+ *
+ * The description is abridged; the committed file's is four lines long.
+ */
+const PE_ENRICHMENT = {
+  country: "PE",
+  generatedAt: "2026-08-25T10:03:02.391Z",
+  source: "Wikidata (CC0) + Wikipedia (CC BY-SA) summaries",
+  cities: {
+    G3941584: {
+      description: "Cusco is a city in southeastern Peru, near the Sacred Valley.",
+      image: null,
+    },
+  },
+};
+
+/**
+ * A second foreign country with a shard of its own — the one thing the
+ * foreign-to-foreign switch test needs that Japan cannot give it.
+ *
+ * Japan is this file's shard-less country: `/cities/JP.json` 404s below, which
+ * is what `keeps working for a country whose shard 404s` reads and what keeps
+ * `No map for Japan yet` true for the two tests that assert it. A PE→JP switch
+ * could therefore only ever show that Peru's cities left, never that the new
+ * country's arrived — half a country-scoping proof, and the half that passes
+ * just as well if the shard leg died outright.
+ */
+const DE_SHARD = {
+  country: "DE",
+  generatedAt: "2026-08-25T09:23:00.949Z",
+  source: "GeoNames cities500 (CC BY 4.0)",
+  cities: [
+    {
+      id: "G2950159",
+      n: "Berlin",
+      lat: 52.52437,
+      lon: 13.41053,
+      a1: "State of Berlin",
+      p: 3_426_354,
+      tz: "Europe/Berlin",
+    },
+  ],
+};
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   fetchMock = vi.fn((url: string) => {
+    const href = String(url);
     const body =
-      url === CHINA_TOPOLOGY_PATH
+      href === CHINA_TOPOLOGY_PATH
         ? CHINA_FIXTURE
-        : url.startsWith("/api/map/cities")
+        : href.startsWith("/api/map/cities")
           ? { available: true, cities: [] }
-          : url.startsWith("/api/map/airports")
+          : href.startsWith("/api/map/airports")
             ? { airports: [] }
-            : WORLD_FIXTURE;
-    return Promise.resolve({ ok: true, status: 200, json: async () => body });
+            : href === "/cities/PE.json"
+              ? PE_SHARD
+              : href === "/cities/enrich/PE.json"
+                ? PE_ENRICHMENT
+                : href === "/cities/DE.json"
+                  ? DE_SHARD
+                  // Every other country's shard and enrichment file — Japan's
+                  // and China's included — 404s. That is the honest answer for
+                  // the four codes with no shard at all, and the map has to
+                  // keep working through it.
+                  : href.startsWith("/cities/")
+                    ? null
+                    : WORLD_FIXTURE;
+    return Promise.resolve({
+      ok: body !== null,
+      status: body === null ? 404 : 200,
+      json: async () => body ?? {},
+    });
   });
   vi.stubGlobal("fetch", fetchMock);
 });
+
+/**
+ * A request that never answers and rejects when it is aborted — what a real
+ * in-flight fetch does when the country changes under it.
+ *
+ * Neither the shared mock (which resolves immediately and ignores the signal)
+ * nor a bare `new Promise(() => {})` (which never settles at all) reproduces
+ * that, and the abort path is the one where a *previous* country's answer can
+ * still reach `setState`.
+ */
+function pendingUntilAbort(init?: { signal?: AbortSignal }): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () =>
+      reject(new DOMException("The operation was aborted.", "AbortError"))
+    );
+  });
+}
+
+/** A catalog that reports itself down, for a country with no shard to fall back on. */
+function deadCatalog(url: string) {
+  const href = String(url);
+  if (href.startsWith("/api/map/cities")) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ available: false, cities: [] }),
+    });
+  }
+  if (href.startsWith("/cities/")) {
+    return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+  }
+  return Promise.resolve({ ok: true, status: 200, json: async () => ({ airports: [] }) });
+}
 
 afterEach(() => {
   cleanup();
@@ -229,6 +358,7 @@ function Harness({
   country = "CN",
   level = "country",
   prefs,
+  onAddCatalog = () => {},
 }: {
   country?: string;
   level?: MapLevel;
@@ -240,12 +370,16 @@ function Harness({
    * is the "no explicit choice" case these tests need too.
    */
   prefs?: UserPrefs;
+  onAddCatalog?: (hit: unknown) => void;
 }) {
   const [activeCountry, setCountry] = useState(country);
   const [activeLevel, setLevel] = useState<MapLevel>(level);
   if (prefs) {
     document.cookie = `${PREFS_COOKIE}=${serializePrefsCookie(prefs)}; Path=/`;
   }
+  // Re-rendering with a new `country` prop must actually move the map, or the
+  // foreign-to-foreign refetch tests would be asserting against frozen state.
+  useEffect(() => setCountry(country), [country]);
   return (
     <PrefsProvider>
       <MapExplorer
@@ -256,7 +390,7 @@ function Harness({
         onCountryChange={setCountry}
         onLevelChange={setLevel}
         onToggleSelect={() => {}}
-        onAddCatalog={() => {}}
+        onAddCatalog={onAddCatalog}
         onRemoveCatalog={() => {}}
         onReorder={() => {}}
       />
@@ -298,9 +432,12 @@ describe("MapExplorer", () => {
     await settle();
     expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
     expect(requested(CHINA_TOPOLOGY_PATH)).toBe(false);
-    // Nor the China-only city catalog, whose "unavailable" notice would
-    // otherwise appear for a request nobody made.
-    expect(screen.queryByText(/catalog is unavailable/)).not.toBeInTheDocument();
+    // The city catalog is still asked about — every country has one now — but
+    // it is asked about for Japan, not for China.
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain(
+      "/api/map/cities?country=JP"
+    );
+    expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
   });
 
   /**
@@ -429,6 +566,159 @@ describe("MapExplorer", () => {
 
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain(WORLD_TOPOLOGY_PATH);
     expect(screen.queryByRole("button", { name: /flat map|globe/i })).not.toBeInTheDocument();
+  });
+
+  test("loads the open country's shard, not China's", async () => {
+    render(<Harness country="PE" />);
+
+    await settle();
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain("/cities/PE.json");
+    expect(urls).toContain("/api/map/cities?country=PE");
+    expect(urls).not.toContain(CHINA_TOPOLOGY_PATH);
+  });
+
+  test("draws Peruvian cities in the country level's place list", async () => {
+    // Peru has no detail level, so the same shell shows CountryPlaceList —
+    // which, before this task, was always empty outside China.
+    render(<Harness country="PE" />);
+
+    await settle();
+    expect(screen.getByRole("button", { name: /Lima/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+  });
+
+  test("a tap on a shard city resolves and is added under its GeoNames id", async () => {
+    // The half of the acceptance test the client owns. `togglePlace` re-looks
+    // the tapped place up in the `cities` state array and silently drops the
+    // add on a miss, so this fails the moment shard cities stop being merged
+    // into that array.
+    const onAddCatalog = vi.fn();
+    render(<Harness country="PE" onAddCatalog={onAddCatalog} />);
+
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Cusco/ }));
+
+    expect(onAddCatalog).toHaveBeenCalledTimes(1);
+    expect(onAddCatalog.mock.calls[0][0]).toEqual({
+      qid: "G3941584",
+      name: "Cusco",
+      localName: null,
+      province: "Cuzco Department",
+      description: "Cusco is a city in southeastern Peru, near the Sacred Valley.",
+      population: 428_450,
+      attractionCount: 0,
+    });
+
+    // Lima has no entry in the enrichment fixture, so its blurb stays null:
+    // the merge is keyed by id rather than applied to whatever the file held.
+    // Its admin-1 and population are its own too, not Cusco's.
+    fireEvent.click(screen.getByRole("button", { name: /Lima/ }));
+    expect(onAddCatalog.mock.calls[1][0]).toEqual({
+      qid: "G3936456",
+      name: "Lima",
+      localName: null,
+      province: "Lima Province",
+      description: null,
+      population: 7_737_002,
+      attractionCount: 0,
+    });
+  });
+
+  test("refetches when the country changes between two foreign countries", async () => {
+    // The trap: the cities effect was keyed on `hasDetail`, a boolean, so
+    // PE → DE would not have refired it and Peru's cities would have stayed on
+    // a German map. Both directions are asserted — Germany's city arrives AND
+    // Peru's are gone — because either alone passes for the wrong reason: an
+    // empty map passes "Cusco is gone" even if the shard leg died outright.
+    const { rerender } = render(<Harness country="PE" />);
+    await settle();
+    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+
+    rerender(<Harness country="DE" />);
+    await settle();
+
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain("/cities/DE.json");
+    expect(screen.getByRole("button", { name: /Berlin/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cusco/ })).not.toBeInTheDocument();
+  });
+
+  test("drops the previous country's cities on the switch, not when the new ones land", async () => {
+    const { rerender } = render(<Harness country="PE" />);
+    await settle();
+    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+
+    // Germany's legs never answer, so everything on screen from here is what
+    // the switch itself did — the only way to observe the window between a
+    // country change and the new data landing. A marker from the country you
+    // just left is a wrong answer, not a stale one.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    rerender(<Harness country="DE" />);
+    await settle();
+
+    expect(screen.queryByRole("button", { name: /Cusco/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Lima/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/No map for Germany yet/)).toBeInTheDocument();
+  });
+
+  test("earns the unavailable notice, then drops it the moment the country changes", async () => {
+    // The one combination that earns the notice: the Wikidata catalog reports
+    // itself down AND the country has no shard to fall back on. A country the
+    // catalog simply has nothing for — the normal case for 245 of them — is
+    // covered by `buys no China assets`, which asserts the notice stays away.
+    vi.stubGlobal("fetch", vi.fn(deadCatalog));
+    const { rerender } = render(<Harness country="AQ" />);
+    await settle();
+    expect(screen.getByText(/city list is unavailable/)).toBeInTheDocument();
+
+    // The next country's legs never answer, so the notice can only go because
+    // the switch itself cleared it. A stale "unavailable" is a claim about the
+    // country you just left, made about the one you just opened.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    rerender(<Harness country="DE" />);
+    await settle();
+
+    expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
+  });
+
+  test("never lets an aborted country's answer land on the country that replaced it", async () => {
+    // Three of the four legs swallow their own rejection, so an abort resolves
+    // the combined promise instead of rejecting it. Without a check on the
+    // signal before the write, Peru's effect lands Peru's answer — cities
+    // emptied, "unavailable" set — on top of Germany's freshly cleared state,
+    // one microtask after the switch.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: { signal?: AbortSignal }) =>
+        String(url).startsWith("/api/map/airports")
+          ? Promise.resolve({ ok: true, status: 200, json: async () => ({ airports: [] }) })
+          : pendingUntilAbort(init)
+      )
+    );
+    const { rerender } = render(<Harness country="PE" />);
+    await settle();
+
+    rerender(<Harness country="DE" />);
+    // Two settles: the abort's rejection travels through three `catch`es and a
+    // `Promise.all` before the stale write would land, which is a longer
+    // microtask chain than one settle's fixed-point loop is guaranteed to
+    // drain — and a test that must observe a write *not* happening has to
+    // out-wait it rather than beat it.
+    await settle();
+    await settle();
+
+    expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
+  });
+
+  test("keeps working for a country whose shard 404s", async () => {
+    render(<Harness country="JP" />);
+
+    await settle();
+    // The fallback names the country and points at search, exactly as before.
+    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
+    // A country with no shard is a country with no cities to offer, not an
+    // outage: the catalog answered, so nothing is broken.
+    expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
   });
 });
 

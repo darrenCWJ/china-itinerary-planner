@@ -12,10 +12,18 @@ import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import type { ChinaRegion } from "@/lib/types";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { useReducedMotion } from "@/lib/useReducedMotion";
-import { CountryMap, hasDetailLevel } from "./CountryMap";
+import { CountryMap, DETAILED_COUNTRY, hasDetailLevel } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
 import { FIT_COLORS, FIT_LABELS, type MapPlace } from "./mapTypes";
+import {
+  fetchCityEnrichment,
+  fetchCityShard,
+  shardRowToMapCity,
+  type CityEnrichmentIndex,
+} from "@/lib/cityShard";
+import { curatedPlaceNames } from "@/lib/curatedNames";
+import { foldPlaceName } from "@/lib/foldPlaceName";
 import { regionForProvinceText } from "@/lib/provinces";
 
 /**
@@ -115,40 +123,99 @@ export function MapExplorer({
   const countryLabel = countryName || countryCode || "this country";
   const hasDetail = hasDetailLevel(country);
 
+  /**
+   * Everything the open country's map needs: China's province topology when
+   * there is one, the Wikidata catalog's cities for that country, and the
+   * GeoNames shard plus its enrichment.
+   *
+   * Keyed on `countryCode`, which it was not before. The old array was
+   * `[retryKey, hasDetail]` — a boolean — so CN→JP→CN refired it but JP→DE did
+   * not. That was harmless while /api/map/cities took no country; the moment it
+   * does, a foreign-to-foreign switch would leave the previous country's cities
+   * on the map.
+   *
+   * The shard is a static asset the browser fetches, not a second API leg:
+   * `public/` is unreadable from a Vercel lambda (spec §3.2), and at 22 KB
+   * gzipped for the largest country it needs no loading state of its own.
+   *
+   * Everything keyed to the country is cleared up front, not just on failure —
+   * the same reason the airports effect below clears first. Between a country
+   * switch and the new data landing, the previous country's cities are wrong
+   * answers, not stale ones, and its "unavailable" notice is a claim about a
+   * country the user has already left. `topology` is the one exception and
+   * needs no clear: it is read only under `hasDetailLevel(country)`, both here
+   * and inside `CountryMap`, so China's geometry can never be drawn under
+   * anywhere else.
+   */
   useEffect(() => {
     const controller = new AbortController();
     setLoadError(false);
+    setCities([]);
+    setCitiesUnavailable(false);
+    // `hover` holds a `MapPlace` derived from the `cities` array just emptied,
+    // so leaving it would keep a popup open over a place that no longer exists.
+    setHover(null);
     Promise.all([
-      // Both assets describe China: the province topology and the Chinese city
-      // catalog. A country with no detail level has nothing to draw them into,
-      // so neither is requested for it.
+      // The province topology describes China and nothing else, so a country
+      // with no detail level has nothing to draw it into.
       hasDetail
         ? fetch("/china-provinces.json", { signal: controller.signal }).then((r) => {
             if (!r.ok) throw new Error(`topology ${r.status}`);
             return r.json() as Promise<Topology>;
           })
         : Promise.resolve(null),
-      hasDetail
-        ? fetch("/api/map/cities", { signal: controller.signal })
-            .then((r) => {
-              if (!r.ok) throw new Error(`cities ${r.status}`);
-              return r.json() as Promise<{ available: boolean; cities: MapCity[] }>;
-            })
-            .catch(() => ({ available: false, cities: [] as MapCity[] }))
-        // `available: true` for a country never asked about: the "catalog is
-        // down" notice would otherwise appear for a request nobody made.
-        : Promise.resolve({ available: true, cities: [] as MapCity[] }),
+      fetch(`/api/map/cities?country=${encodeURIComponent(countryCode)}`, {
+        signal: controller.signal,
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error(`cities ${r.status}`);
+          return r.json() as Promise<{ available: boolean; cities: MapCity[] }>;
+        })
+        .catch(() => ({ available: false, cities: [] as MapCity[] })),
+      // 246 of ~250 codes have a shard; the rest 404. A country with none is a
+      // country with no cities to offer, not an outage.
+      fetchCityShard(countryCode, controller.signal).catch(() => null),
+      fetchCityEnrichment(countryCode, controller.signal).catch(
+        () => ({}) as CityEnrichmentIndex
+      ),
     ])
-      .then(([topo, cityRes]) => {
+      .then(([topo, catalogRes, shardRes, enrichment]) => {
+        // Three of the four legs swallow their own rejection, so an abort
+        // *resolves* this Promise.all rather than rejecting it — and the
+        // `.catch` below, which is where the other aborted paths are filtered
+        // out, never runs. Without this the previous country's effect writes
+        // its answer over the new country's freshly cleared state one
+        // microtask after the switch, and `citiesUnavailable` in particular
+        // lands as an outage notice for a country whose request is still in
+        // flight.
+        if (controller.signal.aborted) return;
         setTopology(topo);
-        setCities(cityRes.cities);
-        setCitiesUnavailable(!cityRes.available);
+        // A GeoNames row for a place a curated card already covers is a second
+        // marker for the same place. `dropCatalogDuplicates` in the ingest only
+        // removes rows that duplicate a data/catalog.json QID city, and
+        // Yangshuo — a curated destination — has no catalog.json row, so its
+        // row survives and would draw beside "Guilin & Yangshuo".
+        const suppressed = curatedPlaceNames(countryCode);
+        const shardCities = (shardRes?.cities ?? [])
+          .filter((row) => !suppressed.has(foldPlaceName(row.n)))
+          .map((row) => shardRowToMapCity(row, enrichment));
+        // China is the one country that gets both halves: ~680 Wikidata cities
+        // plus the 413 GeoNames rows its shard keeps after dedup, so its map
+        // goes from ~680 markers to ~1,090. That is deliberate — those 413 are
+        // Chinese cities the QID catalog never covered, and coverage is the
+        // point of the phase. `MAX_LIST_PLACES` does not apply: China has a
+        // detail level, so it renders ChinaLevel rather than CountryPlaceList.
+        setCities([...catalogRes.cities, ...shardCities]);
+        // Unavailable only when BOTH sources failed. A country the Wikidata
+        // catalog has never covered is the normal case for 245 of them, and
+        // showing an outage notice for it would be a lie.
+        setCitiesUnavailable(!catalogRes.available && shardRes === null);
       })
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [retryKey, hasDetail]);
+  }, [retryKey, hasDetail, countryCode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -211,7 +278,15 @@ export function MapExplorer({
         name: c.name,
         localName: c.localName,
         province: c.province,
-        region: regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central",
+        // `regionForProvinceText` is a China-only keyword table and its
+        // `?? "Central"` fallback is one of China's own seven — which
+        // `isChinaRegion` then accepts, handing a Peruvian city a Chinese
+        // month-fit rather than the neutral one that guard exists to give.
+        // Outside China the admin-1 name IS the region label.
+        region:
+          countryCode === DETAILED_COUNTRY
+            ? (regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central")
+            : (c.province ?? ""),
         lat: c.lat,
         lon: c.lon,
         population: c.population,
@@ -402,8 +477,8 @@ export function MapExplorer({
 
       {citiesUnavailable && (
         <p className="mt-2 rounded-lg bg-[var(--surf-1)] px-3 py-2 text-xs text-[var(--ink-2)]">
-          The all-China catalog is unavailable right now — showing curated
-          destinations only.
+          The city list is unavailable right now — showing curated destinations
+          only. Search still reaches every place.
         </p>
       )}
 
