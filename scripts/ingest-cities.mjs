@@ -49,6 +49,17 @@
  * module type for.
  */
 
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 import { foldPlaceName } from '../lib/foldPlaceName.ts';
 import { haversineKm } from '../lib/geo.ts';
@@ -681,4 +692,325 @@ export function assertAdmin1Sane(admin1Codes) {
       `and every province label on every city would be null`
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Paths, sources, network
+// ---------------------------------------------------------------------------
+
+const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
+const DATA_DIR = join(ROOT_DIR, 'data');
+const SHARD_DIR = join(ROOT_DIR, 'public', 'cities');
+const CATALOG_PATH = join(DATA_DIR, 'catalog.json');
+const SHARD_INDEX_PATH = join(SHARD_DIR, 'index.json');
+const CITY_INDEX_PATH = join(DATA_DIR, 'cities-index.json');
+const ENRICH_TARGETS_PATH = join(DATA_DIR, 'cities-enrich-targets.json');
+const REPORT_PATH = join(DATA_DIR, 'cities-report.md');
+
+const CITIES_URL = 'https://download.geonames.org/export/dump/cities500.zip';
+const CITIES_MEMBER = 'cities500.txt';
+const ADMIN1_URL = 'https://download.geonames.org/export/dump/admin1CodesASCII.txt';
+/**
+ * CC BY 4.0, not public domain — unlike OurAirports and Natural Earth. The
+ * credit has to be visible in the UI as well as here; see
+ * components/plan/GeoNamesCredit.tsx.
+ */
+const SOURCE_LICENSE = 'GeoNames cities500 (CC BY 4.0)';
+const SOURCE_ATTRIBUTION = 'https://www.geonames.org/ — CC BY 4.0';
+const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+
+/** 13.5 MB over a CI network. Airports' 120s is not enough headroom for it. */
+const FETCH_TIMEOUT_MS = 300_000;
+const RETRY_DELAYS_MS = [2_000, 8_000];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One retrying fetch for both sources, returning bytes or text.
+ *
+ * Global `fetch` plus `AbortSignal.timeout`, the same shape as
+ * ingest-airports.mjs — no node-fetch, no undici import, nothing from
+ * node_modules at all, which is what lets the workflow skip `npm ci`.
+ */
+async function fetchSource(url, { binary }) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: 'follow',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return binary ? Buffer.from(await res.arrayBuffer()) : await res.text();
+    } catch (error) {
+      lastError = error;
+      if (attempt < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[attempt];
+        console.warn(`  retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms (${error.message})`);
+        await sleep(delay);
+      }
+    }
+  }
+  throw new Error(`Failed to fetch ${url}: ${lastError?.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+function writeFileAtomic(path, content) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tempPath = `${path}.tmp-${process.pid}`;
+  writeFileSync(tempPath, content, 'utf8');
+  try {
+    rmSync(path, { force: true }); // Windows rename does not overwrite reliably
+    renameSync(tempPath, path);
+  } catch (error) {
+    rmSync(tempPath, { force: true });
+    throw error;
+  }
+}
+
+function readJson(path) {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null; // an unreadable previous artifact is the same as none
+  }
+}
+
+/**
+ * One shard's file contents, with its timestamp preserved when nothing moved.
+ *
+ * Per shard rather than per run, because the run writes 246 files totalling
+ * 6.5 MB and the workflow commits them. Stamping a fresh timestamp on all of
+ * them every night would put 6.5 MB of pure noise into the repository daily;
+ * this way only the countries whose 750 rows actually changed appear in
+ * `git diff`.
+ *
+ * Only the rows are compared, never the envelope — comparing the whole object
+ * would compare the timestamp against itself and never match.
+ */
+export function shardPayload(country, cities, previous, now) {
+  const unchanged = previous !== null && JSON.stringify(previous.cities) === JSON.stringify(cities);
+  return {
+    country,
+    generatedAt: unchanged ? previous.generatedAt : now,
+    source: SOURCE_LICENSE,
+    cities,
+  };
+}
+
+/**
+ * The same preserve-when-unchanged rule for the three run-level index files.
+ *
+ * `shardPayload` covers the 246 shards and nothing else, and all three of
+ * `public/cities/index.json`, `data/cities-index.json` and
+ * `data/cities-enrich-targets.json` sit inside `refresh-cities.yml`'s
+ * commit-guard paths. Stamping `new Date()` on them unconditionally makes that
+ * guard impossible to satisfy: it turns a commit-on-change job into a
+ * commit-every-day job, and every commit is a production deploy plus a CI run.
+ *
+ * Compared on the PAYLOAD, never on the envelope — comparing the whole previous
+ * object would compare the timestamp against itself and never match.
+ *
+ * `generatedAt` is spread first so the emitted key order matches what the
+ * previous file had, which is what keeps the byte comparison above meaningful
+ * and keeps index.json's diff readable.
+ */
+export function stampedPayload(previous, body, now) {
+  const unchanged =
+    previous !== null &&
+    JSON.stringify({ ...previous, generatedAt: undefined }) ===
+      JSON.stringify({ ...body, generatedAt: undefined });
+  return { generatedAt: unchanged ? previous.generatedAt : now, ...body };
+}
+
+// ---------------------------------------------------------------------------
+// Report
+// ---------------------------------------------------------------------------
+
+/**
+ * The report describes the CATALOG, never the run.
+ *
+ * No "N shards changed this run" line, deliberately: that number is 246 on a
+ * first run and 0 on a quiet one, which would make this file differ every time
+ * the previous run's numbers differed — and this file is committed. It is
+ * logged to the console instead, where per-run facts belong. Everything below
+ * is a function of the shards alone, so a rebuild with no data change produces
+ * a byte-identical report and `git status` stays clean.
+ */
+function buildReport({ shards, total, generatedAt, largest }) {
+  const bySize = [...shards.entries()]
+    .map(([code, cities]) => [code, cities.length])
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 15);
+  return [
+    '# Worldwide city catalog report',
+    '',
+    `- Generated: ${generatedAt}`,
+    `- Source: ${CITIES_URL}`,
+    `- Licence: ${SOURCE_LICENSE} — ${SOURCE_ATTRIBUTION}`,
+    `- Filter: composite score (alternate names + 2 x log10 population), top ${CITIES_PER_COUNTRY} per country`,
+    `- Deduplicated against data/catalog.json within ${DEDUP_RADIUS_KM} km on a folded name match`,
+    '',
+    `**${total} cities across ${shards.size} countries.**`,
+    '',
+    `Largest shard: ${largest.code} at ${(largest.bytes / 1024).toFixed(1)} KB raw.`,
+    '',
+    '## Attribution',
+    '',
+    'GeoNames data is licensed CC BY 4.0. The application carries a visible',
+    'credit in `components/plan/GeoNamesCredit.tsx`; this file is not a',
+    'substitute for it.',
+    '',
+    '## Most cities by country',
+    '',
+    '| Country | Cities |',
+    '| --- | --- |',
+    ...bySize.map(([code, n]) => `| ${code} | ${n} |`),
+    '',
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+
+async function main() {
+  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(SHARD_DIR, { recursive: true });
+
+  console.log(`Fetching ${CITIES_URL} …`);
+  const archive = await fetchSource(CITIES_URL, { binary: true });
+  console.log(`  ${archive.length} bytes; inflating ${CITIES_MEMBER}`);
+  const tsv = readZipMember(archive, CITIES_MEMBER).toString('utf8');
+
+  console.log(`Fetching ${ADMIN1_URL} …`);
+  const admin1Codes = parseAdmin1Codes(await fetchSource(ADMIN1_URL, { binary: false }));
+  // Gated before anything reads it: a reshaped file parses to a near-empty Map
+  // and every `a1` becomes null, which no later check would notice.
+  assertAdmin1Sane(admin1Codes);
+  console.log(`  ${admin1Codes.size} admin-1 names`);
+
+  const rows = parseGeoNamesRows(tsv);
+  console.log(`  parsed ${rows.length} usable rows`);
+
+  // The existing catalog is read here rather than imported, so no import
+  // attribute is needed and the pure functions stay testable without it.
+  const catalog = readJson(CATALOG_PATH);
+  const catalogCities = catalog?.cities ?? [];
+  console.log(`  deduplicating against ${catalogCities.length} Wikidata cities`);
+
+  const { shards, targets, total } = buildCities(rows, admin1Codes, catalogCities);
+  const previousIndex = readJson(SHARD_INDEX_PATH);
+  assertSane(shards, previousIndex);
+
+  const now = new Date().toISOString();
+  const countries = [];
+  const indexRows = [];
+  let changed = 0;
+  let largest = { code: '', bytes: 0 };
+
+  for (const country of [...shards.keys()].sort()) {
+    const cities = shards.get(country);
+    const path = join(SHARD_DIR, `${country}.json`);
+    const payload = shardPayload(country, cities, readJson(path), now);
+    if (payload.generatedAt === now) changed++;
+    const json = JSON.stringify(payload);
+    if (json.length > largest.bytes) largest = { code: country, bytes: json.length };
+    writeFileAtomic(path, json);
+    countries.push({ code: country, count: cities.length, generatedAt: payload.generatedAt });
+    for (const city of cities) {
+      indexRows.push([city.id, city.n, country, city.lat, city.lon, city.a1]);
+    }
+  }
+
+  // Stale shards from a country that vanished. `assertSane` refuses to let a
+  // country disappear, so this only ever cleans up after an aborted run — but
+  // an orphan file under public/ is a URL the client can still fetch.
+  const wanted = new Set([...shards.keys()].map((code) => `${code}.json`));
+  for (const entry of readdirSync(SHARD_DIR)) {
+    if (entry === 'index.json' || entry === 'enrich') continue;
+    if (!wanted.has(entry)) {
+      rmSync(join(SHARD_DIR, entry), { force: true });
+      console.log(`  removed stale shard ${entry}`);
+    }
+  }
+
+  // All three index files go through `stampedPayload`, exactly as the 246
+  // shards go through `shardPayload`. They are inside refresh-cities.yml's
+  // commit-guard paths — public/cities/index.json is under public/cities, and
+  // the other two are named outright — so stamping `now` on them
+  // unconditionally would make that guard impossible to satisfy: a
+  // commit-on-change job would commit 3.7 MB and redeploy production every
+  // night for no data change.
+  //
+  // index.json is indented: it is the one generated file whose diff a human
+  // reads. Everything else here is compact, because megabytes of it are
+  // committed and indentation would be pure overhead.
+  const shardIndex = stampedPayload(readJson(SHARD_INDEX_PATH), {
+    source: SOURCE_LICENSE,
+    countries,
+  }, now);
+  writeFileAtomic(SHARD_INDEX_PATH, JSON.stringify(shardIndex, null, 1));
+
+  // Bundled, never fetched: public/ is unreadable from a Vercel lambda, so
+  // this is the only thing resolveDestinations can read a picked city out of.
+  // Tuples rather than objects — 3.5 MB instead of 4.35 MB for the same data,
+  // and it is parsed once per cold start.
+  writeFileAtomic(
+    CITY_INDEX_PATH,
+    JSON.stringify(
+      stampedPayload(readJson(CITY_INDEX_PATH), { source: SOURCE_LICENSE, cities: indexRows }, now)
+    )
+  );
+
+  writeFileAtomic(
+    ENRICH_TARGETS_PATH,
+    JSON.stringify(
+      stampedPayload(
+        readJson(ENRICH_TARGETS_PATH),
+        { targets: Object.fromEntries([...targets.keys()].sort().map((c) => [c, targets.get(c)])) },
+        now
+      )
+    )
+  );
+
+  // The report carries the run's own timestamp and is deliberately OUTSIDE the
+  // workflow's change test: it is prose about the run, not an artifact the app
+  // reads. It is still committed alongside a real change. `shardIndex`'s
+  // timestamp, not `now`, so a quiet day does not rewrite this either.
+  writeFileAtomic(
+    REPORT_PATH,
+    buildReport({ shards, total, generatedAt: shardIndex.generatedAt, largest })
+  );
+
+  console.log(`Wrote ${shards.size} shards to ${SHARD_DIR} (${changed} changed)`);
+  console.log(`Wrote ${CITY_INDEX_PATH} (${indexRows.length} cities)`);
+  console.log(`Wrote ${ENRICH_TARGETS_PATH}, ${SHARD_INDEX_PATH}, ${REPORT_PATH}`);
+}
+
+/**
+ * Only runs when this file is invoked directly.
+ *
+ * Without this guard, importing the module to test one of its rules re-runs
+ * the whole ingest and rewrites 246 files as an import side effect — not
+ * hypothetical; it happened during review of ingest-airports.mjs.
+ *
+ * Compared as file URLs rather than as paths because on Windows
+ * `process.argv[1]` is a drive path while `import.meta.url` is a `file://`
+ * URL, so comparing them directly would never match and running the script
+ * would silently do nothing. `process.argv[1]` is checked for existence first
+ * because it is undefined under `node --eval`, where `pathToFileURL(undefined)`
+ * throws.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`\nCity ingestion failed: ${error.message}`);
+    console.error('Nothing was written — the previous artifacts are untouched.');
+    process.exit(1);
+  });
 }

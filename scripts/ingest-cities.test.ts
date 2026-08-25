@@ -1111,3 +1111,151 @@ describe("assertAdmin1Sane", () => {
     expect(() => assertAdmin1Sane(saneAdmin1(1_200))).toThrow(/expected about 3,865/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// shardPayload
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+import { shardPayload, stampedPayload } from "./ingest-cities.mjs";
+
+describe("shardPayload", () => {
+  const cities = [shardRow({ id: "G1", p: 900 }), shardRow({ id: "G2", p: 100 })];
+
+  test("stamps a fresh timestamp when there is no previous shard", () => {
+    const payload = shardPayload("PE", cities, null, "2026-08-25T00:00:00.000Z");
+    expect(payload).toEqual({
+      country: "PE",
+      generatedAt: "2026-08-25T00:00:00.000Z",
+      source: "GeoNames cities500 (CC BY 4.0)",
+      cities,
+    });
+  });
+
+  test("preserves the previous timestamp when the rows are identical", () => {
+    // Idempotency lives here rather than in the workflow: 246 shards totalling
+    // 6.5 MB are committed, and rewriting all of them nightly for a timestamp
+    // would bloat the repo. Only the countries that actually moved appear as
+    // changed, so the workflow's `git status --porcelain` guard sees a clean
+    // tree on a quiet day.
+    const previous = {
+      country: "PE",
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      source: "GeoNames cities500 (CC BY 4.0)",
+      cities,
+    };
+    expect(shardPayload("PE", cities, previous, "2026-08-25T00:00:00.000Z").generatedAt).toBe(
+      "2026-08-01T00:00:00.000Z"
+    );
+  });
+
+  test("takes the fresh timestamp when a single field moved", () => {
+    const previous = {
+      country: "PE",
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      source: "GeoNames cities500 (CC BY 4.0)",
+      cities: [shardRow({ id: "G1", p: 901 }), shardRow({ id: "G2", p: 100 })],
+    };
+    expect(shardPayload("PE", cities, previous, "2026-08-25T00:00:00.000Z").generatedAt).toBe(
+      "2026-08-25T00:00:00.000Z"
+    );
+  });
+
+  test("compares only the rows, never the envelope", () => {
+    // Comparing the whole previous object would make the timestamp compare
+    // against itself and never match.
+    const previous = {
+      country: "PE",
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      source: "something else entirely",
+      cities,
+    };
+    expect(shardPayload("PE", cities, previous, "2026-08-25T00:00:00.000Z").generatedAt).toBe(
+      "2026-08-01T00:00:00.000Z"
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stampedPayload — the same rule for the three run-level index files
+// ---------------------------------------------------------------------------
+
+describe("stampedPayload", () => {
+  const body = { source: "GeoNames cities500 (CC BY 4.0)", countries: [{ code: "PE", count: 2 }] };
+
+  test("preserves the previous timestamp when the payload is identical", () => {
+    // This is what makes `refresh-cities.yml`'s commit guard able to fire at
+    // all. public/cities/index.json, data/cities-index.json and
+    // data/cities-enrich-targets.json are all inside the guard's paths; if any
+    // of them carries `new Date()` unconditionally, `git status` is never
+    // clean, the guard's short-circuit is dead code, and 3.7 MB is committed
+    // and auto-deployed to production every night for no data change.
+    const previous = { generatedAt: "2026-08-01T00:00:00.000Z", ...body };
+    const stamped = stampedPayload(previous, body, "2026-08-25T00:00:00.000Z");
+    expect(stamped.generatedAt).toBe("2026-08-01T00:00:00.000Z");
+    expect(JSON.stringify(stamped)).toBe(JSON.stringify(previous));
+  });
+
+  test("takes the fresh timestamp when any part of the payload moved", () => {
+    const previous = {
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      source: body.source,
+      countries: [{ code: "PE", count: 3 }],
+    };
+    expect(stampedPayload(previous, body, "2026-08-25T00:00:00.000Z").generatedAt).toBe(
+      "2026-08-25T00:00:00.000Z"
+    );
+  });
+
+  test("stamps fresh when there is no previous file, or it was unreadable", () => {
+    // `readJson` answers null for both a missing file and a parse failure.
+    expect(stampedPayload(null, body, "2026-08-25T00:00:00.000Z").generatedAt).toBe(
+      "2026-08-25T00:00:00.000Z"
+    );
+  });
+
+  test("puts generatedAt first, so a human diff of index.json reads the same way", () => {
+    expect(Object.keys(stampedPayload(null, body, "x"))).toEqual([
+      "generatedAt",
+      "source",
+      "countries",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// main()'s ordering
+// ---------------------------------------------------------------------------
+
+describe("main()'s ordering", () => {
+  const source = readFileSync(new URL("./ingest-cities.mjs", import.meta.url), "utf8");
+
+  test("calls assertSane before it writes anything", () => {
+    // `main()` is not invoked here — importing this module must never refetch
+    // 13.5 MB — so the ordering is read out of the source. Crude, and the only
+    // thing standing between "assertSane throws" (proved twenty-four times
+    // above) and "assertSane gates the deploy", which is the property that
+    // matters: the workflow commits whatever reaches disk and Vercel deploys
+    // the commit.
+    const gate = source.indexOf("assertSane(shards, previousIndex)");
+    // Not "writeFileAtomic(path," alone — that substring also matches the
+    // function's own declaration ("function writeFileAtomic(path, content)"),
+    // which sits above main() and would make this pass unconditionally.
+    const firstWrite = source.indexOf("writeFileAtomic(path, json)");
+    expect(gate).toBeGreaterThan(-1);
+    expect(firstWrite).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(firstWrite);
+  });
+
+  test("gates the admin-1 names before buildCities consumes them", () => {
+    const gate = source.indexOf("assertAdmin1Sane(admin1Codes)");
+    const use = source.indexOf("buildCities(rows, admin1Codes, catalogCities)");
+    expect(gate).toBeGreaterThan(-1);
+    expect(use).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(use);
+  });
+
+  test("exits non-zero when main() rejects, so the workflow does not commit", () => {
+    expect(source).toMatch(/main\(\)\.catch\([\s\S]*process\.exit\(1\)/);
+  });
+});

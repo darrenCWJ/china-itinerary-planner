@@ -1,0 +1,1236 @@
+{
+ "generatedAt": "2026-08-25T09:23:00.949Z",
+ "source": "GeoNames cities500 (CC BY 4.0)",
+ "countries": [
+  {
+   "code": "AD",
+   "count": 20,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AE",
+   "count": 107,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AF",
+   "count": 319,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AG",
+   "count": 41,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AI",
+   "count": 14,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AL",
+   "count": 419,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AM",
+   "count": 625,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AO",
+   "count": 565,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AS",
+   "count": 28,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AT",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AU",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AW",
+   "count": 14,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AX",
+   "count": 21,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "AZ",
+   "count": 245,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BA",
+   "count": 313,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BB",
+   "count": 16,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BD",
+   "count": 164,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BE",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BF",
+   "count": 118,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BG",
+   "count": 333,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BH",
+   "count": 11,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BI",
+   "count": 33,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BJ",
+   "count": 87,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BL",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BM",
+   "count": 12,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BN",
+   "count": 63,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BO",
+   "count": 183,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BQ",
+   "count": 10,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BS",
+   "count": 28,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BT",
+   "count": 34,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BW",
+   "count": 139,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BY",
+   "count": 314,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "BZ",
+   "count": 138,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CA",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CC",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CD",
+   "count": 118,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CF",
+   "count": 51,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CG",
+   "count": 60,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CH",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CI",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CK",
+   "count": 2,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CL",
+   "count": 315,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CM",
+   "count": 145,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CN",
+   "count": 413,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CO",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CR",
+   "count": 137,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CU",
+   "count": 211,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CV",
+   "count": 228,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CW",
+   "count": 14,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CX",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CY",
+   "count": 132,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "CZ",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DE",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DJ",
+   "count": 32,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DK",
+   "count": 507,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DM",
+   "count": 20,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DO",
+   "count": 214,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "DZ",
+   "count": 351,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "EC",
+   "count": 542,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "EE",
+   "count": 218,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "EG",
+   "count": 260,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "EH",
+   "count": 27,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ER",
+   "count": 19,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ES",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ET",
+   "count": 255,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FI",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FJ",
+   "count": 16,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FK",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FM",
+   "count": 61,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FO",
+   "count": 35,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "FR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GA",
+   "count": 50,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GB",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GD",
+   "count": 10,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GE",
+   "count": 218,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GF",
+   "count": 20,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GG",
+   "count": 12,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GH",
+   "count": 120,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GI",
+   "count": 7,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GL",
+   "count": 18,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GM",
+   "count": 180,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GN",
+   "count": 83,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GP",
+   "count": 25,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GQ",
+   "count": 27,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GS",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GT",
+   "count": 340,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GU",
+   "count": 28,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GW",
+   "count": 52,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "GY",
+   "count": 23,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "HK",
+   "count": 325,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "HN",
+   "count": 544,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "HR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "HT",
+   "count": 114,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "HU",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ID",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IE",
+   "count": 566,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IL",
+   "count": 724,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IM",
+   "count": 21,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IN",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IO",
+   "count": 2,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IQ",
+   "count": 172,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IS",
+   "count": 50,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "IT",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "JE",
+   "count": 6,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "JM",
+   "count": 104,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "JO",
+   "count": 148,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "JP",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KE",
+   "count": 336,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KG",
+   "count": 112,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KH",
+   "count": 341,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KI",
+   "count": 37,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KM",
+   "count": 119,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KN",
+   "count": 18,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KP",
+   "count": 127,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KR",
+   "count": 311,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KW",
+   "count": 28,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KY",
+   "count": 72,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "KZ",
+   "count": 352,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LA",
+   "count": 117,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LB",
+   "count": 52,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LC",
+   "count": 38,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LI",
+   "count": 14,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LK",
+   "count": 89,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LR",
+   "count": 27,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LS",
+   "count": 47,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LT",
+   "count": 164,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LU",
+   "count": 235,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LV",
+   "count": 147,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "LY",
+   "count": 119,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MA",
+   "count": 480,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MC",
+   "count": 10,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MD",
+   "count": 94,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ME",
+   "count": 66,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MF",
+   "count": 9,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MG",
+   "count": 152,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MH",
+   "count": 26,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MK",
+   "count": 302,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ML",
+   "count": 94,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MM",
+   "count": 576,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MN",
+   "count": 332,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MO",
+   "count": 8,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MP",
+   "count": 10,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MQ",
+   "count": 23,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MR",
+   "count": 88,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MS",
+   "count": 4,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MT",
+   "count": 70,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MU",
+   "count": 116,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MV",
+   "count": 34,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MW",
+   "count": 39,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MX",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MY",
+   "count": 740,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "MZ",
+   "count": 94,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NA",
+   "count": 93,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NC",
+   "count": 63,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NE",
+   "count": 74,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NF",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NG",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NI",
+   "count": 168,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NL",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NO",
+   "count": 632,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NP",
+   "count": 84,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NR",
+   "count": 15,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NU",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "NZ",
+   "count": 732,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "OM",
+   "count": 39,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PA",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PE",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PF",
+   "count": 45,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PG",
+   "count": 59,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PH",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PK",
+   "count": 572,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PL",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PM",
+   "count": 2,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PN",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PR",
+   "count": 227,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PS",
+   "count": 448,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PT",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PW",
+   "count": 29,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "PY",
+   "count": 173,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "QA",
+   "count": 43,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "RE",
+   "count": 28,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "RO",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "RS",
+   "count": 492,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "RU",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "RW",
+   "count": 51,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SA",
+   "count": 160,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SB",
+   "count": 23,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SC",
+   "count": 26,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SD",
+   "count": 112,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SE",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SG",
+   "count": 121,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SH",
+   "count": 6,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SI",
+   "count": 602,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SJ",
+   "count": 2,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SK",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SL",
+   "count": 88,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SM",
+   "count": 15,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SN",
+   "count": 153,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SO",
+   "count": 76,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SR",
+   "count": 35,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SS",
+   "count": 23,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ST",
+   "count": 51,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SV",
+   "count": 102,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SX",
+   "count": 7,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SY",
+   "count": 310,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "SZ",
+   "count": 25,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TC",
+   "count": 11,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TD",
+   "count": 74,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TF",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TG",
+   "count": 35,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TH",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TJ",
+   "count": 103,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TK",
+   "count": 3,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TL",
+   "count": 32,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TM",
+   "count": 124,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TN",
+   "count": 286,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TO",
+   "count": 47,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TR",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TT",
+   "count": 27,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TV",
+   "count": 12,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TW",
+   "count": 89,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "TZ",
+   "count": 324,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "UA",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "UG",
+   "count": 212,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "US",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "UY",
+   "count": 154,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "UZ",
+   "count": 221,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VA",
+   "count": 1,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VC",
+   "count": 25,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VE",
+   "count": 414,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VG",
+   "count": 2,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VI",
+   "count": 8,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VN",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "VU",
+   "count": 10,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "WF",
+   "count": 8,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "WS",
+   "count": 74,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "XK",
+   "count": 77,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "YE",
+   "count": 316,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "YT",
+   "count": 66,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ZA",
+   "count": 750,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ZM",
+   "count": 98,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  },
+  {
+   "code": "ZW",
+   "count": 69,
+   "generatedAt": "2026-08-25T09:23:00.949Z"
+  }
+ ]
+}
