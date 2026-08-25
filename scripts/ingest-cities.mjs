@@ -110,6 +110,19 @@ export function readZipMember(buffer, memberName) {
       const localNameLength = buffer.readUInt16LE(localOffset + 26);
       const localExtraLength = buffer.readUInt16LE(localOffset + 28);
       const start = localOffset + 30 + localNameLength + localExtraLength;
+      // `Buffer.subarray` silently CLAMPS an out-of-range end rather than
+      // throwing, so a central directory that lies about `compressedSize` (or
+      // a `start` that already runs past the buffer) would otherwise splice
+      // in whatever bytes happen to follow — e.g. the archive's own central
+      // directory and EOCD — as if they were the member's real content. This
+      // must be checked before the slice, not after: there is no exception to
+      // catch once `subarray` has already clamped.
+      if (start + compressedSize > buffer.length) {
+        throw new Error(
+          `corrupt zip: ${name} claims ${compressedSize} byte(s) starting at offset ${start}, ` +
+          `but the archive is only ${buffer.length} byte(s)`
+        );
+      }
       const payload = buffer.subarray(start, start + compressedSize);
       if (method === 0) return payload;
       if (method === 8) return inflateRawSync(payload, { maxOutputLength: MAX_INFLATED_BYTES });
