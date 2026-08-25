@@ -425,12 +425,42 @@ const COUNTRY_TOLERANCE = 2;
  * because 244 is within tolerance of 246.
  */
 export const REQUIRED_COUNTRY_CODES = ['IO', 'TK'];
-const MIN_EXPECTED_CITIES = 50_000;
+/**
+ * Measured 2026-08-25: 59,073 cities. An EXACT expectation with a percentage
+ * band, mirroring `EXPECTED_COUNTRIES` above, and for the same reason: a bare
+ * floor only ever catches a feed that shrank. cities1000 or cities500
+ * ingested without the per-country cut produces 184,500 rows — 3.1x real —
+ * and on a first run (`previous === null`) this is the ONLY bound in play, so
+ * a floor alone would wave it straight through.
+ */
+export const EXPECTED_CITIES = 59_073;
+const CITY_COUNT_TOLERANCE_RATIO = 0.25;
 const MAX_SHRINK_RATIO = 0.10;
 const MAX_GROWTH_RATIO = 0.10;
 /** Measured: admin1CodesASCII.txt parses to 3,865 entries. */
 const EXPECTED_ADMIN1_NAMES = 3_865;
 const MIN_ADMIN1_NAMES = 3_000;
+/**
+ * Measured 2026-08-25: 58,634/59,073 rows (99.26%) resolve a non-null admin-1
+ * name. `assertAdmin1Sane` only checks the SIZE of the admin1 Map — a
+ * reshaped key column in admin1CodesASCII.txt still yields a full-size Map
+ * that matches nothing in `buildCities`'s lookup, so every `a1` goes null and
+ * that check passes regardless. This floor is what actually inspects the
+ * joined result. 90% leaves 9 points of headroom below the measured rate
+ * while sitting far above the ~0% a reshape produces.
+ */
+const MIN_ADMIN1_RESOLVED_SHARE = 0.9;
+/**
+ * Measured 2026-08-25: 4,722/59,073 rows (7.99%) GLOBALLY have population 0.
+ * This MUST stay a global share, never a per-country one: real per-country
+ * rates legitimately reach 84% (Mongolia, 279/332), 81% (Yemen), 77%
+ * (Ecuador), 67% (Angola), and a per-country ceiling would abort on healthy
+ * data. 25% is triple the measured global rate, comfortably below the 100% an
+ * all-blank population column produces feed-wide — at which point every row
+ * scores on `altNameCount` alone, which `cityScore`'s own doc calls an
+ * inadequate separator.
+ */
+const MAX_ZERO_POPULATION_SHARE = 0.25;
 
 /**
  * Cities the design was validated against, by geonameid rather than by name.
@@ -487,6 +517,8 @@ export function assertSane(shards, previous) {
   }
 
   let total = 0;
+  let admin1Resolved = 0;
+  let zeroPopulation = 0;
   for (const [country, cities] of shards) {
     if (!/^[A-Z]{2}$/.test(country)) {
       throw new Error(
@@ -533,14 +565,45 @@ export function assertSane(shards, previous) {
         );
       }
       previousPopulation = city.p;
+      if (city.a1 !== null) admin1Resolved++;
+      if (city.p === 0) zeroPopulation++;
     }
     total += cities.length;
   }
 
-  if (total < MIN_EXPECTED_CITIES) {
+  const cityFloor = Math.round(EXPECTED_CITIES * (1 - CITY_COUNT_TOLERANCE_RATIO));
+  const cityCeiling = Math.round(EXPECTED_CITIES * (1 + CITY_COUNT_TOLERANCE_RATIO));
+  if (total < cityFloor) {
     throw new Error(
-      `only ${total} cities passed the filter, expected at least ${MIN_EXPECTED_CITIES}`
+      `only ${total} cities passed the filter, expected at least ${cityFloor} ` +
+      `(${EXPECTED_CITIES} +/-${CITY_COUNT_TOLERANCE_RATIO * 100}%)`
     );
+  }
+  if (total > cityCeiling) {
+    throw new Error(
+      `${total} cities passed the filter, over the ${cityCeiling} ceiling ` +
+      `(${EXPECTED_CITIES} +/-${CITY_COUNT_TOLERANCE_RATIO * 100}%) — this is what cities1000 or ` +
+      `cities500 ingested without the per-country cut looks like`
+    );
+  }
+
+  if (total > 0) {
+    const admin1Share = admin1Resolved / total;
+    if (admin1Share < MIN_ADMIN1_RESOLVED_SHARE) {
+      throw new Error(
+        `only ${(admin1Share * 100).toFixed(1)}% of cities resolved a non-null admin-1 name, ` +
+        `expected at least ${MIN_ADMIN1_RESOLVED_SHARE * 100}% — admin1CodesASCII.txt may have ` +
+        `reshaped its key column, which a Map of the right SIZE cannot reveal`
+      );
+    }
+    const zeroPopulationShare = zeroPopulation / total;
+    if (zeroPopulationShare > MAX_ZERO_POPULATION_SHARE) {
+      throw new Error(
+        `${(zeroPopulationShare * 100).toFixed(1)}% of cities have population 0, over the ` +
+        `${MAX_ZERO_POPULATION_SHARE * 100}% GLOBAL ceiling — the population column may have gone ` +
+        `blank feed-wide`
+      );
+    }
   }
 
   for (const required of REQUIRED_CITIES) {

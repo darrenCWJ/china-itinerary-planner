@@ -735,15 +735,27 @@ interface ShardRow {
   tz: string;
 }
 
-/** A shard row that passes every per-record check, so a test can break one. */
+/**
+ * A shard row that passes every per-record check, so a test can break one.
+ *
+ * `a1` defaults to a resolved name rather than null: the real admin-1
+ * resolution rate is 99.26%, and a fixture that left every row unresolved
+ * would fail Finding A's floor by default, in every test in this file that
+ * doesn't care about admin-1 at all.
+ */
 function shardRow(over: Partial<ShardRow> & Pick<ShardRow, "id">): ShardRow {
-  return { n: `City ${over.id}`, lat: 10, lon: 20, a1: null, p: 1_000, tz: "UTC", ...over };
+  return { n: `City ${over.id}`, lat: 10, lon: 20, a1: "Region", p: 1_000, tz: "UTC", ...over };
 }
 
 /** Synthetic two-letter codes, AA, AB, AC … — a deterministic filler alphabet. */
 function syntheticCountryCode(i: number): string {
   const a = "A".charCodeAt(0);
   return String.fromCharCode(a + (Math.floor(i / 26) % 26), a + (i % 26));
+}
+
+/** Every row across every shard, as live references — mutate in place to corrupt a fixture. */
+function flattenCities(shards: Map<string, ShardRow[]>): ShardRow[] {
+  return [...shards.values()].flat();
 }
 
 /**
@@ -761,10 +773,16 @@ function syntheticCountryCode(i: number): string {
  *
  * Fixture invariant (spec §6): every required city is in the shard its country
  * names, or these tests are green and hollow.
+ *
+ * The default `perCountry` (240) is close to the real per-country average
+ * (59,073 / 246 ≈ 240.1), not the old arbitrary 300: Finding C turns the city
+ * total into an exact expectation with a +/-25% band, and 246 countries at
+ * 300 apiece sits close enough to that ceiling that a single extra territory
+ * (the 247-country case below) would tip over it on an unrelated test.
  */
 function saneShards(options: { countries?: number; perCountry?: number } = {}) {
   const countries = options.countries ?? EXPECTED_COUNTRIES;
-  const perCountry = options.perCountry ?? 300;
+  const perCountry = options.perCountry ?? 240;
   const shards = new Map<string, ShardRow[]>();
   let seed = 1;
   const filler = () => {
@@ -982,6 +1000,99 @@ describe("assertSane", () => {
       shardRow({ id: "G777", p: 900 }),
     ]);
     expect(() => assertSane(shards, null)).toThrow(/PE is not in descending population order/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Finding A: an admin1 reshape must not pass undetected
+  // ---------------------------------------------------------------------------
+
+  test("aborts when admin1 has reshaped and every a1 comes out null", () => {
+    // `assertAdmin1Sane` only checks the SIZE of the admin1 Map, so a
+    // reshaped key column (GeoNames renaming or reordering it) still yields a
+    // full 3,865-entry Map that matches NOTHING in `buildCities`'s lookup —
+    // every province label goes null and that check passes regardless.
+    // `assertSane` must be the one that notices, because it is the one
+    // holding the actual joined output.
+    const shards = saneShards();
+    for (const city of flattenCities(shards)) city.a1 = null;
+    expect(() => assertSane(shards, null)).toThrow(/admin-1/);
+  });
+
+  test("accepts the real 99.26% admin-1 resolution rate, and a rate just above the 90% floor", () => {
+    // The default fixture already resolves ~100% of rows via shardRow's
+    // default; this pins the measured real-world rate as a control before
+    // testing the floor's edge.
+    expect(() => assertSane(saneShards(), null)).not.toThrow();
+
+    // Blank ~9% of rows -> ~91% resolved, just above the 90% floor.
+    const shards = saneShards();
+    const cities = flattenCities(shards);
+    const toBlank = Math.floor(cities.length * 0.09);
+    for (let i = 0; i < toBlank; i++) cities[i].a1 = null;
+    expect(() => assertSane(shards, null)).not.toThrow();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Finding B: an all-zero-population feed must not pass
+  // ---------------------------------------------------------------------------
+
+  test("aborts when population has gone blank feed-wide", () => {
+    // `parseGeoNamesRows` deliberately maps a blank population cell to 0. If
+    // the population column goes blank across the whole feed, every row
+    // scores on `altNameCount` alone — which `cityScore`'s own doc calls an
+    // inadequate separator — and the descending-population-order check is
+    // vacuous for a constant column, so nothing currently catches this.
+    const shards = saneShards();
+    for (const city of flattenCities(shards)) city.p = 0; // all equal: still "descending"
+    expect(() => assertSane(shards, null)).toThrow(/population/i);
+  });
+
+  test("accepts the real global zero-population rate, and Mongolia's real 84% within a healthy global mix", () => {
+    // Global rate: measured real is 7.99%; 8% here must stay under the 25%
+    // ceiling.
+    const shards = saneShards();
+    const cities = flattenCities(shards);
+    const toZero = Math.floor(cities.length * 0.08);
+    for (let i = 0; i < toZero; i++) cities[i].p = 0;
+    for (const [country, list] of shards) {
+      shards.set(country, [...list].sort((a, b) => b.p - a.p || a.id.localeCompare(b.id)));
+    }
+    expect(() => assertSane(shards, null)).not.toThrow();
+
+    // Per-country rate: Mongolia's real rate is 84% (279/332) and MUST pass,
+    // because the ceiling is global. A per-country ceiling would wrongly
+    // abort on this healthy country while the feed as a whole is fine.
+    const shards2 = saneShards();
+    const mongolia = shards2.get("AA")!; // first synthetic filler country
+    const zeroCount = Math.floor(mongolia.length * 0.84);
+    for (let i = 0; i < zeroCount; i++) mongolia[mongolia.length - 1 - i].p = 0;
+    shards2.set("AA", [...mongolia].sort((a, b) => b.p - a.p || a.id.localeCompare(b.id)));
+    expect(() => assertSane(shards2, null)).not.toThrow();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Finding C: the city total is a floor with no ceiling
+  // ---------------------------------------------------------------------------
+
+  test("aborts when the city total blows past the ceiling (an un-cut cities500/cities1000 ingest)", () => {
+    // 246 countries at 749 apiece (just under the CITIES_PER_COUNTRY cap of
+    // 750, so this isn't rejected for a different reason first) totals
+    // ~184,500 — 3.1x real. On a FIRST run (`previous === null`) the total
+    // floor/ceiling is the ONLY bound in play, exactly as in production.
+    const shards = saneShards({ perCountry: 749 });
+    let total = 0;
+    for (const cities of shards.values()) total += cities.length;
+    expect(total).toBeGreaterThan(180_000);
+    expect(() => assertSane(shards, null)).toThrow(/ceiling/);
+  });
+
+  test("accepts a total close to the real 59,073 count, comfortably inside the +/-25% band", () => {
+    const shards = saneShards(); // ~59,043 by default — matches the measured 59,073 closely
+    let total = 0;
+    for (const cities of shards.values()) total += cities.length;
+    expect(total).toBeGreaterThan(44_305);
+    expect(total).toBeLessThan(73_841);
+    expect(() => assertSane(shards, null)).not.toThrow();
   });
 });
 
