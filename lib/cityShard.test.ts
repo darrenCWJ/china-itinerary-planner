@@ -14,11 +14,19 @@ import {
   type CityShardRow,
 } from "./cityShard";
 
+/**
+ * `n` and `a1` must stay DIFFERENT strings. "Cuzco Department" is the real
+ * admin-1 name GeoNames gives Cusco (checked against public/cities/PE.json),
+ * and the difference is load-bearing: while both fields read "Cusco", the
+ * exhaustive toEqual in shardRowToMapCity below was blind to `name` and
+ * `province` being wired to each other's source field, because both spellings
+ * of that bug produced the same object.
+ */
 const row = (over: Partial<CityShardRow> & Pick<CityShardRow, "id">): CityShardRow => ({
   n: "Cusco",
   lat: -13.52264,
   lon: -71.96734,
-  a1: "Cusco",
+  a1: "Cuzco Department",
   p: 428_450,
   tz: "America/Lima",
   ...over,
@@ -49,8 +57,30 @@ describe("shard paths", () => {
 describe("parseCityShard", () => {
   const shard = { country: "PE", generatedAt: "2026-08-25", source: "GeoNames", cities: [row({ id: "G1" })] };
 
-  test("accepts a well-formed shard", () => {
-    expect(parseCityShard(shard).cities).toHaveLength(1);
+  test("accepts a well-formed shard, projecting every field of the row", () => {
+    // Field by field, not merely counted. The parser rebuilds each row as a
+    // fresh object literal rather than passing the input through, so every
+    // field is a separate chance to mis-wire — and a `toHaveLength(1)` stays
+    // green for all of them. Swapped lat/lon relocates the city to a
+    // believable wrong place, a hardcoded `p` resizes every marker, a dropped
+    // `tz` breaks arrival times, and nothing else in this file reads `n`, `p`
+    // or `tz` off a parsed row at all.
+    expect(parseCityShard(shard)).toEqual({
+      country: "PE",
+      generatedAt: "2026-08-25",
+      source: "GeoNames",
+      cities: [
+        {
+          id: "G1",
+          n: "Cusco",
+          lat: -13.52264,
+          lon: -71.96734,
+          a1: "Cuzco Department",
+          p: 428_450,
+          tz: "America/Lima",
+        },
+      ],
+    });
   });
 
   test("throws rather than returning a half-parsed shard", () => {
@@ -79,6 +109,36 @@ describe("parseCityShard", () => {
     );
   });
 
+  test("pins each coordinate limit from both sides", () => {
+    // The committed data cannot pin these: its extremes are lat -54.93/78.22
+    // and lon -179.12/179.36, and not one of the 58,742 rows sits at exactly
+    // ±90 or ±180. So a range narrowed from `>=`/`<=` to `>`/`<`, or a
+    // latitude handed longitude's limit, would pass every other test here AND
+    // every shard on disk, and would only ever misbehave on a country nobody
+    // sampled.
+    const at = (over: Partial<CityShardRow>) =>
+      parseCityShard({ ...shard, cities: [{ ...row({ id: "G1" }), ...over }] }).cities[0];
+    expect(at({ lat: 90 }).lat).toBe(90);
+    expect(at({ lat: -90 }).lat).toBe(-90);
+    expect(at({ lon: 180 }).lon).toBe(180);
+    expect(at({ lon: -180 }).lon).toBe(-180);
+
+    const bad = (over: Partial<CityShardRow>) => () =>
+      parseCityShard({ ...shard, cities: [{ ...row({ id: "G1" }), ...over }] });
+    // Half a degree past each limit, which is the size a real regression is.
+    // The 394.5 case above sits 304° out — far enough to stay rejected even if
+    // latitude were checked against longitude's ±180, so it cannot tell the
+    // two limits apart. 90.5 can, and that is its whole job.
+    expect(bad({ lat: 90.5 })).toThrow(/row 0 has a non-finite lat/);
+    expect(bad({ lat: -90.5 })).toThrow(/row 0 has a non-finite lat/);
+    expect(bad({ lon: 180.5 })).toThrow(/row 0 has a non-finite lon/);
+    // Before these, the suite had no bad longitude at all, so the lon check
+    // could be deleted outright and stay green. 200 is the coarse half of that
+    // guard: out of range on any reading, so it fails only if longitude goes
+    // genuinely unchecked.
+    expect(bad({ lon: 200 })).toThrow(/row 0 has a non-finite lon/);
+  });
+
   test("accepts a null a1, and coerces a missing or empty one to null", () => {
     const parse = (a1: unknown) =>
       parseCityShard({ ...shard, cities: [{ ...row({ id: "G1" }), a1 }] }).cities[0].a1;
@@ -87,7 +147,7 @@ describe("parseCityShard", () => {
     // Empty string too: `a1` renders as MapCity.province, and "" would draw an
     // empty separator where a province name belongs.
     expect(parse("")).toBeNull();
-    expect(parse("Cusco")).toBe("Cusco");
+    expect(parse("Cuzco Department")).toBe("Cuzco Department");
   });
 
   test("rejects a shard whose envelope names a different country than was asked for", () => {
@@ -114,9 +174,28 @@ describe("fetchCityShard / fetchCityEnrichment", () => {
   test("a missing enrichment file is an empty index; a missing shard is an error", async () => {
     // The asymmetry the module's docblock claims, exercised rather than
     // asserted in prose: the shard is required and the enrichment is not.
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })));
+    //
+    // json() rejects the way a real 404 does — the body is an error page, not
+    // JSON, so SyntaxError is what the browser actually raises. That is what
+    // makes this stub load-bearing: against a `json: async () => ({})` stub
+    // the `!response.ok` guard could be deleted outright and the assertion
+    // below would stay green, because parseCityEnrichment({}) is also {}. The
+    // empty index has to come from the guard, not from parsing an error page.
+    const fetchMock = vi.fn(async (_path: string, _init?: unknown) => ({
+      ok: false,
+      status: 404,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
     await expect(fetchCityEnrichment("PE")).resolves.toEqual({});
+    // And that it asked for the enrichment file, not the shard: the two
+    // fetchers differ only in the path helper they call, and nothing else in
+    // this file looks at the enrichment side's URL.
+    expect(fetchMock).toHaveBeenCalledWith("/cities/enrich/PE.json", undefined);
     await expect(fetchCityShard("PE")).rejects.toThrow(/city shard \/cities\/PE\.json: 404/);
+    expect(fetchMock).toHaveBeenLastCalledWith("/cities/PE.json", undefined);
   });
 
   test("passes the requested country through to the parser", async () => {
@@ -196,9 +275,12 @@ describe("shardRowToMapCity", () => {
       // CatalogHit's shape unchanged, so a GeoNames id rides in it. The
       // G prefix is what keeps the two namespaces apart.
       qid: "G3941584",
+      // `name` and `province` are fed by different source fields and must read
+      // as different strings, or this otherwise-exhaustive comparison cannot
+      // see the two being crossed.
       name: "Cusco",
       localName: null,
-      province: "Cusco",
+      province: "Cuzco Department",
       lat: -13.52264,
       lon: -71.96734,
       population: 428_450,
@@ -215,9 +297,12 @@ describe("shardRowToMapCity", () => {
   });
 
   test("reports population zero as zero, not as null", () => {
-    // 30,648 of the real rows carry an explicit 0. `population: null` means
-    // "unknown" to lib/feasibility and the marker sizing; 0 means "nobody
-    // lives here", and the two must not be confused.
+    // 4,721 of the 58,742 committed shard rows carry an explicit 0 — a real
+    // GeoNames place that the dump gives no population figure for. (The raw
+    // cities500 dump has 30,648 such rows out of 235,483; the shards keep only
+    // the top 750 per country, so most of them never arrive.) `population:
+    // null` means "unknown" to lib/feasibility and the marker sizing; 0 means
+    // "nobody lives here", and the two must not be confused.
     expect(shardRowToMapCity(row({ id: "G1", p: 0 }), {}).population).toBe(0);
   });
 });
@@ -285,6 +370,48 @@ describe.skipIf(!hasAssets)("the committed city shards", () => {
       .map((c) => [c.code, statSync(join(SHARD_DIR, `${c.code}.json`)).size] as const)
       .filter(([, bytes]) => bytes > 150_000);
     expect(oversized, `oversized shards: ${JSON.stringify(oversized)}`).toEqual([]);
+  });
+
+  it("keeps every shard at or under the top-750-per-country cut", () => {
+    // "Pool = cities500, keep top 750 per country" is a Global Constraint, and
+    // this is its only check. The size budget above does not stand in for it:
+    // 750 rows is ~97 KB, so a shard could carry roughly 1,100 cities before
+    // 150 KB fired. The cap is saturated — the largest shard holds exactly
+    // 750 — so a broken cut shows up one row past the boundary rather than as
+    // an overshoot a byte count would notice.
+    const counts = index!.countries.map(
+      (c) =>
+        [
+          c.code,
+          parseCityShard(JSON.parse(readFileSync(join(SHARD_DIR, `${c.code}.json`), "utf8"))).cities
+            .length,
+        ] as const
+    );
+    const over = counts.filter(([, n]) => n > 750);
+    expect(over, `shards past the 750-city cut: ${JSON.stringify(over)}`).toEqual([]);
+    // And that the cut is still the binding constraint it is documented to be.
+    // If nothing reached 750, the assertion above would be pinning a limit no
+    // shard approaches — which is how a cap silently stops being applied at
+    // all.
+    expect(Math.max(...counts.map(([, n]) => n))).toBe(750);
+  });
+
+  it("orders every shard by population descending, not by the ranking score", () => {
+    // "Ranking decides inclusion only; display sorts by population" is the
+    // other Global Constraint with no coverage, and lib/cityShard.ts:58
+    // publishes it as a guarantee of the CityShard type. Callers render
+    // `cities` in array order and never sort, so a shard left in score order
+    // would stack obscure places above capitals in the picker with nothing
+    // erroring anywhere.
+    const unsorted: string[] = [];
+    for (const entry of index!.countries) {
+      const { cities } = parseCityShard(
+        JSON.parse(readFileSync(join(SHARD_DIR, `${entry.code}.json`), "utf8"))
+      );
+      const at = cities.findIndex((c, i) => i > 0 && c.p > cities[i - 1].p);
+      if (at !== -1) unsorted.push(`${entry.code}@${at}`);
+    }
+    expect(unsorted, `shards not in population-descending order: ${unsorted.join(", ")}`).toEqual([]);
   });
 
   it("reaches the destinations population alone excluded", () => {
