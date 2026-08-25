@@ -6,9 +6,11 @@ import { catalogStatus, ensureCatalogLoaded, searchCities } from "@/lib/server/c
  *
  * An absent or malformed `country` yields no results rather than the whole
  * catalog: `searchCities` decides that, and it is tested there. Failing open
- * would serve every Chinese city to a request that named no country, which is
- * precisely what the China-only allowlist PlaceSearch used to hold hid
- * (deleted in Task 13).
+ * would serve every Chinese city to a request that named no country — the
+ * failure the China-only allowlist inside `PlaceSearch` used to hide, by
+ * never letting such a request be made. Task 13 deleted that allowlist, so
+ * this route is now the only thing standing between an unscoped query and
+ * the whole China catalog.
  *
  * The GeoNames half of the catalog is searched in the browser, against the
  * shard the picker already fetched — public/ is unreadable from a lambda.

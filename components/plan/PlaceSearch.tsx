@@ -57,13 +57,72 @@ interface Props {
 const MIN_QUERY = 2;
 const DEBOUNCE_MS = 300;
 /**
- * Shard rows handed to the ranker per keystroke. A shard holds at most 750
- * cities (measured: AR, the largest of the 246 committed shards) and the ranker
- * slices to ten, so this only bounds the work, never the answer: it is applied
- * after the substring filter, in population order, so what it drops is always
- * smaller than what it keeps.
+ * Shard rows handed to the ranker per keystroke, prefix matches first.
+ *
+ * A shard holds at most 750 cities (measured: AR, the largest of the 246
+ * committed shards) and the ranker slices to ten, so a cap is worth having.
+ * What it must not do is decide the answer — and until this commit it did.
+ * The cap was applied to a single list in file order, and file order is
+ * population order, which `lib/cityShard.ts` states is "display order, never
+ * score order". `rankPlaces` scores a prefix match 100 and a substring match
+ * 80, so truncating by population before scoring dropped prefix matches in
+ * favour of more populous substring matches.
+ *
+ * Measured over all 246 committed shards and every 2-6 character prefix of
+ * every city name in them (175,814 distinct queries): 1,009 of those queries
+ * match more than 60 rows, and a population-ordered cut changes the visible
+ * top ten in 409 of them (0.23%) and row one in 64. Small, but not "never".
+ *
+ * The two buckets below make the claim true rather than merely small: prefix
+ * matches fill the budget first and substring matches take what is left, so a
+ * row the cap drops always scores at or below every row it keeps.
  */
-const SHARD_CANDIDATES = 60;
+export const SHARD_CANDIDATES = 60;
+
+/**
+ * The Wikidata leg's answers indexed as folded name -> folded provinces, which
+ * is the key the two catalog legs are deduped on.
+ *
+ * China is the one country where both legs answer — `lib/server/catalog.ts`
+ * stamps `LEGACY_CATALOG_COUNTRY = "CN"` on all 695 Wikidata rows — and the
+ * two sources overlap there. Measured against the committed
+ * `data/catalog.json` and `public/cities/CN.json` (413 rows): 54 shard rows
+ * carry a name the catalog also has, 3 of which (`chongqing`, `qingdao`,
+ * `dali`) the curated set already removes from both legs.
+ *
+ * Name alone is the wrong key and would be a worse bug than the one it fixes.
+ * The 51 rows that remain make 55 name-pairs — Longnan and Jinzhou each match
+ * two catalog cities — and 40 of those pairs, across 36 distinct names, are
+ * genuinely different Chinese cities: Yushu (Changchun) and Yushu (Qinghai)
+ * are 2,852 km apart, and 32 of the 40 are more than 100 km apart. Their
+ * provinces differ, so they survive this key. The other 15 are one city
+ * offered twice, 5.0-229.5 km apart depending on which point in a prefecture
+ * each source picked, and those are the ones suppressed.
+ *
+ * `CatalogHit` carries no coordinates, so distance is not available to key on
+ * and the province label is the closest stand-in. It is not exact in either
+ * direction: it keeps a duplicate whose two labels name the same place at
+ * different levels (the catalog's "Meizhou" against the shard's "Guangdong",
+ * 6 of the 51), and it drops Jinzhou (Liaoning), where the catalog's
+ * prefecture-level city and the shard's Dalian district really are two places
+ * 229 km apart under one province. Both are quieter failures than offering 15
+ * duplicate cities, which `app/plan/page.tsx` will accept twice because it
+ * dedupes `selected` by id and the two rows carry different ids.
+ */
+function foldedProvincesByName(rows: readonly CatalogHit[]): ReadonlyMap<string, ReadonlySet<string>> {
+  // Two levels rather than one joined string key: a province label can contain
+  // whatever a place name can, so any separator that is legal in one part can
+  // make two different pairs share a key. Nesting has no separator to get
+  // wrong.
+  const index = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const name = foldPlaceName(row.name);
+    const provinces = index.get(name) ?? new Set<string>();
+    provinces.add(foldPlaceName(row.province ?? ""));
+    index.set(name, provinces);
+  }
+  return index;
+}
 
 export function PlaceSearch({
   curated,
@@ -116,6 +175,35 @@ export function PlaceSearch({
   }, [country]);
 
   /**
+   * The Wikidata hits, cleared on a country switch — the shard's counterpart,
+   * and for the identical reason.
+   *
+   * It is a separate effect from the debounced fetch below on purpose. That
+   * one is keyed `[query, country]` and so runs on every keystroke; clearing
+   * at the top of it would blank the list between letters. This one runs only
+   * when the country changes.
+   *
+   * Without it a country switch left the previous country's hits on screen
+   * for a debounce plus a round trip — and indefinitely if `/api/destinations`
+   * hung, because the only other clears are the `query < MIN_QUERY` guard and
+   * the `catch`, which fires on rejection alone. Since every catalog row is
+   * Chinese (`lib/server/catalog.ts` stamps `LEGACY_CATALOG_COUNTRY = "CN"`),
+   * a non-empty `hits` under a switched-away scope is always a Chinese city
+   * offered for another country's trip — first in the list, keyboard-active
+   * and addable. The China-only allowlist Task 13 deleted used to clear
+   * synchronously here; nothing replaced it until this effect.
+   *
+   * `PlaceSearch` is rendered without a `key` (`components/DestinationStep`),
+   * so a switch is a prop change, not a remount: `query` and `hits` both
+   * survive it.
+   */
+  useEffect(() => {
+    // Bail-out updater, same as the shard's `clear()`: an already-empty `hits`
+    // must be a true no-op rather than a fresh `[]` that re-renders.
+    setHits((previous) => (previous.length === 0 ? previous : []));
+  }, [country]);
+
+  /**
    * The Wikidata half, which only China has. Debounced, then aborted in flight
    * so a slow older response cannot overwrite a newer one after further typing.
    *
@@ -164,10 +252,14 @@ export function PlaceSearch({
    * The ingest's `dropCatalogDuplicates` only removes rows that duplicate a
    * `data/catalog.json` QID city — and a curated destination with no
    * catalog.json row of its own keeps its GeoNames row through the ingest, so
-   * it has to be suppressed here instead. `rankPlaces` does not dedupe by name
-   * across kinds either (`lib/placeSearch.ts:127-142` concatenates with no
-   * cross-kind check), so without this the picker can offer a bare "Yangshuo"
-   * chip beside the curated "Guilin & Yangshuo" card.
+   * it has to be suppressed here instead.
+   *
+   * `rankPlaces` does have a cross-kind name check (`lib/placeSearch.ts:129`
+   * drops a catalog row whose folded name matches a `curated` entry), but it
+   * can only see the names in the `curated` prop. This set covers what that
+   * prop cannot: a name a curated destination's *activities* cover without a
+   * card of its own — "Yangshuo", planned by the "Guilin & Yangshuo" card —
+   * so without it the picker offers a bare "Yangshuo" chip beside the card.
    *
    * `curatedPlaceNames` rather than the `curated` prop, because the prop
    * already excludes visited destinations — and a place the traveller has been
@@ -176,31 +268,58 @@ export function PlaceSearch({
    */
   const suppressed = useMemo(() => curatedPlaceNames(country), [country]);
 
+  /** See `foldedProvincesByName` for why the province is half of the key. */
+  const catalogProvinces = useMemo(() => foldedProvincesByName(hits), [hits]);
+
   /**
    * The shard rows worth ranking. Filtered here rather than inside `rankPlaces`
    * so the fold runs once per row per query instead of once per render, and
    * so the ranker never sees more than `SHARD_CANDIDATES` rows.
+   *
+   * Two buckets, not one list: see `SHARD_CANDIDATES`. A prefix match outranks
+   * a substring match, so filling the budget in the shard's own population
+   * order let the cap decide the answer.
    */
   const shardHits = useMemo<SearchableHit[]>(() => {
     if (query.trim().length < MIN_QUERY) return [];
     const q = foldPlaceName(query);
-    const matched: SearchableHit[] = [];
+    const prefix: SearchableHit[] = [];
+    const substring: SearchableHit[] = [];
     for (const row of shard) {
       const folded = foldPlaceName(row.n);
-      if (!folded.includes(q)) continue;
+      const at = folded.indexOf(q);
+      if (at < 0) continue;
       if (suppressed.has(folded)) continue;
-      // GeoNames' `name` column is already the local endonym, so there is no
-      // second spelling to show beside it.
-      matched.push({ qid: row.id, name: row.n, localName: null, province: row.a1 });
-      if (matched.length >= SHARD_CANDIDATES) break;
+      if (catalogProvinces.get(folded)?.has(foldPlaceName(row.a1 ?? ""))) continue;
+      // `localName: null` for every shard row, and it stays null: GeoNames'
+      // `name` column is the romanised conventional name, not the endonym.
+      // Measured across all 246 committed shards (58,742 rows), 20 names carry
+      // a non-Latin script at all, and CN, JP, RU, KR, GR, TH and EG carry
+      // none — JP opens "Tokyo"/"Yokohama", RU "Moscow". So the `font-kai`
+      // span beside a shard row would have nothing to render even if this
+      // field were wired to something.
+      const hit: SearchableHit = { qid: row.id, name: row.n, localName: null, province: row.a1 };
+      if (at === 0) {
+        prefix.push(hit);
+        // Nothing after this point can outrank a full bucket of prefix
+        // matches, so the rest of the shard cannot change the answer.
+        if (prefix.length >= SHARD_CANDIDATES) break;
+      } else if (substring.length < SHARD_CANDIDATES) {
+        substring.push(hit);
+      }
     }
-    return matched;
-  }, [shard, query, suppressed]);
+    return [...prefix, ...substring].slice(0, SHARD_CANDIDATES);
+  }, [shard, query, suppressed, catalogProvinces]);
 
   /**
    * Wikidata hits first, GeoNames rows second. `rankPlaces` breaks a score tie
    * by input index, so a city that has a researched description and an
    * attraction count outranks a bare shard row that matched just as well.
+   *
+   * Order settles which of two *different* cities leads. It is `shardHits`
+   * that keeps the same city from appearing on both sides of this
+   * concatenation — `rankPlaces` dedupes catalog against curated and never
+   * catalog against catalog.
    */
   const catalogHits = useMemo<SearchableHit[]>(
     () => [

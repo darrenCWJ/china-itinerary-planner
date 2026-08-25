@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { SearchableCurated } from "@/lib/placeSearch";
-import { PlaceSearch, type PickedPlace } from "./PlaceSearch";
+import { PlaceSearch, SHARD_CANDIDATES, type PickedPlace } from "./PlaceSearch";
 
 /**
  * The plan declines a test here; the ruling reinstates one, because the
@@ -254,6 +254,36 @@ describe("PlaceSearch country scoping", () => {
     ],
   };
 
+  /**
+   * The same city as both legs hold it: `data/catalog.json`'s Q57947 and
+   * `public/cities/CN.json`'s G1799722, verbatim. Same folded name, same
+   * province label, 5.4 km apart — one city, two rows.
+   */
+  const NANTONG_HIT = { qid: "Q57947", name: "Nantong", localName: "南通市", province: "Jiangsu" };
+  const CN_NANTONG_SHARD = {
+    country: "CN",
+    generatedAt: "2026-08-25",
+    source: "GeoNames cities500 (CC BY 4.0)",
+    cities: [
+      { id: "G1799722", n: "Nantong", lat: 32.03028, lon: 120.87472, a1: "Jiangsu", p: 2_273_326, tz: "Asia/Shanghai" },
+    ],
+  };
+
+  /**
+   * Two different cities that share a name, likewise verbatim from both
+   * sources: Q1022251 sits in Changchun and G1281105 in Qinghai, 2,852 km
+   * apart. The name matches; the province is what tells them apart.
+   */
+  const YUSHU_HIT = { qid: "Q1022251", name: "Yushu", localName: "榆树市", province: "Changchun" };
+  const CN_YUSHU_SHARD = {
+    country: "CN",
+    generatedAt: "2026-08-25",
+    source: "GeoNames cities500 (CC BY 4.0)",
+    cities: [
+      { id: "G1281105", n: "Yushu", lat: 33.00118, lon: 97.00893, a1: "Qinghai", p: 141_308, tz: "Asia/Shanghai" },
+    ],
+  };
+
   /** Likewise from public/cities/JP.json — the second country in the switch test. */
   const JP_SHARD = {
     country: "JP",
@@ -366,34 +396,61 @@ describe("PlaceSearch country scoping", () => {
     });
   });
 
-  test("ranks a Wikidata hit above a shard row that scored the same", async () => {
-    // Both match "nanj" by prefix, so the tie is broken by input order, and
-    // the API hit is the one with a description and an attraction count.
-    // The two rows share only the name — the local name and the admin-1 label
-    // differ, so whichever one lands first is identifiable from its text.
-    stubFetch(
-      {
-        country: "CN",
-        generatedAt: "x",
-        source: "y",
-        cities: [{ id: "G1799962", n: "Nanjing", lat: 32.06167, lon: 118.77778, a1: "Jiangsu Sheng", p: 7_165_292, tz: "Asia/Shanghai" }],
-      },
-      [NANJING]
-    );
+  test("offers one row, not two, for a city both catalog legs answer with", async () => {
+    // China is the only country where both legs answer, and they overlap:
+    // measured against the committed data/catalog.json and
+    // public/cities/CN.json, 54 shard rows carry a name the catalog also has.
+    // `rankPlaces` dedupes catalog-against-curated and never
+    // catalog-against-catalog, so nothing but `shardHits` catches this.
+    //
+    // Both rows are real and verbatim: Q57947 from data/catalog.json and
+    // G1799722 from public/cities/CN.json, 5.4 km apart under one province
+    // label. A duplicate here is not a display wart — app/plan/page.tsx
+    // dedupes `selected` by id, and data/cities-index.json resolves
+    // G1799722, so a trip can carry Nantong twice with two day allocations.
+    stubFetch(CN_NANTONG_SHARD, [NANTONG_HIT]);
     render(
       <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="CN" onAdd={vi.fn()} onRemove={vi.fn()} />
     );
     await pastDebounce();
 
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "nant" } });
+    await pastDebounce();
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(options.filter((t) => t.includes("Nantong"))).toHaveLength(1);
+    // And it is the Wikidata row that survives — the one carrying a local
+    // name, a researched description and an attraction count.
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("南通市");
+  });
+
+  test("keeps two same-name cities that sit in different provinces", async () => {
+    // The overcorrection this guards against. Deduping on the folded name
+    // alone would hide one of these: measured, the collisions above make 55
+    // name-pairs and 40 of them are genuinely different Chinese cities, 32
+    // more than 100 km apart. Both rows here are real — Q1022251 (Yushu,
+    // Changchun) and G1281105 (Yushu, Qinghai) — and they are 2,852 km apart,
+    // the widest pair in the data.
+    //
+    // This also carries the ordering assertion the duplicate test above used
+    // to hold: `rankPlaces` breaks a score tie by input index, and the
+    // Wikidata leg goes in first.
+    stubFetch(CN_YUSHU_SHARD, [YUSHU_HIT]);
+    render(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="CN" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+    await pastDebounce();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "yush" } });
     await pastDebounce();
 
     const options = screen.getAllByRole("option");
-    expect(options[0]).toHaveTextContent("南京");
+    expect(options.filter((o) => (o.textContent ?? "").includes("Yushu"))).toHaveLength(2);
     // Pinned from both ends: the shard row is second, and it is second because
     // it went in second — not because the Wikidata leg answered with nothing.
-    expect(options[1]).toHaveTextContent("Jiangsu Sheng");
-    expect(options[1]).not.toHaveTextContent("南京");
+    expect(options[0]).toHaveTextContent("榆树市");
+    expect(options[1]).toHaveTextContent("Qinghai");
+    expect(options[1]).not.toHaveTextContent("榆树市");
   });
 
   test("drops the previous country's cities the moment the country changes", async () => {
@@ -463,6 +520,110 @@ describe("PlaceSearch country scoping", () => {
 
     expect(screen.getAllByRole("option")).toHaveLength(1);
     expect(screen.getByRole("option")).toHaveTextContent("as its own place");
+  });
+
+  test("clears the previous country's Wikidata hits the instant the country changes", async () => {
+    // The `hits` counterpart of the test above, and the gap Task 13 opened:
+    // the deleted China-only allowlist cleared `hits` synchronously on any
+    // switch away from CN, and nothing replaced it. Every catalog row is
+    // Chinese (`LEGACY_CATALOG_COUNTRY`), so a surviving hit under a Japanese
+    // scope is always a Chinese city offered for a Japanese trip — first in
+    // the list and keyboard-addable.
+    //
+    // Nanjing is deliberately not Beijing: `searchCities` filters curated
+    // names out of the catalog leg, so a curated city could never be here.
+    // The CN shard holds Nantong, which does not match "nanj" — whatever this
+    // asserts is about `hits` and not about the shard.
+    stubFetch(CN_NANTONG_SHARD, [NANJING]);
+    const { rerender } = render(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="CN" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+    await pastDebounce();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "nanj" } });
+    await pastDebounce();
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("南京");
+
+    // Both legs hang, so the switch is observed mid-flight — the same shape as
+    // the shard test above. A user who never gets an answer must still not be
+    // left holding the previous country's cities.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    rerender(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="JP" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+
+    // Asserted before `pastDebounce()`: the clear has to be synchronous with
+    // the switch, not something the next response happens to overwrite.
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("as its own place");
+  });
+
+  test("ignores a one-character query rather than filling the list from the shard", async () => {
+    // `MIN_QUERY` guards the shard filter as well as the API call, and every
+    // other test in this file types at least two characters, so deleting that
+    // guard left the suite green. Peru's committed shard has 750 rows and 393
+    // of them fold-match "c"; the picker would answer a single keystroke with
+    // ten cities ordered by population.
+    stubFetch(PE_SHARD, []);
+    render(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="PE" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+    await pastDebounce();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "c" } });
+    await pastDebounce();
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(options.some((t) => t.includes("Cusco"))).toBe(false);
+    // Only the off-map offer, which is what one character is worth.
+    expect(options).toHaveLength(1);
+  });
+
+  test("ranks a prefix match the population cap would have cut", async () => {
+    // `SHARD_CANDIDATES` is a bound on work, and this pins that it is not also
+    // a bound on the answer. The shard is population-ordered — "display
+    // order, never score order" (lib/cityShard.ts) — so a single list
+    // truncated at 60 drops rows the ranker would have scored above the ones
+    // it keeps: `rankPlaces` scores a prefix match 100 and a substring match
+    // 80. Measured over all 246 committed shards and every 2-6 character
+    // prefix in them (175,814 queries), that changed the visible top ten 409
+    // times and row one 64 times.
+    //
+    // Synthetic, and it has to be: no committed shard puts 60 more-populous
+    // substring matches ahead of a prefix match for a short query, which is
+    // exactly why the real fixtures could not observe the cap.
+    const substringMatches = Array.from({ length: SHARD_CANDIDATES }, (_, i) => ({
+      id: `G${3_000_001 + i}`,
+      n: `Cordoba ${i + 1}`,
+      lat: -31.4,
+      lon: -64.18,
+      a1: "Cordoba",
+      p: 600_000 - i,
+      tz: "America/Argentina/Cordoba",
+    }));
+    stubFetch(
+      {
+        country: "AR",
+        generatedAt: "2026-08-25",
+        source: "GeoNames cities500 (CC BY 4.0)",
+        cities: [
+          ...substringMatches,
+          // Last in the file, so a population-ordered cut never reaches it —
+          // and the only prefix match in the shard.
+          { id: "G3838233", n: "Ortiz", lat: -33.5, lon: -60.6, a1: "Santa Fe", p: 1_000, tz: "America/Argentina/Cordoba" },
+        ],
+      },
+      []
+    );
+    render(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="AR" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+    await pastDebounce();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "or" } });
+    await pastDebounce();
+
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Ortiz");
   });
 
   test("does not re-offer a place a curated card already covers", async () => {
