@@ -268,3 +268,147 @@ describe("parseAdmin1Codes", () => {
     expect(parseAdmin1Codes("\nCH.VS\tValais\tValais\t1\n\ngarbage\n").size).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// cityScore / topPerCountry
+// ---------------------------------------------------------------------------
+
+import { CITIES_PER_COUNTRY, cityScore, topPerCountry } from "./ingest-cities.mjs";
+
+interface ScorableRow {
+  id: string;
+  name: string;
+  altNameCount: number;
+  lat: number;
+  lon: number;
+  country: string;
+  admin1Code: string;
+  population: number;
+  timezone: string;
+}
+
+function scorable(over: Partial<ScorableRow> & Pick<ScorableRow, "id">): ScorableRow {
+  return {
+    name: `City ${over.id}`,
+    altNameCount: 0,
+    lat: 10,
+    lon: 20,
+    country: "XX",
+    admin1Code: "01",
+    population: 1_000,
+    timezone: "UTC",
+    ...over,
+  };
+}
+
+describe("cityScore", () => {
+  test("is alternate-name count plus twice the log of population", () => {
+    // 22 + 2 * log10(6629) = 22 + 7.6417... — Zermatt's real numbers.
+    expect(cityScore({ altNameCount: 22, population: 6_629 })).toBeCloseTo(
+      22 + 2 * Math.log10(6_629),
+      10
+    );
+  });
+
+  test("clamps population to 1 so an unpopulated row scores its alternate names, not -Infinity", () => {
+    // 30,648 of the 235,483 real rows carry population 0. log10(0) is
+    // -Infinity, and -Infinity + n is -Infinity for every n — so without the
+    // clamp every unpopulated row ties at the bottom and the id tiebreak, not
+    // notability, decides which ones make the cut.
+    expect(cityScore({ altNameCount: 12, population: 0 })).toBe(12);
+    expect(Number.isFinite(cityScore({ altNameCount: 0, population: 0 }))).toBe(true);
+  });
+
+  test("separates a tourist town from a same-size commune", () => {
+    // The finding the whole design rests on: Zermatt (6,629 people, 22
+    // alternate names) must outrank a French commune of comparable size with
+    // the handful of alternate names such a place actually carries.
+    const zermatt = cityScore({ altNameCount: 22, population: 6_629 });
+    const commune = cityScore({ altNameCount: 3, population: 6_800 });
+    expect(zermatt).toBeGreaterThan(commune);
+  });
+
+  test("still lets a large city win on population alone", () => {
+    // Lima ranks 1 in Peru; the score must not become a pure notability metric
+    // that buries capitals under photogenic villages.
+    expect(cityScore({ altNameCount: 4, population: 7_737_002 })).toBeGreaterThan(
+      cityScore({ altNameCount: 12, population: 600 })
+    );
+  });
+});
+
+describe("topPerCountry", () => {
+  test("ranks within each country, never globally", () => {
+    // The entire point of §2.1: a French commune scoring higher than a Peruvian
+    // town must not push that town out of Peru's shard.
+    const kept = topPerCountry(
+      [
+        scorable({ id: "G1", country: "FR", altNameCount: 40, population: 100_000 }),
+        scorable({ id: "G2", country: "FR", altNameCount: 30, population: 100_000 }),
+        scorable({ id: "G3", country: "PE", altNameCount: 1, population: 900 }),
+      ],
+      1
+    );
+    expect(kept.get("FR")!.map((r: ScorableRow) => r.id)).toEqual(["G1"]);
+    expect(kept.get("PE")!.map((r: ScorableRow) => r.id)).toEqual(["G3"]);
+  });
+
+  test("cuts each country at the limit independently", () => {
+    const rows = [
+      ...Array.from({ length: 5 }, (_, i) =>
+        scorable({ id: `GA${i}`, country: "AA", population: 1_000 * (i + 1) })
+      ),
+      scorable({ id: "GB0", country: "BB" }),
+    ];
+    const kept = topPerCountry(rows, 3);
+    expect(kept.get("AA")).toHaveLength(3);
+    expect(kept.get("BB")).toHaveLength(1);
+  });
+
+  test("returns rows in descending score order", () => {
+    const kept = topPerCountry(
+      [
+        scorable({ id: "G1", altNameCount: 1 }),
+        scorable({ id: "G2", altNameCount: 9 }),
+        scorable({ id: "G3", altNameCount: 5 }),
+      ],
+      3
+    );
+    expect(kept.get("XX")!.map((r: ScorableRow) => r.id)).toEqual(["G2", "G3", "G1"]);
+  });
+
+  test("breaks a score tie by id so a rebuild is byte-stable", () => {
+    // Two rows with identical score are otherwise ordered by whatever order
+    // the dump happened to list them in, and GeoNames does reorder rows —
+    // which would rewrite a shard nightly with no data change.
+    const kept = topPerCountry(
+      [scorable({ id: "G9" }), scorable({ id: "G2" }), scorable({ id: "G5" })],
+      3
+    );
+    expect(kept.get("XX")!.map((r: ScorableRow) => r.id)).toEqual(["G2", "G5", "G9"]);
+  });
+
+  test("defaults to 750 per country", () => {
+    expect(CITIES_PER_COUNTRY).toBe(750);
+    const rows = Array.from({ length: 800 }, (_, i) =>
+      scorable({ id: `G${1000 + i}`, population: i + 1 })
+    );
+    expect(topPerCountry(rows).get("XX")).toHaveLength(750);
+  });
+
+  test("a country code spelled like an Object member is a real key, not a prototype hit", () => {
+    // Not hypothetical for a keyed group: a plain object would answer
+    // `groups['constructor']` with `Object.prototype.constructor`, and
+    // `groups[cc] ?? []` would never catch it because a function is not
+    // nullish — the same class of bug `sizeForType` documents in
+    // ingest-airports.mjs. A Map has no prototype chain to fall through.
+    const kept = topPerCountry([scorable({ id: "G1", country: "CO" })], 750);
+    expect(kept.get("constructor")).toBeUndefined();
+    expect(kept.get("toString")).toBeUndefined();
+    expect(kept.get("CO")).toHaveLength(1);
+  });
+
+  test("an empty pool is an empty map, not a throw", () => {
+    expect(topPerCountry([]).size).toBe(0);
+  });
+});
