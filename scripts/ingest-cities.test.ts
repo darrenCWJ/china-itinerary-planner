@@ -1255,7 +1255,106 @@ describe("main()'s ordering", () => {
     expect(gate).toBeLessThan(use);
   });
 
-  test("exits non-zero when main() rejects, so the workflow does not commit", () => {
-    expect(source).toMatch(/main\(\)\.catch\([\s\S]*process\.exit\(1\)/);
+  test("exits non-zero when run() rejects, so the workflow does not commit", () => {
+    expect(source).toMatch(/run\(\)\.catch\([\s\S]*process\.exit\(1\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// run() — proving the gate by behavior, not by source position
+//
+// The describe block above only proves that the SUBSTRING "assertSane(...)"
+// sits earlier in the file than the SUBSTRING "writeFileAtomic(path, json)".
+// A reviewer mutation-tested that claim and found four changes that leave it
+// green while a corrupt feed still reaches disk: a gate hidden behind a
+// never-set env flag, a write hoisted above the gate, an early-return branch
+// that writes before returning, and a try/catch that swallows the gate's
+// exception. It also only pins one of `writeFileAtomic`'s five call sites.
+//
+// This block instead drives the real, exported `run()` with fake network
+// loaders and a small (5-row) corrupt-shaped fixture — few enough countries
+// that `assertSane`'s own country-count check rejects it for a genuine
+// reason — and asserts by BEHAVIOR: no write primitive ever fires. That is
+// what actually matters, because the nightly workflow commits whatever
+// reaches disk and Vercel deploys the commit.
+// ---------------------------------------------------------------------------
+
+import { mkdtempSync, renameSync, rmSync as rmSyncReal, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
+import { afterEach, vi } from "vitest";
+import { run } from "./ingest-cities.mjs";
+
+/**
+ * `vi.spyOn` cannot touch `node:fs` directly here — Vitest's ESM module
+ * namespace for a Node builtin is non-configurable, so `vi.spyOn(fs,
+ * "writeFileSync")` throws "Cannot redefine property" before the test body
+ * even runs. `vi.mock` with `importOriginal` is Vitest's own prescribed
+ * workaround: every other primitive (`readFileSync`, `existsSync`,
+ * `mkdirSync`, `readdirSync`, `rmSync`) stays real, and only the two
+ * primitives that actually commit bytes to disk — `writeFileSync` and
+ * `renameSync` — become no-op spies. That keeps this test file hermetic (no
+ * mutation of the gate can make it write a real file, whatever else it does)
+ * while still letting `expect(...).toHaveBeenCalled()` prove whether the
+ * write path ran.
+ */
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, writeFileSync: vi.fn(), renameSync: vi.fn() };
+});
+
+describe("run() aborts before any write primitive fires when assertSane rejects the feed", () => {
+  // 3,001 synthetic admin-1 names — over MIN_ADMIN1_NAMES (3,000) — so
+  // `assertAdmin1Sane` passes and control actually reaches `assertSane`,
+  // rather than the fixture being rejected one gate earlier for an unrelated
+  // reason.
+  const admin1Text = Array.from({ length: 3_001 }, (_, i) => `XX.${i}\tRegion ${i}`).join("\n");
+
+  // Five well-formed rows across five distinct (fake) countries. `assertSane`
+  // requires 246 +/-2 countries, so this is rejected for a real reason: the
+  // feed looks nothing like a real GeoNames dump, the same way a truncated or
+  // reshaped upstream download would.
+  const citiesTsv = [
+    tsvRow({ 0: "1001", 1: "Fixture City One", 3: "", 4: "10.0", 5: "10.0", 8: "ZZ", 10: "01", 14: "50000" }),
+    tsvRow({ 0: "1002", 1: "Fixture City Two", 3: "", 4: "11.0", 5: "11.0", 8: "YY", 10: "01", 14: "20000" }),
+    tsvRow({ 0: "1003", 1: "Fixture City Three", 3: "", 4: "-5.0", 5: "20.0", 8: "XA", 10: "01", 14: "15000" }),
+    tsvRow({ 0: "1004", 1: "Fixture City Four", 3: "", 4: "40.0", 5: "-70.0", 8: "WW", 10: "01", 14: "5000" }),
+    tsvRow({ 0: "1005", 1: "Fixture City Five", 3: "", 4: "-33.0", 5: "150.0", 8: "VV", 10: "01", 14: "1000" }),
+  ].join("\n");
+
+  const scratchDirs: string[] = [];
+
+  afterEach(() => {
+    // Cleanup only — created by the real, un-mocked `mkdirSync` the gate runs
+    // before either check (a separate, already-tracked Minor finding). Not
+    // part of what this test asserts.
+    while (scratchDirs.length > 0) {
+      const dir = scratchDirs.pop();
+      if (dir) rmSyncReal(dir, { recursive: true, force: true });
+    }
+  });
+
+  function fixtureDirs(): { dataDir: string; shardDir: string } {
+    const root = mkdtempSync(pathJoin(tmpdir(), "ingest-cities-gate-test-"));
+    scratchDirs.push(root);
+    return { dataDir: pathJoin(root, "data"), shardDir: pathJoin(root, "cities") };
+  }
+
+  test("never calls writeFileSync or renameSync before assertSane throws", async () => {
+    const { dataDir, shardDir } = fixtureDirs();
+    const writeMock = vi.mocked(writeFileSync);
+    const renameMock = vi.mocked(renameSync);
+    writeMock.mockClear();
+    renameMock.mockClear();
+    await expect(
+      run({
+        loadCitiesTsv: async () => citiesTsv,
+        loadAdmin1Text: async () => admin1Text,
+        dataDir,
+        shardDir,
+      })
+    ).rejects.toThrow(/countries produced a shard, expected 246/);
+    expect(writeMock).not.toHaveBeenCalled();
+    expect(renameMock).not.toHaveBeenCalled();
   });
 });
