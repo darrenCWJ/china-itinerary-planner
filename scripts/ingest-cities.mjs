@@ -33,7 +33,9 @@
  *
  * Licence: GeoNames is CC BY 4.0 — attribution required, and unlike
  * OurAirports and Natural Earth it is not public domain. The credit has to be
- * visible in the UI (components/plan/GeoNamesCredit.tsx), not just here.
+ * visible in the UI, not just here — Task 16 of this plan
+ * (components/plan/GeoNamesCredit.tsx) is where that lands; it does not exist
+ * yet, so as of this script the requirement is unmet.
  *
  * Usage: node scripts/ingest-cities.mjs
  *
@@ -715,8 +717,9 @@ const CITIES_MEMBER = 'cities500.txt';
 const ADMIN1_URL = 'https://download.geonames.org/export/dump/admin1CodesASCII.txt';
 /**
  * CC BY 4.0, not public domain — unlike OurAirports and Natural Earth. The
- * credit has to be visible in the UI as well as here; see
- * components/plan/GeoNamesCredit.tsx.
+ * credit has to be visible in the UI as well as here; that is Task 16
+ * (components/plan/GeoNamesCredit.tsx), which has not landed yet — see
+ * `buildReport`'s Attribution section below for the wording that says so.
  */
 const SOURCE_LICENSE = 'GeoNames cities500 (CC BY 4.0)';
 const SOURCE_ATTRIBUTION = 'https://www.geonames.org/ — CC BY 4.0';
@@ -844,8 +847,12 @@ export function stampedPayload(previous, body, now) {
  * logged to the console instead, where per-run facts belong. Everything below
  * is a function of the shards alone, so a rebuild with no data change produces
  * a byte-identical report and `git status` stays clean.
+ *
+ * Exported (unlike the rest of `run()`'s internals) so `data/cities-report.md`
+ * can be regenerated from the 246 shard files already on disk — e.g. after a
+ * wording-only change to this function — without a full network ingest.
  */
-function buildReport({ shards, total, generatedAt, largest }) {
+export function buildReport({ shards, total, generatedAt, largest }) {
   const bySize = [...shards.entries()]
     .map(([code, cities]) => [code, cities.length])
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -865,9 +872,10 @@ function buildReport({ shards, total, generatedAt, largest }) {
     '',
     '## Attribution',
     '',
-    'GeoNames data is licensed CC BY 4.0. The application carries a visible',
-    'credit in `components/plan/GeoNamesCredit.tsx`; this file is not a',
-    'substitute for it.',
+    'GeoNames data is licensed CC BY 4.0, which requires a visible credit. That',
+    'credit is REQUIRED and NOT YET RENDERED IN THE UI — it lands with Task 16',
+    '("The visible GeoNames CC BY 4.0 credit", `components/plan/GeoNamesCredit.tsx`)',
+    'of the worldwide city catalog plan; this file is not a substitute for it.',
     '',
     '## Most cities by country',
     '',
