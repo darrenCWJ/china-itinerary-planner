@@ -210,7 +210,7 @@ describe("PlaceSearch keyboard path", () => {
 
   test("refuses to add a place that is already selected", () => {
     const { input, onAdd } = setup([
-      { id: "hangzhou", name: "Hangzhou", kind: "curated", lat: 30.25, lon: 120.16, localName: "杭州", province: null, country: "CN" },
+      { id: "hangzhou", name: "Hangzhou", kind: "curated", lat: 30.25, lon: 120.16, localName: "杭州", province: null, description: null, country: "CN" },
     ]);
     fireEvent.change(input, { target: { value: "hangzhou" } });
 
@@ -223,7 +223,7 @@ describe("PlaceSearch keyboard path", () => {
 
   test("removes a selected place through its own control", () => {
     const { onRemove } = setup([
-      { id: "harbin", name: "Harbin", kind: "curated", lat: 45.8, lon: 126.5, localName: null, province: null, country: "CN" },
+      { id: "harbin", name: "Harbin", kind: "curated", lat: 45.8, lon: 126.5, localName: null, province: null, description: null, country: "CN" },
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Harbin" }));

@@ -44,6 +44,10 @@ const TIMEOUT_MS = 15_000;
  *
  * Exported for the test that pins it: the route hands over whatever `?ids=`
  * carried, so without the cap one request is one unbounded SPARQL body.
+ *
+ * It bounds ONE request and nothing more. Aggregate outbound volume is bounded
+ * by who may reach the route at all, which is the session check in
+ * `app/api/cities/enrich/route.ts`.
  */
 export const MAX_IDS_PER_REQUEST = 12;
 
@@ -108,13 +112,16 @@ export function readEnrichmentRows(bindings: readonly unknown[]): Map<string, Ci
  * A miss is cached too. Without that, a city Wikidata has never heard of is
  * re-queried on every selection for as long as the instance lives.
  *
- * Bounded, because these keys are attacker-chosen: `wallDecision` passes
+ * Bounded, because these keys are caller-chosen. `wallDecision` passes
  * everything under `/api/` unconditionally (`lib/wall.ts:38`, "routes
- * self-enforce") and this route does no session check, so an anonymous caller
- * can walk `G1…G99999999` twelve at a time. Ids are validated, so there is no
- * injection — but caching a miss by design means an unbounded map would grow
- * one entry per distinct id, forever, in a lambda's memory. FIFO eviction: the
- * working set is the cities in one trip, orders of magnitude under the cap.
+ * self-enforce"), so the only thing standing between this map and an arbitrary
+ * walk of `G1…G99999999` is the session gate the route itself applies — this
+ * cap does not substitute for it, and neither does `MAX_IDS_PER_REQUEST`:
+ * both bound a single request, not how many requests one caller may make.
+ * Ids are validated, so there is no injection — but caching a miss by design
+ * means an unbounded map would grow one entry per distinct id, forever, in a
+ * lambda's memory. FIFO eviction: the working set is the cities in one trip,
+ * orders of magnitude under the cap.
  *
  * Exported for the test that pins the eviction. 20,000 records of two short
  * strings is well under a lambda's headroom and 340x the 58 cities the largest
@@ -131,9 +138,51 @@ function remember(id: string, record: CityEnrichmentRecord | null): void {
   cache.set(id, record);
 }
 
-/** Test-only: the cache is a module singleton and would leak between tests. */
+/** Test-only: both maps are module singletons and would leak between tests. */
 export function clearEnrichmentCache(): void {
   cache.clear();
+  inFlight.clear();
+}
+
+/**
+ * The batches this instance is already waiting on, one entry per id in each.
+ *
+ * `missing` is computed from a synchronous `cache.has`, which runs before the
+ * await — so two overlapping calls naming the same id both saw it uncached and
+ * both issued the query. The client makes that easy to hit: `addCatalog` in
+ * `app/plan/page.tsx` reads `extras` from the render closure, so two picks in
+ * one tick both decide to fetch. A second caller now awaits the first caller's
+ * request instead of opening its own.
+ *
+ * Entries live only for the duration of a request, so this needs no cap: the
+ * cache below is what persists, and it has one.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
+/**
+ * One outbound query for one batch of ids, resolving to nothing either way.
+ *
+ * Never rejects. Every failure path resolves so the shared promise other
+ * callers are awaiting settles for them too, and so an id whose request failed
+ * stays uncached and free to be tried again.
+ */
+async function fetchBatch(missing: readonly string[]): Promise<void> {
+  try {
+    const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(enrichmentQuery(missing))}&format=json`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const found = readEnrichmentRows(bindingsOf(await res.json()));
+    // Every id in this batch is now answered — the found ones with a record,
+    // the rest with a cached null.
+    for (const id of missing) remember(id, found.get(id) ?? null);
+  } catch {
+    // Not cached: a network failure, an HTTP error and a body that is not a
+    // SPARQL result all say nothing about the city, and the next request
+    // should be free to try again.
+  }
 }
 
 /**
@@ -161,24 +210,27 @@ export async function enrichCities(
   const wanted = [...new Set(ids.filter(isGeoNamesId))].slice(0, MAX_IDS_PER_REQUEST);
   const missing = wanted.filter((id) => !cache.has(id));
 
-  if (missing.length > 0) {
-    try {
-      const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(enrichmentQuery(missing))}&format=json`;
-      const res = await fetch(url, {
-        headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const found = readEnrichmentRows(bindingsOf(await res.json()));
-      // Every id in this batch is now answered — the found ones with a record,
-      // the rest with a cached null.
-      for (const id of missing) remember(id, found.get(id) ?? null);
-    } catch {
-      // Not cached: a network failure, an HTTP error and a body that is not a
-      // SPARQL result all say nothing about the city, and the next request
-      // should be free to try again.
-    }
+  // An id another call is already asking about is awaited, not re-asked.
+  const waits = new Set<Promise<void>>();
+  const fresh: string[] = [];
+  for (const id of missing) {
+    const pending = inFlight.get(id);
+    if (pending) waits.add(pending);
+    else fresh.push(id);
   }
+
+  if (fresh.length > 0) {
+    // Registered before the first await, so a caller arriving in the same tick
+    // sees it. Deregistered on settle, and only if it is still this batch — a
+    // later batch may have claimed the id after this one finished.
+    const batch: Promise<void> = fetchBatch(fresh).finally(() => {
+      for (const id of fresh) if (inFlight.get(id) === batch) inFlight.delete(id);
+    });
+    for (const id of fresh) inFlight.set(id, batch);
+    waits.add(batch);
+  }
+
+  if (waits.size > 0) await Promise.all(waits);
 
   const out: Record<string, CityEnrichmentRecord> = {};
   for (const id of wanted) {

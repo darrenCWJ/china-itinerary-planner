@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { PlanStep } from "@/components/PlanStep";
-import { mergeCatalogHit } from "@/lib/catalogExtras";
+import { mergeCatalogHit, shouldFetchEnrichment } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
 import { seasonOfMonth } from "@/lib/months";
 import { WIZARD_STEPS, canAdvance } from "@/lib/wizard";
@@ -51,6 +51,16 @@ export default function PlanPage() {
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  /**
+   * Ids the lazy enrichment fetch has already been fired for, this session.
+   *
+   * Never cleared. A city Wikidata has nothing for resolves to a cached miss,
+   * which leaves `description` null forever — so without this the guard in
+   * `shouldFetchEnrichment` stays true and every re-pick re-asks. A ref rather
+   * than state because nothing renders from it and a write must be visible to
+   * the very next `addCatalog` call in the same tick.
+   */
+  const enrichRequested = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     try {
@@ -117,7 +127,11 @@ export default function PlanPage() {
     // first time anyone selects it, fetch one (spec §4). Fire-and-forget: the
     // pick is already committed above and a missing blurb is an accepted
     // state, so nothing here is allowed to block or to fail loudly.
-    if (merged.description !== null) return;
+    //
+    // The three refusals live in `shouldFetchEnrichment` — see lib/catalogExtras.ts
+    // for why each one exists and why the guard is not inline here.
+    if (!shouldFetchEnrichment(merged, enrichRequested.current)) return;
+    enrichRequested.current.add(hit.qid);
     void fetch(`/api/cities/enrich?ids=${encodeURIComponent(hit.qid)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((json: { enrichment?: Record<string, { description: string | null }> } | null) => {

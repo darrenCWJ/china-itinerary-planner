@@ -230,10 +230,11 @@ describe("enrichCities", () => {
 
   test("bounds the cache, because a miss is cached and the ids are caller-chosen", async () => {
     // `wallDecision` passes everything under /api/ (lib/wall.ts:38, "routes
-    // self-enforce") and this route does no session check, so an anonymous
-    // caller can walk G1…G99999999 twelve at a time. Ids are validated, so
-    // there is no injection — but an unbounded map would grow one entry per
-    // distinct id, forever, in a lambda's memory.
+    // self-enforce"), so the route's own session check is the only thing
+    // limiting who may walk G1…G99999999 twelve at a time — and a signed-in
+    // caller may still do it. Ids are validated, so there is no injection —
+    // but an unbounded map would grow one entry per distinct id, forever, in a
+    // lambda's memory.
     const mock = stubSparql([]);
     const id = (i: number) => `G${1_000_000 + i}`;
     const fill = async (from: number, count: number) => {
@@ -255,5 +256,58 @@ describe("enrichCities", () => {
     await fill(MAX_CACHE_ENTRIES, MAX_IDS_PER_REQUEST);
     await enrichCities([id(0)]);
     expect(mock).toHaveBeenCalledTimes(filled + 2);
+  });
+
+  test("two concurrent calls for the same id ask upstream once", async () => {
+    // `missing` is computed from a synchronous `cache.has` that runs before
+    // the await, so without an in-flight map both callers saw the id as
+    // uncached and both queried. `app/plan/page.tsx` makes that easy to hit:
+    // `addCatalog` reads `extras` from the render closure rather than through
+    // a state updater, so two picks in one tick both decide to fetch.
+    const mock = stubSparql(CUSCO_ROWS);
+
+    const [first, second] = await Promise.all([
+      enrichCities(["G3941584"]),
+      enrichCities(["G3941584"]),
+    ]);
+
+    expect(mock).toHaveBeenCalledTimes(1);
+    // Not merely "one query": the second caller must be answered, and with the
+    // same record. A dedupe that dropped the second caller's answer would
+    // satisfy the call count alone.
+    expect(first).toEqual({ G3941584: CUSCO_RECORD });
+    expect(second).toEqual({ G3941584: CUSCO_RECORD });
+  });
+
+  test("a second caller adds only the ids the first is not already asking about", async () => {
+    // The overlap case, which a whole-batch dedupe would get wrong in the
+    // other direction: sharing the first caller's promise must not cost the
+    // second caller the id that promise was never going to answer.
+    const mock = stubSparql(CUSCO_ROWS);
+
+    const [, second] = await Promise.all([
+      enrichCities(["G3941584"]),
+      enrichCities(["G3941584", "G3936456"]),
+    ]);
+
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(sentQuery(mock, 0)).toContain('"3941584"');
+    const overlap = sentQuery(mock, 1);
+    expect(overlap).toContain('"3936456"');
+    expect(overlap).not.toContain('"3941584"');
+    expect(second).toEqual({ G3941584: CUSCO_RECORD });
+  });
+
+  test("a failed batch does not leave its ids permanently in flight", async () => {
+    // The in-flight entry is dropped on settle, not on success. If it were
+    // dropped only on success, one network failure would wedge that id: every
+    // later call would await a promise that had already rejected-and-resolved
+    // and never re-ask.
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    await Promise.all([enrichCities(["G3941584"]), enrichCities(["G3941584"])]);
+
+    const mock = stubSparql(CUSCO_ROWS);
+    await expect(enrichCities(["G3941584"])).resolves.toEqual({ G3941584: CUSCO_RECORD });
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 });

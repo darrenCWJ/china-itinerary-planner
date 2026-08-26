@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { mergeCatalogHit } from "./catalogExtras";
+import { mergeCatalogHit, shouldFetchEnrichment } from "./catalogExtras";
 import type { CatalogHit } from "./tripShared";
 
 /**
@@ -136,5 +136,60 @@ describe("app/plan/page.tsx wiring", () => {
 
   test("asks the enrich route for a description the pick arrived without", () => {
     expect(source).toContain("/api/cities/enrich?ids=");
+  });
+
+  test("gates that fetch on shouldFetchEnrichment and records the id it asked about", () => {
+    // The guard and the ref are tested above as logic; this is the wiring
+    // that makes them run. Without it the page could keep the bare
+    // `merged.description !== null` check — which is false on every first
+    // search pick, Q-ids included — with the whole suite green.
+    expect(source).toContain("shouldFetchEnrichment(merged, enrichRequested.current)");
+    expect(source).toContain("enrichRequested.current.add(hit.qid)");
+    expect(source).not.toContain("if (merged.description !== null) return;");
+  });
+});
+
+/**
+ * The fetch decision itself. It sits in lib/ for the same reason the merge
+ * does — `vitest.config.mts` includes only lib/, scripts/ and components/, so
+ * a guard written inline in `app/plan/page.tsx` is a guard no test can reach.
+ */
+describe("shouldFetchEnrichment", () => {
+  const NONE = new Set<string>();
+  /** A first search pick: `RankedPlace` holds no blurb, so this is every one. */
+  const fromSearch: CatalogHit = { ...FROM_SEARCH };
+
+  test("fetches for a GeoNames city that arrived without a description", () => {
+    expect(shouldFetchEnrichment(fromSearch, NONE)).toBe(true);
+  });
+
+  test("does not fetch when the merge already has a description", () => {
+    // The map's hit carries one, and so does a hit an earlier fetch filled in.
+    expect(shouldFetchEnrichment(FROM_MAP, NONE)).toBe(false);
+  });
+
+  test("does not fetch for a Wikidata id, which the endpoint cannot answer", () => {
+    // The refusal the `description !== null` guard alone never made:
+    // `DestinationStep.addPlace` hard-codes `description: null` for every
+    // search pick, so that guard is false on every first pick — including
+    // `Q…` ids, which /api/cities/enrich queries by wdt:P1566 and can never
+    // match. Every one of those was a round trip that could not answer.
+    expect(shouldFetchEnrichment({ ...fromSearch, qid: "Q956" }, NONE)).toBe(false);
+    // And a curated id, which reaches `addCatalog` by the same path.
+    expect(shouldFetchEnrichment({ ...fromSearch, qid: "hangzhou" }, NONE)).toBe(false);
+  });
+
+  test("does not re-ask about an id it has already asked about", () => {
+    // A cached miss comes back with no description, so the first guard stays
+    // false forever for a city Wikidata has never heard of. Without this,
+    // re-picking it re-queries on every pick for the life of the session.
+    expect(shouldFetchEnrichment(fromSearch, new Set([fromSearch.qid]))).toBe(false);
+  });
+
+  test("an unrelated id in the set does not suppress the fetch", () => {
+    // The membership test must be on this hit's id, not on the set being
+    // non-empty — one earlier pick would otherwise disable enrichment for the
+    // whole session.
+    expect(shouldFetchEnrichment(fromSearch, new Set(["G999"]))).toBe(true);
   });
 });

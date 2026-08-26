@@ -128,6 +128,11 @@ export function DestinationStep({
             lon: curatedHit.lon,
             localName: curatedHit.localName,
             province: null,
+            // A curated card carries a hand-written `tagline`, not a Wikidata
+            // blurb, and it is already rendered on the card itself. Repeating
+            // it in the chip would say nothing new; this field exists for the
+            // catalog branch below, which has no other place to show one.
+            description: null,
             country: curatedHit.country,
           }];
         }
@@ -141,6 +146,8 @@ export function DestinationStep({
             lon: null,
             localName: off.localName,
             province: null,
+            // Hand-typed: no dataset knows this place, so nothing can describe it.
+            description: null,
             country: off.country,
           }];
         }
@@ -164,6 +171,13 @@ export function DestinationStep({
             lon: null,
             localName: hit.localName,
             province: hit.province,
+            // The read end of the lazy enrichment fetch. `addCatalog` writes
+            // the fetched blurb to `extras[qid].description`, and this is the
+            // hop that was missing: without it the string was stored and then
+            // dropped, and the whole feature rendered nothing. `extras` is
+            // written by both pick surfaces, so this one carry covers the map
+            // tap and the search pick alike.
+            description: hit.description,
             country,
           }];
         }
