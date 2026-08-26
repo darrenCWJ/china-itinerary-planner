@@ -602,3 +602,97 @@ describe("C6 — the trip payload stays serialisable", () => {
     expect(isOffender("createdAt: Date;", "Date")).toBe(true);
   });
 });
+
+describe("C7 — every surface that renders GeoNames data credits it", () => {
+  /**
+   * Spec §7 is a licence obligation with legal weight, and it is the kind that
+   * is discharged by a JSX line somebody has to remember. These four files
+   * render city names that come from GeoNames for any non-Chinese trip:
+   * the wizard footer (every step), the destination step, the shared trip page
+   * a view-only member reaches by join code, and the bearer-link briefing.
+   *
+   * A blunt source scan on purpose, like C1 and C2 above: a component-level
+   * test can only see the component it renders, and what this guards against
+   * is a surface quietly dropping the import during an unrelated refactor.
+   */
+  const MUST_CREDIT = [
+    "app/plan/page.tsx",
+    "components/DestinationStep.tsx",
+    "components/TripView.tsx",
+    "app/b/[code]/page.tsx",
+  ] as const;
+
+  const CREDIT = "components/plan/GeoNamesCredit.tsx";
+
+  test.each(MUST_CREDIT)("%s renders GeoNamesCredit", (path) => {
+    const file = FILES.find((f) => f.path === path);
+    expect(file, `${path} is not in the scanned tree`).toBeDefined();
+    // `.code`, not `.text`: a commented-out call site is not a rendered credit,
+    // and this is the assertion whose failure mode is a licence breach.
+    expect(file!.code).toContain("<GeoNamesCredit");
+  });
+
+  test("the credit names both licences", () => {
+    const credit = FILES.find((f) => f.path === CREDIT);
+    expect(credit, `${CREDIT} is missing`).toBeDefined();
+    // GeoNames is CC BY 4.0; the descriptions are Wikipedia extracts, which are
+    // CC BY-SA 4.0 — attribution and share-alike. Asserted on `.code` so that
+    // the deed URLs have to be in the markup rather than in the file's own
+    // explanatory comment, which is where both URLs also appear.
+    expect(credit!.code).toContain("https://creativecommons.org/licenses/by/4.0/");
+    expect(credit!.code).toContain("https://creativecommons.org/licenses/by-sa/4.0/");
+    expect(credit!.code).toContain("https://www.geonames.org/");
+    expect(credit!.code).toContain("https://en.wikipedia.org/");
+  });
+
+  test("TripView credits the guest surface as well as the member one", () => {
+    /**
+     * TripView has five `<PageMain>` returns. Three are loading/private/
+     * not-found and render no city data. TWO render `destinationNames`: the
+     * member view, and the `loadState === "guest"` view whose `GuestHeader`
+     * shows the same names to somebody who is not signed in. A single credit
+     * in the file satisfies the scan above while leaving the guest surface
+     * bare, so the count is pinned here rather than the presence.
+     */
+    const view = FILES.find((f) => f.path === "components/TripView.tsx");
+    expect(view, "components/TripView.tsx is not in the scanned tree").toBeDefined();
+    const rendered = view!.code.match(/<GeoNamesCredit\b/g) ?? [];
+    const surfaces = view!.code.match(/destinationNames/g) ?? [];
+    expect(surfaces.length, "TripView no longer renders destinationNames").toBe(2);
+    expect(rendered.length, "one credit cannot cover both TripView surfaces").toBe(2);
+  });
+
+  test("the ingest report does not still claim the credit is unrendered", () => {
+    /**
+     * `scripts/ingest-cities.mjs` wrote "REQUIRED and NOT YET RENDERED IN THE
+     * UI" into data/cities-report.md for every run before this one, and the
+     * report is regenerated and committed by an unattended workflow. Once the
+     * credit exists that sentence is a false claim about a licence, committed
+     * to the repo — the single worst place for one. Both the generator and its
+     * current output are checked, because fixing only the committed file lets
+     * the next scheduled ingest put it straight back.
+     */
+    const STALE = "NOT YET RENDERED IN THE UI";
+    for (const path of ["data/cities-report.md", "scripts/ingest-cities.mjs"]) {
+      const source = readFileSync(join(process.cwd(), ...path.split("/")), "utf8");
+      expect(source, `${path} still claims the GeoNames credit is unrendered`).not.toContain(
+        STALE
+      );
+      expect(source, `${path} no longer mentions the credit at all`).toContain(
+        "GeoNamesCredit"
+      );
+    }
+  });
+
+  test("the credit is not left in a file nothing imports", () => {
+    // The scan above proves the tag appears; this proves the symbol resolves,
+    // so that deleting the component would fail here rather than at runtime.
+    for (const path of MUST_CREDIT) {
+      const file = FILES.find((f) => f.path === path);
+      expect(file!.code, `${path} renders GeoNamesCredit without importing it`).toContain(
+        '@/components/plan/GeoNamesCredit'
+      );
+    }
+    expect(FILES.some((f) => f.path === CREDIT), `${CREDIT} is missing`).toBe(true);
+  });
+});

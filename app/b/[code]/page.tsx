@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { BriefingView } from "@/components/trip/BriefingView";
 import { buildBriefing } from "@/lib/briefing";
 import { getBriefingByCode, getTrip, storeMode } from "@/lib/server/store";
@@ -35,6 +36,14 @@ export default async function BriefingPage({ params }: Props) {
       <BriefingView briefing={briefing} />
       <footer className="mt-12 border-t border-[var(--line-1)] pt-4 text-xs text-[var(--ink-2)]">
         A read-only trip briefing. Ask whoever shared this link if you need the booking details.
+        {/*
+          A bearer link a non-member holds: they never sign in, never open
+          /plan, and the briefing above is nothing but GeoNames city names and
+          the Wikipedia-derived blurbs.
+        */}
+        <div className="mt-3">
+          <GeoNamesCredit />
+        </div>
       </footer>
     </main>
   );
