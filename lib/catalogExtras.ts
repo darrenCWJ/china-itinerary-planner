@@ -1,3 +1,4 @@
+import { isGeoNamesId } from "./geoNamesId";
 import type { CatalogHit } from "./tripShared";
 
 /**
@@ -51,4 +52,38 @@ export function mergeCatalogHit(
     // field's "unknown" and must not overwrite a count the map supplied.
     attractionCount: incoming.attractionCount > 0 ? incoming.attractionCount : stored.attractionCount,
   };
+}
+
+/**
+ * Whether a freshly merged catalog pick should trigger the lazy enrichment
+ * fetch in `app/plan/page.tsx`'s `addCatalog`.
+ *
+ * Three refusals, and each one closes a request that could never have helped:
+ *
+ * 1. **It already has a description.** Either the map supplied one or an
+ *    earlier fetch filled it in. Nothing to ask for.
+ * 2. **It is not a GeoNames id.** `DestinationStep.addPlace` hard-codes
+ *    `description: null` for every search pick, because a `RankedPlace` never
+ *    held one — so rule 1 is false on *every* first search pick, Wikidata
+ *    `Q…` ids included. `/api/cities/enrich` queries by `wdt:P1566`, the
+ *    GeoNames id, so a `Q…` is a round trip that cannot answer by
+ *    construction. `isGeoNamesId` comes from `lib/geoNamesId.ts`, the leaf —
+ *    never from `lib/server/cityIndex.ts`, which re-exports it but
+ *    static-imports the 3.65 MB city index along with it.
+ * 3. **It has been asked about already this session.** A cached miss comes
+ *    back with no description, so rule 1 stays false forever for a city
+ *    Wikidata has never heard of, and re-picking it would re-ask on every
+ *    pick. The caller holds the set in a ref that is never cleared.
+ *
+ * Here rather than inline in the page for the same reason `mergeCatalogHit`
+ * is: `vitest.config.mts` includes only lib/, scripts/ and components/, so a
+ * guard written inside app/ is a guard no test can reach.
+ */
+export function shouldFetchEnrichment(
+  merged: CatalogHit,
+  alreadyRequested: ReadonlySet<string>
+): boolean {
+  if (merged.description !== null) return false;
+  if (!isGeoNamesId(merged.qid)) return false;
+  return !alreadyRequested.has(merged.qid);
 }

@@ -48,6 +48,24 @@ export interface PickedPlace {
   localName: string | null;
   province: string | null;
   /**
+   * The one-line Wikidata blurb for this place, once something knows one.
+   *
+   * The read end of the lazy enrichment fetch. `addCatalog` writes the fetched
+   * string to `extras[qid].description`, `DestinationStep`'s `picked` memo
+   * carries it here, and the chip below renders it — without that chain the
+   * fetch wrote into a dead end and the whole feature was invisible.
+   *
+   * This one field is what both pick surfaces share. `extras` is the single
+   * store that `MapExplorer.togglePlace` and `DestinationStep.addPlace` both
+   * write, and `picked` is rebuilt from it, so a city added by tapping the map
+   * and a city added through this box arrive at the same chip and show the
+   * same blurb — no second render path to keep in step.
+   *
+   * Null on the producer side: this component emits a pick from a
+   * `RankedPlace`, which never held one. Only the `picked` rebuild fills it.
+   */
+  description: string | null;
+  /**
    * ISO alpha-2 of the *country being planned* — the scope that is open in the
    * picker, not the country the place itself sits in. Those are two different
    * questions and this field answers only the first: this component stamps the
@@ -374,6 +392,8 @@ export function PlaceSearch({
       lon: coords?.lon ?? null,
       localName: place.localName,
       province: place.province,
+      // A ranked row never held a blurb; `extras` is where one arrives.
+      description: null,
       country,
     });
     setQuery("");
@@ -483,6 +503,21 @@ export function PlaceSearch({
               className="flex min-h-8 items-center gap-1 rounded-full bg-[var(--line-1)] px-3 text-sm text-[var(--accent-ink)]"
             >
               {place.name}
+              {/*
+                The lazy enrichment fetch's only render path (spec §4). Wikidata
+                descriptions are one short noun phrase — "city in the Lima
+                Region, Peru" — so the chip can carry one as secondary text;
+                `truncate` plus `title` keeps the pill's height for the rare
+                long one.
+              */}
+              {place.description && (
+                <span
+                  className="max-w-[18ch] truncate text-xs font-normal text-[var(--ink-2)]"
+                  title={place.description}
+                >
+                  {place.description}
+                </span>
+              )}
               {/*
                 Keyed on kind, not on lat === null. A catalog pick also arrives
                 without coordinates — CatalogHit carries none until goToPlan
