@@ -1,4 +1,4 @@
-import { CN_PACKING, CN_WINTER_CLOTHING_NOTE } from "./countryData/cn";
+import { DEFAULT_COUNTRY, getCountryProfile } from "./countryProfile";
 import type { TripInput } from "./itinerary";
 import type { Destination, PackingGroup, Season } from "./types";
 
@@ -27,18 +27,23 @@ const CLOTHING_BY_SEASON: Record<Season, string[]> = {
     "Light scarf for cool evenings",
     "Comfortable broken-in walking shoes",
   ],
-  winter: [
-    "Thermal base layers",
-    "Insulated coat, gloves, scarf and beanie",
-    "Warm waterproof shoes",
-    CN_WINTER_CLOTHING_NOTE,
-  ],
+  // Cold-weather items that hold anywhere it is cold. The country's own winter
+  // line — China's is about northern China's dry air — is appended from the
+  // profile below, so a southern coastal winter is not told the air is dry.
+  winter: ["Thermal base layers", "Insulated coat, gloves, scarf and beanie", "Warm waterproof shoes"],
 };
 
 const BEACH_DESTINATIONS = new Set(["sanya", "xiamen", "qingdao", "shenzhen"]);
 
 export function buildPackingList(input: TripInput, destinations: Destination[]): PackingGroup[] {
+  // Same seam as buildItinerary, read the same way, so one TripInput can never
+  // produce a plan for one country and a packing list for another.
+  const profile = getCountryProfile(input.country ?? DEFAULT_COUNTRY);
+
   const clothingItems = [...CLOTHING_BY_SEASON[input.season]];
+  if (input.season === "winter" && profile.copy.winterClothingNote) {
+    clothingItems.push(profile.copy.winterClothingNote);
+  }
   if (input.season === "winter" && destinations.some((d) => d.id === "harbin")) {
     clothingItems.push(
       "Harbin extreme-cold kit: -20°C rated coat, hand warmers and snow boots"
@@ -46,9 +51,10 @@ export function buildPackingList(input: TripInput, destinations: Destination[]):
   }
 
   const groups: PackingGroup[] = [
-    // Copied, not shared: the caller owns what it is handed, and these groups
-    // are the single source lib/countryProfile.ts reads too.
-    ...CN_PACKING.map((group) => ({ ...group, items: [...group.items] })),
+    // Already fresh objects with copied arrays — getCountryProfile's contract —
+    // so the caller owns what it is handed and the curated document behind it
+    // cannot be corrupted by a caller that edits its own list.
+    ...profile.packing,
     {
       title: `Clothing for ${input.season}`,
       emoji: "🧥",

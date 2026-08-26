@@ -1,11 +1,5 @@
-import {
-  CN_DEPARTURE_AFTERNOON,
-  CN_DEPARTURE_EVENING,
-  CN_GENERAL_TIPS,
-  CN_HOP_NOTE,
-  CN_HOP_TITLE,
-  CN_KIDS_TIP,
-} from "./countryData/cn";
+import { CN_GENERAL_TIPS } from "./countryData/cn";
+import { DEFAULT_COUNTRY, getCountryProfile, type CountryProfile } from "./countryProfile";
 import { newId } from "./id";
 import type { Activity, CountryCode, Destination, Interest, Season, TimeSlot } from "./types";
 
@@ -67,10 +61,12 @@ export interface TripPlan {
 const EXCLUDED = -50;
 
 /**
- * China's tips, under the name generation has always used. The strings live in
- * countryData/cn.ts so lib/countryProfile.ts can read them without importing
- * this module — which it would otherwise have to, while this module has to
- * import the profile.
+ * China's tips, under the name generation has always used.
+ *
+ * No longer read by `buildTips`, which asks the country profile — a China trip
+ * gets these because `getCountryProfile("CN")` returns them, not because the
+ * generator hard-codes them. Kept as an export because callers and tests still
+ * name it, and because it is the value the China profile must keep matching.
  */
 export const GENERAL_TIPS = CN_GENERAL_TIPS;
 
@@ -174,6 +170,12 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
     return { days: [], tips: [] };
   }
 
+  // The one place this generator learns which country it is writing for. Every
+  // sentence below that could be a claim about a place comes from here, so a
+  // Peru trip cannot be told to board a Chinese train.
+  const profile = getCountryProfile(input.country ?? DEFAULT_COUNTRY);
+  const { hopTitle, hopNote, departureCopy } = profile.transport;
+
   // Never plan more destinations than there are days.
   const active = chosen.slice(0, Math.min(chosen.length, input.days));
   const alloc = allocateDays(active, input.days);
@@ -206,8 +208,10 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
         items.push({
           slot: "morning",
           kind: "travel",
-          title: fillCity(CN_HOP_TITLE, dest.name),
-          note: CN_HOP_NOTE,
+          title: fillCity(hopTitle, dest.name),
+          // Spread rather than `note: hopNote ?? undefined`: a country with no
+          // note should carry no key, not a key holding nothing.
+          ...(hopNote ? { note: hopNote } : {}),
         });
         free = ["afternoon"];
       }
@@ -223,14 +227,14 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
           departure = {
             slot: "evening",
             kind: "departure",
-            title: CN_DEPARTURE_EVENING,
+            title: departureCopy.evening,
           };
         } else {
           free = free.filter((s) => s !== "afternoon");
           departure = {
             slot: "afternoon",
             kind: "departure",
-            title: CN_DEPARTURE_AFTERNOON,
+            title: departureCopy.afternoon,
           };
         }
       }
@@ -278,17 +282,26 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
     }
   });
 
-  return { days, tips: buildTips(input, active) };
+  return { days, tips: buildTips(input, active, profile) };
 }
 
-function buildTips(input: TripInput, destinations: Destination[]): string[] {
-  const tips = [...GENERAL_TIPS];
+/**
+ * The tips snapshotted into the trip when it is created — and published on the
+ * trip's unauthenticated briefing, which is why the country's own tips are read
+ * from the profile rather than from a module-level China array.
+ */
+function buildTips(
+  input: TripInput,
+  destinations: Destination[],
+  profile: CountryProfile
+): string[] {
+  const tips = [...profile.tips];
   destinations.forEach((d) => {
     const note = d.seasonNotes[input.season];
     if (note) tips.push(`${d.name} in ${input.season}: ${note}`);
   });
   if (input.kids > 0) {
-    tips.push(CN_KIDS_TIP);
+    tips.push(profile.copy.kidsTip);
   }
   return tips;
 }
