@@ -1,0 +1,85 @@
+# Refreshes the worldwide city catalog from GeoNames' cities500 dump.
+#
+# Commits only when the catalog actually changed. `scripts/ingest-cities.mjs`
+# preserves the previous `generatedAt` on every artifact whose payload is
+# unchanged — each of the 246 shards via `shardPayload`, and public/cities/
+# index.json, data/cities-index.json and data/cities-enrich-targets.json via
+# `stampedPayload` — so a quiet day produces a byte-identical tree. That is
+# what keeps this from committing 246 shards and a 3.7 MB index every night,
+# and it is verified by Task 6 Step 6 rather than assumed here.
+#
+# A commit here triggers a Vercel deploy, so the artifacts reach production
+# without anyone doing anything. That is also why the ingest script aborts
+# BEFORE writing when a sanity check fails: nothing looks at this run.
+#
+# GeoNames is CC BY 4.0 — attribution required. The credit lives in
+# components/plan/GeoNamesCredit.tsx, not here.
+name: Refresh cities
+
+on:
+  schedule:
+    # 04:40 UTC — after GeoNames' nightly rebuild, and half an hour after
+    # refresh-airports so the two jobs never contend for a runner.
+    - cron: "40 4 * * *"
+  workflow_dispatch:
+
+# Least privilege: the job writes data files and nothing else.
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-cities
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 24 for stable TypeScript type stripping: both scripts import
+          # lib/*.ts leaves directly rather than keeping a copy that could drift.
+          node-version: 24
+
+      # No `npm ci`: both scripts run on Node built-ins alone.
+      - name: Ingest cities
+        run: node scripts/ingest-cities.mjs
+
+      # A single failed SPARQL batch costs nothing: those ids are left out of
+      # this run's scope, so they keep the enrichment they already had. What
+      # DOES abort the run is `assertEnrichmentSane` — a run that would erase
+      # more than half the previous coverage. That failure skips the commit
+      # step below, which is the intent: a bad Wikidata day costs one skipped
+      # refresh, not the catalog's whole descriptive layer. Reads
+      # data/cities-enrich-targets.json, which the step above just wrote.
+      - name: Enrich the top cities per country
+        run: node scripts/enrich-cities.mjs
+
+      - name: Commit if the catalog changed
+        run: |
+          # `git status --porcelain`, not `git diff --quiet`: `git diff` is
+          # blind to untracked files, and `assertSane` explicitly accepts a
+          # country GeoNames newly covers — whose shard arrives untracked.
+          # refresh-airports.yml can use `git diff` only because it watches one
+          # always-tracked file.
+          #
+          # This short-circuit is only reachable because every artifact under
+          # these paths is byte-stable on a quiet day (see the header). If this
+          # job commits every night, that is what broke — check Task 6 Step 6.
+          CHANGED="$(git status --porcelain -- public/cities data/cities-index.json data/cities-enrich-targets.json)"
+          if [ -z "$CHANGED" ]; then
+            echo "No change in the city catalog — nothing to commit."
+            exit 0
+          fi
+          echo "$CHANGED" | head -20
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # data/cities-report.md is staged but deliberately NOT part of the
+          # change test above: it is prose about the catalog, not something the
+          # app reads, so it rides along with a real change instead of being
+          # able to cause one.
+          git add public/cities data/cities-index.json data/cities-enrich-targets.json data/cities-report.md
+          git commit -m "chore: refresh cities from GeoNames"
+          git push
