@@ -12,11 +12,28 @@ Largest shard: AR at 94.5 KB raw.
 
 ## Attribution
 
-GeoNames data is licensed CC BY 4.0, which requires a visible credit. That
-credit is rendered in the UI by `components/plan/GeoNamesCredit.tsx`, on every
-surface that shows a city name: the wizard footer, the destination step, both
-the member and guest states of the shared trip page, and the bearer-link
-briefing. `lib/contracts.test.ts` (C7) fails if any of them drops it.
+GeoNames data is licensed CC BY 4.0, which requires a visible credit AND an
+indication that the material was changed. It was: the filter above cuts each
+country to its top scorers, admin-1 codes are resolved to human-readable
+names, and near-duplicates of the curated catalog are dropped. Both the credit
+and the modification notice are rendered in the UI by
+`components/plan/GeoNamesCredit.tsx`, from these files:
+
+- `app/plan/page.tsx` — the planning wizard, beside the footer rather than
+  inside it, because that footer is `print:hidden` and the generated plan is
+  meant to be printed
+- `components/DestinationStep.tsx` — the destination step, under the search
+- `components/TripView.tsx` — twice: the member view and the join-code guest
+  view of the shared trip page
+- `app/b/[code]/page.tsx` — the bearer-link briefing
+- `components/home/TripsDashboard.tsx` — the signed-in home page trip list
+
+`lib/contracts.test.ts` (C7) fails if one of the files listed above drops it.
+That list is not the whole guarantee, because a hardcoded list cannot catch a
+surface added later: C7 also derives the set, scanning every `.tsx` under
+`app/` and `components/` for the tokens that carry city names and requiring
+each match to either render the credit or sit on an explicit allowlist naming
+the parent surface that renders it instead.
 
 This file is NOT the credit and never was — a line in a generated report does
 not discharge CC BY 4.0. It records where the credit lives so that deleting

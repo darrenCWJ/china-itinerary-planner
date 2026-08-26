@@ -373,16 +373,27 @@ export default function PlanPage() {
             </button>
           )}
         </div>
-        {/*
-          In the footer, not only inside DestinationStep: that component is
-          mounted under `{step === 1 && (`, so step 0 and the generated plan on
-          step 2 would carry no credit at all — and step 2 is full of GeoNames
-          city names, day counts and route legs.
-        */}
-        <div className="mt-3">
-          <GeoNamesCredit />
-        </div>
       </footer>
+
+      {/*
+        Beside the footer, not inside it — and NOT inside DestinationStep alone.
+
+        Two separate reasons stack here. DestinationStep is mounted under
+        `{step === 1 && (`, so step 0 and the generated plan on step 2 would
+        carry no credit at all, and step 2 is full of GeoNames city names, day
+        counts and route legs. And the footer above is `print:hidden`, while the
+        app has its own "Print / save as PDF" button in components/PlanStep.tsx
+        — so a credit nested in that footer is absent from the one artifact a
+        traveller actually carries around. `display: none` on the footer wins
+        over any `print:block` written on a descendant, so the fix is to be a
+        sibling of the footer rather than a child of it.
+
+        lib/contracts.test.ts (C7) scans for a `<GeoNamesCredit` that sits
+        inside a `print:hidden` container, so moving it back fails CI.
+      */}
+      <div className="mx-auto max-w-6xl px-4 pb-6">
+        <GeoNamesCredit />
+      </div>
     </div>
   );
 }

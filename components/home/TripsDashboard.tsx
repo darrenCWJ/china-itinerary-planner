@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { authClient } from "@/lib/authClient";
 import {
   localTodayIso,
@@ -258,6 +259,26 @@ export function TripsDashboard() {
   return (
     <section aria-label="Your trips" className="mb-8">
       <TripCards trips={trips} today={today} />
+      {/*
+        The sixth credited surface, and the one the brief's list missed.
+        `TripCards` renders `next.destinations`, which `toMyTrip` above maps
+        straight from `ApiTrip.destinationNames` — written by
+        lib/server/planService.ts through `resolveDestinations`, which routes
+        `G…` ids through `cityIndexEntry` → `geoNamesCityToDestination`. For any
+        non-Chinese trip those names ARE GeoNames data, and `app/page.tsx` is
+        twenty-five lines of `Link` and this component with no credit of its own.
+
+        Here rather than in `app/page.tsx` because `vitest.config.mts` includes
+        no test path under `app/`, so a credit placed there is unguardable by
+        anything except the source scan; here it is inside the component tree
+        the derived C7 scan and any future render test can both see. And inside
+        this branch specifically: the empty/error/signed-out states above render
+        no city name at all, so a credit on them would be noise attached to
+        nothing.
+      */}
+      <div className="mt-6">
+        <GeoNamesCredit />
+      </div>
     </section>
   );
 }

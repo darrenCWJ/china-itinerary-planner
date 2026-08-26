@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it, test } from "vitest";
+// The ingest script's entry-point guard means importing it here does not also
+// run `main()` and refetch 13 MB — the idiom scripts/ingest-cities.test.ts
+// already relies on. C7 compares the committed report against a live call.
+import { buildReport } from "../scripts/ingest-cities.mjs";
 import { TRIP_NAV } from "./nav";
 import { fullPayload } from "./tripFixtures";
 
@@ -606,33 +610,305 @@ describe("C6 — the trip payload stays serialisable", () => {
 describe("C7 — every surface that renders GeoNames data credits it", () => {
   /**
    * Spec §7 is a licence obligation with legal weight, and it is the kind that
-   * is discharged by a JSX line somebody has to remember. These four files
-   * render city names that come from GeoNames for any non-Chinese trip:
-   * the wizard footer (every step), the destination step, the shared trip page
-   * a view-only member reaches by join code, and the bearer-link briefing.
+   * is discharged by a JSX line somebody has to remember.
    *
-   * A blunt source scan on purpose, like C1 and C2 above: a component-level
-   * test can only see the component it renders, and what this guards against
-   * is a surface quietly dropping the import during an unrelated refactor.
+   * The first version of this contract was a hardcoded four-path list. That
+   * list was WRONG on the day it was written — it missed
+   * `components/home/TripsDashboard.tsx`, the signed-in home page, which
+   * renders `destinationNames` straight out of `GET /api/me/trips` — and a
+   * hardcoded list is structurally incapable of catching the seventh surface
+   * somebody adds next month. So the set is derived instead: scan the tree for
+   * the tokens that carry GeoNames city names into a render path, and require
+   * every match to either render the credit or sit on an allowlist that names
+   * the parent surface rendering it on that file's behalf.
+   *
+   * This mirrors the preference the repo already states for image credits at
+   * components/shell/CountryHero.tsx:29-33 — an `ImageCredit` "cannot be minted
+   * outside `lib/countryImagery`, so an image hero always carries one". The
+   * structural guarantee is the point; the enumerated list below is only its
+   * documentation.
    */
-  const MUST_CREDIT = [
-    "app/plan/page.tsx",
-    "components/DestinationStep.tsx",
-    "components/TripView.tsx",
-    "app/b/[code]/page.tsx",
-  ] as const;
-
   const CREDIT = "components/plan/GeoNamesCredit.tsx";
 
-  test.each(MUST_CREDIT)("%s renders GeoNamesCredit", (path) => {
-    const file = FILES.find((f) => f.path === path);
-    expect(file, `${path} is not in the scanned tree`).toBeDefined();
-    // `.code`, not `.text`: a commented-out call site is not a rendered credit,
-    // and this is the assertion whose failure mode is a licence breach.
-    expect(file!.code).toContain("<GeoNamesCredit");
+  /**
+   * The tokens that actually carry GeoNames-derived city names.
+   *
+   * Traced from the write side, not guessed: `lib/server/planService.ts:24`
+   * fills `destinationNames` through `resolveDestinations`, which routes `G…`
+   * ids through `cityIndexEntry` → `geoNamesCityToDestination`; `CatalogHit`
+   * and `MapCity` are the two shapes `lib/tripShared.ts` declares for a catalog
+   * row and a map pin, both of which carry a GeoNames `name`.
+   *
+   * `\.destinations\b` and not a bare `destinations`: the loose form matches
+   * app/layout.tsx's marketing copy ("pick destinations, tune the details"),
+   * which is a page-level metadata string and renders no city at all. A
+   * contract whose first finding is a false positive gets an allowlist entry
+   * that then licenses a real violation in that file forever.
+   */
+  const CITY_NAME_TOKENS = [
+    /\bdestinationNames\b/,
+    /\.destinations\b/,
+    /\bCatalogHit\b/,
+    /\bMapCity\b/,
+  ] as const;
+
+  /**
+   * `.code`, so a file that merely *discusses* GeoNames data in a comment is
+   * not dragged in, and — more importantly — a commented-out `<GeoNamesCredit`
+   * cannot satisfy the requirement. Prose must not be able to fail or pass a
+   * contract, the same rule C2 states above.
+   */
+  const namesCityData = (f: SourceFile) =>
+    /\.tsx$/.test(f.path) &&
+    (f.path.startsWith("app/") || f.path.startsWith("components/")) &&
+    CITY_NAME_TOKENS.some((t) => t.test(f.code));
+
+  const rendersCredit = (f: SourceFile) => f.code.includes("<GeoNamesCredit");
+
+  /**
+   * Explicit, and every entry says which surface covers it.
+   *
+   * These files DO render city names — they are not innocent — but they are
+   * only ever mounted inside a parent that renders the credit next to them, so
+   * a second copy would be duplicate chrome rather than a second disclosure.
+   * `coveredBy` is checked below: the named parent has to still exist, still
+   * import this file, and still render the credit itself. An entry whose parent
+   * stopped doing any of those is an exemption nobody needs, and left unchecked
+   * it silently licenses the next real violation in that file — the same
+   * failure mode C4's allowlist check exists to prevent.
+   */
+  const ALLOWED: ReadonlyArray<{ path: string; coveredBy: string; why: string }> = [
+    {
+      path: "components/map/MapExplorer.tsx",
+      coveredBy: "components/DestinationStep.tsx",
+      why: "Renders MapCity pins, but only ever as DestinationStep's map pane — the credit sits directly above it, under the search.",
+    },
+    {
+      path: "components/plan/PlaceSearch.tsx",
+      coveredBy: "components/DestinationStep.tsx",
+      why: "Renders CatalogHit rows, but only ever as DestinationStep's search box — DestinationStep renders the credit immediately beneath it.",
+    },
+    {
+      path: "components/PlanStep.tsx",
+      coveredBy: "app/plan/page.tsx",
+      why: "Renders the generated plan's destination names, but only ever as step 2 of the wizard — app/plan/page.tsx carries the credit beside its footer, where it survives print.",
+    },
+  ];
+
+  const CANDIDATES = FILES.filter(namesCityData);
+
+  /**
+   * The surfaces the generated `data/cities-report.md` claims carry the credit,
+   * parsed back out of the committed report.
+   *
+   * Read from the report rather than restated here on purpose: the report is
+   * regenerated and committed by an unattended workflow, and an enumeration in
+   * it that reads as complete has to actually be complete. Asserting the two
+   * sets are EQUAL is what stops the report from drifting in either direction —
+   * a surface that drops the credit, or a surface that gains one nobody wrote
+   * down.
+   */
+  const reportedSurfaces = (): string[] => {
+    const report = readFileSync(join(process.cwd(), "data", "cities-report.md"), "utf8");
+    const start = report.indexOf("## Attribution");
+    const end = report.indexOf("## Most cities by country");
+    expect(start, "the report has no Attribution section").toBeGreaterThanOrEqual(0);
+    expect(end, "the report has no country table to bound the Attribution section").toBeGreaterThan(
+      start
+    );
+    return [...report.slice(start, end).matchAll(/^- `([^`]+)`/gm)].map((m) => m[1]);
+  };
+
+  it("is armed — the scan finds the surfaces it is supposed to be scanning", () => {
+    // A derived scan that matches nothing reports a clean tree it never walked,
+    // which reads exactly like a passing contract. Two independent floors: a
+    // count, and the file the first version of this contract missed.
+    expect(CANDIDATES.length).toBeGreaterThanOrEqual(6);
+    expect(CANDIDATES.map((f) => f.path)).toContain("components/home/TripsDashboard.tsx");
   });
 
-  test("the credit names both licences", () => {
+  it("every file that renders GeoNames city names credits it, or is allowlisted", () => {
+    const offenders = CANDIDATES.filter(
+      (f) => !rendersCredit(f) && !ALLOWED.some((a) => a.path === f.path)
+    ).map((f) => f.path);
+    expect(offenders).toEqual([]);
+  });
+
+  it("fails on a seventh surface added later — the whole point of deriving it", () => {
+    // The regression this replaced a hardcoded list to prevent. A new component
+    // rendering destinationNames with no credit and no allowlist entry has to
+    // be a candidate and has to not satisfy the check.
+    const added = "export function Recent({ trips }) { return trips.destinationNames.join(); }\n";
+    const fake: SourceFile = {
+      path: "components/home/RecentTrips.tsx",
+      text: added,
+      code: stripComments(added),
+    };
+    expect(namesCityData(fake)).toBe(true);
+    expect(rendersCredit(fake)).toBe(false);
+    expect(ALLOWED.some((a) => a.path === fake.path)).toBe(false);
+  });
+
+  it("cannot have the credit satisfied by a comment, or the scan tripped by one", () => {
+    const commentedOut = "// <GeoNamesCredit />\nexport const x = 1;\n";
+    expect(
+      rendersCredit({ path: "x.tsx", text: commentedOut, code: stripComments(commentedOut) })
+    ).toBe(false);
+
+    const prose = "// renders destinationNames one day\nexport const y = 1;\n";
+    expect(namesCityData({ path: "components/y.tsx", text: prose, code: stripComments(prose) })).toBe(
+      false
+    );
+  });
+
+  it("does not sweep in marketing copy that mentions destinations", () => {
+    // app/layout.tsx's metadata says "pick destinations, tune the details". It
+    // renders no city, and an allowlist entry for it would sit in this file
+    // forever licensing whatever that page grows into.
+    const meta = 'export const metadata = { description: "pick destinations, tune the details" };\n';
+    expect(namesCityData({ path: "app/layout.tsx", text: meta, code: stripComments(meta) })).toBe(
+      false
+    );
+    // The dotted form still fires, which is what TripsDashboard renders.
+    const real = "const line = next.destinations.join(String.fromCharCode(8594));\n";
+    expect(
+      namesCityData({ path: "components/home/TripsDashboard.tsx", text: real, code: stripComments(real) })
+    ).toBe(true);
+  });
+
+  it("keeps its own allowlist honest — parent still exists, imports it, and credits", () => {
+    for (const { path, coveredBy } of ALLOWED) {
+      const file = FILES.find((f) => f.path === path);
+      expect(file, `${path} is allowlisted but not in the tree`).toBeDefined();
+      expect(
+        namesCityData(file!),
+        `${path} is allowlisted but no longer renders city data — drop the entry`
+      ).toBe(true);
+
+      const parent = FILES.find((f) => f.path === coveredBy);
+      expect(parent, `${path} is covered by ${coveredBy}, which is not in the tree`).toBeDefined();
+      const moduleName = path.replace(/^.*\//, "").replace(/\.tsx$/, "");
+      expect(
+        parent!.code,
+        `${coveredBy} no longer imports ${moduleName}, so it cannot be covering it`
+      ).toContain(moduleName);
+      expect(
+        rendersCredit(parent!),
+        `${coveredBy} no longer renders the credit, so ${path} is uncovered`
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * The spans of every element carrying `print:hidden`, half-open [start, end).
+   *
+   * Needed because `display: none` on an ancestor beats any `print:block` on a
+   * descendant, so "the credit is somewhere on the page" is not the same claim
+   * as "the credit prints". The wizard's credit used to sit inside
+   * `<footer className="… print:hidden">`, and step 2 unmounts DestinationStep,
+   * so the app's own "Print / save as PDF" button produced a plan full of
+   * GeoNames city names with no attribution anywhere on it.
+   *
+   * A tag-name-scoped depth count rather than a general JSX parse: read the
+   * element's name backwards from the marker, then count only that name's own
+   * opens and closes forward. Generic type parameters (`useState<MapCity[]>`)
+   * and comparisons cannot disturb it, because they never spell the container's
+   * tag name.
+   */
+  const printHiddenSpans = (code: string): Array<[number, number]> => {
+    const spans: Array<[number, number]> = [];
+    const marker = /print:hidden/g;
+    let hit: RegExpExecArray | null;
+    while ((hit = marker.exec(code)) !== null) {
+      const open = code.lastIndexOf("<", hit.index);
+      if (open < 0) continue;
+      const name = /^<([A-Za-z][\w.]*)/.exec(code.slice(open, open + 64))?.[1];
+      if (!name) continue;
+
+      // The tag's own `>`, skipping the one in an `onClick={() => …}` attribute.
+      let tagEnd = code.indexOf(">", hit.index);
+      while (tagEnd > 0 && code[tagEnd - 1] === "=") tagEnd = code.indexOf(">", tagEnd + 1);
+      if (tagEnd < 0) continue;
+      // Self-closing: it has no children, so nothing can be hidden inside it.
+      if (code.slice(open, tagEnd).trimEnd().endsWith("/")) continue;
+
+      const scan = new RegExp(`</?${name}(?=[\\s/>])`, "g");
+      scan.lastIndex = tagEnd + 1;
+      let depth = 1;
+      let end = code.length;
+      let tag: RegExpExecArray | null;
+      while ((tag = scan.exec(code)) !== null) {
+        if (tag[0][1] === "/") {
+          depth -= 1;
+          if (depth === 0) {
+            end = tag.index;
+            break;
+          }
+          continue;
+        }
+        const gt = code.indexOf(">", tag.index);
+        if (gt > 0 && code.slice(tag.index, gt).trimEnd().endsWith("/")) continue;
+        depth += 1;
+      }
+      spans.push([open, end]);
+    }
+    return spans;
+  };
+
+  it("renders no credit inside a print:hidden container", () => {
+    const offenders: string[] = [];
+    for (const file of FILES.filter(rendersCredit)) {
+      const spans = printHiddenSpans(file.code);
+      for (const call of file.code.matchAll(/<GeoNamesCredit\b/g)) {
+        if (spans.some(([start, end]) => call.index! > start && call.index! < end)) {
+          offenders.push(file.path);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("still recognises a credit buried in a hidden container when it sees one", () => {
+    // Two independent substring tests, so an empty result above proves nothing
+    // on its own. The first block is exactly what app/plan/page.tsx used to be.
+    const buried = '<footer className="py-3 print:hidden"><div className="mt-3"><GeoNamesCredit /></div></footer>';
+    const [span] = printHiddenSpans(buried);
+    expect(span).toBeDefined();
+    expect(buried.indexOf("<GeoNamesCredit")).toBeGreaterThan(span[0]);
+    expect(buried.indexOf("<GeoNamesCredit")).toBeLessThan(span[1]);
+
+    // `print:block` on the inner div does NOT rescue it — display:none on the
+    // ancestor wins — so the scan must still call it hidden.
+    const rescued = '<footer className="print:hidden"><div className="print:block"><GeoNamesCredit /></div></footer>';
+    const [rescuedSpan] = printHiddenSpans(rescued);
+    expect(rescued.indexOf("<GeoNamesCredit")).toBeLessThan(rescuedSpan[1]);
+  });
+
+  it("does not call a sibling of the hidden container hidden", () => {
+    // The shipped shape: the credit follows `</footer>`, so it prints.
+    const sibling =
+      '<div><footer className="print:hidden"><button>Back</button></footer><div className="pb-6"><GeoNamesCredit /></div></div>';
+    const spans = printHiddenSpans(sibling);
+    const at = sibling.indexOf("<GeoNamesCredit");
+    expect(spans.some(([start, end]) => at > start && at < end)).toBe(false);
+
+    // Nesting of the same tag name must not close the span early.
+    const nested = '<div className="print:hidden"><div>x</div><GeoNamesCredit /></div>';
+    const [nestedSpan] = printHiddenSpans(nested);
+    expect(nested.indexOf("<GeoNamesCredit")).toBeLessThan(nestedSpan[1]);
+
+    // A self-closing hidden element has no interior at all.
+    expect(printHiddenSpans('<input className="print:hidden" /><GeoNamesCredit />')).toEqual([]);
+
+    // An `onClick={() => …}` arrow before the tag's own `>` must not truncate
+    // the open tag and make the span start in the wrong place.
+    const arrow = '<button onClick={() => go()} className="print:hidden"><GeoNamesCredit /></button>';
+    const [arrowSpan] = printHiddenSpans(arrow);
+    expect(arrow.indexOf("<GeoNamesCredit")).toBeGreaterThan(arrowSpan[0]);
+    expect(arrow.indexOf("<GeoNamesCredit")).toBeLessThan(arrowSpan[1]);
+  });
+
+  it("the credit names both licences", () => {
     const credit = FILES.find((f) => f.path === CREDIT);
     expect(credit, `${CREDIT} is missing`).toBeDefined();
     // GeoNames is CC BY 4.0; the descriptions are Wikipedia extracts, which are
@@ -684,13 +960,85 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     }
   });
 
+  test("the report does not claim the credit is on EVERY city-name surface", () => {
+    /**
+     * The replacement copy for the stale claim above traded one false statement
+     * for another: it said the credit renders "on every surface that shows a
+     * city name" while the signed-in home page had none. A universal quantifier
+     * in a generated, auto-committed file is a claim nobody re-checks, so the
+     * report enumerates instead — and the enumeration is verified against the
+     * tree by the test below rather than trusted.
+     */
+    for (const path of ["data/cities-report.md", "scripts/ingest-cities.mjs"]) {
+      const source = readFileSync(join(process.cwd(), ...path.split("/")), "utf8");
+      expect(source, `${path} claims the credit covers "every surface"`).not.toMatch(
+        /every surface/i
+      );
+    }
+  });
+
+  test("the report's list of credited surfaces is exactly the set that credits", () => {
+    // Both directions. A surface that drops the credit fails, and a surface
+    // that gains one the report never mentions fails too — which is what stops
+    // the enumeration from reading as complete while quietly not being.
+    const listed = [...reportedSurfaces()].sort();
+    const actual = FILES.filter((f) => f.path !== CREDIT && rendersCredit(f))
+      .map((f) => f.path)
+      .sort();
+    expect(listed).toEqual(actual);
+    expect(listed.length).toBeGreaterThanOrEqual(5);
+  });
+
+  test.each(["app/plan/page.tsx", "components/DestinationStep.tsx", "components/TripView.tsx", "app/b/[code]/page.tsx", "components/home/TripsDashboard.tsx"])(
+    "%s renders GeoNamesCredit",
+    (path) => {
+      // The enumerated floor, kept alongside the derived scan rather than
+      // replaced by it: the derived scan proves no surface is UNCREDITED, and
+      // this proves these six named ones still exist to be credited at all. A
+      // file deleted outright passes the derived scan vacuously.
+      const file = FILES.find((f) => f.path === path);
+      expect(file, `${path} is not in the scanned tree`).toBeDefined();
+      // `.code`, not `.text`: a commented-out call site is not a rendered credit,
+      // and this is the assertion whose failure mode is a licence breach.
+      expect(file!.code).toContain("<GeoNamesCredit");
+    }
+  );
+
+  test("the committed report matches what the generator would write", () => {
+    /**
+     * The report is regenerated by an unattended nightly workflow, so wording
+     * hand-edited into the committed file and not into `buildReport` survives
+     * exactly until the next run. Comparing the Attribution section against a
+     * live `buildReport` call is the cheapest way to make that drift fail here
+     * instead of silently reverting in production.
+     *
+     * Only that section, because the rest is a function of the shard data — the
+     * generated timestamp and city counts would differ for reasons that have
+     * nothing to do with the licence.
+     */
+    const section = (text: string) => {
+      const start = text.indexOf("## Attribution");
+      const end = text.indexOf("## Most cities by country");
+      expect(start, "Attribution anchor missing").toBeGreaterThanOrEqual(0);
+      expect(end, "country-table anchor missing").toBeGreaterThan(start);
+      return text.slice(start, end);
+    };
+    const generated = buildReport({
+      shards: new Map(),
+      total: 0,
+      generatedAt: "unused",
+      largest: { code: "XX", bytes: 0 },
+    });
+    const committed = readFileSync(join(process.cwd(), "data", "cities-report.md"), "utf8");
+    expect(section(committed)).toBe(section(generated));
+  });
+
   test("the credit is not left in a file nothing imports", () => {
     // The scan above proves the tag appears; this proves the symbol resolves,
     // so that deleting the component would fail here rather than at runtime.
-    for (const path of MUST_CREDIT) {
-      const file = FILES.find((f) => f.path === path);
-      expect(file!.code, `${path} renders GeoNamesCredit without importing it`).toContain(
-        '@/components/plan/GeoNamesCredit'
+    for (const file of FILES.filter((f) => f.path !== CREDIT && rendersCredit(f))) {
+      expect(file.code, `${file.path} renders GeoNamesCredit without importing it`).toContain(
+        "@/components/plan/GeoNamesCredit"
       );
     }
     expect(FILES.some((f) => f.path === CREDIT), `${CREDIT} is missing`).toBe(true);
