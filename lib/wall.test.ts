@@ -74,3 +74,33 @@ describe("wallDecision", () => {
     ).toBe("pass");
   });
 });
+
+describe("wallDecision — the city shards", () => {
+  const signedOut = {
+    hasCode: false,
+    hasSessionCookie: false,
+    accountsConfigured: true,
+  };
+
+  test("a city shard sits behind the wall, exactly like the topology assets", () => {
+    // Deliberate, not an oversight. The picker only renders on /plan, which
+    // needs a session anyway, and RouteMap — the one map a guest can reach —
+    // fetches no cities at all. Exempting /cities/ would publish 6.5 MB of
+    // data outside the wall for no user-visible gain.
+    expect(wallDecision({ ...signedOut, pathname: "/cities/PE.json" })).toBe("redirect");
+    expect(wallDecision({ ...signedOut, pathname: "/cities/index.json" })).toBe("redirect");
+    expect(wallDecision({ ...signedOut, pathname: "/cities/enrich/PE.json" })).toBe("redirect");
+    // The same answer the assets that already work give.
+    expect(wallDecision({ ...signedOut, pathname: "/world-globe.json" })).toBe("redirect");
+  });
+
+  test("a signed-in visitor gets the shard", () => {
+    expect(
+      wallDecision({ ...signedOut, hasSessionCookie: true, pathname: "/cities/PE.json" })
+    ).toBe("pass");
+  });
+
+  test("the enrichment route self-enforces like every other api route", () => {
+    expect(wallDecision({ ...signedOut, pathname: "/api/cities/enrich" })).toBe("pass");
+  });
+});
