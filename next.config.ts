@@ -34,6 +34,39 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        /**
+         * The 246 city shards, their index and their enrichment files.
+         *
+         * A separate rule because the one above matches a SINGLE path segment
+         * with an inline regex — `/cities/PE.json` has two, so it would fall
+         * through to Next's `public, max-age=0` for public/ files and a country
+         * switch would refetch 22 KB every time. `:path*` matches the whole
+         * subtree, which is right: everything under /cities/ is the same kind
+         * of generated artifact with the same lifecycle.
+         *
+         * A shorter window than the topology assets deliberately. These change
+         * whenever the daily workflow finds movement upstream, where a topology
+         * changes only when someone re-runs a build script by hand. Six hours
+         * plus a day of stale-while-revalidate means a refresh reaches a
+         * returning user the same day without any picker open paying for a
+         * revalidation.
+         *
+         * BEFORE ANY SCHEMA-BREAKING REBUILD OF THESE FILES, ship a cache bust
+         * first — a hashed filename or a query string. These URLs carry no
+         * content hash, so a client can hold this morning's bytes while newly
+         * deployed code expects a new shape. A pure data refresh is fine:
+         * `parseCityShard` throws loudly rather than degrading. A shape change
+         * is not.
+         */
+        source: "/cities/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=21600, stale-while-revalidate=86400",
+          },
+        ],
+      },
     ];
   },
 };
