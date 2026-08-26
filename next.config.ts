@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
   /**
+   * Scope: this block describes the FIRST rule below only — the committed
+   * topology assets. The `/cities/` rule that follows it has its own docblock
+   * and its own, deliberately shorter, window.
+   *
    * The committed topology assets, which Next otherwise serves with
    * `Cache-Control: public, max-age=0` — it cannot know that a given file under
    * `public/` is safe to cache. These are: each changes only when its build
@@ -41,9 +45,15 @@ const nextConfig: NextConfig = {
          * A separate rule because the one above matches a SINGLE path segment
          * with an inline regex — `/cities/PE.json` has two, so it would fall
          * through to Next's `public, max-age=0` for public/ files and a country
-         * switch would refetch 22 KB every time. `:path*` matches the whole
+         * switch would refetch 22 KB every time. `:path+` matches the whole
          * subtree, which is right: everything under /cities/ is the same kind
          * of generated artifact with the same lifecycle.
+         *
+         * `:path+` (one-or-more) rather than `:path*` (zero-or-more): the
+         * star form also matches the bare `/cities` and `/cities/`, which are
+         * not files — a 404 served under those URLs would carry a six-hour
+         * `public` cache. The plus form is strictly tighter and loses nothing;
+         * `lib/cacheHeaders.test.ts` pins both directions.
          *
          * A shorter window than the topology assets deliberately. These change
          * whenever the daily workflow finds movement upstream, where a topology
@@ -59,7 +69,7 @@ const nextConfig: NextConfig = {
          * `parseCityShard` throws loudly rather than degrading. A shape change
          * is not.
          */
-        source: "/cities/:path*",
+        source: "/cities/:path+",
         headers: [
           {
             key: "Cache-Control",

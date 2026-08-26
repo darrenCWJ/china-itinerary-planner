@@ -76,11 +76,9 @@ describe("wallDecision", () => {
 });
 
 describe("wallDecision — the city shards", () => {
-  const signedOut = {
-    hasCode: false,
-    hasSessionCookie: false,
-    accountsConfigured: true,
-  };
+  // `base` above is already exactly this signed-out state; a second copy would
+  // only drift.
+  const signedOut = base;
 
   test("a city shard sits behind the wall, exactly like the topology assets", () => {
     // Deliberate, not an oversight. The picker only renders on /plan, which
