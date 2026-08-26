@@ -88,3 +88,18 @@ export interface Destination {
   suggestedDays: [number, number];
   activities: Activity[];
 }
+
+/**
+ * One titled block of a packing list.
+ *
+ * Lives here rather than in lib/packing.ts so lib/countryProfile.ts can name
+ * the shape without importing the generator that builds it — the generator
+ * has to import the profile, and a module cannot be on both ends of that.
+ * lib/packing.ts re-exports this name, so every existing consumer keeps its
+ * `from "@/lib/packing"` import.
+ */
+export interface PackingGroup {
+  title: string;
+  emoji: string;
+  items: string[];
+}

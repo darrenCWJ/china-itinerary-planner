@@ -1,4 +1,12 @@
 import { nearestAirports, DEFAULT_AIRPORT_RADIUS_KM, type Airport } from "./airports";
+import { CN_RAIL_KMH } from "./countryData/cn";
+import {
+  FLIGHT_BUFFER_H,
+  FLIGHT_KMH,
+  FLIGHT_THRESHOLD_KM,
+  GROUND_TRANSFER_KMH,
+  RAIL_BUFFER_H,
+} from "./countryData/transportDefaults";
 import { haversineKm, type LatLon } from "./geo";
 
 export interface RoutePlace {
@@ -64,41 +72,18 @@ export interface RouteSuggestion {
   notes: string[];
 }
 
-/** Legs longer than this are usually better flown than railed. */
-const FLIGHT_THRESHOLD_KM = 1200;
-/** Typical average speed of China's high-speed rail network, station to station. */
-const RAIL_KMH = 230;
-const RAIL_BUFFER_H = 0.75;
-const FLIGHT_KMH = 700;
 /**
- * Time spent at the airport itself: check-in, security, boarding, taxi and
- * baggage reclaim. Gate-side only — it does not include getting from the city
- * to the airport. That trip is `GROUND_TRANSFER_KMH` below, added on top for
- * an airport-aware flight, so the two terms are legitimately additive and do
- * not double-count the ride to the airport.
- *
- * On the zero-airport branch there is no separate transfer term, so this same
- * 2.5h is the only non-flight time in that estimate — there it deliberately
- * stands in for the transfer time too, because no airport is known and so no
- * transfer distance is knowable to estimate it from. Relative to the
- * airport-aware model above, which adds a real transfer term on top, that
- * makes the legacy branch an under-count by exactly the transfer term it has
- * no distance to compute: the test suite pins this on the same city pair —
- * 6.5h airport-aware against 6.0h legacy for Beijing → Ürümqi.
+ * The estimator still takes no country, so its rail speed is still China's —
+ * widening that is T22, not this task. Named for the country it describes so
+ * the assumption is visible where it is used, and defined once, in cn.ts.
  */
-const FLIGHT_BUFFER_H = 2.5;
-
-/**
- * Average door-to-door speed between a city centre and its airport. Deliberately
- * slow: it stands for a taxi or airport train plus the walk at either end, not
- * a motorway cruise.
- */
-const GROUND_TRANSFER_KMH = 60;
+const RAIL_KMH = CN_RAIL_KMH;
 
 /**
  * The estimator's constants, readable from outside without duplicating them.
- * The private consts above stay the single definition — this is a view of
- * them, so a country profile can report what the estimates assume.
+ * The country-neutral ones are defined once in countryData/transportDefaults
+ * and the rail speed once in countryData/cn — this stays a view of them, so a
+ * country profile can report what the estimates assume without a second copy.
  */
 export const TRANSPORT = {
   railKmh: RAIL_KMH,
