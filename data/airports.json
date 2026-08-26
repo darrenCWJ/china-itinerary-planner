@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-25T04:50:51.106Z",
+ "generatedAt": "2026-08-26T04:52:40.718Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -19003,16 +19003,6 @@
    "size": "medium"
   },
   {
-   "iata": "LBG",
-   "icao": "LFPB",
-   "name": "Paris-Le Bourget International Airport",
-   "municipality": "Paris",
-   "country": "FR",
-   "lat": 48.962276,
-   "lon": 2.436539,
-   "size": "large"
-  },
-  {
    "iata": "LBH",
    "icao": null,
    "name": "Palm Beach Seaplane Base",
@@ -29590,16 +29580,6 @@
    "country": "MU",
    "lat": -19.756696,
    "lon": 63.359326,
-   "size": "medium"
-  },
-  {
-   "iata": "RRJ",
-   "icao": "SBJR",
-   "name": "Jacarepaguá - Roberto Marinho Airport",
-   "municipality": "Rio de Janeiro",
-   "country": "BR",
-   "lat": -22.986773,
-   "lon": -43.372194,
    "size": "medium"
   },
   {
