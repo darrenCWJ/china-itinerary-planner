@@ -1,11 +1,13 @@
+import { CN_PACKING, CN_WINTER_CLOTHING_NOTE } from "./countryData/cn";
 import type { TripInput } from "./itinerary";
-import type { Destination, Season } from "./types";
+import type { Destination, PackingGroup, Season } from "./types";
 
-export interface PackingGroup {
-  title: string;
-  emoji: string;
-  items: string[];
-}
+/**
+ * Declared in lib/types.ts so lib/countryProfile.ts can name the shape without
+ * importing this module. Re-exported here under the name it has always had, so
+ * no consumer's import path changes.
+ */
+export type { PackingGroup };
 
 const CLOTHING_BY_SEASON: Record<Season, string[]> = {
   spring: [
@@ -29,7 +31,7 @@ const CLOTHING_BY_SEASON: Record<Season, string[]> = {
     "Thermal base layers",
     "Insulated coat, gloves, scarf and beanie",
     "Warm waterproof shoes",
-    "Lip balm and moisturiser — northern air is very dry",
+    CN_WINTER_CLOTHING_NOTE,
   ],
 };
 
@@ -44,38 +46,9 @@ export function buildPackingList(input: TripInput, destinations: Destination[]):
   }
 
   const groups: PackingGroup[] = [
-    {
-      title: "Documents & Money",
-      emoji: "🛂",
-      items: [
-        "Passport (6+ months validity) and visa or visa-free confirmation",
-        "Printed hotel bookings and return flight (border control may ask)",
-        "Alipay + WeChat Pay set up and tested with your bank card",
-        "Some RMB cash (¥300–500) as a backup",
-        "Travel insurance policy details",
-      ],
-    },
-    {
-      title: "Tech",
-      emoji: "🔌",
-      items: [
-        "Phone + power bank — everything in China runs through your phone",
-        "VPN installed and tested before departure",
-        "Universal power adapter (China uses type A/C/I plugs, 220V)",
-        "Offline translation app (Pleco or Google Translate offline pack)",
-        "Offline maps app (Amap 高德 has the best China coverage)",
-      ],
-    },
-    {
-      title: "Health & Comfort",
-      emoji: "💊",
-      items: [
-        "Prescription medicines in original packaging",
-        "Pocket tissues and hand sanitiser — many restrooms lack paper",
-        "Basic meds: stomach relief, cold tablets, motion sickness",
-        "Reusable water bottle — hotels have kettles; tap water isn't potable",
-      ],
-    },
+    // Copied, not shared: the caller owns what it is handed, and these groups
+    // are the single source lib/countryProfile.ts reads too.
+    ...CN_PACKING.map((group) => ({ ...group, items: [...group.items] })),
     {
       title: `Clothing for ${input.season}`,
       emoji: "🧥",

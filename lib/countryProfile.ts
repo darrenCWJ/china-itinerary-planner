@@ -1,5 +1,14 @@
+import { DEFAULT_AIRPORT_RADIUS_KM } from "./airports";
 import { getCountry } from "./countries";
-import { GENERAL_TIPS } from "./itinerary";
+import { CN_BOOKING_COPY, CN_GENERAL_TIPS, CN_PACKING, CN_RAIL_KMH } from "./countryData/cn";
+import { NEUTRAL_BOOKING_COPY, NEUTRAL_PACKING, NEUTRAL_TIPS } from "./countryData/neutral";
+import {
+  FLIGHT_BUFFER_H,
+  FLIGHT_KMH,
+  FLIGHT_THRESHOLD_KM,
+  GROUND_TRANSFER_KMH,
+  RAIL_BUFFER_H,
+} from "./countryData/transportDefaults";
 import {
   HOLIDAY_BANDS,
   NATIONAL_CROWD,
@@ -8,9 +17,7 @@ import {
   type HolidayBand,
   type RegionMonthClimate,
 } from "./months";
-import type { PackingGroup } from "./packing";
-import { TRANSPORT } from "./route";
-import type { Season } from "./types";
+import type { PackingGroup, Season } from "./types";
 
 export interface TransportProfile {
   /** null = no meaningful rail estimate for this country. */
@@ -64,114 +71,36 @@ function chinaClimate(region: string): RegionMonthClimate[] | null {
   return rows.map((row) => ({ ...row }));
 }
 
-/**
- * The static half of the China packing document. The seasonal and
- * interest-driven groups still come from buildPackingList, which remains the
- * live generator — this is the country-level document that generation will be
- * rewired onto, not a second implementation of it.
- */
-const CHINA_PACKING: PackingGroup[] = [
-  {
-    title: "Documents & Money",
-    emoji: "🛂",
-    items: [
-      "Passport (6+ months validity) and visa or visa-free confirmation",
-      "Printed hotel bookings and return flight (border control may ask)",
-      "Alipay + WeChat Pay set up and tested with your bank card",
-      "Some RMB cash (¥300–500) as a backup",
-      "Travel insurance policy details",
-    ],
-  },
-  {
-    title: "Tech",
-    emoji: "🔌",
-    items: [
-      "Phone + power bank — everything in China runs through your phone",
-      "VPN installed and tested before departure",
-      "Universal power adapter (China uses type A/C/I plugs, 220V)",
-      "Offline translation app (Pleco or Google Translate offline pack)",
-      "Offline maps app (Amap 高德 has the best China coverage)",
-    ],
-  },
-  {
-    title: "Health & Comfort",
-    emoji: "💊",
-    items: [
-      "Prescription medicines in original packaging",
-      "Pocket tissues and hand sanitiser — many restrooms lack paper",
-      "Basic meds: stomach relief, cold tablets, motion sickness",
-      "Reusable water bottle — hotels have kettles; tap water isn't potable",
-    ],
-  },
-];
-
-/**
- * Deliberately thin. Anything a country has not been researched for is absent
- * rather than guessed: no holidays, no climate, no rail estimate. The one
- * thing it must get right is the hemisphere, which is the bug this seam
- * exists to fix.
- */
-const NEUTRAL_PACKING: PackingGroup[] = [
-  {
-    title: "Documents & Money",
-    emoji: "🛂",
-    items: [
-      "Passport with at least six months' validity, plus any visa you need",
-      "A payment card that works abroad, and a small amount of local cash",
-      "Travel insurance policy details",
-      "Copies of your bookings, stored offline",
-    ],
-  },
-  {
-    title: "Tech",
-    emoji: "🔌",
-    items: [
-      "Universal power adapter",
-      "Phone and power bank",
-      "Offline maps and a translation app downloaded before you fly",
-    ],
-  },
-  {
-    title: "Health & Comfort",
-    emoji: "💊",
-    items: [
-      "Prescription medicines in their original packaging",
-      "Basic meds: stomach relief, painkillers, motion sickness",
-      "Reusable water bottle",
-      "Comfortable broken-in walking shoes",
-    ],
-  },
-];
-
-const NEUTRAL_TIPS: string[] = [
-  "Check your passport validity and entry requirements well before you book.",
-  "Tell your bank you are travelling so your cards keep working.",
-  "Download offline maps and a translation pack before you leave.",
-];
-
 /** Flat, so nothing is claimed about a country nobody has researched. */
 const FLAT_CROWD = 3;
+
+/**
+ * The half of a transport profile that is about aircraft, airports and taxis
+ * rather than about one country's networks. Read from the leaf the estimator
+ * reads, so `TRANSPORT` and every profile can never disagree.
+ */
+const TRANSPORT_DEFAULTS = {
+  flightThresholdKm: FLIGHT_THRESHOLD_KM,
+  flightKmh: FLIGHT_KMH,
+  railBufferH: RAIL_BUFFER_H,
+  flightBufferH: FLIGHT_BUFFER_H,
+  groundTransferKmh: GROUND_TRANSFER_KMH,
+  /** Not country-specific: the radius the airport index is searched over. */
+  airportSearchRadiusKm: DEFAULT_AIRPORT_RADIUS_KM,
+} as const;
 
 function chinaProfile(): CountryProfile {
   return {
     seasonOfMonth: (month) => seasonIn("north", month),
     crowdByMonth: [...NATIONAL_CROWD],
     holidays: HOLIDAY_BANDS.map((band) => ({ ...band })),
-    packing: CHINA_PACKING.map((group) => ({ ...group, items: [...group.items] })),
+    packing: CN_PACKING.map((group) => ({ ...group, items: [...group.items] })),
     transport: {
-      railKmh: TRANSPORT.railKmh,
-      flightThresholdKm: TRANSPORT.flightThresholdKm,
-      flightKmh: TRANSPORT.flightKmh,
-      railBufferH: TRANSPORT.railBufferH,
-      flightBufferH: TRANSPORT.flightBufferH,
-      groundTransferKmh: TRANSPORT.groundTransferKmh,
-      airportSearchRadiusKm: TRANSPORT.airportSearchRadiusKm,
-      bookingCopy: [
-        "High-speed rail seats open about 15 days ahead on 12306 or Trip.com.",
-        "Your passport is the ticket — carry it to collect seats and to board.",
-      ],
+      railKmh: CN_RAIL_KMH,
+      ...TRANSPORT_DEFAULTS,
+      bookingCopy: [...CN_BOOKING_COPY],
     },
-    tips: [...GENERAL_TIPS],
+    tips: [...CN_GENERAL_TIPS],
     climateFor: chinaClimate,
     currency: "CNY",
   };
@@ -188,13 +117,8 @@ function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
       // Cruise speed and airport overhead are not country-specific, so the
       // flight estimate stays useful everywhere.
       railKmh: null,
-      flightThresholdKm: TRANSPORT.flightThresholdKm,
-      flightKmh: TRANSPORT.flightKmh,
-      railBufferH: TRANSPORT.railBufferH,
-      flightBufferH: TRANSPORT.flightBufferH,
-      groundTransferKmh: TRANSPORT.groundTransferKmh,
-      airportSearchRadiusKm: TRANSPORT.airportSearchRadiusKm,
-      bookingCopy: ["Book long-distance transport ahead — fares climb close to the date."],
+      ...TRANSPORT_DEFAULTS,
+      bookingCopy: [...NEUTRAL_BOOKING_COPY],
     },
     tips: [...NEUTRAL_TIPS],
     climateFor: () => null,

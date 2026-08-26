@@ -1,3 +1,11 @@
+import {
+  CN_DEPARTURE_AFTERNOON,
+  CN_DEPARTURE_EVENING,
+  CN_GENERAL_TIPS,
+  CN_HOP_NOTE,
+  CN_HOP_TITLE,
+  CN_KIDS_TIP,
+} from "./countryData/cn";
 import { newId } from "./id";
 import type { Activity, CountryCode, Destination, Interest, Season, TimeSlot } from "./types";
 
@@ -58,13 +66,26 @@ export interface TripPlan {
 /** Scores below this are treated as "do not schedule" (e.g. wrong season). */
 const EXCLUDED = -50;
 
-export const GENERAL_TIPS = [
-  "Set up Alipay and WeChat Pay with your home bank card before flying — most of China is cashless.",
-  "Install and test a VPN before arrival if you need Google, WhatsApp or Instagram.",
-  "Book high-speed rail seats on Trip.com or the official 12306 app up to 15 days ahead.",
-  "Carry your passport everywhere — it's required for hotels, train travel and many attractions.",
-  "Download offline maps (Amap 高德 works best in China) and a translation app with offline packs.",
-];
+/**
+ * China's tips, under the name generation has always used. The strings live in
+ * countryData/cn.ts so lib/countryProfile.ts can read them without importing
+ * this module — which it would otherwise have to, while this module has to
+ * import the profile.
+ */
+export const GENERAL_TIPS = CN_GENERAL_TIPS;
+
+/**
+ * Substitute `{city}` in a copy template.
+ *
+ * split/join rather than String.replace: the city name is the *replacement*
+ * argument, where a `$` sequence is a substitution pattern rather than text,
+ * so a place name containing one would expand instead of appearing. (Written
+ * after that exact footgun mangled this file during the refactor that moved
+ * the template out.)
+ */
+function fillCity(template: string, city: string): string {
+  return template.split("{city}").join(city);
+}
 
 export function scoreActivity(a: Activity, input: TripInput): number {
   if (a.avoidSeasons?.includes(input.season)) return EXCLUDED - 1;
@@ -185,8 +206,8 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
         items.push({
           slot: "morning",
           kind: "travel",
-          title: `High-speed rail or flight to ${dest.name}`,
-          note: "Arrive at the station 30–40 minutes early; passport needed to board.",
+          title: fillCity(CN_HOP_TITLE, dest.name),
+          note: CN_HOP_NOTE,
         });
         free = ["afternoon"];
       }
@@ -202,14 +223,14 @@ export function buildItinerary(input: TripInput, all: Destination[]): TripPlan {
           departure = {
             slot: "evening",
             kind: "departure",
-            title: "Evening train or flight out — safe travels home!",
+            title: CN_DEPARTURE_EVENING,
           };
         } else {
           free = free.filter((s) => s !== "afternoon");
           departure = {
             slot: "afternoon",
             kind: "departure",
-            title: "Head to the airport or station — safe travels home!",
+            title: CN_DEPARTURE_AFTERNOON,
           };
         }
       }
@@ -267,9 +288,7 @@ function buildTips(input: TripInput, destinations: Destination[]): string[] {
     if (note) tips.push(`${d.name} in ${input.season}: ${note}`);
   });
   if (input.kids > 0) {
-    tips.push(
-      "Travelling with kids: metro stations often lack lifts at every exit — pack light and allow buffer time."
-    );
+    tips.push(CN_KIDS_TIP);
   }
   return tips;
 }
