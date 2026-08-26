@@ -92,6 +92,64 @@ describe("GeoNamesCredit", () => {
     expect(href("CC BY-SA 4.0")).toBe("https://creativecommons.org/licenses/by-sa/4.0/");
   });
 
+  test("indicates the material was modified, beside each source it names", () => {
+    /**
+     * CC BY 4.0 §3(a)(1)(B) and CC BY-SA 4.0 both require an indication that
+     * the material was changed, on the same footing as the attribution itself.
+     * It unambiguously was: `scripts/ingest-cities.mjs` cuts to the top 750 per
+     * country, resolves admin-1 codes to names and drops near-duplicates within
+     * 5 km; `firstSentences()` in `scripts/enrich-cities.mjs` shortens every
+     * description to its opening sentence or two.
+     *
+     * Asserted per source rather than per document, because "modified" written
+     * once at the end would leave it ambiguous which of the two it applies to —
+     * and one clause indicating modification while the other implies verbatim
+     * material is still a breach on the verbatim-looking one. The window checked
+     * is the text between a source and its OWN deed link, so a later copy edit
+     * cannot satisfy this by leaving the word somewhere else in the sentence.
+     */
+    const MODIFICATION = /\b(?:modified|adapted|filtered|shortened|abridged|subset|excerpt)/i;
+
+    const { container } = render(<GeoNamesCredit />);
+    const text = container.textContent ?? "";
+
+    for (const [source, deed] of [
+      ["GeoNames", "CC BY 4.0"],
+      ["Wikipedia", "CC BY-SA 4.0"],
+    ] as const) {
+      const from = text.indexOf(source);
+      const to = text.indexOf(deed);
+      expect(from, `"${source}" is missing from the credit`).toBeGreaterThanOrEqual(0);
+      expect(to, `"${deed}" is missing from the credit`).toBeGreaterThan(from);
+      expect(
+        text.slice(from + source.length, to),
+        `the ${source} clause does not indicate the material was modified`
+      ).toMatch(MODIFICATION);
+    }
+  });
+
+  test("does not claim every description is Wikipedia's", () => {
+    /**
+     * A measured 437 of the 5,105 committed descriptions are Wikidata
+     * `schema:description` values rather than Wikipedia extracts — the fallback
+     * at `scripts/enrich-cities.mjs:714`, `firstSentences(extract) ??
+     * entity.description` — and the entire lazy runtime path in
+     * `lib/server/cityEnrichment.ts` returns nothing else. Those are CC0: public
+     * domain dedication, no attribution or share-alike condition at all.
+     *
+     * Over-attribution is not a breach, but a legal notice that misstates
+     * provenance is still wrong, so the copy has to leave room for them. The
+     * source itself stays unnamed — the test below pins that, and a CC0 source
+     * named beside CC BY-SA deeds would imply a condition it does not carry.
+     */
+    const { container } = render(<GeoNamesCredit />);
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/public[- ]domain/i);
+    // Positioned after the share-alike deed, so it reads as an exception to the
+    // Wikipedia clause rather than as a claim about GeoNames.
+    expect(text.indexOf("CC BY-SA 4.0")).toBeLessThan(text.search(/public[- ]domain/i));
+  });
+
   test("opens every link safely in a new tab", () => {
     render(<GeoNamesCredit />);
 
