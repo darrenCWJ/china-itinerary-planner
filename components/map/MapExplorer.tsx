@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { Topology } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
+import { getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
@@ -366,6 +367,13 @@ export function MapExplorer({
 
   const placeById = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
 
+  /**
+   * The open country's own transport assumptions. Without this the estimator
+   * falls back to its default profile, which is China's — so a Peruvian route
+   * was scored at Chinese high-speed-rail speed and drawn with a 🚄.
+   */
+  const transport = useMemo(() => getCountryProfile(countryCode).transport, [countryCode]);
+
   const { route, unresolvedCount } = useMemo(() => {
     const routePlaces: RoutePlace[] = [];
     let missing = 0;
@@ -375,10 +383,10 @@ export function MapExplorer({
       else missing++;
     }
     return {
-      route: routePlaces.length >= 2 ? suggestRoute(routePlaces, airports) : null,
+      route: routePlaces.length >= 2 ? suggestRoute(routePlaces, airports, transport) : null,
       unresolvedCount: missing,
     };
-  }, [selected, placeById, airports]);
+  }, [selected, placeById, airports, transport]);
 
   const togglePlace = (place: MapPlace) => {
     setHover(null);
@@ -623,6 +631,20 @@ export function MapExplorer({
                     >
                       {leg.mode === "flight" ? "✈️" : "🚄"}
                       <span className="ml-0.5 font-mono text-[10px]">{leg.hours}h</span>
+                    </span>
+                  )}
+                  {/*
+                    A country whose profile withholds a rail speed has no rail
+                    leg to draw, so this one has a distance and no duration.
+                    Shown as km without an hours figure: the glyph branch above
+                    is binary — rail or flight — and neither is true here.
+                  */}
+                  {leg?.kind === "overland" && (
+                    <span
+                      className="mx-0.5 text-xs text-[var(--ink-2)]"
+                      title={`${leg.km.toLocaleString()} km overland · no travel-time estimate for ${countryLabel}`}
+                    >
+                      · {leg.km.toLocaleString()} km overland
                     </span>
                   )}
                   {/*

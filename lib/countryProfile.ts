@@ -70,7 +70,14 @@ export interface CountryCopy {
 }
 
 export interface TransportProfile {
-  /** null = no meaningful rail estimate for this country. */
+  /**
+   * null = no meaningful rail estimate for this country.
+   *
+   * Read by `estimateLeg` in lib/route.ts, and load-bearing there: null means
+   * no leg is ever scored as rail. Such a leg is flown when an airport pair
+   * resolves and beats the ground transfer to reach it, and is an `overland`
+   * leg — distance, and deliberately no duration — otherwise.
+   */
   railKmh: number | null;
   flightThresholdKm: number;
   flightKmh: number;
@@ -80,7 +87,14 @@ export interface TransportProfile {
   groundTransferKmh: number;
   /** Radius searched for a nearby airport, in km — not country-specific. */
   airportSearchRadiusKm: number;
-  /** Generation-time copy: where and how far ahead to book. */
+  /**
+   * Generation-time copy: where and how far ahead to book.
+   *
+   * `suggestRoute` emits this as the note on an all-ground route, and only
+   * when `railKmh` is non-null: the note's premise is that the traveller is
+   * about to spend the trip on trains, which is false wherever rail is
+   * withheld.
+   */
   bookingCopy: string[];
   /**
    * Title for the itinerary item that moves the party to a new city.
@@ -143,7 +157,9 @@ const FLAT_CROWD = 3;
 /**
  * The half of a transport profile that is about aircraft, airports and taxis
  * rather than about one country's networks. Read from the leaf the estimator
- * reads, so `TRANSPORT` and every profile can never disagree.
+ * used to read directly, and now the only definition of these numbers: since
+ * T22, `route.ts`'s exported `TRANSPORT` *is* the default country's profile,
+ * so the two cannot disagree because they are the same object.
  */
 const TRANSPORT_DEFAULTS = {
   flightThresholdKm: FLIGHT_THRESHOLD_KM,
@@ -185,7 +201,9 @@ function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
     transport: {
       // Rail speed is a claim about a specific network, so it is withheld.
       // Cruise speed and airport overhead are not country-specific, so the
-      // flight estimate stays useful everywhere.
+      // flight estimate stays useful everywhere. What this null buys, in
+      // lib/route.ts: no rail leg, no 🚄, and no rail booking copy for any
+      // country nobody has researched a network for.
       railKmh: null,
       ...TRANSPORT_DEFAULTS,
       bookingCopy: [...NEUTRAL_BOOKING_COPY],
