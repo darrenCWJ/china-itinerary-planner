@@ -54,3 +54,46 @@ export const NEUTRAL_TIPS = [
 export const NEUTRAL_BOOKING_COPY = [
   "Book long-distance transport ahead — fares climb close to the date.",
 ];
+
+/**
+ * Title for the morning of a day that moves to a new city. `{city}` is the
+ * arrival city, substituted by the caller.
+ *
+ * Names no mode of transport, because none is known: China's version says
+ * "High-speed rail or flight", which is a claim about a network that most
+ * countries do not have.
+ */
+export const NEUTRAL_HOP_TITLE = "Travel to {city}";
+
+/**
+ * No note under the hop title.
+ *
+ * China's note ("arrive 30–40 minutes early; passport needed to board") is
+ * about boarding a Chinese train. Nothing equivalent is known for an
+ * unresearched country, and the honest-gap rule says absent, never a hedge.
+ */
+export const NEUTRAL_HOP_NOTE: string | null = null;
+
+/** Departure when the morning was already spent in transit. */
+export const NEUTRAL_DEPARTURE_EVENING = "Evening departure — safe travels home!";
+
+/** Departure when the afternoon is free to travel. */
+export const NEUTRAL_DEPARTURE_AFTERNOON = "Time to head home — safe travels!";
+
+/**
+ * Added to the tips when the party includes children.
+ *
+ * China's version explains that metro stations often lack lifts at every exit
+ * — true there, unverified anywhere else, so only the transferable half of the
+ * advice survives here.
+ */
+export const NEUTRAL_KIDS_TIP =
+  "Travelling with kids: pack light and allow buffer time between stops.";
+
+/**
+ * No extra winter clothing line.
+ *
+ * China's is "northern air is very dry", which is a claim about northern
+ * China's winter and wrong on, say, Lima's coastal-fog winter.
+ */
+export const NEUTRAL_WINTER_CLOTHING_NOTE: string | null = null;

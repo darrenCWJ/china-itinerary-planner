@@ -1,7 +1,28 @@
 import { DEFAULT_AIRPORT_RADIUS_KM } from "./airports";
 import { getCountry } from "./countries";
-import { CN_BOOKING_COPY, CN_GENERAL_TIPS, CN_PACKING, CN_RAIL_KMH } from "./countryData/cn";
-import { NEUTRAL_BOOKING_COPY, NEUTRAL_PACKING, NEUTRAL_TIPS } from "./countryData/neutral";
+import {
+  CN_BOOKING_COPY,
+  CN_DEPARTURE_AFTERNOON,
+  CN_DEPARTURE_EVENING,
+  CN_GENERAL_TIPS,
+  CN_HOP_NOTE,
+  CN_HOP_TITLE,
+  CN_KIDS_TIP,
+  CN_PACKING,
+  CN_RAIL_KMH,
+  CN_WINTER_CLOTHING_NOTE,
+} from "./countryData/cn";
+import {
+  NEUTRAL_BOOKING_COPY,
+  NEUTRAL_DEPARTURE_AFTERNOON,
+  NEUTRAL_DEPARTURE_EVENING,
+  NEUTRAL_HOP_NOTE,
+  NEUTRAL_HOP_TITLE,
+  NEUTRAL_KIDS_TIP,
+  NEUTRAL_PACKING,
+  NEUTRAL_TIPS,
+  NEUTRAL_WINTER_CLOTHING_NOTE,
+} from "./countryData/neutral";
 import {
   FLIGHT_BUFFER_H,
   FLIGHT_KMH,
@@ -17,7 +38,36 @@ import {
   type HolidayBand,
   type RegionMonthClimate,
 } from "./months";
-import type { PackingGroup, Season } from "./types";
+import type { CountryCode, PackingGroup, Season } from "./types";
+
+/**
+ * The country a generator assumes when its input does not name one.
+ *
+ * One constant rather than a `?? "CN"` in each generator: `buildItinerary` and
+ * `buildPackingList` are handed the same `TripInput`, and two literals that
+ * drift apart would give one trip two countries' copy. `TripInput.country` is
+ * optional because trips saved before the field existed do not carry it, and
+ * every one of those is a China trip — the same reasoning `tripCountry` in
+ * lib/tripShared.ts documents at length for the persisted side.
+ */
+export const DEFAULT_COUNTRY: CountryCode = "CN";
+
+/**
+ * Country-specific sentences the generators splice into their own output.
+ *
+ * These are not tips or packing items in their own right — each one is a
+ * fragment that only makes sense in the place the generator puts it, which is
+ * why they live here rather than in `tips`.
+ */
+export interface CountryCopy {
+  /** Added to the tips when the party includes children. */
+  kidsTip: string;
+  /**
+   * Extra winter clothing item, appended after the generic cold-weather ones.
+   * `null` when nothing country-specific is known — never a hedge.
+   */
+  winterClothingNote: string | null;
+}
 
 export interface TransportProfile {
   /** null = no meaningful rail estimate for this country. */
@@ -32,6 +82,20 @@ export interface TransportProfile {
   airportSearchRadiusKm: number;
   /** Generation-time copy: where and how far ahead to book. */
   bookingCopy: string[];
+  /**
+   * Title for the itinerary item that moves the party to a new city.
+   * A template: `{city}` is substituted with the arrival city by the caller,
+   * so the sentence stays reviewable as one string rather than as
+   * concatenation spread across the generator.
+   */
+  hopTitle: string;
+  /** Note under the hop title, or `null` when nothing can be claimed. */
+  hopNote: string | null;
+  /**
+   * Last-day copy. `evening` is used when transit already took the morning,
+   * `afternoon` when the afternoon is free to travel.
+   */
+  departureCopy: { evening: string; afternoon: string };
 }
 
 export interface CountryProfile {
@@ -45,6 +109,8 @@ export interface CountryProfile {
   transport: TransportProfile;
   /** Generation-time tips, snapshotted into the trip when it is created. */
   tips: string[];
+  /** Sentences the generators splice into their own output. */
+  copy: CountryCopy;
   /** Rows for a region, or null when this country has no climate table. */
   climateFor(region: string): RegionMonthClimate[] | null;
   /** Currency conversion pivot. */
@@ -99,8 +165,12 @@ function chinaProfile(): CountryProfile {
       railKmh: CN_RAIL_KMH,
       ...TRANSPORT_DEFAULTS,
       bookingCopy: [...CN_BOOKING_COPY],
+      hopTitle: CN_HOP_TITLE,
+      hopNote: CN_HOP_NOTE,
+      departureCopy: { evening: CN_DEPARTURE_EVENING, afternoon: CN_DEPARTURE_AFTERNOON },
     },
     tips: [...CN_GENERAL_TIPS],
+    copy: { kidsTip: CN_KIDS_TIP, winterClothingNote: CN_WINTER_CLOTHING_NOTE },
     climateFor: chinaClimate,
     currency: "CNY",
   };
@@ -119,8 +189,15 @@ function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
       railKmh: null,
       ...TRANSPORT_DEFAULTS,
       bookingCopy: [...NEUTRAL_BOOKING_COPY],
+      hopTitle: NEUTRAL_HOP_TITLE,
+      hopNote: NEUTRAL_HOP_NOTE,
+      departureCopy: {
+        evening: NEUTRAL_DEPARTURE_EVENING,
+        afternoon: NEUTRAL_DEPARTURE_AFTERNOON,
+      },
     },
     tips: [...NEUTRAL_TIPS],
+    copy: { kidsTip: NEUTRAL_KIDS_TIP, winterClothingNote: NEUTRAL_WINTER_CLOTHING_NOTE },
     climateFor: () => null,
     currency:
       // Placeholder pivot. A country without a researched profile has no known
