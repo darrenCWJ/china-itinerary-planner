@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
+import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { PlanStep } from "@/components/PlanStep";
 import { mergeCatalogHit, shouldFetchEnrichment } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
@@ -371,6 +372,15 @@ export default function PlanPage() {
               Plan another trip
             </button>
           )}
+        </div>
+        {/*
+          In the footer, not only inside DestinationStep: that component is
+          mounted under `{step === 1 && (`, so step 0 and the generated plan on
+          step 2 would carry no credit at all — and step 2 is full of GeoNames
+          city names, day counts and route legs.
+        */}
+        <div className="mt-3">
+          <GeoNamesCredit />
         </div>
       </footer>
     </div>

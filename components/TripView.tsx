@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { CountryHero } from "@/components/shell/CountryHero";
 import { useSetShellTrip } from "@/components/shell/ShellTripContext";
 import type { SettlementDraft } from "@/components/trip/BalancesCard";
@@ -159,6 +160,16 @@ export function TripView({ tripId }: { tripId: string }) {
           </p>
         )}
         <GuestTripView view={guestView} />
+        {/*
+          The guest state is NOT one of this file's loading/error early returns:
+          `GuestHeader` right above renders `view.destinationNames`, which for a
+          non-Chinese trip is GeoNames data, to someone who is not signed in and
+          may never open /plan. It needs the credit for the same reason the real
+          trip view below does.
+        */}
+        <div className="mt-8">
+          <GeoNamesCredit />
+        </div>
       </PageMain>
     );
   }
@@ -325,6 +336,16 @@ export function TripView({ tripId }: { tripId: string }) {
           isMember={isMember}
         />
       )}
+      {/*
+        The shared trip page is reachable by a view-only member holding a join
+        code, who may never open /plan — and for a non-Chinese trip every name
+        in `data.destinationNames` above is GeoNames data. components/trip/
+        Rates.tsx already renders its own `<Attribution />` on this page for a
+        weaker obligation; this is the stronger one.
+      */}
+      <div className="mt-8">
+        <GeoNamesCredit />
+      </div>
     </PageMain>
   );
 }

@@ -13,9 +13,14 @@ Largest shard: AR at 94.5 KB raw.
 ## Attribution
 
 GeoNames data is licensed CC BY 4.0, which requires a visible credit. That
-credit is REQUIRED and NOT YET RENDERED IN THE UI — it lands with Task 16
-("The visible GeoNames CC BY 4.0 credit", `components/plan/GeoNamesCredit.tsx`)
-of the worldwide city catalog plan; this file is not a substitute for it.
+credit is rendered in the UI by `components/plan/GeoNamesCredit.tsx`, on every
+surface that shows a city name: the wizard footer, the destination step, both
+the member and guest states of the shared trip page, and the bearer-link
+briefing. `lib/contracts.test.ts` (C7) fails if any of them drops it.
+
+This file is NOT the credit and never was — a line in a generated report does
+not discharge CC BY 4.0. It records where the credit lives so that deleting
+the component is a visible break rather than a silent one.
 
 ## Most cities by country
 

@@ -33,9 +33,9 @@
  *
  * Licence: GeoNames is CC BY 4.0 — attribution required, and unlike
  * OurAirports and Natural Earth it is not public domain. The credit has to be
- * visible in the UI, not just here — Task 16 of this plan
- * (components/plan/GeoNamesCredit.tsx) is where that lands; it does not exist
- * yet, so as of this script the requirement is unmet.
+ * visible in the UI, not just here; components/plan/GeoNamesCredit.tsx renders
+ * it on every surface that shows a city name, and lib/contracts.test.ts (C7)
+ * fails if one of them drops it.
  *
  * Usage: node scripts/ingest-cities.mjs
  *
@@ -717,9 +717,9 @@ const CITIES_MEMBER = 'cities500.txt';
 const ADMIN1_URL = 'https://download.geonames.org/export/dump/admin1CodesASCII.txt';
 /**
  * CC BY 4.0, not public domain — unlike OurAirports and Natural Earth. The
- * credit has to be visible in the UI as well as here; that is Task 16
- * (components/plan/GeoNamesCredit.tsx), which has not landed yet — see
- * `buildReport`'s Attribution section below for the wording that says so.
+ * credit has to be visible in the UI as well as here; that is
+ * components/plan/GeoNamesCredit.tsx — see `buildReport`'s Attribution section
+ * below, which records where it renders and what guards it.
  */
 const SOURCE_LICENSE = 'GeoNames cities500 (CC BY 4.0)';
 const SOURCE_ATTRIBUTION = 'https://www.geonames.org/ — CC BY 4.0';
@@ -873,9 +873,14 @@ export function buildReport({ shards, total, generatedAt, largest }) {
     '## Attribution',
     '',
     'GeoNames data is licensed CC BY 4.0, which requires a visible credit. That',
-    'credit is REQUIRED and NOT YET RENDERED IN THE UI — it lands with Task 16',
-    '("The visible GeoNames CC BY 4.0 credit", `components/plan/GeoNamesCredit.tsx`)',
-    'of the worldwide city catalog plan; this file is not a substitute for it.',
+    'credit is rendered in the UI by `components/plan/GeoNamesCredit.tsx`, on every',
+    'surface that shows a city name: the wizard footer, the destination step, both',
+    'the member and guest states of the shared trip page, and the bearer-link',
+    'briefing. `lib/contracts.test.ts` (C7) fails if any of them drops it.',
+    '',
+    'This file is NOT the credit and never was — a line in a generated report does',
+    'not discharge CC BY 4.0. It records where the credit lives so that deleting',
+    'the component is a visible break rather than a silent one.',
     '',
     '## Most cities by country',
     '',

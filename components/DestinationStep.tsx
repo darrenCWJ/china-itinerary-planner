@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { MapExplorer, type MapLevel } from "@/components/map/MapExplorer";
 import { FeasibilityCounter } from "@/components/plan/FeasibilityCounter";
+import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { PlaceSearch, type PickedPlace } from "@/components/plan/PlaceSearch";
 import { getCountry } from "@/lib/countries";
 import { DESTINATIONS } from "@/lib/data";
@@ -327,6 +328,12 @@ export function DestinationStep({
           onRemove={removePlace}
         />
         <FeasibilityCounter places={feasibilityPlaces} daysSet={days} />
+        {/*
+          Directly under the search that is browsing the data, not only in the
+          wizard footer: this is where GeoNames names, coordinates and the
+          Wikipedia-derived blurbs are actually being read.
+        */}
+        <GeoNamesCredit />
       </div>
 
       {view === "map" && (
