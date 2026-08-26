@@ -21,7 +21,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh-airports
+  # SHARED with refresh-cities.yml, deliberately. Both jobs commit to main on
+  # a cron half an hour apart, and GitHub routinely delays scheduled runs well
+  # past that under load. A group name unique per workflow would let them
+  # overlap and turn one of the two pushes into a non-fast-forward; the same
+  # name serialises them.
+  group: refresh-data
   cancel-in-progress: false
 
 jobs:

@@ -12,6 +12,26 @@
 # without anyone doing anything. That is also why the ingest script aborts
 # BEFORE writing when a sanity check fails: nothing looks at this run.
 #
+# ...and it is why this job runs the test suite ITSELF, in "Verify the
+# artifacts" below, before it is allowed to commit. GitHub does not create
+# workflow runs from pushes authenticated with the default GITHUB_TOKEN
+# (recursion prevention; only workflow_dispatch and repository_dispatch are
+# exempt), and actions/checkout persists exactly that token for the `git push`
+# at the end — so **ci.yml never runs on this job's commit**, while Vercel's
+# git integration deploys it regardless. Without the verify step, the very
+# scenario cited below to justify `git status --porcelain` — a country
+# GeoNames newly covers, which `assertSane` accepts anywhere in 244..248 —
+# would sail past the gate, land on main against the exact
+# `toHaveLength(246)` in lib/cityShard.test.ts, deploy to production, and
+# never produce a red test anywhere. The same holds for the other exact pins a
+# refresh can legitimately move: the 750-per-country cap, and the five named
+# destinations asserted by geonameid.
+#
+# So: if the artifacts would fail the repo's own tests, this job goes red and
+# commits nothing. A human sees a failed scheduled run in the Actions tab and
+# decides whether a 247th country is real — which is the right place for that
+# call to be made, rather than in a production incident.
+#
 # GeoNames is CC BY 4.0 — attribution required. The credit lives in
 # components/plan/GeoNamesCredit.tsx, not here.
 name: Refresh cities
@@ -19,7 +39,10 @@ name: Refresh cities
 on:
   schedule:
     # 04:40 UTC — after GeoNames' nightly rebuild, and half an hour after
-    # refresh-airports so the two jobs never contend for a runner.
+    # refresh-airports. The offset is politeness, not a guarantee: GitHub
+    # routinely delays scheduled runs well past 30 minutes under load. The
+    # shared concurrency group below is what actually keeps the two jobs from
+    # overlapping.
     - cron: "40 4 * * *"
   workflow_dispatch:
 
@@ -28,12 +51,23 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh-cities
+  # SHARED with refresh-airports.yml, deliberately. Both jobs commit to main,
+  # and this one holds the repo's longest checkout->push window, so an
+  # overlapping refresh-airports push would make our `git push` a
+  # non-fast-forward. A group name unique per workflow would not serialise
+  # them; the same name does.
+  group: refresh-data
   cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    # The default is 360. Nothing bounds the worst case below it: a degraded
+    # Wikidata day is ~42 SPARQL batches x 3 attempts x 90s SPARQL_TIMEOUT_MS
+    # (~3.1h) plus ~313 extract batches x 3 x 30s REST_TIMEOUT_MS (~7.8h), so
+    # a bad night would burn hours of runner minutes before the 6h kill. A
+    # healthy run is far inside 60 minutes; anything past it is a fast red.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -42,8 +76,15 @@ jobs:
           # 24 for stable TypeScript type stripping: both scripts import
           # lib/*.ts leaves directly rather than keeping a copy that could drift.
           node-version: 24
+          cache: npm
 
-      # No `npm ci`: both scripts run on Node built-ins alone.
+      # Both ingest scripts still run on Node built-ins alone — this install is
+      # for vitest, so "Verify the artifacts" below can run. It is first so a
+      # broken lockfile fails in seconds instead of after an hour of ingest.
+      # legacy-peer-deps: .npmrc sets it and `npm ci` honours it, kept explicit
+      # for the reason ci.yml gives.
+      - run: npm ci --legacy-peer-deps
+
       - name: Ingest cities
         run: node scripts/ingest-cities.mjs
 
@@ -56,6 +97,17 @@ jobs:
       # data/cities-enrich-targets.json, which the step above just wrote.
       - name: Enrich the top cities per country
         run: node scripts/enrich-cities.mjs
+
+      # The whole suite, not a hand-picked subset: lib/cityShard.test.ts and
+      # lib/server/cityIndex.test.ts are the two files that read these
+      # artifacts off disk today, but naming them here would be a list that
+      # silently stops being complete the day someone adds a third. `npm test`
+      # is also literally ci.yml's gate, which is the point — see the header.
+      # `npx tsc --noEmit`, ci.yml's other half, is deliberately not repeated:
+      # these scripts write JSON only, so every TypeScript file in the tree is
+      # byte-identical to the commit CI already type-checked.
+      - name: Verify the artifacts against the repo's own tests
+        run: npm test
 
       - name: Commit if the catalog changed
         run: |
@@ -82,4 +134,12 @@ jobs:
           # able to cause one.
           git add public/cities data/cities-index.json data/cities-enrich-targets.json data/cities-report.md
           git commit -m "chore: refresh cities from GeoNames"
-          git push
+          # The concurrency group keeps the other refresh job out of this
+          # window, but a human push to main can still land inside it and make
+          # this a non-fast-forward. Rebase the one data commit onto their tip
+          # and retry, rather than losing the day's refresh to a race with no
+          # retry. Verified to work on the shallow checkout actions/checkout
+          # produces. (If their push changed source, the rebased tree is not
+          # quite the one tested a minute ago — but that tree is what ci.yml
+          # runs on THEIR commit, so it is covered where this job is not.)
+          git push || { git pull --rebase origin main && git push; }
