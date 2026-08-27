@@ -113,6 +113,21 @@ describe("neutral profile", () => {
     expect(xx.tips.length).toBeGreaterThan(0);
   });
 
+  test("each packing GROUP gets a fresh items array, not a shared reference", () => {
+    // `not.toBe(NEUTRAL_PACKING)` compares the outer array only, so
+    // `copyPacking`'s `items: [...group.items]` could become `items:
+    // group.items` with every assertion above still green — and the mutation
+    // test at the top of this file edits `crowdByMonth` and `tips` but never a
+    // group's items. That inner copy is the contract `lib/countryFacts.ts`
+    // cites as the reason `getCountryFacts` is not memoised: a caller may edit
+    // what it is handed. Pinned by writing through the handle and re-reading.
+    const first = getCountryProfile("XX");
+    expect(first.packing[0].items).not.toBe(NEUTRAL_PACKING[0].items);
+    first.packing[0].items.push("mutated");
+    expect(getCountryProfile("XX").packing[0].items).not.toContain("mutated");
+    expect(NEUTRAL_PACKING[0].items).not.toContain("mutated");
+  });
+
   test("a code that is not a country gets no gap note, because it cannot name one", () => {
     // `buildGapNote` returns [] for a blank country name, and "XX" has none.
     // A note that cannot say whose data is missing is not actionable.
