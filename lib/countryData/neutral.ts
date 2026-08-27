@@ -50,6 +50,10 @@ export const NEUTRAL_TIPS = [
 /**
  * Generation-time booking copy that names no network and no vendor, because
  * neither is known for an unresearched country.
+ *
+ * Naming nothing is what lets `suggestRoute` emit it on a flown route as well
+ * as a ground one: it is true of a flight, a coach and a ferry alike. China's
+ * version is not, which is why that one is gated on a rail speed being known.
  */
 export const NEUTRAL_BOOKING_COPY = [
   "Book long-distance transport ahead — fares climb close to the date.",

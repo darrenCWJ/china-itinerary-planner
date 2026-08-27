@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
+import { NATIONAL_CROWD } from "@/lib/months";
 import { PlacePopup } from "./PlacePopup";
 import type { MapPlace } from "./mapTypes";
 
@@ -31,9 +32,20 @@ function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlac
   };
 }
 
-function show(subject: MapPlace) {
+/**
+ * `country` defaults to CN so the origin-line cases below read exactly as they
+ * did before the prop existed — they are about `place`, not about the country
+ * being planned. The crowd cases pass it explicitly, in both directions.
+ */
+function show(subject: MapPlace, country = "CN", month = 10) {
   return render(
-    <PlacePopup place={subject} month={10} position={{ x: 100, y: 100 }} containerWidth={640} />
+    <PlacePopup
+      place={subject}
+      month={month}
+      position={{ x: 100, y: 100 }}
+      containerWidth={640}
+      country={country}
+    />
   );
 }
 
@@ -100,5 +112,53 @@ describe("PlacePopup — where it says a place is", () => {
     // that is left, so it stands alone rather than after a dangling "·".
     expect(screen.getByText("prefecture")).toBeInTheDocument();
     expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The hover card used to read `crowdForMonth` and `bandsForMonth` straight out
+ * of lib/months.ts — China's tables — so every Peruvian city hover showed
+ * China's national crowd curve, and February showed 🧧.
+ *
+ * Both directions, in the same file, for the reason
+ * components/map/MonthTimeline.test.tsx spells out: "Peru shows no crowd dots"
+ * passes just as well against a card that renders nothing.
+ */
+describe("PlacePopup — whose crowd curve it shows", () => {
+  const cusco = { id: "G3941584", name: "Cusco", province: "Cuzco Department", region: "Cuzco Department" };
+
+  test("a Chinese place still shows China's crowd dots and October's band glyph", () => {
+    const { container } = show(place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" }), "CN");
+
+    // October's real value from the curated curve, not a constant — a card
+    // rendering the same figure every month would pass a presence check.
+    const october = NATIONAL_CROWD[9];
+    expect(container.textContent).toContain(`Crowds ${"●".repeat(october)}${"○".repeat(5 - october)}`);
+    expect(screen.getByTitle("National Day Golden Week falls in this month")).toBeInTheDocument();
+    expect(container.textContent).toContain("🇨🇳");
+  });
+
+  test("a Peruvian place shows no crowd element at all, and no band glyph", () => {
+    const { container } = show(place(cusco), "PE");
+
+    expect(container.textContent).not.toContain("Crowds");
+    expect(container.textContent).not.toContain("●");
+    expect(container.textContent).not.toContain("○");
+    expect(screen.queryByTitle(/falls in this month/)).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain("🇨🇳");
+    // Positive half: the card is still a card. Without this the four absences
+    // above are satisfied by a component that returned null.
+    expect(screen.getByText("Cusco")).toBeInTheDocument();
+    expect(screen.getByText("Click to select")).toBeInTheDocument();
+  });
+
+  test("February shows no red envelope over a Peruvian city, and still does over a Chinese one", () => {
+    // The single sharpest string on this surface, and the month it fires in.
+    show(place(cusco), "PE", 2);
+    expect(screen.queryByTitle(/Chinese New Year/)).not.toBeInTheDocument();
+    cleanup();
+
+    show(place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" }), "CN", 2);
+    expect(screen.getByTitle("Chinese New Year falls in this month")).toBeInTheDocument();
   });
 });

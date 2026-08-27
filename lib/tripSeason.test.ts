@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { seasonOfMonth } from "./months";
 import { resolveTripSeason } from "./tripSeason";
 
 /**
@@ -49,5 +50,31 @@ describe("resolveTripSeason", () => {
 
   it("is case-insensitive about the country code", () => {
     expect(resolveTripSeason("winter", 1, "au")).toBe("summer");
+  });
+
+  it("gives the wizard preview and the saved trip the same answer for a southern June", () => {
+    // The bug this closes, stated as the two calls that used to disagree.
+    // app/plan/page.tsx now calls exactly this for the month the user scrubs
+    // to, and app/api/trips/route.ts calls it for the month the client then
+    // sends — one function, so the preview and the saved trip cannot part
+    // company. The wizard used to call the bare `seasonOfMonth` below.
+    expect(seasonOfMonth(6)).toBe("summer");
+    expect(resolveTripSeason(seasonOfMonth(6), 6, "PE")).toBe("winter");
+    // And the arming: the same two calls agree for a northern country, so
+    // "they agree" above is a fact about the hemisphere and not about a
+    // function that returns one season for everything.
+    expect(resolveTripSeason(seasonOfMonth(6), 6, "CN")).toBe("summer");
+    expect(resolveTripSeason(seasonOfMonth(6), 6, "CN")).toBe(seasonOfMonth(6));
+  });
+
+  it("agrees with the country profile in every month, for both hemispheres", () => {
+    // A single month could agree by accident — two of the four seasons match
+    // across hemispheres at the boundaries. Sweeping all twelve does not.
+    for (let month = 1; month <= 12; month++) {
+      const north = resolveTripSeason("autumn", month, "CN");
+      const south = resolveTripSeason("autumn", month, "PE");
+      expect(north).toBe(seasonOfMonth(month));
+      expect(south).toBe(seasonOfMonth(((month + 5) % 12) + 1));
+    }
   });
 });

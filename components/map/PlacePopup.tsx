@@ -1,12 +1,7 @@
 "use client";
 
-import {
-  bandsForMonth,
-  crowdForMonth,
-  highlightFor,
-  regionMonthClimate,
-  seasonOfMonth,
-} from "@/lib/months";
+import { getCountryProfile } from "@/lib/countryProfile";
+import { bandsIn, highlightFor, regionMonthClimate } from "@/lib/months";
 import {
   FIT_COLORS,
   FIT_LABELS,
@@ -21,22 +16,35 @@ interface Props {
   month: number;
   position: { x: number; y: number };
   containerWidth: number;
+  /**
+   * The country being planned.
+   *
+   * The crowd dots and the holiday glyph below used to come from lib/months.ts
+   * directly, which is China's table — so hovering any Peruvian city showed
+   * China's national crowd curve, and February showed 🧧. The season used to
+   * pick a `seasonNotes` line was northern for the same reason.
+   */
+  country: string;
 }
 
 const POPUP_W = 260;
 
 /** Hover card following the cursor over a map marker. */
-export function PlacePopup({ place, month, position, containerWidth }: Props) {
+export function PlacePopup({ place, month, position, containerWidth, country }: Props) {
+  const profile = getCountryProfile(country);
   const fit = fitForPlace(place, month);
   // regionMonthClimate is China-only data (see lib/months.ts); a place from
   // outside China's seven regions has no row to read, so this degrades to no
   // climate line instead of throwing.
   const climate = isChinaRegion(place.region) ? regionMonthClimate(place.region, month) : null;
-  const season = seasonOfMonth(month);
+  const season = profile.seasonOfMonth(month);
   const seasonNote = place.seasonNotes?.[season];
   const highlight = place.kind === "curated" ? highlightFor(place.id, month) : undefined;
-  const crowd = crowdForMonth(month);
-  const band = bandsForMonth(month)[0];
+  // null, not a flat curve, for a country nobody has researched — the crowd
+  // line is then not rendered at all. See `CountryProfile.crowdByMonth`.
+  const crowd = profile.crowdByMonth?.[month - 1] ?? null;
+  const band = bandsIn(profile.holidays, month)[0];
+  const hasCrowdLine = crowd !== null || band !== undefined;
   const population = formatPopulation(place.population);
 
   /**
@@ -113,12 +121,22 @@ export function PlacePopup({ place, month, position, containerWidth }: Props) {
         <p className="mt-1 line-clamp-3 text-xs text-[var(--ink-2)]">{place.blurb}</p>
       )}
 
-      <div className="mt-2 flex items-center justify-between border-t border-dashed border-[var(--line-1)] pt-2 text-[11px] text-[var(--ink-2)]">
-        <span title={band ? `${band.name} falls in this month` : undefined}>
-          Crowds {"●".repeat(crowd)}
-          {"○".repeat(5 - crowd)}
-          {band && <span className="ml-1">{band.emoji}</span>}
-        </span>
+      <div
+        className={`mt-2 flex items-center ${
+          hasCrowdLine ? "justify-between" : "justify-end"
+        } border-t border-dashed border-[var(--line-1)] pt-2 text-[11px] text-[var(--ink-2)]`}
+      >
+        {hasCrowdLine && (
+          <span title={band ? `${band.name} falls in this month` : undefined}>
+            {crowd !== null && (
+              <>
+                Crowds {"●".repeat(crowd)}
+                {"○".repeat(5 - crowd)}
+              </>
+            )}
+            {band && <span className="ml-1">{band.emoji}</span>}
+          </span>
+        )}
         {place.attractionCount > 0 ? (
           <span>{place.attractionCount} sights</span>
         ) : (

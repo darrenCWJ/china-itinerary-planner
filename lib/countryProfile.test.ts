@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { ISO_NUMERIC_TO_ALPHA2 } from "./countries";
 import { getCountryProfile } from "./countryProfile";
 import { GENERAL_TIPS } from "./itinerary";
 import { HOLIDAY_BANDS, NATIONAL_CROWD, REGION_MONTHS } from "./months";
@@ -43,7 +44,13 @@ describe("China profile", () => {
   });
 
   test("callers cannot mutate the shared curated data through the profile", () => {
-    cn.crowdByMonth[0] = 99;
+    const crowd = cn.crowdByMonth;
+    // Narrowing, and an assertion in its own right: China's curve is the one
+    // that must never be null, so a `?? []` here would hide the regression
+    // this test is holding down.
+    expect(crowd).not.toBeNull();
+    if (crowd === null) return;
+    crowd[0] = 99;
     cn.tips.push("mutated");
     expect(getCountryProfile("CN").crowdByMonth).toEqual(NATIONAL_CROWD);
     expect(getCountryProfile("CN").tips).toEqual([...GENERAL_TIPS]);
@@ -72,9 +79,14 @@ describe("hemisphere", () => {
 describe("neutral profile", () => {
   const xx = getCountryProfile("XX");
 
-  test("crowd pressure is flat rather than invented", () => {
-    expect(xx.crowdByMonth).toHaveLength(12);
-    expect(new Set(xx.crowdByMonth).size).toBe(1);
+  test("crowd pressure is absent rather than invented", () => {
+    // Was `toHaveLength(12)` over a flat `[3,3,3,…]`. A flat curve is not the
+    // absence of a claim: rendered under the label its consumers carry —
+    // *typical national crowd pressure this month* — it says every month is
+    // equally busy, which nobody researched. `null` is the honest state, and
+    // components/map/MonthTimeline.test.tsx pins that it renders as no element
+    // at all rather than as a row of three-of-five dots.
+    expect(xx.crowdByMonth).toBeNull();
   });
 
   test("no holidays and no climate rows", () => {
@@ -110,7 +122,60 @@ describe("neutral profile", () => {
   test("garbage input yields a profile instead of an exception", () => {
     for (const junk of ["", "   ", "CHN", "🙂", "constructor"]) {
       expect(() => getCountryProfile(junk)).not.toThrow();
-      expect(getCountryProfile(junk).crowdByMonth).toHaveLength(12);
+      // Was `crowdByMonth` — now null for anything unresearched, so it can no
+      // longer witness that a whole profile came back. Two fields that are
+      // still populated do that instead, or "yields a profile" would be
+      // asserted by a check that a field is empty.
+      expect(getCountryProfile(junk).crowdByMonth).toBeNull();
+      expect(getCountryProfile(junk).tips.length).toBeGreaterThan(0);
+      expect(getCountryProfile(junk).packing.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("crowdByMonth is null or twelve long, for every country there is", () => {
+  /**
+   * The guard TypeScript cannot give and nothing at runtime does.
+   *
+   * `number[] | null` says nothing about the length, and every consumer indexes
+   * it by `month - 1`. A curve of the wrong length is not a type error and does
+   * not throw — it renders `undefined` dots, or silently reads a neighbouring
+   * month. So the shape is swept over the whole code table rather than sampled.
+   */
+  const CODES = [...new Set(Object.values(ISO_NUMERIC_TO_ALPHA2))];
+
+  test("the sweep runs over the whole table, not over nothing", () => {
+    // The iteration floor. Without it, an empty or renamed table turns the
+    // sweep below into a loop over zero countries that passes perfectly.
+    expect(CODES.length).toBeGreaterThanOrEqual(240);
+    expect(CODES).toContain("CN");
+    expect(CODES).toContain("PE");
+  });
+
+  test("every profile is either twelve months of crowd or none at all", () => {
+    let researched = 0;
+    let withheld = 0;
+    for (const code of CODES) {
+      const curve = getCountryProfile(code).crowdByMonth;
+      if (curve === null) {
+        withheld += 1;
+        continue;
+      }
+      researched += 1;
+      expect(curve, `${code} has a crowd curve of the wrong length`).toHaveLength(12);
+      for (const value of curve) {
+        expect(Number.isInteger(value), `${code} has a non-integer crowd value`).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(1);
+        expect(value).toBeLessThanOrEqual(5);
+      }
+    }
+    // Both arms observed, or the sweep proves only that one branch exists.
+    expect(researched).toBe(1);
+    expect(withheld).toBe(CODES.length - 1);
+  });
+
+  test("China is the researched one and Peru is not", () => {
+    expect(getCountryProfile("CN").crowdByMonth).toEqual(NATIONAL_CROWD);
+    expect(getCountryProfile("PE").crowdByMonth).toBeNull();
   });
 });

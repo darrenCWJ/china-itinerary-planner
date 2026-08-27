@@ -7,7 +7,7 @@ import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { PlanStep } from "@/components/PlanStep";
 import { mergeCatalogHit, shouldFetchEnrichment } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
-import { seasonOfMonth } from "@/lib/months";
+import { resolveTripSeason } from "@/lib/tripSeason";
 import { WIZARD_STEPS, canAdvance } from "@/lib/wizard";
 import type { TripInput } from "@/lib/itinerary";
 import type { CatalogHit } from "@/lib/tripShared";
@@ -23,9 +23,14 @@ export default function PlanPage() {
   const [season, setSeason] = useState<Season>("autumn");
   /**
    * The month the user picked on the destinations map, when they picked one.
-   * Season stays alongside it rather than being derived here: Task 20 moves that
-   * derivation server-side behind the country profile, where a southern-
-   * hemisphere trip gets the right answer.
+   *
+   * Season is kept as its own state rather than derived from this, because a
+   * user who never touches the map has a season and no month. When they do
+   * touch it, the season is re-derived through `resolveTripSeason` — the same
+   * function the write route calls (app/api/trips/route.ts), so the preview on
+   * step 2 and the trip that gets saved cannot disagree. They did, for every
+   * southern-hemisphere country: this file called the bare northern
+   * `seasonOfMonth`, so a June Peru trip previewed summer and saved winter.
    */
   const [month, setMonth] = useState<number | null>(null);
   /**
@@ -300,19 +305,30 @@ export default function PlanPage() {
             onRemoveCatalog={removeCatalog}
             onReorder={setSelected}
             country={country}
-            onCountryChange={setCountry}
+            onCountryChange={(next) => {
+              setCountry(next);
+              // Picking the month and then switching country is the same
+              // hemisphere bug in the other order: the month was read through
+              // the country that was open at the time. Re-derive, so the two
+              // orders of the same two clicks end on the same season.
+              if (month !== null) setSeason(resolveTripSeason(season, month, next));
+            }}
             onAddOffMap={addOffMap}
             offMap={offMap}
             /*
               Dragging the month slider now happens *after* the season control on
               step 0, so it wins. That is deliberate: moving the slider is an
-              explicit act, and a user who sets it to January means January. The
-              month is kept too, for Task 20 to derive season server-side where
-              the hemisphere is known.
+              explicit act, and a user who sets it to January means January.
+
+              Derived through `resolveTripSeason`, which is the rule the write
+              route (app/api/trips/route.ts) applies to the very same month — not
+              `lib/months.ts`'s bare `seasonOfMonth`, whose table is hardcoded
+              northern. C8 in lib/contracts.test.ts scans this file for a
+              relapse, because no test file may live under app/.
             */
             onMonthPicked={(m) => {
               setMonth(m);
-              setSeason(seasonOfMonth(m));
+              setSeason(resolveTripSeason(season, m, country));
             }}
           />
         )}

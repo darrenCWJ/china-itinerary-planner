@@ -1,21 +1,31 @@
 "use client";
 
-import { useCallback, useRef } from "react";
-import {
-  bandsForMonth,
-  crowdForMonth,
-  HOLIDAY_BANDS,
-  MONTHS,
-} from "@/lib/months";
+import { useCallback, useMemo, useRef } from "react";
+import { getCountryProfile } from "@/lib/countryProfile";
 import { SEASON_EMOJI } from "@/lib/meta";
+import { bandsIn, MONTHS } from "@/lib/months";
 
 interface Props {
   month: number;
   onMonth: (month: number) => void;
+  /**
+   * The country being planned.
+   *
+   * Load-bearing, not decorative. This scrubber read `HOLIDAY_BANDS` and
+   * `crowdForMonth` straight out of lib/months.ts, both of which are China's
+   * and only China's — so a traveller picking Peruvian cities and dragging to
+   * October was told about "National Day Golden Week 🇨🇳", February showed
+   * "Chinese New Year 🧧", and every month carried China's crowd curve under a
+   * label reading *typical national crowd pressure*. Everything month-shaped
+   * below now comes from `getCountryProfile(country)`, including the season
+   * word: MONTHS[].season is the northern table, which calls Peru's June
+   * summer while the plan the same wizard builds says winter.
+   */
+  country: string;
 }
 
-/** Draggable Jan–Dec scrubber with holiday/crowd bands. */
-export function MonthTimeline({ month, onMonth }: Props) {
+/** Draggable Jan–Dec scrubber with the open country's holiday/crowd bands. */
+export function MonthTimeline({ month, onMonth, country }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
@@ -33,27 +43,36 @@ export function MonthTimeline({ month, onMonth }: Props) {
     [monthFromClientX, onMonth]
   );
 
+  const profile = useMemo(() => getCountryProfile(country), [country]);
   const info = MONTHS[month - 1];
-  const crowd = crowdForMonth(month);
-  const activeBands = bandsForMonth(month);
+  const season = profile.seasonOfMonth(month);
+  // Absent, never flat: a country with no researched crowd curve renders no
+  // crowd element at all rather than a row of three-out-of-five dots, which
+  // would be a claim that every month there is equally busy. See
+  // `CountryProfile.crowdByMonth`.
+  const crowd = profile.crowdByMonth?.[month - 1] ?? null;
+  const holidays = profile.holidays;
+  const activeBands = bandsIn(holidays, month);
 
   return (
     <div>
       <div className="flex items-baseline justify-between">
         <p className="text-sm font-semibold">
-          {SEASON_EMOJI[info.season]} {info.label}
-          <span className="ml-2 font-normal capitalize text-[var(--ink-2)]">{info.season}</span>
+          {SEASON_EMOJI[season]} {info.label}
+          <span className="ml-2 font-normal capitalize text-[var(--ink-2)]">{season}</span>
         </p>
-        <p
-          className="text-xs text-[var(--ink-2)]"
-          title="Typical national crowd pressure this month"
-        >
-          Crowds{" "}
-          <span aria-label={`${crowd} out of 5`} className="tracking-tighter">
-            {"●".repeat(crowd)}
-            {"○".repeat(5 - crowd)}
-          </span>
-        </p>
+        {crowd !== null && (
+          <p
+            className="text-xs text-[var(--ink-2)]"
+            title="Typical national crowd pressure this month"
+          >
+            Crowds{" "}
+            <span aria-label={`${crowd} out of 5`} className="tracking-tighter">
+              {"●".repeat(crowd)}
+              {"○".repeat(5 - crowd)}
+            </span>
+          </p>
+        )}
       </div>
 
       <div
@@ -94,7 +113,7 @@ export function MonthTimeline({ month, onMonth }: Props) {
       >
         {/* Holiday bands */}
         <div className="relative h-2.5">
-          {HOLIDAY_BANDS.map((b) => (
+          {holidays.map((b) => (
             <span
               key={b.name}
               title={`${b.emoji} ${b.name}: ${b.note}`}

@@ -137,26 +137,57 @@ describe("railKmh: null is load-bearing", () => {
 });
 
 describe("the rail booking copy follows the rail", () => {
-  test("an all-overland Peru route earns no note; the same geometry in China earns the copy", () => {
+  /**
+   * Two notes, two premises, and only one of them is about rail.
+   *
+   * China's copy says *every leg is high-speed-rail friendly — book seats on
+   * 12306*, which is false wherever a rail speed is withheld, so it stays
+   * gated on `railKmh !== null`. The neutral copy names no network and no
+   * vendor, and a country with no researched rail still has transport to
+   * book — so withholding it there is a gap where there is no gap. That is
+   * the acceptance criterion the design states for Peru in as many words.
+   */
+  test("an all-overland Peru route earns the neutral booking copy, never the rail one", () => {
     const peru = suggestRoute([lima, cusco], [IQT], PE);
     expect(peru.legs.map((l) => l.kind)).toEqual(["overland"]);
-    expect(peru.notes).toEqual([]);
+    expect(peru.notes).toEqual([
+      "Book long-distance transport ahead — fares climb close to the date.",
+    ]);
+    expect(peru.notes.join(" ")).not.toMatch(/rail|12306|Trip\.com|high-speed|🚄/i);
 
-    // The arming, and the guard's only witness: this route reaches the
+    // The arming, and the rail guard's only witness: this route reaches the
     // all-ground predicate — one ground leg, 573 km, well under the flight
-    // threshold — and is turned away by `railKmh !== null` alone.
+    // threshold — and gets a different sentence entirely under China's
+    // profile, decided by `railKmh` alone.
     const china = suggestRoute([lima, cusco], [IQT], CN);
     expect(china.legs.map((l) => l.kind)).toEqual(["estimated"]);
     expect(china.notes).toEqual(CN.bookingCopy);
     expect(china.notes.join(" ")).toMatch(/12306/);
+    expect(china.notes).not.toEqual(peru.notes);
   });
 
-  test("a flown Peru route names the flight and never names rail", () => {
+  test("a route with no measurable distance at all still earns no booking note", () => {
+    // Two hand-typed places have no coordinates, so nothing here knows the
+    // hops are long-distance. "Fares climb close to the date" would be a
+    // claim about a journey the app cannot see.
+    const nowhere = { id: "a", name: "Grandma's village", lat: null, lon: null };
+    const elsewhere = { id: "b", name: "The old farm", lat: null, lon: null };
+    const { notes, legs } = suggestRoute([nowhere, elsewhere], [], PE);
+    expect(legs.map((l) => l.kind)).toEqual(["unknown"]);
+    expect(notes).toEqual([]);
+  });
+
+  test("a flown Peru route names the flight, carries the neutral copy, and never names rail", () => {
     const { notes } = suggestRoute([lima, cusco], PE_AIRPORTS, PE);
     // Positive half first, so "no rail copy" cannot pass on an empty notes list.
     expect(notes.join(" ")).toMatch(/worth flying/i);
     expect(notes.join(" ")).toMatch(/Cusco/);
     expect(notes.join(" ")).toMatch(/Lima/);
+    // The design's Peru acceptance criterion, on the exact route it names:
+    // LIM → CUZ resolves as a flight and the booking note is still there.
+    expect(notes).toContain(
+      "Book long-distance transport ahead — fares climb close to the date."
+    );
     expect(notes.join(" ")).not.toMatch(/rail|12306|Trip\.com|high-speed/i);
   });
 });
