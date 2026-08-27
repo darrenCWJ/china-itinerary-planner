@@ -1,11 +1,21 @@
 /** ISO 3166-1 alpha-2, uppercase. */
 export type CountryCode = string;
 
+/**
+ * Which half of the planet a country's seasons follow.
+ *
+ * Named rather than written inline at each use so lib/meta.ts's season-months
+ * tables and `Country.hemisphere` cannot drift into two different unions. It is
+ * a `type`, so importing it costs no bytes and this module stays the zero-import
+ * leaf lib/countryFacts.test.ts pins it as.
+ */
+export type Hemisphere = "north" | "south";
+
 export interface Country {
   code: CountryCode;
   name: string;
   localName: string | null;
-  hemisphere: "north" | "south";
+  hemisphere: Hemisphere;
   /**
    * Curated OKLCH hue override, 0–359. Omitted means derive it.
    * A hue rather than a colour deliberately: lightness and chroma stay pinned

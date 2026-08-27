@@ -1,3 +1,4 @@
+import type { Hemisphere } from "./countries";
 import type { ItemKind } from "./itinerary";
 import type { TicketKind } from "./tripShared";
 import type { Interest, Season, TimeSlot } from "./types";
@@ -16,12 +17,60 @@ export const INTERESTS: { id: Interest; label: string; emoji: string }[] = [
   { id: "family", label: "Family & Kids", emoji: "👨‍👩‍👧" },
 ];
 
-export const SEASONS: { id: Season; label: string; months: string; emoji: string }[] = [
-  { id: "spring", label: "Spring", months: "Mar – May", emoji: "🌸" },
-  { id: "summer", label: "Summer", months: "Jun – Aug", emoji: "☀️" },
-  { id: "autumn", label: "Autumn", months: "Sep – Nov", emoji: "🍁" },
-  { id: "winter", label: "Winter", months: "Dec – Feb", emoji: "❄️" },
+/**
+ * The four season chips, with no months attached — see `seasonMonths` below.
+ *
+ * `months` used to be a field here, and it was a northern-hemisphere calendar
+ * stated as a fact to every country on earth: `spring` was "Mar – May" whether
+ * the trip was to Japan or to Peru, where spring is Sep–Nov. It got *worse* as
+ * this branch progressed rather than better. The commit before this one grew
+ * `SOUTHERN` in lib/countries.ts from 34 codes to 59, so 25 more countries now
+ * correctly resolve a June trip to **winter** — while this table went on
+ * printing "Jun – Aug" beside the word Summer. A season whose name and whose
+ * months contradict each other is worse than one that is merely wrong.
+ *
+ * The field is REMOVED rather than corrected, which is the move
+ * `KIND_EMOJI.travel` makes further down for the same reason: a renderer that
+ * reaches here for a season's months now gets a type error instead of getting
+ * the northern hemisphere's. `seasonMonths` is the only way to obtain them and
+ * it cannot be called without saying which hemisphere is being drawn.
+ */
+export const SEASONS: { id: Season; label: string; emoji: string }[] = [
+  { id: "spring", label: "Spring", emoji: "🌸" },
+  { id: "summer", label: "Summer", emoji: "☀️" },
+  { id: "autumn", label: "Autumn", emoji: "🍁" },
+  { id: "winter", label: "Winter", emoji: "❄️" },
 ];
+
+/**
+ * Which calendar months a season covers, north and south of the equator.
+ *
+ * Two literal tables rather than a computed shift, and the HEMISPHERE as the
+ * parameter rather than a country code — both for the reason `travelEmoji`
+ * below takes a bare number: this module has no value imports at all, and is
+ * read by map, plan and briefing bundles that want one emoji and one short
+ * label. The month names and the season boundaries live in lib/months.ts,
+ * which also carries China's climate tables, its crowd curve and its curated
+ * highlights; an edge from here to there would put all of that into every
+ * bundle that renders a season chip.
+ *
+ * The two columns are not free-floating strings. `lib/meta.test.ts` reconciles
+ * them against `getCountryBaseProfile(code).seasonOfMonth` in both hemispheres
+ * and in both directions — every month named for a season must resolve to that
+ * season, and every month *not* named must not — so a month in the wrong
+ * bucket fails on the commit that puts it there. The southern column is the
+ * northern one six months away, which is exactly what `seasonIn` in
+ * lib/countryBaseProfile.ts computes for a southern country.
+ */
+const SEASON_MONTHS: Record<Hemisphere, Record<Season, string>> = {
+  north: { spring: "Mar – May", summer: "Jun – Aug", autumn: "Sep – Nov", winter: "Dec – Feb" },
+  south: { spring: "Sep – Nov", summer: "Dec – Feb", autumn: "Mar – May", winter: "Jun – Aug" },
+};
+
+/** The months a season covers in a given hemisphere, e.g. `"Sep – Nov"`. */
+export function seasonMonths(season: Season, hemisphere: Hemisphere): string {
+  return SEASON_MONTHS[hemisphere][season];
+}
 
 export const SEASON_EMOJI: Record<Season, string> = {
   spring: "🌸",

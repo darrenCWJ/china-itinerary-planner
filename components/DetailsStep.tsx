@@ -1,11 +1,25 @@
 "use client";
 
-import { INTERESTS, SEASONS } from "@/lib/meta";
+import { getCountry } from "@/lib/countries";
+import { INTERESTS, SEASONS, seasonMonths } from "@/lib/meta";
 import type { Interest, Season } from "@/lib/types";
 
 interface Props {
   season: Season;
   onSeason: (s: Season) => void;
+  /**
+   * The country being planned, so the months beside each season name are that
+   * country's own.
+   *
+   * The chips used to print "Spring · Mar – May" to everyone, which is a lie
+   * south of the equator — and a self-contradicting one since the previous
+   * commit, which taught 25 more countries that June is winter while this
+   * control went on captioning Summer with Jun–Aug. Only the hemisphere is
+   * read (`getCountry` is total and answers "north" for anything it does not
+   * recognise), so an unknown code degrades to the northern calendar rather
+   * than to a blank.
+   */
+  country: string;
   days: number;
   onDays: (d: number) => void;
   maxDays: number;
@@ -22,6 +36,7 @@ const DAY_PRESETS = [3, 5, 7, 10, 14];
 export function DetailsStep({
   season,
   onSeason,
+  country,
   days,
   onDays,
   maxDays,
@@ -32,6 +47,7 @@ export function DetailsStep({
   interests,
   onToggleInterest,
 }: Props) {
+  const { hemisphere } = getCountry(country);
   return (
     <section className="space-y-8">
       <div>
@@ -58,7 +74,9 @@ export function DetailsStep({
             >
               <span aria-hidden className="text-2xl">{s.emoji}</span>
               <p className="mt-1 font-semibold">{s.label}</p>
-              <p className="font-mono text-xs text-[var(--ink-2)]">{s.months}</p>
+              <p className="font-mono text-xs text-[var(--ink-2)]">
+                {seasonMonths(s.id, hemisphere)}
+              </p>
             </button>
           ))}
         </div>

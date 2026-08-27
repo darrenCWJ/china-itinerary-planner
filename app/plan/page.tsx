@@ -282,6 +282,14 @@ export default function PlanPage() {
           <DetailsStep
             season={season}
             onSeason={setSeason}
+            /*
+              The season chips caption themselves with this country's months.
+              Step 0 runs before the picker on step 1, so this is "CN" on a
+              first pass — but the wizard lets a completed step be reopened,
+              and coming back to Details after choosing Peru used to show a
+              Peruvian traveller Mar–May under the word Spring.
+            */
+            country={country}
             days={days}
             onDays={(d) => setDays(Math.min(MAX_DAYS, Math.max(1, d)))}
             maxDays={MAX_DAYS}
