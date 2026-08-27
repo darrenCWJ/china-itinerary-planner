@@ -6,6 +6,7 @@ import {
   EXPECTED_COUNTRIES,
   MIN_FIELD_COVERAGE,
   PLUG_LETTER_SET,
+  REQUIRED_NAMES,
   RENDERED_FIELDS,
 } from "@/scripts/ingest-country-facts.mjs";
 
@@ -39,6 +40,7 @@ const hasAssets = existsSync(FACTS_PATH);
 
 type EmergencyNumber = { number: string; role: string | null };
 type CountryFacts = {
+  name?: string;
   currencyCode?: string;
   currencyName?: string;
   plugs?: string[];
@@ -70,6 +72,7 @@ const artifact: Artifact | null = hasAssets
  * next to the artifact it describes, which is a diff a reviewer can read.
  */
 const MEASURED_COVERAGE: Record<string, number> = {
+  name: 246,
   currencyCode: 239,
   currencyName: 239,
   plugs: 207,
@@ -82,11 +85,15 @@ const MEASURED_COVERAGE: Record<string, number> = {
 };
 
 /**
- * Measured: 65,516 bytes for 246 countries and 2,098 facts, 8,947 gzipped.
+ * Measured: 70,443 bytes for 246 countries, 2,098 facts and 246 names, 10,387
+ * gzipped.
  *
  * The design's prototype said 50,265 and said to re-measure rather than carry
- * it forward; the real figure is 30% larger, mostly because 243 countries
+ * it forward; the real figure is 40% larger, mostly because 243 countries
  * carry their official languages and `currencyName` ships beside every code.
+ * Adding the country name cost 4,927 bytes — 1,440 gzipped — which is the
+ * price of every gap note and every packing line naming a country instead of
+ * a two-letter code.
  *
  * The budget matters because this file reaches the BROWSER —
  * components/PlanStep.tsx generates the wizard preview client-side, and
@@ -94,11 +101,14 @@ const MEASURED_COVERAGE: Record<string, number> = {
  * disagreement this whole work exists to fix. For scale:
  * data/country-images.json is 6,505 bytes and fine, and
  * lib/server/cityIndex.ts is 3.65 MB and explicitly forbidden from client
- * components. 80 KB is ~22% of headroom over the measurement, which is room
- * for real upstream growth and not room for a shape change.
+ * components. The budget STAYS at 80 KB rather than moving up with the
+ * measurement: 12% of headroom is still room for real upstream growth and is
+ * now much less room for a shape change, which is the direction a budget
+ * should travel. The next field that costs 5 KB should have to argue for
+ * itself here.
  *
  * NOT ASSERTED, and stated so it is not assumed: the gzipped size. It is
- * measured (8,947 bytes) and recorded, and nothing here or anywhere else in
+ * measured (10,387 bytes) and recorded, and nothing here or anywhere else in
  * the repo checks it.
  */
 const MAX_ARTIFACT_BYTES = 80_000;
@@ -140,6 +150,7 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
     // plausible, and it is not self-referential: CN's P2853 values are
     // Europlug + NEMA 1-15 + AS/NZS 3112, which sort to exactly A, C and I.
     const cn = artifact!.countries.CN;
+    expect(cn.name).toBe(REQUIRED_NAMES.CN);
     expect(cn.currencyCode).toBe("CNY");
     expect(cn.plugs).toEqual(["A", "C", "I"]);
     expect(cn.voltageV).toBe(220);
@@ -154,6 +165,10 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
 
   test("reproduces Peru's answer, the design's acceptance case", () => {
     const pe = artifact!.countries.PE;
+    // "Peru", not "PE". Wiring the gap note before this field existed would
+    // have rendered "We don't have PE-specific guidance" for 222 countries.
+    expect(pe.name).toBe("Peru");
+    expect(pe.name).toBe(REQUIRED_NAMES.PE);
     expect(pe.currencyCode).toBe("PEN");
     expect(pe.plugs).toEqual(["A", "B", "C"]);
     expect(pe.voltageV).toBe(220);
@@ -202,6 +217,23 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
       expect(record.officialLanguages?.length ?? 1, `${code}.officialLanguages`).toBeGreaterThan(0);
       expect(JSON.stringify(record), code).not.toMatch(/""/);
     }
+  });
+
+  test("every record names its country, and no record is only a name", () => {
+    // Two halves of one rule. `name` is identity, so every record carries one;
+    // and it is not a fact, so it can never be the only thing keeping a record
+    // in the file — a country we know nothing else about falls through to the
+    // neutral profile instead, which is what the ingest's `factCount` enforces.
+    for (const [code, record] of Object.entries(artifact!.countries)) {
+      expect(typeof record.name, code).toBe("string");
+      expect(record.name!.trim(), code).toBe(record.name);
+      expect(record.name!.length, code).toBeGreaterThan(1);
+      const facts = Object.keys(record).filter((field) => field !== "name");
+      expect(facts.length, `${code} carries only a name`).toBeGreaterThan(0);
+    }
+    // Guinea's meta-item is gone from the extract, so the reader's language
+    // rule has nothing left to refuse in the committed file.
+    expect(artifact!.countries.GN?.officialLanguages).toEqual(["French"]);
   });
 
   test("every plug letter is one the hand-checked standard table can emit", () => {
@@ -288,5 +320,74 @@ describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
       expect(lat, `${code} is on the exception list but no longer needs to be`).toBeGreaterThanOrEqual(0);
       expect(lat, `${code} is too far north to be called a straddler`).toBeLessThan(5);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bundle constraint — where the 70 KB is allowed to be reachable from
+// ---------------------------------------------------------------------------
+
+/**
+ * Every non-test source file under lib/, components/ and app/.
+ *
+ * A source-level scan, which this repo uses for its structural contracts
+ * (lib/contracts.test.ts) because the alternative — asserting a bundle size —
+ * needs a build. Armed below against walking nothing.
+ */
+function sourceFiles(): { path: string; code: string }[] {
+  const out: { path: string; code: string }[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(join(process.cwd(), dir))) {
+      const path = `${dir}/${entry}`;
+      if (statSync(join(process.cwd(), path)).isDirectory()) {
+        walk(path);
+      } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
+        out.push({ path, code: readFileSync(join(process.cwd(), path), "utf8") });
+      }
+    }
+  };
+  for (const dir of ["lib", "components", "app"]) walk(dir);
+  return out;
+}
+
+/** A VALUE import of a path — `import type` is erased and costs no bytes. */
+const valueImportOf = (code: string, path: RegExp): boolean =>
+  new RegExp(`import\\s+(?!type\\b)[^;]*from\\s+["'][^"']*${path.source}["']`).test(code);
+
+describe("data/country-facts.json stays out of the bundles that only want a name", () => {
+  const FILES = sourceFiles();
+
+  test("the scan walks a real tree, or every check below is vacuous", () => {
+    expect(FILES.length).toBeGreaterThan(50);
+    expect(FILES.map((file) => file.path)).toContain("lib/countries.ts");
+    expect(FILES.map((file) => file.path)).toContain("lib/countryFacts.ts");
+  });
+
+  test("exactly one module imports the artifact", () => {
+    // 70 KB. Every module that imports this one inherits it, so the list of
+    // importers is the list of bundles paying for it — and it is one module
+    // long on purpose.
+    const importers = FILES.filter((file) => valueImportOf(file.code, /country-facts\.json/));
+    expect(importers.map((file) => file.path)).toEqual(["lib/countryFacts.ts"]);
+  });
+
+  test("lib/countries.ts is a zero-import leaf, which is what keeps it cheap", () => {
+    // The tempting fix for `getCountry("PE").name === "PE"` is to make THIS
+    // module fall back to the artifact. It is imported by client components
+    // for accents, marks and hemispheres, so that would put 70 KB into every
+    // page that wanted a hue. The merge lives in lib/countryFacts.ts instead,
+    // which already pays for the artifact — the same shape as lib/geoNamesId.ts
+    // against the 3.65 MB city index.
+    const countries = FILES.find((file) => file.path === "lib/countries.ts")!;
+    expect(countries.code).toContain("export function curatedCountryName");
+    expect(countries.code).not.toMatch(/^\s*import\s/m);
+  });
+
+  test("the template layer reaches the reader for TYPES only", () => {
+    // lib/countryTips.ts is pure templates. A value import here would drag the
+    // artifact into anything rendering a tip, whether or not it reads a fact.
+    const tips = FILES.find((file) => file.path === "lib/countryTips.ts")!;
+    expect(tips.code).toContain('import type { CountryFacts');
+    expect(valueImportOf(tips.code, /countryFacts/)).toBe(false);
   });
 });

@@ -139,6 +139,29 @@ export function isCountryCode(s: string): boolean {
 }
 
 /**
+ * The hand-tuned name for a code, or `null` when this table has none.
+ *
+ * `getCountry(code).name` cannot answer this question and must not be made to:
+ * it falls back to the code itself, so `"PE"` is both a name it found and a
+ * name it did not. The other 222 countries are named by the CC0 Wikidata
+ * artifact, and `getCountryName` in lib/countryFacts.ts is where the two meet
+ * — hand-tuned first, ingested second.
+ *
+ * That direction is deliberate and it is a bundle constraint, not a taste.
+ * This module is imported by client components for accents, marks and
+ * hemispheres; `data/country-facts.json` is 70 KB. Reaching for the artifact
+ * from HERE would put 70 KB into every page that resolves a country name,
+ * including the ones that only want a hue. So this module stays a zero-import
+ * leaf and the module that already pays for the artifact does the merging —
+ * the same shape as `lib/geoNamesId.ts` against the 3.65 MB city index.
+ */
+export function curatedCountryName(code: string): string | null {
+  const normalised = typeof code === "string" ? code.trim().toUpperCase() : "";
+  if (!isCountryCode(normalised)) return null;
+  return CURATED[normalised]?.name ?? null;
+}
+
+/**
  * Total function: always returns a record, never throws. Callers render what
  * they get rather than branching on undefined, so an unrecognised code
  * degrades to a plain one instead of breaking the page it appears on.

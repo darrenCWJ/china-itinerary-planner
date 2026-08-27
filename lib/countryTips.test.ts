@@ -8,6 +8,7 @@ import {
   type CountryFacts,
   type CountryFactsIndex,
   getCountryFacts,
+  getCountryName,
   readCountryFactsIndex,
   readCountryFactsRecord,
 } from "./countryFacts";
@@ -130,6 +131,9 @@ describe("golden output", () => {
 
   test("Saint Helena — a genuinely sparse country, three fields of seven", () => {
     expect(SH).toEqual({
+      // Identity, not one of the three: `name` is what the templates CALL the
+      // country, so it is absent from every count of what we know about it.
+      name: "Saint Helena, Ascension and Tristan da Cunha",
       drivingSide: "left",
       emergency: [{ number: "999", role: null }],
       officialLanguages: ["English"],
@@ -545,29 +549,57 @@ describe("the boundary and the committed artifact agree", () => {
     }
     // Armed: an artifact that failed to parse would leave both empty and green.
     expect(Object.keys(raw.countries)).toHaveLength(246);
-    expect(compared).toBe(2098);
-    // Guinea's P37 includes Q35759, "languages of Guinea" — a Wikidata
-    // meta-item, not a language. Rendered it reads "languages of Guinea is the
-    // official language". The upstream fix belongs to the ingest's extract;
-    // when it lands, this goes red and the rule can be deleted rather than
-    // rotting into cruft nobody re-checks.
-    expect(dropped).toEqual(["GN.officialLanguages"]);
+    // 2,098 facts plus one name per country. The name is not a fact — the
+    // ingest keeps it out of `FACT_FIELDS` so no drift band moves by 246 — but
+    // it IS a field this reader has to carry, so it is compared like one.
+    expect(compared).toBe(2344);
+    // Nothing is dropped any more. T26 refused Guinea's "languages of Guinea"
+    // meta-item here, by label, which cost Guinea French with it; the ingest
+    // now drops that item by its Q-id upstream, so what the artifact carries is
+    // what upstream states. The rule that refused it is still live and still
+    // tested — see the two tests below — it just has nothing to refuse in the
+    // committed file.
+    expect(dropped).toEqual([]);
   });
 
-  test("Guinea loses the field, not the country, and the note says so", () => {
-    expect(raw.countries.GN.officialLanguages).toEqual(["French", "languages of Guinea"]);
-    expect(getCountryFacts("GN").officialLanguages).toBeUndefined();
-    expect(languageTip(getCountryFacts("GN"))).toBeNull();
-    expect(translationPackItem(getCountryFacts("GN"))).toBeNull();
-    expect(buildGapNote("Guinea", getCountryFacts("GN"))[1]).toBe(
-      "We also have no official language for Guinea."
+  test("Guinea keeps French: the meta-item is gone from the artifact, not filtered at the reader", () => {
+    // The positive half of the fix. If the ingest ever stops dropping
+    // Q1339026, the first line goes red rather than the boundary silently
+    // taking Guinea's language field away again.
+    expect(raw.countries.GN.officialLanguages).toEqual(["French"]);
+    expect(getCountryFacts("GN").officialLanguages).toEqual(["French"]);
+    expect(languageTip(getCountryFacts("GN"))).toBe(
+      "French is the official language — download an offline translation pack before you go."
     );
+    expect(translationPackItem(getCountryFacts("GN"))).toBe("Offline French translation pack");
+    expect(buildGapNote("Guinea", getCountryFacts("GN"))).toHaveLength(1);
     expect(getCountryFacts("GN").currencyCode).toBe("GNF");
+  });
+
+  test("no committed record carries a value the language rule would refuse", () => {
+    // The rule is belt and braces now, so this is what says it is not needed
+    // rather than not working: a sweep over every language value in the file.
+    const meta: string[] = [];
+    let scanned = 0;
+    for (const [code, record] of Object.entries(raw.countries)) {
+      for (const language of (record.officialLanguages as string[] | undefined) ?? []) {
+        scanned++;
+        if (/^languages? of /i.test(language)) meta.push(`${code}: ${language}`);
+      }
+    }
+    // Armed: measured 450 language values across 243 countries.
+    expect(scanned).toBe(450);
+    expect(meta).toEqual([]);
+    // And the rule still refuses one arriving by another route — a hand-edited
+    // artifact, or a stale deploy built before the ingest dropped it.
+    expect(
+      readCountryFactsRecord({ officialLanguages: ["French", "languages of Guinea"] })
+    ).toBeNull();
   });
 
   test("no field's value is altered on the way through", () => {
     // Dropping is the sanctioned outcome; changing a value is not. This is the
-    // "does not repair" rule checked against 2,097 real values rather than
+    // "does not repair" rule checked against 2,344 real values rather than
     // against the handful of malformed fixtures above.
     let checked = 0;
     for (const [code, record] of Object.entries(raw.countries)) {
@@ -578,7 +610,7 @@ describe("the boundary and the committed artifact agree", () => {
         expect(read[field], `${code}.${field}`).toEqual(value);
       }
     }
-    expect(checked).toBe(2097);
+    expect(checked).toBe(2344);
   });
 });
 
@@ -652,5 +684,106 @@ describe("the curated escape hatch", () => {
   test("a malformed override is dropped, not trusted for being hand-written", () => {
     const facts = getCountryFacts("PE", { curated: { PE: { currencyCode: "usd" } } });
     expect(facts.currencyCode).toBe("PEN");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The country name — the one thing these templates cannot derive
+// ---------------------------------------------------------------------------
+
+describe("getCountryName", () => {
+  /** The artifact read from disk, so the precedence checks are independent. */
+  const rawNames = (
+    JSON.parse(readFileSync(join(process.cwd(), "data", "country-facts.json"), "utf8")) as {
+      countries: Record<string, { name?: string }>;
+    }
+  ).countries;
+
+  test("Peru is called Peru — the regression this field exists to close", () => {
+    // Before the ingest carried a name, `getCountry("PE").name` was "PE" and
+    // this note read "We don't have PE-specific guidance…". lib/countries.ts's
+    // hand-tuned table has 24 entries and Peru is not one of them, so this
+    // answer can only be coming from the artifact.
+    expect(getCountryName("PE")).toBe("Peru");
+    expect(rawNames.PE?.name).toBe("Peru");
+    expect(buildGapNote(getCountryName("PE"), PE)).toEqual([
+      "These notes come from open reference data. We don't have Peru-specific guidance on payments, connectivity, booking channels or public holidays yet — and we'd rather leave that blank than guess.",
+    ]);
+    expect(powerAdapterItem(getCountryName("PE"), PE)).toBe(
+      "Universal power adapter (Peru uses type A/B/C plugs, 220V)"
+    );
+  });
+
+  test("the hand-tuned name wins over the ingested one, and the reproduction gate is why", () => {
+    // Wikidata's label for CN is "People's Republic of China". Resolved
+    // through the merge, China is still "China" — which is what keeps the one
+    // line in this repo written before the ingest existed reproducible.
+    expect(rawNames.CN?.name).toBe("People's Republic of China");
+    expect(getCountryName("CN")).toBe("China");
+    const handWritten = CN_PACKING.flatMap((group) => group.items).filter((item) =>
+      item.startsWith("Universal power adapter")
+    );
+    expect(handWritten).toHaveLength(1);
+    expect(powerAdapterItem(getCountryName("CN"), CN)).toBe(handWritten[0]);
+  });
+
+  test("and it wins where the two genuinely disagree, not only where they agree", () => {
+    // Armed with a case that is not China: if the precedence were reversed,
+    // this would say "Turkey", the name the country itself asked the world to
+    // stop using.
+    expect(rawNames.TR?.name).toBe("Turkey");
+    expect(getCountryName("TR")).toBe("Türkiye");
+  });
+
+  test("an uncurated country gets Wikidata's label, formality and all", () => {
+    // The honest cost of not hand-writing 246 names, pinned rather than
+    // discovered: the label belongs to the entity that CARRIES the ISO code,
+    // and for NL that entity is the Kingdom — the same item whose P38 answers
+    // EUR/USD/AWG/XCG. A shorter name would have to come from a second item
+    // nothing else in the ingest speaks about, or from a hand-written table,
+    // which is the thing the honest-gap rule refuses. If a country earns a
+    // nicer name it earns a row in lib/countries.ts's CURATED table, and this
+    // test is where that shows up.
+    expect(getCountryName("NL")).toBe("Kingdom of the Netherlands");
+    expect(getCountryName("CD")).toBe("Democratic Republic of the Congo");
+    expect(buildGapNote(getCountryName("NL"), getCountryFacts("NL"))[0]).toContain(
+      "We don't have Kingdom of the Netherlands-specific guidance"
+    );
+  });
+
+  test("every country in the artifact has a real name, and none is its own code", () => {
+    // The sweep that would have caught the original bug: 222 of these have no
+    // hand-tuned entry, so before the ingest every one of them answered with
+    // its own two letters.
+    let checked = 0;
+    for (const code of Object.keys(rawNames)) {
+      const name = getCountryName(code);
+      checked++;
+      expect(name, code).not.toBe("");
+      expect(name, code).not.toBe(code);
+      expect(name.length, `${code}: ${name}`).toBeLessThanOrEqual(80);
+    }
+    expect(checked).toBe(246);
+  });
+
+  test("a code that is not a country resolves to nothing, and nothing is rendered", () => {
+    // "" is a real answer here and never a rendered one: both name-taking
+    // templates treat it as "say nothing" rather than printing a blank.
+    for (const code of ["", "   ", "🙂", "CHN", "constructor"]) {
+      expect(getCountryName(code), code).toBe("");
+      expect(buildGapNote(getCountryName(code), getCountryFacts(code))).toEqual([]);
+      expect(powerAdapterItem(getCountryName(code), PE)).toBeNull();
+    }
+  });
+
+  test("reads the name through the same boundary as every other field", () => {
+    // A hand-edited artifact cannot smuggle a Q-id, a blob or prose into a
+    // sentence just because it landed in the name.
+    const junk = { XX: { name: "Q148", currencyCode: "USD" } };
+    expect(getCountryName("XX", { facts: junk })).toBe("");
+    expect(getCountryName("XX", { facts: { XX: { name: "x".repeat(81) } } })).toBe("");
+    expect(getCountryName("XX", { facts: { XX: { name: "Peru. It is nice." } } })).toBe("");
+    expect(getCountryName("XX", { facts: { XX: { name: " Peru " } } })).toBe("");
+    expect(getCountryName("XX", { facts: { XX: { name: "Nowhere" } } })).toBe("Nowhere");
   });
 });

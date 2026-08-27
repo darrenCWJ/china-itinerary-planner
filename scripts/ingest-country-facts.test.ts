@@ -2,6 +2,7 @@ import { afterEach as afterEachTop, describe, expect, test, vi as viTop } from "
 import {
   COUNTRY_CODES,
   CURATED_FACTS,
+  DROPPED_LANGUAGE_ITEMS,
   DROPPED_PLUG_ITEMS,
   EMERGENCY_ROLE_SET,
   EXPECTED_COUNTRIES,
@@ -9,6 +10,8 @@ import {
   PLUG_LETTERS,
   PLUG_LETTER_SET,
   PROPERTIES,
+  RECORD_FIELDS,
+  REQUIRED_NAMES,
   RENDERED_FIELDS,
   applyCurated,
   batchCodes,
@@ -32,6 +35,7 @@ import {
   pickEmergency,
   pickLanguages,
   pickLatitude,
+  pickName,
   pickPlugs,
   pickVoltage,
   stampedPayload,
@@ -651,30 +655,112 @@ describe("pickCallingCode", () => {
   });
 });
 
+/** `http://www.wikidata.org/entity/Qn`, the form every `?item` column takes. */
+const entity = (id: string): string => `http://www.wikidata.org/entity/${id}`;
+
+/** Guinea's real P37 answer, measured 2026-08-27: French plus one meta-item. */
+const GUINEA_LANGUAGE_ROWS: Row[] = [
+  { country: "GN", item: entity("Q150"), value: "French" },
+  { country: "GN", item: entity("Q1339026"), value: "languages of Guinea" },
+];
+
 describe("pickLanguages", () => {
   test("deduplicates and sorts, so a quiet rebuild is byte-identical", () => {
     expect(
       pickLanguages([
-        { country: "PE", value: "Spanish" },
-        { country: "PE", value: "Quechua" },
-        { country: "PE", value: "Aymara" },
-        { country: "PE", value: "Spanish" },
-      ])
+        { country: "PE", item: entity("Q1321"), value: "Spanish" },
+        { country: "PE", item: entity("Q5218"), value: "Quechua" },
+        { country: "PE", item: entity("Q4118"), value: "Aymara" },
+        { country: "PE", item: entity("Q1321"), value: "Spanish" },
+      ]).names
     ).toEqual(["Aymara", "Quechua", "Spanish"]);
   });
 
   test("passes Bolivia's real 37 languages, which is why the ceiling is not a taste judgement", () => {
-    const rows = Array.from({ length: 37 }, (_, i) => ({ country: "BO", value: `Language ${i}` }));
-    expect(pickLanguages(rows)).toHaveLength(37);
+    const rows = Array.from({ length: 37 }, (_, i) => ({
+      country: "BO",
+      item: entity(`Q${1000 + i}`),
+      value: `Language ${i}`,
+    }));
+    expect(pickLanguages(rows).names).toHaveLength(37);
   });
 
   test("withholds a list long enough to be a join gone wrong", () => {
-    const rows = Array.from({ length: 60 }, (_, i) => ({ country: "XX", value: `Language ${i}` }));
-    expect(pickLanguages(rows)).toBeNull();
+    const rows = Array.from({ length: 60 }, (_, i) => ({
+      country: "XX",
+      item: entity(`Q${1000 + i}`),
+      value: `Language ${i}`,
+    }));
+    expect(pickLanguages(rows).names).toBeNull();
   });
 
   test("is absent, not an empty array, when there is nothing upstream", () => {
-    expect(pickLanguages([])).toBeNull();
+    expect(pickLanguages([]).names).toBeNull();
+  });
+
+  test("drops Guinea's meta-item by id and KEEPS French, which the boundary could not", () => {
+    // The one non-language among the 215 distinct P37 items measured
+    // 2026-08-27. T26 refused it at the reader by label shape, which costs
+    // Guinea the whole field because a language list is all-or-nothing there.
+    // Dropped here, the surviving set is what upstream actually states.
+    expect(pickLanguages(GUINEA_LANGUAGE_ROWS)).toEqual({
+      names: ["French"],
+      soleDroppedMeta: false,
+    });
+  });
+
+  test("drops it by ID, so an upstream label edit cannot re-admit it", () => {
+    const relabelled: Row[] = [
+      { country: "GN", item: entity("Q150"), value: "French" },
+      { country: "GN", item: entity("Q1339026"), value: "Guinean languages" },
+    ];
+    expect(pickLanguages(relabelled).names).toEqual(["French"]);
+  });
+
+  test("flags a country whose ONLY language value is the meta-item instead of silently emptying it", () => {
+    expect(pickLanguages([{ country: "XX", item: entity("Q1339026"), value: "languages of Guinea" }])).toEqual({
+      names: null,
+      soleDroppedMeta: true,
+    });
+  });
+
+  test("the dropped-item set is exactly the one measured meta-item", () => {
+    // Measured 2026-08-27: 451 P37 rows, 243 countries, 215 distinct items,
+    // and exactly one of them is not a language. A second id here would be a
+    // rule nobody measured.
+    expect([...DROPPED_LANGUAGE_ITEMS]).toEqual(["Q1339026"]);
+  });
+});
+
+describe("pickName", () => {
+  test("publishes the one label upstream carries, whitespace-collapsed", () => {
+    expect(pickName([{ country: "PE", value: " Peru " }])).toBe("Peru");
+  });
+
+  test("carries China's label verbatim rather than shortening it", () => {
+    // Wikidata's English label for the item whose P297 is CN. The traveller
+    // reads lib/countries.ts's hand-tuned "China" instead — see
+    // `getCountryName` — but this ingest does not edit its source.
+    expect(pickName([{ country: "CN", value: "People's Republic of China" }])).toBe(
+      REQUIRED_NAMES.CN
+    );
+  });
+
+  test("withholds two names for one code, which means two items carry that code", () => {
+    expect(pickName([{ country: "XX", value: "Peru" }, { country: "XX", value: "Perú" }])).toBeNull();
+  });
+
+  test("is absent, not an empty string, when the label lookup found nothing", () => {
+    expect(pickName([])).toBeNull();
+    expect(pickName([{ country: "XX", value: "" }])).toBeNull();
+  });
+
+  test("withholds a label long enough to be a blob, rather than aborting the whole run", () => {
+    // One strange upstream label costs that country its name. It must not cost
+    // the other 245 their nightly refresh — which is what the gate's 80-char
+    // throw would do if this reached a record.
+    expect(pickName([{ country: "XX", value: "x".repeat(81) }])).toBeNull();
+    expect(pickName([{ country: "XX", value: "x".repeat(80) }])).toBe("x".repeat(80));
   });
 });
 
@@ -713,14 +799,16 @@ describe("buildFacts", () => {
       { country: "PE", number: "116", role: "fire department" },
       { country: "PE", number: "106", role: "emergency medical services" },
     ],
-    languages: [{ country: "PE", value: "Spanish" }],
+    languages: [{ country: "PE", item: entity("Q1321"), value: "Spanish" }],
     callingCode: [{ country: "PE", value: "+51" }],
     coordinate: [{ country: "PE", lat: "-9.19" }],
+    name: [{ country: "PE", value: "Peru" }],
   };
 
   test("builds one ordered record per country that has facts", () => {
     const built = buildFacts(byProperty);
     expect(built.countries.PE).toEqual({
+      name: "Peru",
       currencyCode: "PEN",
       currencyName: "Peruvian sol",
       plugs: ["A", "B", "C"],
@@ -737,12 +825,58 @@ describe("buildFacts", () => {
     });
   });
 
+  test("puts the name first, so a reader sees which country a record is about", () => {
+    // Also the byte-identical-rebuild rule: key order is RECORD_FIELDS order,
+    // never insertion order, or a quiet night rewrites the file for nothing.
+    expect(Object.keys(buildFacts(byProperty).countries.PE)).toEqual(RECORD_FIELDS);
+  });
+
   test("OMITS a country with no facts rather than writing an empty record", () => {
     // lib/countryProfile.ts already falls through to the neutral profile for a
     // country it has no facts for. An empty record would be a second way of
     // saying the same thing, and the two would drift.
     const built = buildFacts(byProperty);
     expect(Object.keys(built.countries)).toEqual(["PE"]);
+  });
+
+  test("OMITS a country that has a name and nothing else, because a name is not a fact", () => {
+    // The whole reason `name` is outside FACT_FIELDS: it must not be able to
+    // keep an otherwise empty record alive, and it must not move `factCount` —
+    // the unit every drift band in the gate is calibrated in.
+    const built = buildFacts({
+      ...byProperty,
+      codes: [{ code: "PE" }, { code: "XX" }],
+      name: [
+        { country: "PE", value: "Peru" },
+        { country: "XX", value: "Nowhere" },
+      ],
+    });
+    expect(Object.keys(built.countries)).toEqual(["PE"]);
+    expect(factCount(built.countries.PE)).toBe(9);
+  });
+
+  test("records the meta-item drop and the withheld name, which a finished record cannot show", () => {
+    const built = buildFacts({
+      ...byProperty,
+      codes: [{ code: "PE" }, { code: "GN" }],
+      languages: [
+        { country: "PE", item: entity("Q1321"), value: "Spanish" },
+        { country: "GN", item: entity("Q1339026"), value: "languages of Guinea" },
+      ],
+      currency: [
+        { country: "PE", code: "PEN", name: "Peruvian sol" },
+        { country: "GN", code: "GNF", name: "Guinean franc" },
+      ],
+      name: [
+        { country: "PE", value: "Peru" },
+        { country: "GN", value: "Guinea" },
+        { country: "GN", value: "Republic of Guinea" },
+      ],
+    });
+    expect(built.diagnostics.soleDroppedMetaLanguages).toEqual(["GN"]);
+    expect(built.countries.GN.officialLanguages).toBeUndefined();
+    expect(built.diagnostics.withheld.name).toEqual(["GN"]);
+    expect(built.countries.GN.name).toBeUndefined();
   });
 
   test("does not uppercase or reshape a country code, so the gate can see a reshape", () => {
@@ -1090,6 +1224,7 @@ function sampleBuilt(): {
 } {
   const countries: Record<string, Record<string, unknown>> = {};
   const base = {
+    name: "Sample Country",
     currencyCode: "XCD",
     currencyName: "East Caribbean dollar",
     plugs: ["C"],
@@ -1102,6 +1237,7 @@ function sampleBuilt(): {
   };
   for (const code of SAMPLE_FILLERS) countries[code] = structuredClone(base);
   countries.CN = {
+    name: REQUIRED_NAMES.CN,
     currencyCode: "CNY",
     currencyName: "renminbi",
     plugs: ["A", "C", "I"],
@@ -1116,15 +1252,27 @@ function sampleBuilt(): {
     callingCode: "+86",
     lat: 35,
   };
-  countries.PE = structuredClone(base);
+  countries.PE = { ...structuredClone(base), name: REQUIRED_NAMES.PE };
   countries.JP = structuredClone(base);
   countries.CH = structuredClone(base);
-  countries.SH = { currencyCode: "SHP", currencyName: "Saint Helena pound", drivingSide: "left", lat: -15.9 };
+  countries.SH = {
+    name: "Saint Helena, Ascension and Tristan da Cunha",
+    currencyCode: "SHP",
+    currencyName: "Saint Helena pound",
+    drivingSide: "left",
+    lat: -15.9,
+  };
   const ordered: Record<string, Record<string, unknown>> = {};
   for (const code of Object.keys(countries).sort()) ordered[code] = countries[code];
   return {
     countries: ordered,
-    diagnostics: { soleDroppedArticlePlugs: [], curatedFired: [], curatedStale: [], withheld: {} },
+    diagnostics: {
+      soleDroppedArticlePlugs: [],
+      soleDroppedMetaLanguages: [],
+      curatedFired: [],
+      curatedStale: [],
+      withheld: {},
+    },
   };
 }
 
@@ -1314,6 +1462,34 @@ describe("assertFactsSane", () => {
     expect(() => assertFactsSane(built, null)).toThrow(/as their ONLY plug value/);
   });
 
+  test("rejects a build where the language meta-item became a country's only value", () => {
+    // The LIVE-DATA invariant for `DROPPED_LANGUAGE_ITEMS`, armed exactly like
+    // the plug article's. Dropping Q1339026 by id is lossless only while zero
+    // countries rely on it.
+    const built = sampleBuilt();
+    built.diagnostics.soleDroppedMetaLanguages = ["GN"];
+    expect(() => assertFactsSane(built, null)).toThrow(/as their ONLY official-language value/);
+  });
+
+  test.each([
+    ["CN", "China"],
+    ["PE", "PE"],
+  ])("rejects a build where %s.name stopped being the name a traveller is shown", (code, value) => {
+    // "PE" is the exact regression this field exists to close: before it,
+    // `getCountry("PE").name` was "PE" and the gap note read "We don't have
+    // PE-specific guidance". "China" is the opposite mistake — a nicer name
+    // than upstream carries, which means the ingest edited its source.
+    const built = sampleBuilt();
+    built.countries[code].name = value;
+    expect(() => assertFactsSane(built, null)).toThrow(new RegExp(`${code}.name is`));
+  });
+
+  test("rejects a build where a country lost its name entirely", () => {
+    const built = sampleBuilt();
+    delete built.countries.PE.name;
+    expect(() => assertFactsSane(built, null)).toThrow(/PE.name is undefined/);
+  });
+
   test("rejects a stale curated override rather than letting it rot", () => {
     const built = sampleBuilt();
     built.diagnostics.curatedStale = ["NL.currencyCode"];
@@ -1352,14 +1528,16 @@ describe("assertFactsSane", () => {
       // The assertExtractQualitySane lesson: all 246 records can survive while
       // one field empties, and no count check can see it.
       const built = sampleBuilt();
-      // Every country but CN, because the CN reproduction check runs one gate
-      // earlier and would otherwise be what rejects this — which would leave
-      // the floor itself untested.
+      // Every country except the ones an EARLIER gate pins for this field —
+      // CN for the reproduction cross-check, and CN and PE for `name`. Those
+      // gates would otherwise be what rejects the build, which would leave the
+      // floor itself untested.
+      const pinned = field === "name" ? new Set(Object.keys(REQUIRED_NAMES)) : new Set(["CN"]);
       for (const [code, record] of Object.entries(built.countries)) {
-        if (code !== "CN") delete record[field];
+        if (!pinned.has(code)) delete record[field];
       }
       expect(() => assertFactsSane(built, null)).toThrow(
-        new RegExp(`only 1 countries carry ${field}`)
+        new RegExp(`only ${pinned.size} countries carry ${field}`)
       );
     }
   );
@@ -1473,6 +1651,7 @@ const NAMED_CODES = ["BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL",
 const FILLERS = FILLER_POOL.slice(0, EXPECTED_COUNTRIES - NAMED_CODES.length);
 
 interface CountrySpec {
+  name?: string;
   currency?: [string, string][];
   plugs?: string[];
   voltage?: string[];
@@ -1483,8 +1662,20 @@ interface CountrySpec {
   lat?: string;
 }
 
+/**
+ * A stable fake Q-id per language label, so a fixture rebuilt in the same run
+ * produces the same rows. `pickLanguages` acts on the id, so the feed has to
+ * carry one — and the one id that MATTERS, Q1339026, is pushed by hand in the
+ * test that needs it rather than being reachable from here by accident.
+ */
+const LANGUAGE_ITEM: Record<string, string> = {};
+let nextLanguageItem = 900_000;
+const languageItem = (label: string): string =>
+  (LANGUAGE_ITEM[label] ??= `http://www.wikidata.org/entity/Q${nextLanguageItem++}`);
+
 function addCountry(feed: Feed, code: string, spec: CountrySpec): void {
   (feed.codes as Row[]).push({ code });
+  (feed.name as Row[]).push({ country: code, value: spec.name ?? `Country ${code}` });
   for (const [currencyCode, name] of spec.currency ?? []) {
     (feed.currency as Row[]).push({ country: code, code: currencyCode, name });
   }
@@ -1500,7 +1691,9 @@ function addCountry(feed: Feed, code: string, spec: CountrySpec): void {
   for (const [number, role] of spec.emergency ?? []) {
     (feed.emergency as Row[]).push({ country: code, number, role });
   }
-  for (const value of spec.languages ?? []) (feed.languages as Row[]).push({ country: code, value });
+  for (const value of spec.languages ?? []) {
+    (feed.languages as Row[]).push({ country: code, item: languageItem(value), value });
+  }
   if (spec.callingCode) (feed.callingCode as Row[]).push({ country: code, value: spec.callingCode });
   if (spec.lat) (feed.coordinate as Row[]).push({ country: code, lat: spec.lat });
 }
@@ -1524,6 +1717,7 @@ const FILLER_SPEC: CountrySpec = {
 function healthyFeed(): Feed {
   const feed: Feed = {
     codes: [],
+    name: [],
     currency: [],
     plugs: [],
     voltage: [],
@@ -1534,6 +1728,7 @@ function healthyFeed(): Feed {
     coordinate: [],
   };
   addCountry(feed, "CN", {
+    name: REQUIRED_NAMES.CN,
     currency: [["CNY", "renminbi"]],
     plugs: ["Europlug", "NEMA 1-15", "AS/NZS 3112"],
     voltage: ["220"],
@@ -1548,6 +1743,7 @@ function healthyFeed(): Feed {
     lat: "35.0",
   });
   addCountry(feed, "PE", {
+    name: REQUIRED_NAMES.PE,
     currency: [["PEN", "Peruvian sol"]],
     plugs: ["NEMA 1-15", "NEMA 5-15", "Europlug"],
     voltage: ["220"],
@@ -1590,6 +1786,7 @@ function healthyFeed(): Feed {
   });
   // The design's own sparse fixture: present, with fields absent.
   addCountry(feed, "SH", {
+    name: "Saint Helena, Ascension and Tristan da Cunha",
     currency: [["SHP", "Saint Helena pound"]],
     drivingSide: "left-hand traffic",
     lat: "-15.9",
@@ -1751,6 +1948,7 @@ describe("run() — the positive control", () => {
   test("China's record reproduces the answer a human wrote before this ingest existed", async () => {
     await run({ fetchBindings: loaderFor(healthyFeed()), dataDir: freshDataDir() });
     expect(writtenPayload().countries.CN).toEqual({
+      name: REQUIRED_NAMES.CN,
       currencyCode: "CNY",
       currencyName: "renminbi",
       plugs: ["A", "C", "I"],
@@ -1778,6 +1976,37 @@ describe("run() — the positive control", () => {
     expect(countries.PL.currencyCode).toBe("PLN");
     expect(countries.ZW.currencyCode).toBe("USD");
     expect(countries.MO.currencyCode).toBe("MOP");
+  });
+
+  test("Guinea's meta-item is dropped end to end and French survives, which the reader could not do", async () => {
+    // The whole point of fixing this in the extract rather than at the
+    // boundary: refused by label at the reader, the all-or-nothing rule costs
+    // Guinea French as well. Dropped by id here, the record states what
+    // upstream states.
+    const feed = healthyFeed();
+    dropRows(feed, "languages", [FILLERS[0]]);
+    (feed.languages as Row[]).push(
+      { country: FILLERS[0], item: languageItem("French"), value: "French" },
+      {
+        country: FILLERS[0],
+        item: `http://www.wikidata.org/entity/${[...DROPPED_LANGUAGE_ITEMS][0]}`,
+        value: "languages of Nowhere",
+      }
+    );
+    await run({ fetchBindings: loaderFor(feed), dataDir: freshDataDir() });
+    expect(writtenPayload().countries[FILLERS[0]].officialLanguages).toEqual(["French"]);
+  });
+
+  test("every country is written with the name the sentences will call it", async () => {
+    await run({ fetchBindings: loaderFor(healthyFeed()), dataDir: freshDataDir() });
+    const { countries } = writtenPayload();
+    expect(countries.PE.name).toBe("Peru");
+    expect(Object.values(countries).filter((record) => record.name !== undefined)).toHaveLength(
+      EXPECTED_COUNTRIES
+    );
+    // Identity, not a fact: it must not be able to keep a record alive, and it
+    // must not have moved the count the drift bands are calibrated in.
+    expect(factCount(countries.SH)).toBe(4);
   });
 
   test("the sparse country is written PRESENT with fields absent, never as a placeholder", async () => {
@@ -1889,6 +2118,24 @@ describe("run() aborts before any write primitive fires", () => {
       itemLabel: PLUG_ARTICLE.itemLabel,
     });
     await expectNoWrite(feed, /as their ONLY plug value/);
+  });
+
+  test("a feed whose Peru record came back under a different name", async () => {
+    const feed = healthyFeed();
+    dropRows(feed, "name", ["PE"]);
+    (feed.name as Row[]).push({ country: "PE", value: "Republic of Peru" });
+    await expectNoWrite(feed, /PE.name is "Republic of Peru"/);
+  });
+
+  test("a feed where the language meta-item became a country's only value", async () => {
+    const feed = healthyFeed();
+    dropRows(feed, "languages", [FILLERS[0]]);
+    (feed.languages as Row[]).push({
+      country: FILLERS[0],
+      item: `http://www.wikidata.org/entity/${[...DROPPED_LANGUAGE_ITEMS][0]}`,
+      value: "languages of Nowhere",
+    });
+    await expectNoWrite(feed, /as their ONLY official-language value/);
   });
 
   test("a feed where a curated override has gone stale", async () => {

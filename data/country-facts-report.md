@@ -1,11 +1,16 @@
 # Country facts report
 
-- Generated: 2026-08-27T07:40:53.049Z
+- Generated: 2026-08-27T08:33:43.041Z
 - Source: https://query.wikidata.org/sparql (Wikidata (CC0))
 - Licence: CC0-1.0
 - Contents: structured scalars only. Never prose, never a sentence.
 
 **246 countries carry at least one fact.**
+
+Every record also carries the country's English NAME, from the item's own
+`rdfs:label`. It is identity rather than a fact — it is what the sentences in
+`lib/countryTips.ts` call the country — so it is not counted as one, and a record
+carrying nothing but a name would be omitted exactly like an empty one.
 
 A country with none is absent from the artifact entirely and falls through to
 `lib/countryProfile.ts`'s neutral profile, which is the honest default. A field
@@ -17,6 +22,7 @@ simply does not run.
 
 | Field | Countries | Share |
 | --- | --- | --- |
+| `name` | 246 | 100.0% |
 | `currencyCode` | 239 | 97.2% |
 | `currencyName` | 239 | 97.2% |
 | `plugs` | 207 | 84.1% |
@@ -80,6 +86,16 @@ Recorded so it is not re-litigated. Each of these was measured, not assumed.
 - **Climate normals.** These need station data of a different order of size, and
   they are the highest-value future addition — climate is what actually answers
   "when should I go".
+- **A currency NAME a traveller could be shown.** The code is carried and rendered;
+  the name is carried and never rendered. Measured 2026-08-27 on the currency items
+  themselves: PE's is `Nuevo sol`, the pre-2015 name Peru dropped that year, and the
+  `mul` fallback does not fix it (Q204656 has an English label and no `mul` one).
+  Nor is the field consistent in what it names — JP's is `yen` and MX's is `peso`,
+  generic units rather than the Japanese yen or the Mexican peso — and P1813
+  ("short name") is empty for every one sampled, so no better property exists to
+  switch to. One label being provably stale while 238 more are unchecked is not a
+  one-country correction; it is a field that cannot be shown. See the block comment
+  in `lib/countryFacts.ts`.
 - **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**
   No structured source. Visa rules also depend on the traveller's passport, which
   the app does not know.
