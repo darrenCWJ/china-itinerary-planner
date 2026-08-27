@@ -8,7 +8,7 @@ import { PlanStep } from "@/components/PlanStep";
 import { mergeCatalogHit, shouldFetchEnrichment } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
 import { resolveTripSeason } from "@/lib/tripSeason";
-import { WIZARD_STEPS, canAdvance } from "@/lib/wizard";
+import { WIZARD_STEPS, canAdvance, tripCountryFromPicks } from "@/lib/wizard";
 import type { TripInput } from "@/lib/itinerary";
 import type { CatalogHit } from "@/lib/tripShared";
 import type { Destination, Interest, Season } from "@/lib/types";
@@ -34,13 +34,35 @@ export default function PlanPage() {
    */
   const [month, setMonth] = useState<number | null>(null);
   /**
-   * The country being planned. Lifted out of DestinationStep, where it was local
-   * state that never left the component — so the world picker's choice was
-   * discarded at the write boundary and TripInputSchema defaulted every trip to
-   * "CN". That silently reverted the season derivation to China's hemisphere and
-   * pinned the accent and hero to China. Found by review, not by a test.
+   * The country the picker is OPEN on — the browsing scope, not the trip.
+   *
+   * Lifted out of DestinationStep, where it was local state that never left the
+   * component — so the world picker's choice was discarded at the write
+   * boundary and TripInputSchema defaulted every trip to "CN". That silently
+   * reverted the season derivation to China's hemisphere and pinned the accent
+   * and hero to China. Found by review, not by a test.
+   *
+   * It is deliberately NOT what the trip is saved as. See `tripCountry` below:
+   * this value scopes the map, the search and the cards, and a user who picks
+   * Lima and then browses on to Japan has changed what they are looking at, not
+   * where they are going.
    */
   const [country, setCountry] = useState("CN");
+  /**
+   * The country each catalog pick was made in, keyed by qid.
+   *
+   * Curated destinations and hand-typed places already state their own country
+   * (`Destination.country`, stamped by `addOffMap` below), and a `CatalogHit`
+   * is the one pick kind that carries none — it is a name, a qid and a
+   * province. So the wizard records the open country at pick time, which is the
+   * only moment that fact exists: `extras` is keyed by qid and survives a
+   * country switch, so nothing later in the session can recover it.
+   *
+   * Written once per qid and never overwritten, for the same reason: a re-pick
+   * under a different scope must not retroactively move a city to another
+   * country. Cleared only by `restart`.
+   */
+  const [pickedIn, setPickedIn] = useState<Record<string, string>>({});
   const [days, setDays] = useState(5);
   const [adults, setAdults] = useState(2);
   const [kids, setKids] = useState(0);
@@ -129,6 +151,10 @@ export default function PlanPage() {
     const merged = mergeCatalogHit(extras[hit.qid], hit);
     setExtras((prev) => ({ ...prev, [hit.qid]: mergeCatalogHit(prev[hit.qid], hit) }));
     setSelected((prev) => (prev.includes(hit.qid) ? prev : [...prev, hit.qid]));
+    // The country this city is in, captured at the only moment it is known —
+    // see `pickedIn`. First write wins, so a re-pick under a switched scope
+    // cannot move a city that is already on the trip.
+    setPickedIn((prev) => (prev[hit.qid] ? prev : { ...prev, [hit.qid]: country }));
     // A city outside the build-time top 30 arrives with no description; the
     // first time anyone selects it, fetch one (spec §4). Fire-and-forget: the
     // pick is already committed above and a missing blurb is an accepted
@@ -219,9 +245,40 @@ export default function PlanPage() {
     }
   };
 
+  /**
+   * Which country each picked id belongs to, from the three sources that know.
+   *
+   * Curated cards and hand-typed places carry their own `country`; catalog
+   * picks are answered by `pickedIn`. The three id spaces are disjoint (a
+   * curated slug, an `offmap:` slug and a `Q…`/`G…` qid), so the merge order is
+   * not a precedence rule.
+   */
+  const countryOfPick = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = { ...pickedIn };
+    for (const dest of DESTINATIONS) out[dest.id] = dest.country;
+    for (const dest of offMap) out[dest.id] = dest.country;
+    return out;
+  }, [pickedIn, offMap]);
+
+  /**
+   * The country the TRIP is for, which is where its destinations are — not
+   * wherever the picker was left. See `tripCountryFromPicks` in lib/wizard.ts
+   * for why the first pick decides and why the picker still answers when
+   * nothing is picked.
+   */
+  const tripCountry = tripCountryFromPicks(selected, countryOfPick, country);
+
   const tripInput = useMemo<TripInput>(
-    () => ({ destinationIds: selected, days, season, adults, kids, interests, country }),
-    [selected, days, season, adults, kids, interests, country]
+    () => ({
+      destinationIds: selected,
+      days,
+      season,
+      adults,
+      kids,
+      interests,
+      country: tripCountry,
+    }),
+    [selected, days, season, adults, kids, interests, tripCountry]
   );
 
   const canNext = canAdvance(step, { selectedCount: selected.length, days });
@@ -236,6 +293,7 @@ export default function PlanPage() {
     setMonth(null);
     setOffMap([]);
     setCountry("CN");
+    setPickedIn({});
   };
 
   return (
@@ -288,8 +346,12 @@ export default function PlanPage() {
               first pass — but the wizard lets a completed step be reopened,
               and coming back to Details after choosing Peru used to show a
               Peruvian traveller Mar–May under the word Spring.
+
+              The TRIP's country, not the picker's: these chips set the season
+              the trip is planned in, so they answer to the same country
+              `tripInput` does.
             */
-            country={country}
+            country={tripCountry}
             days={days}
             onDays={(d) => setDays(Math.min(MAX_DAYS, Math.max(1, d)))}
             maxDays={MAX_DAYS}
@@ -319,7 +381,21 @@ export default function PlanPage() {
               // hemisphere bug in the other order: the month was read through
               // the country that was open at the time. Re-derive, so the two
               // orders of the same two clicks end on the same season.
-              if (month !== null) setSeason(resolveTripSeason(season, month, next));
+              //
+              // Derived through the TRIP's country, with `next` as the new
+              // browsing scope — not through `next` itself. A trip whose
+              // destinations are Peruvian keeps Peru's seasons when the picker
+              // moves on to Japan, which is the same rule `tripInput` above
+              // applies to everything else the country decides.
+              if (month !== null) {
+                setSeason(
+                  resolveTripSeason(
+                    season,
+                    month,
+                    tripCountryFromPicks(selected, countryOfPick, next)
+                  )
+                );
+              }
             }}
             onAddOffMap={addOffMap}
             offMap={offMap}
@@ -336,7 +412,7 @@ export default function PlanPage() {
             */
             onMonthPicked={(m) => {
               setMonth(m);
-              setSeason(resolveTripSeason(season, m, country));
+              setSeason(resolveTripSeason(season, m, tripCountry));
             }}
           />
         )}
