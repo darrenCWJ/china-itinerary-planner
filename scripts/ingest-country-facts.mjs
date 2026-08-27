@@ -242,21 +242,41 @@ export function groupByCountry(rows) {
  * plugs" is checkable, and "Peru uses type IEC-60906-1 plugs" is a sentence no
  * traveller can act on.
  *
- * Fourteen rows for thirteen measured standards. Investigation 3's write-up
- * names eleven of the thirteen explicitly; the remaining two are inferred from
- * the letter sets the design pins for China (A/C/I) and Peru (A/B/C), which
- * fixes `NEMA 1-15`, `NEMA 5-15` and `Europlug`. The two BS 546 rows are the
- * open question, so both are carried. One row here is therefore expected never
- * to fire, and Task 25 removes it once the shipping query prints the measured
- * distinct set. An extra row cannot mis-publish: a row can only RECOGNISE a
- * standard, each letter below is hand-checked against IEC 60083, and a
- * standard with no row still withholds.
+ * TWELVE rows for the thirteen standards the shipping query MEASURED on
+ * 2026-08-27 by the shipping query (Task 25, not the design prototype). That
+ * measurement is the whole distinct P2853 label set across
+ * the 246 shard countries, counts attached:
+ *
+ *   Europlug 135, Schuko 75, BS 1363 55, NEMA 1-15 54, NEMA 5-15 46,
+ *   Type E 40, AS/NZS 3112 21, BS 546 15, Type K 9, Type L 9, SN 441011 6,
+ *   Type H 2, IEC 60906-1 2  — plus the Wikipedia article at 39
+ *   (`DROPPED_PLUG_ITEMS`), which is the fourteenth distinct value.
+ *
+ * Two changes against Task 24's provisional table, both forced by that run.
+ * `Type D` and `Type M` are GONE: upstream uses neither item, so both rows
+ * were dead code that could only ever have fired on a value nobody has seen.
+ *
+ * `BS 546` is measured, is the thirteenth standard, and is DELIBERATELY NOT
+ * GIVEN A ROW. One Wikidata item covers both of its sizes — the 5 A variant
+ * is IEC type D and the 15 A variant is type M — and the statement carries
+ * nothing that separates them. Guessing D would publish "South Africa uses
+ * type C/D/N" when South Africa's round-pin sockets are the 15 A type M, and
+ * a traveller who buys a type D adapter on that sentence finds it does not
+ * fit. Measured cost of refusing instead: 15 countries withhold their plug
+ * field — MO, BT, MZ, PK, IL, PS, ZA, IN, BW, LK, NP, SZ, NG, NA, LS (SZ and
+ * LS carry BS 546 alone, so they would have been withheld by any rule). Those
+ * countries say so, per field, through the gap note. Recorded in
+ * data/country-facts-report.md's "Not derivable" section so it is not
+ * re-litigated as an oversight.
+ *
+ * A row can only ever RECOGNISE a standard, each letter below is hand-checked
+ * against IEC 60083, and a standard with no row still withholds — which is why
+ * an unmappable standard costs coverage but can never cost correctness.
  */
 export const PLUG_LETTERS = {
   'NEMA 1-15': 'A',
   'NEMA 5-15': 'B',
   Europlug: 'C',
-  'Type D': 'D',
   'Type E': 'E',
   Schuko: 'F',
   'BS 1363': 'G',
@@ -265,7 +285,6 @@ export const PLUG_LETTERS = {
   'SN 441011': 'J',
   'Type K': 'K',
   'Type L': 'L',
-  'Type M': 'M',
   'IEC 60906-1': 'N',
 };
 
@@ -277,8 +296,10 @@ export const PLUG_LETTER_SET = new Set(Object.values(PLUG_LETTERS));
  * Wikipedia ARTICLE used as a P2853 value by 39 countries. It names no single
  * standard, so it maps to no letter.
  *
- * Measured: zero countries have it as their SOLE value, which is what makes
- * dropping it by explicit id lossless rather than a silent coverage cut. That
+ * Measured zero countries have it as their SOLE value — re-measured against
+ * the live endpoint by the shipping query on 2026-08-27, still zero, across
+ * all 39 countries that carry it — which is what makes dropping it by explicit
+ * id lossless rather than a silent coverage cut. That
  * measurement is an assumption about live upstream data, so it is enforced
  * rather than trusted: `buildFacts` records any country whose plug field was
  * withheld only because this article was all it had, and `assertFactsSane`
@@ -568,17 +589,39 @@ export function factCount(record) {
  * the previous artifact and everything else in the run proceeds normally.
  * `codes` feeds no fields — it establishes the country universe, and a run
  * without it has nothing to build at all.
+ *
+ * `batch` is how many country codes ride in one request's `VALUES` block, and
+ * every value below is derived from one measured number rather than chosen:
+ * the rows-per-answering-country density the shipping query returned on
+ * 2026-08-27 by the shipping query over all 246 codes.
+ *
+ *   currency 268 rows / 244 countries = 1.10   plugs   508 / 222 = 2.29
+ *   voltage  234 / 222 = 1.05                  driving 247 / 246 = 1.00
+ *   emergency 648 / 246 = 2.63                 languages 451 / 243 = 1.86
+ *   callingCode 248 / 242 = 1.02               coordinate 246 / 246 = 1.00
+ *
+ * The rule, applied uniformly: the largest size in {50, 100, 150, 200} whose
+ * measured density keeps ONE request under 250 rows. That is roughly a tenth
+ * of what the whole universe returns in a single request today, so upstream
+ * would have to grow tenfold before any one request came near Blazegraph's own
+ * 60-second ceiling — and a batch that does bail out costs a slice of one
+ * property rather than the property, which is the granularity
+ * `isPropertyAnswerPlausible` judges at.
+ *
+ * `codes` is unbatched: it is the country universe, its `VALUES` block IS the
+ * batch key, and splitting the thing every other batch is cut from would be
+ * circular.
  */
 export const PROPERTIES = [
-  { name: 'codes', property: 'P297', fields: [], columns: ['code'] },
-  { name: 'currency', property: 'P38/P498', fields: ['currencyCode', 'currencyName'], columns: ['country', 'code', 'name'] },
-  { name: 'plugs', property: 'P2853', fields: ['plugs'], columns: ['country', 'item', 'itemLabel'] },
-  { name: 'voltage', property: 'P2884', fields: ['voltageV'], columns: ['country', 'value'] },
-  { name: 'drivingSide', property: 'P1622', fields: ['drivingSide'], columns: ['country', 'value'] },
-  { name: 'emergency', property: 'P2852', fields: ['emergency'], columns: ['country', 'number', 'role'] },
-  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'value'] },
-  { name: 'callingCode', property: 'P474', fields: ['callingCode'], columns: ['country', 'value'] },
-  { name: 'coordinate', property: 'P625', fields: ['lat'], columns: ['country', 'lat'] },
+  { name: 'codes', property: 'P297', fields: [], columns: ['code'], batch: 246 },
+  { name: 'currency', property: 'P38/P498', fields: ['currencyCode', 'currencyName'], columns: ['country', 'code', 'name'], batch: 200 },
+  { name: 'plugs', property: 'P2853', fields: ['plugs'], columns: ['country', 'item', 'itemLabel'], batch: 100 },
+  { name: 'voltage', property: 'P2884', fields: ['voltageV'], columns: ['country', 'value'], batch: 200 },
+  { name: 'drivingSide', property: 'P1622', fields: ['drivingSide'], columns: ['country', 'value'], batch: 200 },
+  { name: 'emergency', property: 'P2852', fields: ['emergency'], columns: ['country', 'number', 'role'], batch: 50 },
+  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'value'], batch: 100 },
+  { name: 'callingCode', property: 'P474', fields: ['callingCode'], columns: ['country', 'value'], batch: 200 },
+  { name: 'coordinate', property: 'P625', fields: ['lat'], columns: ['country', 'lat'], batch: 200 },
 ];
 
 /**
@@ -703,12 +746,26 @@ export const CURATED_FACTS = {
   /** P498 yields PLN and PLZ, the pre-1995 zloty: still ISO-shaped, still truthy. */
   PL: { currencyCode: 'PLN', currencyName: 'złoty' },
   /**
-   * P38 yields thirteen currencies. Zimbabwe's multi-currency regime makes USD
+   * P38 yields thirteen currencies. Measured 2026-08-27 by the shipping
+   * query, they are EUR, CNY,
+   * GBP, USD, JPY, AUD, ZWG, ZAR, ZWN, ZWR, ZWL, INR and ZWD — four of them
+   * historical Zimbabwean dollars, so no rule that picks by shape can pick
+   * correctly here. Zimbabwe's multi-currency regime makes USD
    * the unit a visitor is quoted in and pays in; ZWG, the 2024 gold-backed
    * unit, is neither obtainable abroad nor useful to a traveller. This is the
    * currency the money pivot and the cash-backup packing line are about, so it
    * is the traveller-facing one, and this comment is the record of that
    * judgement rather than a claim about legal tender.
+   *
+   * Re-examined at Task 25 against the live answer above rather than carried
+   * forward on trust, because the value was an editorial call the design named
+   * a row for without naming a value. Kept: USD is in the upstream set, it is
+   * what a visitor is quoted and pays in, and the two alternatives a rule
+   * could have reached for are both worse — ZWG is unobtainable abroad, and
+   * "pick the one ISO-shaped value" is undefined when thirteen qualify. The
+   * row still FIRES, which `applyCurated` records and `assertFactsSane`
+   * enforces: the day Wikidata reduces ZW to one currency, this goes red
+   * rather than rotting.
    */
   ZW: { currencyCode: 'USD', currencyName: 'United States dollar' },
   /** P38 yields HKD/MOP, because the item covers the wider administrative history. */
@@ -758,8 +815,14 @@ export function applyCurated(built, curated = CURATED_FACTS) {
  * country count says nothing: `plugs` legitimately covers 222 of 246.
  *
  * 0.8 is the value scripts/enrich-cities.mjs already calibrated for exactly
- * this question at batch scale. Task 25 re-measures it against the shipping
- * query's real per-property variance.
+ * this question at batch scale, and it STAYS 0.8 — stated as a decision rather
+ * than dressed up as a measurement. The first real build (2026-08-27) is one
+ * run, and one run measures a level, not a variance: every property answered
+ * its full expected coverage, so there is no night-to-night spread here to
+ * calibrate against yet. What that run did establish is the shape this ratio
+ * has to survive — nine independent property queries in 22 batched requests,
+ * where a single batch bailing out fails its whole property (see
+ * `fetchPropertyRows`) and arrives here as a zero, not as 80%.
  */
 export const MIN_PROPERTY_ANSWER_RATIO = 0.8;
 
@@ -831,7 +894,8 @@ export function carryForwardFields(built, previous, fields) {
 // ---------------------------------------------------------------------------
 
 /**
- * Measured 2026-08-27 against the app's exact shard set: 246 countries.
+ * 246, measured 2026-08-27 against the app's exact shard set and confirmed by
+ * the first real build the same day.
  *
  * A two-sided band, never a bare floor. `previous === null` on a first run,
  * which is precisely when every drift check below early-returns — so on that
@@ -839,10 +903,16 @@ export function carryForwardFields(built, previous, fields) {
  * has nothing to compare against. A floor of 200 would let a first run write
  * 201 countries and then baseline every later run against 201.
  *
- * The tolerance is for the handful of items whose P297 Wikidata adds or
- * retires; it is wider than ingest-cities.mjs's because the country universe
- * here comes from Wikidata's ISO codes rather than from the GeoNames dump the
- * shards are cut from. Task 25 reconciles the two sets and re-measures this.
+ * The two sets are RECONCILED, measured 2026-08-27 by the shipping query. The
+ * app's 246 shard codes are a STRICT SUBSET of the 259 codes Wikidata carries
+ * a truthy P297 for: nothing the app ships a shard for is unknown upstream,
+ * and the 13 extras are AC, AN, AQ, BV, CP, CQ, DD, DG, HM, PC, TA, UM, YU.
+ * `COUNTRY_CODES` bounds the query to the 246, so the answer is the
+ * intersection and this band is measuring the same thing on both sides.
+ *
+ * The first real build returned exactly 246. The tolerance is for the handful
+ * of items whose P297 Wikidata adds or retires; a code upstream stops carrying
+ * drops out of `universe` in `run()` and shows up here rather than silently.
  */
 export const EXPECTED_COUNTRIES = 246;
 const COUNTRY_TOLERANCE = 3;
@@ -860,13 +930,16 @@ export const REQUIRED_FACT_COUNTRIES = ['CN', 'PE', 'JP', 'CH'];
  * The positive fixture for the honest-gap rule, and the one check that can
  * tell "we degraded to silence" from "we degraded to fabrication".
  *
- * Saint Helena is one of the five thinnest records measured (with TF, SJ, CX
- * and IO — all uninhabited or near-uninhabited dependencies) and the design's
+ * Saint Helena is the joint-thinnest record the shipping query produced on
+ * 2026-08-27 — 4 of 9 fields, tied with IO, ahead of CC, CX, SJ and TF at 5,
+ * all uninhabited or near-uninhabited dependencies — and it is the design's
  * own gap-note example: "We also have no emergency numbers or plug types for
- * Saint Helena." It must be PRESENT, and it must still be MISSING at least one
- * rendered field. A run where SH has everything means the withhold rules
- * stopped withholding, which no coverage floor can see because floors only
- * ever count downwards.
+ * Saint Helena." (Measured, it has emergency 999 but no currency, plugs,
+ * voltage or dialling code; its P474 answers both +290 and +247, which
+ * `pickCallingCode` withholds.) It must be PRESENT, and it must still be
+ * MISSING at least one rendered field. A run where SH has everything means the
+ * withhold rules stopped withholding, which no coverage floor can see because
+ * floors only ever count downwards.
  */
 export const REQUIRED_SPARSE_COUNTRY = 'SH';
 
@@ -895,27 +968,82 @@ export const CN_CROSS_CHECK = {
  * null everywhere — the `assertExtractQualitySane` lesson, where a healthy
  * record count hid every description being replaced by a stub.
  *
- * PROVISIONAL. Each floor is the design's measured post-withhold coverage
- * (2026-08-27: currency 234, plugs 222, voltage 220, driving side 245,
- * emergency 218, dialling code 238, latitude 245) less about ten points of
- * headroom. `officialLanguages` post-withhold was never measured — 243 is its
- * RAW coverage — so its floor carries extra headroom and is marked unverified.
- * Task 25 replaces every number here with one the shipping query produced,
- * plus the date it produced it.
+ * MEASURED. Every floor below is the SHIPPING query's own post-withhold
+ * coverage on 2026-08-27 — Task 25's run, not the design prototype's — less
+ * exactly ten countries of headroom, one rule,
+ * applied uniformly, so a reader can recompute each number rather than trust
+ * it. Measured coverage, out of 246:
+ *
+ *   currencyCode 239   currencyName 239   plugs 207   voltageV 221
+ *   drivingSide  245   emergency    221   officialLanguages 243
+ *   callingCode  237   lat 246
+ *
+ * Three of these move against Task 24's provisional guesses and each is a
+ * finding rather than a rounding:
+ *
+ * - `currencyCode` 234 -> 239. The design's prototype filtered labels to
+ *   `en` only, and Q4916 (the euro) now has no English label at all — its
+ *   label lives under `mul`. See `labelWithMulFallback`.
+ * - `drivingSide` 245 and `lat` 246 close the design's unexplained 246 -> 245
+ *   pair. Driving side is raw 246 and post-withhold 245: exactly one country,
+ *   AR, carries both left and right, because Argentina drove on the left until
+ *   1945. Latitude is 246 both raw and post-withhold — every country returns
+ *   exactly one best-rank centroid — so the prototype's 245 was not
+ *   reproducible and is not carried forward.
+ * - `plugs` 222 -> 207, and its floor DROPS from 200 to 197. That is not the
+ *   gate being loosened to admit bad data: the prototype's 222 assumed the
+ *   standard `BS 546` maps to a letter, and it does not — one Wikidata item
+ *   covers both the 5 A (type D) and 15 A (type M) sizes. Fifteen countries
+ *   are withheld rather than guessed at; see `PLUG_LETTERS`. The floor tracks
+ *   the measurement under the same -10 rule as every other row.
+ *
+ * `officialLanguages` was marked unverified by the design. Measured
+ * post-withhold: 243, identical to its raw coverage — no country trips the
+ * 40-language ceiling, so nothing is withheld. It is verified now.
  */
 export const MIN_FIELD_COVERAGE = {
-  currencyCode: 210,
-  currencyName: 210,
-  plugs: 200,
-  voltageV: 198,
-  drivingSide: 220,
-  emergency: 196,
-  officialLanguages: 200, // unverified upstream; see above
-  callingCode: 214,
-  lat: 220,
+  currencyCode: 229,
+  currencyName: 229,
+  plugs: 197,
+  voltageV: 211,
+  drivingSide: 235,
+  emergency: 211,
+  officialLanguages: 233,
+  callingCode: 227,
+  lat: 236,
 };
 
-const MAX_SHRINK_RATIO = 0.10;
+/**
+ * 0.05, not 0.10, and the change is forced by arithmetic the first real build
+ * made available.
+ *
+ * `MIN_FIELD_COVERAGE` runs BEFORE this check and is now set from measured
+ * coverage less ten. Add up how many fields can go missing while every one of
+ * those floors still holds: currencyCode 17, currencyName 17, plugs 49,
+ * voltageV 35, drivingSide 11, emergency 35, officialLanguages 13,
+ * callingCode 19, lat 10 — 206 fields out of a full 246 x 9 = 2,214, which is
+ * 9.3%. A 10% shrink is therefore UNREACHABLE: every path to it trips a
+ * coverage floor first, and this check would have been dead code dressed as a
+ * defence. At 0.05 it is live again, and it is the only gate that sees loss
+ * spread thinly across many fields and many countries at once, which is
+ * exactly the shape no single floor and no per-country grace can catch.
+ *
+ * The nightly cost of the tighter number is negligible: per-property demotion
+ * already carries a bad property's values forward before this check ever runs,
+ * so a 5% overnight fall in total facts means something systemic rather than
+ * churn.
+ */
+const MAX_SHRINK_RATIO = 0.05;
+/**
+ * Stays at 0.10, and its honest reach is recorded rather than assumed: against
+ * the shipped baseline of 2,098 facts, filling in EVERY absent field in every
+ * country would reach 2,214, a 5.5% rise — so this ratio cannot fire on the
+ * artifact as it stands. It is a backstop against a much larger reshape, not
+ * the thing that catches a withhold rule that stopped firing. That job belongs
+ * to the value-domain allowlists above (plug letters, driving side, the
+ * voltage band, ISO-shaped currency codes) and to the `soleDroppedArticlePlugs`
+ * and `curatedStale` diagnostics, all of which fire on one country.
+ */
 const MAX_GROWTH_RATIO = 0.10;
 /**
  * How many fields one country may lose before the run stops, regardless of how
@@ -1302,15 +1430,114 @@ const SOURCE_NAME = 'Wikidata (CC0)';
 const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
 
 /**
- * PROVISIONAL. Blazegraph's own ceiling on these property-path queries is
- * 60 s and it answers `upstream request timeout` rather than an error page,
- * which `parseBindings` refuses to read as an empty answer. Task 25 justifies
- * this number against the shipping query's measured worst case.
+ * The country universe this ingest asks about: every code the app ships a city
+ * shard for under public/cities, sorted. Pinned against that directory by a
+ * derived contract in lib/countryFacts.test.ts, so a shard added or removed
+ * reddens rather than silently going unqueried.
+ *
+ * Bounding the query matters. Measured 2026-08-27, an unbounded
+ * `?item wdt:P297 ?code` returns 259 codes — the app's 246 are a strict subset,
+ * and the 13 extras are AC, AN, AQ, BV, CP, CQ, DD, DG, HM, PC, TA, UM, YU:
+ * exceptionally reserved codes, uninhabited territories, and the historical
+ * AN (Netherlands Antilles), DD (East Germany) and YU (Yugoslavia). Facts
+ * about East Germany would pass every gate in this file, cost bytes in a
+ * bundle that reaches the browser, and answer a question no user can ask.
+ *
+ * It is a literal rather than a `readdirSync` because `run()`'s injectable
+ * seams are `fetchBindings` and `dataDir`: reading public/cities inside the
+ * run would make every gate test in scripts/ingest-country-facts.test.ts
+ * depend on the real shard tree, which is the coupling those tests exist
+ * without.
+ */
+export const COUNTRY_CODES = [
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AR', 'AS', 'AT', 'AU',
+  'AW', 'AX', 'AZ', 'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ',
+  'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS', 'BT', 'BW', 'BY', 'BZ', 'CA',
+  'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN', 'CO', 'CR',
+  'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ',
+  'EC', 'EE', 'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO',
+  'FR', 'GA', 'GB', 'GD', 'GE', 'GF', 'GG', 'GH', 'GI', 'GL', 'GM', 'GN',
+  'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HN', 'HR', 'HT',
+  'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE',
+  'JM', 'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW',
+  'KY', 'KZ', 'LA', 'LB', 'LC', 'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV',
+  'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK', 'ML', 'MM', 'MN',
+  'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ',
+  'NA', 'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ',
+  'OM', 'PA', 'PE', 'PF', 'PG', 'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS',
+  'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW', 'SA', 'SB', 'SC',
+  'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR',
+  'SS', 'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ',
+  'TK', 'TL', 'TM', 'TN', 'TO', 'TR', 'TT', 'TV', 'TW', 'TZ', 'UA', 'UG',
+  'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI', 'VN', 'VU', 'WF', 'WS',
+  'XK', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
+];
+
+/**
+ * Deliberately ABOVE the server's own ceiling, not below it.
+ *
+ * Blazegraph gives itself 60 s and then answers `upstream request timeout` —
+ * an HTTP 200 whose body has no CSV header, which `parseBindings` refuses to
+ * read as an empty answer. A client timeout under 60 s would abort requests
+ * the server was about to answer or about to refuse in a way this ingest can
+ * attribute, and turn a diagnosable refusal into an undiagnosable abort.
+ *
+ * Headroom, measured 2026-08-27 by the shipping queries over all 246 codes in
+ * ONE request each (the batches below are smaller still): 252 ms for the
+ * fastest (P474) and 746 ms for the slowest (P2884). 90 s is ~120x the
+ * measured worst case and 1.5x the server's ceiling.
  */
 const SPARQL_TIMEOUT_MS = 90_000;
 const RETRY_DELAYS_MS = [2_000, 8_000];
 
+/**
+ * The longest a `Retry-After` may park this run.
+ *
+ * The header is honoured because ignoring it is how a polite client becomes an
+ * abusive one, but it is upstream-controlled input and is treated as such: a
+ * misconfigured or hostile `Retry-After: 86400` must not hold the nightly
+ * workflow's runner open for a day. Past this, the run fails, nothing is
+ * written, the previous artifact stands and the job goes red — which is the
+ * correct outcome for "Wikidata has asked us to come back much later".
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * One second between requests, serially, never concurrently.
+ *
+ * WDQS asks clients to keep concurrency low rather than to hit a published
+ * quota, so the politeness rule here is one request in flight at a time with a
+ * full second between them. Measured cost on 2026-08-27: 22 requests for a
+ * whole build (1 codes + 2 + 3 + 2 + 2 + 5 + 3 + 2 + 2), so the delay adds
+ * about 21 s to a run whose queries themselves total under 10 s. That is a
+ * price worth paying nightly for a free public endpoint.
+ */
+const POLITENESS_DELAY_MS = 1_000;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `Retry-After` in milliseconds, or null when there is nothing usable to
+ * honour. Both RFC 9110 forms are accepted: delta-seconds and an HTTP-date.
+ *
+ * Clamped to `MAX_RETRY_AFTER_MS` by the caller, not here, so the raw value
+ * stays visible in the log line — "asked for 3600 s, waiting 60 s" is
+ * diagnosable and "waiting 60 s" is not.
+ */
+export function parseRetryAfter(header, now = Date.now()) {
+  const raw = String(header ?? '').trim();
+  if (raw === '') return null;
+  if (/^[0-9]+$/.test(raw)) return Number(raw) * 1_000;
+  // Every RFC 9110 date form starts with a day name, and requiring one is not
+  // pedantry: `Date.parse` is lenient enough to read "12.5" as a DATE, so a
+  // malformed delta-seconds value would otherwise come back as "wait until
+  // some day in the year 2012", clamp to 0, and turn a rate-limit into a
+  // hot retry loop against the endpoint that just asked us to slow down.
+  if (!/^[A-Za-z]{3}/.test(raw)) return null;
+  const at = Date.parse(raw);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, at - now);
+}
 
 /**
  * One retrying fetch, returning the response text.
@@ -1327,9 +1554,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * merge, and it is not worth retrying either — a moved endpoint will still be
  * moved in ten seconds.
  */
-async function fetchSource(url, { body, accept }) {
+async function fetchWithRetry(url, { body, accept }) {
   let lastError = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    /** Set when the server itself told us how long to wait; overrides the backoff. */
+    let requested = null;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -1348,13 +1577,28 @@ async function fetchSource(url, { body, accept }) {
           `not an empty result`
         );
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        requested = parseRetryAfter(res.headers.get('retry-after'));
+        throw new Error(`HTTP ${res.status}`);
+      }
       return await res.text();
     } catch (error) {
       lastError = error;
+      if (requested !== null && requested > MAX_RETRY_AFTER_MS) {
+        // Not a retry decision: the server has asked for longer than this run
+        // is willing to hold a CI runner open, so stop and let the property be
+        // demoted with its previous values carried forward.
+        throw new Error(
+          `${error.message}; Retry-After asked for ${Math.round(requested / 1_000)}s, over the ` +
+          `${MAX_RETRY_AFTER_MS / 1_000}s ceiling — giving up rather than parking the run`
+        );
+      }
       if (attempt < RETRY_DELAYS_MS.length) {
-        const delay = RETRY_DELAYS_MS[attempt];
-        console.warn(`  retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms (${error.message})`);
+        const delay = requested === null ? RETRY_DELAYS_MS[attempt] : Math.max(requested, RETRY_DELAYS_MS[attempt]);
+        console.warn(
+          `  retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms (${error.message}` +
+          `${requested === null ? '' : `, Retry-After ${Math.round(requested / 1_000)}s`})`
+        );
         await sleep(delay);
       }
     }
@@ -1457,6 +1701,20 @@ export function buildReport({ countries, generatedAt }) {
     .map(([code, record]) => [code, factCount(record)])
     .sort((a, b) => Number(b[1]) - Number(a[1]) || String(a[0]).localeCompare(String(b[0])));
   const thinnest = byFacts.slice(-15).reverse();
+  /**
+   * How many of the SEVEN rendered fields each country carries. The design's
+   * first stated risk is that the bar "as clear as China for all countries" is
+   * not met literally, and this histogram is the number that risk turns on:
+   * it says how many countries get the full set of fact-derived lines and how
+   * many are visibly thin. `currencyName` rides with `currencyCode` and `lat`
+   * is never rendered, so neither is counted here.
+   */
+  const rendered = new Map();
+  for (const [, record] of records) {
+    const carried = RENDERED_FIELDS.filter((field) => record[field] !== undefined).length;
+    rendered.set(carried, (rendered.get(carried) ?? 0) + 1);
+  }
+  const histogram = [...rendered.entries()].sort((a, b) => b[0] - a[0]);
 
   return [
     '# Country facts report',
@@ -1479,6 +1737,16 @@ export function buildReport({ countries, generatedAt }) {
     '| Field | Countries | Share |',
     '| --- | --- | --- |',
     ...coverage,
+    '',
+    '## Countries by rendered-field count',
+    '',
+    'Of the seven fields that reach a traveller. A country lower down this table is',
+    'not a country we got wrong — it is one whose gap note names, per field, exactly',
+    'what we do not have.',
+    '',
+    '| Rendered fields | Countries |',
+    '| --- | --- |',
+    ...histogram.map(([carried, count]) => `| ${carried} of ${RENDERED_FIELDS.length} | ${count} |`),
     '',
     '## Thinnest records',
     '',
@@ -1508,6 +1776,24 @@ export function buildReport({ countries, generatedAt }) {
     '- **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**',
     '  No structured source. Visa rules also depend on the traveller\'s passport, which',
     '  the app does not know.',
+    '- **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole',
+    '  distinct P2853 value set across these countries is fourteen items, thirteen',
+    '  standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single',
+    '  Wikidata item covering both of its sizes — the 5 A variant is IEC type D and the',
+    '  15 A variant is type M — and the statement carries nothing that separates them.',
+    '  Guessing D would publish "South Africa uses type C/D/N" when South Africa\'s',
+    '  round-pin sockets are the 15 A type M, and a traveller who buys a type D adapter',
+    '  on that sentence finds it does not fit. So the whole plug field is withheld for',
+    '  MO, BT, MZ, PK, IL, PS, ZA, IN, BW, LK, NP, SZ, NG, NA and LS, and the gap note',
+    '  names it. Splitting the item upstream, or a qualifier that gives the current',
+    '  rating, is what would fix this.',
+    '- **Anything about a country the app has no city shard for.** The query is bounded',
+    '  to the 246 codes under `public/cities`. Measured 2026-08-27, an unbounded P297',
+    '  query answers with 259: the extra thirteen are AC, AN, AQ, BV, CP, CQ, DD, DG,',
+    '  HM, PC, TA, UM and YU — exceptionally reserved codes, uninhabited territories,',
+    '  and the historical Netherlands Antilles, East Germany and Yugoslavia. Facts about',
+    '  East Germany would pass every gate in the ingest and answer a question no user',
+    '  can ask.',
     '',
     '## Attribution',
     '',
@@ -1534,43 +1820,227 @@ export function buildReport({ countries, generatedAt }) {
 // ---------------------------------------------------------------------------
 
 /**
- * NOT WRITTEN YET, deliberately, and not executed by any test in this task.
+ * An English label with Wikidata's `mul` fallback, as a deterministic COALESCE.
  *
- * Task 25 owns the shipping queries, their batching, their politeness delays
- * and every measured constant above. The design records why each query is a
- * hazard in its own right: Investigation 3 measured the same emergency-number
- * question returning 0, then 84, then the correct 155 rows depending on `BIND`
- * and `OPTIONAL` scoping inside Blazegraph, so a query is not a detail to be
- * filled in later by whoever happens to be passing.
+ * This is not defensive boilerplate — it is the single most expensive thing
+ * measured on 2026-08-27. Wikidata has been migrating item labels to the `mul`
+ * ("default for all languages") pseudo-language, and Q4916, the EURO, now has
+ * NO English label at all: 207 label languages, `en` not among them, `mul` =
+ * "euro". An `en`-only currency query therefore silently drops every eurozone
+ * country — measured 209 countries with `en` alone against 244 with this
+ * fallback, and DE, IT, AT, GR, ES, IE, FI, EE, LT, LV, LU, MC, ME and more
+ * simply absent. That is a 35-country hole that looks exactly like thin data.
  *
- * @param {{ name: string, property: string, fields: string[], columns: string[] }} property
+ * COALESCE rather than `FILTER(LANG(?x) IN ("en","mul"))`, because an item
+ * carrying both would emit two rows and the pickers take first-seen — which
+ * makes the artifact depend on result order and rewrites it on nights when
+ * nothing changed.
+ */
+const labelWithMulFallback = (subject, out) =>
+  `OPTIONAL { ${subject} rdfs:label ?${out}En . FILTER(LANG(?${out}En) = "en") }\n` +
+  `    OPTIONAL { ${subject} rdfs:label ?${out}Mul . FILTER(LANG(?${out}Mul) = "mul") }\n` +
+  `    BIND(COALESCE(?${out}En, ?${out}Mul) AS ?${out})`;
+
+/** `VALUES ?country { "AD" "AE" … }` for one batch. */
+const valuesClause = (variable, codes) => `VALUES ?${variable} { ${codes.map((code) => `"${code}"`).join(' ')} }`;
+
+/**
+ * The shipping query for one property over one batch of country codes.
+ *
+ * Every one of these is anchored on `?c wdt:P297 ?country` — the ISO code is
+ * the join key AND the country universe, so a query can only ever speak about
+ * codes this build asked for. `wdt:` is truthy-only, which is what keeps
+ * Germany's normal-rank Deutsche Mark and France's livre tournois out of the
+ * currency answer while their preferred-rank euro stays in.
+ *
+ * Two queries need statement-level access and say why in place. The rest are
+ * one triple plus a label.
+ *
+ * Investigation 3's warning is the reason each of these was measured
+ * individually before shipping: the same emergency-number question returned 0,
+ * then 84, then the correct 155 rows depending on `BIND` and `OPTIONAL`
+ * scoping inside Blazegraph. A query here is a measured artefact, not a
+ * detail.
+ *
+ * @param {{ name: string, property: string, fields: string[], columns: string[], batch: number }} property
+ * @param {string[]} codes
  * @returns {string}
  */
-function buildQuery(property) {
-  throw new Error(
-    `the SPARQL query for "${property.name}" (${property.property}) is not written yet — Task 25 ` +
-    `owns the network layer. Call run({ fetchBindings }) with an injected loader until then.`
-  );
+export function buildQuery(property, codes) {
+  switch (property.name) {
+    // The universe. Bounded by `VALUES` rather than left as an unbounded
+    // `?item wdt:P297 ?code`, because unbounded returns 259 codes including
+    // the historical DD (East Germany), YU (Yugoslavia) and AN (Netherlands
+    // Antilles) and the uninhabited AQ/BV/HM — measured 2026-08-27, and the
+    // app ships a city shard for none of them. Bounded, the answer is the
+    // intersection, and a code Wikidata has stopped coding drops out where the
+    // count band sees it.
+    //
+    // The FILTER is not a stylistic choice and must not be "simplified" back
+    // into `?item wdt:P297 ?code`. Measured against the live endpoint on
+    // 2026-08-27, that direct form returns HTTP 200 with a CSV header and ZERO
+    // rows for the same 246 codes this form answers in full — Blazegraph binds
+    // the VALUES set straight into the object position and the join misses,
+    // while every other query here escapes it only because it carries further
+    // triples on `?c`. This is Investigation 3's `BIND`/`OPTIONAL` scoping
+    // hazard, in the one place where a wrong answer is a total wipe rather
+    // than a thin field, and it was caught by the count band throwing "5
+    // countries carry facts, expected 246" on the first real run rather than
+    // by reading the query.
+    case 'codes':
+      return `SELECT DISTINCT ?code WHERE {
+  ${valuesClause('code', codes)}
+  ?item wdt:P297 ?isoCode .
+  FILTER(?isoCode = ?code)
+}`;
+
+    // P38 -> P498. The name is the currency item's own label, so `EUR` and
+    // "euro" always come from one item and can never be paired across two.
+    case 'currency':
+      return `SELECT DISTINCT ?country ?code ?name WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P38 ?currency .
+  ?currency wdt:P498 ?code .
+  ${labelWithMulFallback('?currency', 'name')}
+}`;
+
+    // `?item` is selected as well as its label because `DROPPED_PLUG_ITEMS`
+    // acts on the Q-id: dropping the Wikipedia article by id survives an
+    // upstream label edit, and dropping it by label would not.
+    case 'plugs':
+      return `SELECT DISTINCT ?country ?item ?itemLabel WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P2853 ?item .
+  ${labelWithMulFallback('?item', 'itemLabel')}
+}`;
+
+    case 'voltage':
+      return `SELECT DISTINCT ?country ?value WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P2884 ?value .
+}`;
+
+    // P1622's values are items whose labels are the bare words "left" and
+    // "right" — measured 2026-08-27, 170 right / 77 left over 246 countries.
+    // The 247th row is AR, which carries both because Argentina drove on the
+    // left until 1945; `pickDrivingSide` withholds it, and that is the whole
+    // of the design's unexplained 246 -> 245.
+    case 'drivingSide':
+      return `SELECT DISTINCT ?country ?value WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P1622 ?side .
+  ${labelWithMulFallback('?side', 'value')}
+}`;
+
+    // Statement-level, because the ROLE is a P366 qualifier on the statement
+    // and `wdt:` throws qualifiers away. `?st a wikibase:BestRank` is the
+    // truthy filter a `wdt:` path would have given for free — without it,
+    // superseded emergency numbers come back as current ones.
+    //
+    // The OPTIONAL wraps the qualifier AND its label together, so a role whose
+    // item has no label leaves `?role` unbound rather than dropping the number
+    // — a number with no role still reaches `pickEmergency`, which is what
+    // keeps the 67 single-number countries publishable.
+    case 'emergency':
+      return `SELECT DISTINCT ?country ?number ?role WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c p:P2852 ?st .
+  ?st a wikibase:BestRank .
+  ?st ps:P2852 ?num .
+  ${labelWithMulFallback('?num', 'number')}
+  OPTIONAL {
+    ?st pq:P366 ?use .
+    ${labelWithMulFallback('?use', 'role')}
+  }
+}`;
+
+    case 'languages':
+      return `SELECT DISTINCT ?country ?value WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P37 ?language .
+  ${labelWithMulFallback('?language', 'value')}
+}`;
+
+    case 'callingCode':
+      return `SELECT DISTINCT ?country ?value WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c wdt:P474 ?value .
+}`;
+
+    // Statement-level again, for the value NODE: `wdt:P625` hands back a WKT
+    // point that would have to be parsed by hand, while `psv:` exposes the
+    // latitude Wikidata already decomposed. `a wikibase:BestRank` keeps
+    // superseded centroids out, which is what makes every country's answer
+    // single-valued — `pickLatitude` withholds on anything else.
+    case 'coordinate':
+      return `SELECT DISTINCT ?country ?lat WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ?c p:P625 ?st .
+  ?st a wikibase:BestRank .
+  ?st psv:P625 ?node .
+  ?node wikibase:geoLatitude ?lat .
+}`;
+
+    default:
+      throw new Error(`no SPARQL query is defined for property "${property.name}"`);
+  }
+}
+
+/** `codes` split into `size`-long batches, in order. */
+export function batchCodes(codes, size) {
+  const batches = [];
+  for (let i = 0; i < codes.length; i += Math.max(1, size)) batches.push(codes.slice(i, i + Math.max(1, size)));
+  return batches;
 }
 
 /**
+ * One property's rows, in batches.
+ *
  * One request per property rather than one joined query, because that is the
  * granularity demotion needs: a single joined query makes one property's
  * bail-out indistinguishable from every property failing, and the whole
  * carry-forward defence rests on being able to tell them apart.
  *
+ * A batch that fails THROWS the whole property rather than returning what the
+ * other batches managed. Partial rows are the Task 7 shape at a smaller scale:
+ * they would arrive as an ordinary answer covering four fifths of the world,
+ * and `isPropertyAnswerPlausible` would wave through anything above 80%.
+ * Failing the property routes it to demotion and carry-forward instead, which
+ * loses one night's freshness rather than a field.
+ *
  * @param {string} name
+ * @param {string[]} codes
  * @returns {Promise<Row[]>}
  */
-async function fetchPropertyRows(name) {
+async function fetchPropertyRows(name, codes) {
   const property = PROPERTIES.find((entry) => entry.name === name);
   if (!property) throw new Error(`unknown property query "${name}"`);
-  console.log(`Querying ${property.property} for ${name} …`);
-  const text = await fetchSource(SPARQL_ENDPOINT, {
-    body: `query=${encodeURIComponent(buildQuery(property))}`,
-    accept: 'text/csv',
-  });
-  return parseBindings(text, property.columns);
+  const batches = batchCodes(codes, property.batch);
+  /** @type {Row[]} */
+  const rows = [];
+  for (const [index, batch] of batches.entries()) {
+    if (rows.length > 0 || index > 0) await sleep(POLITENESS_DELAY_MS);
+    const started = Date.now();
+    const text = await fetchWithRetry(SPARQL_ENDPOINT, {
+      body: `query=${encodeURIComponent(buildQuery(property, batch))}`,
+      accept: 'text/csv',
+    });
+    const parsed = parseBindings(text, property.columns);
+    rows.push(...parsed);
+    console.log(
+      `  ${property.property} ${name} batch ${index + 1}/${batches.length} ` +
+      `(${batch.length} codes): ${parsed.length} rows in ${Date.now() - started}ms`
+    );
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -1596,7 +2066,7 @@ async function fetchPropertyRows(name) {
  * at all, and a directory created before the gate is one — which also makes
  * "nothing was written" checkable by a test rather than merely asserted here.
  *
- * @param {{ fetchBindings?: (name: string) => Promise<Row[]>, dataDir?: string }} [options]
+ * @param {{ fetchBindings?: (name: string, codes: string[]) => Promise<Row[]>, dataDir?: string }} [options]
  */
 export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DIR } = {}) {
   const factsPath = join(dataDir, FACTS_FILE);
@@ -1611,12 +2081,20 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
   /** @type {Record<string, Row[]>} */
   const byProperty = {};
   const demoted = [];
+  /**
+   * What the later property queries batch over. Starts as the codes this
+   * build ASKS about and narrows to the codes Wikidata ANSWERED with, so a
+   * code upstream has stopped carrying is never queried for the other eight
+   * properties — and, because `buildFacts` takes the universe from the same
+   * answer, never lands in the artifact either.
+   */
+  let universe = COUNTRY_CODES;
   for (const property of PROPERTIES) {
     const previouslyCovered = countPreviousCoverage(previous, property.fields);
     /** @type {Row[] | null} */
     let rows = null;
     try {
-      rows = await fetchBindings(property.name);
+      rows = await fetchBindings(property.name, universe);
     } catch (error) {
       console.warn(`  ${property.name} (${property.property}) failed: ${String(error.message).slice(0, 160)}`);
     }
@@ -1632,6 +2110,7 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
         );
       }
       byProperty.codes = rows;
+      universe = [...new Set(rows.map((row) => String(row.code ?? '').trim()).filter((code) => code !== ''))].sort();
       continue;
     }
     const answered = rows === null ? 0 : countAnsweredCountries(rows);

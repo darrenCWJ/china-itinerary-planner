@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  COUNTRY_CODES,
   CURATED_FACTS,
   DROPPED_PLUG_ITEMS,
   EMERGENCY_ROLE_SET,
@@ -7,8 +8,12 @@ import {
   MIN_FIELD_COVERAGE,
   PLUG_LETTERS,
   PLUG_LETTER_SET,
+  PROPERTIES,
   RENDERED_FIELDS,
   applyCurated,
+  batchCodes,
+  buildQuery,
+  parseRetryAfter,
   assertFactsSane,
   buildFacts,
   buildReport,
@@ -260,21 +265,45 @@ describe("pickCurrency — landmine 2, the ISO code on the wrong item", () => {
 // ---------------------------------------------------------------------------
 
 const PLUG_ITEM: Record<string, string> = {
-  "NEMA 1-15": "Q1057632",
-  "NEMA 5-15": "Q1057633",
+  "NEMA 1-15": "Q24288454",
+  "NEMA 5-15": "Q24288456",
   Europlug: "Q1378312",
-  "Type D": "Q2103890",
-  "Type E": "Q2103891",
-  Schuko: "Q152003",
-  "BS 1363": "Q800524",
-  "Type H": "Q2103892",
-  "AS/NZS 3112": "Q4811073",
-  "SN 441011": "Q2103893",
-  "Type K": "Q2103894",
-  "Type L": "Q2103895",
-  "Type M": "Q2103896",
-  "IEC 60906-1": "Q1637825",
+  "Type E": "Q2335536",
+  Schuko: "Q1123613",
+  "BS 1363": "Q1528507",
+  "Type H": "Q1266396",
+  "AS/NZS 3112": "Q2335539",
+  "SN 441011": "Q2335530",
+  "Type K": "Q1502017",
+  "Type L": "Q1520890",
+  "IEC 60906-1": "Q1653438",
+  // Measured across 15 countries on 2026-08-27 and deliberately UNMAPPED; see
+  // the withhold test below.
+  "BS 546": "Q1383497",
 };
+
+/**
+ * The whole distinct P2853 label set the shipping query returned on
+ * 2026-08-27, with the number of countries carrying each. Fourteen values:
+ * thirteen standards plus one Wikipedia article. Every Q-id above is the real
+ * one that run returned, not a plausible-looking placeholder.
+ */
+const MEASURED_PLUG_STANDARDS: [string, number][] = [
+  ["Europlug", 135],
+  ["Schuko", 75],
+  ["BS 1363", 55],
+  ["NEMA 1-15", 54],
+  ["NEMA 5-15", 46],
+  ["Type E", 40],
+  ["AC power plugs and sockets: British and related types", 39],
+  ["AS/NZS 3112", 21],
+  ["BS 546", 15],
+  ["Type K", 9],
+  ["Type L", 9],
+  ["SN 441011", 6],
+  ["Type H", 2],
+  ["IEC 60906-1", 2],
+];
 
 /** The Wikipedia ARTICLE Wikidata carries as a P2853 value for 39 countries. */
 const PLUG_ARTICLE = {
@@ -337,6 +366,139 @@ describe("pickPlugs — landmine 3, technical standards used as if they were let
 
   test("the dropped-item set is exactly the one measured Wikipedia article", () => {
     expect([...DROPPED_PLUG_ITEMS]).toEqual(["Q60740126"]);
+  });
+
+  test("BS 546 withholds, because one Wikidata item covers both type D and type M", () => {
+    // The design's most expensive deliberate refusal, and the reason plug
+    // coverage is 207 rather than the prototype's 222. BS 546's 5 A variant is
+    // IEC type D and its 15 A variant is type M; the statement says which
+    // standard, never which size. Mapping it to D would publish "South Africa
+    // uses type C/D/N" over sockets that are type M, and a traveller who buys
+    // a type D adapter on that sentence finds it does not fit.
+    //
+    // India's measured value set, which is the expensive half of the cost.
+    const picked = pickPlugs([...plugRows("Europlug", "BS 546"), { country: "XX", ...PLUG_ARTICLE }]);
+    expect(picked.letters).toBeNull();
+    expect(picked.soleDroppedArticle).toBe(false);
+    // The arming half: the same country WITHOUT BS 546 does publish, so this
+    // fails on the standard rather than on the fixture.
+    expect(pickPlugs(plugRows("Europlug")).letters).toEqual(["C"]);
+  });
+
+  test("the table maps every measured standard it can map, and no standard it cannot", () => {
+    // Pins the reconciliation Task 25 performed against the live endpoint
+    // rather than restating the table. `Type D` and `Type M` used to have rows
+    // here and upstream uses neither item, so both were dead code that could
+    // only ever have fired on a value nobody has seen.
+    const mappable = MEASURED_PLUG_STANDARDS.map(([label]) => label).filter(
+      (label) => label !== "BS 546" && !label.startsWith("AC power plugs")
+    );
+    expect(Object.keys(PLUG_LETTERS).sort()).toEqual([...mappable].sort());
+    expect(MEASURED_PLUG_STANDARDS).toHaveLength(14);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The network layer's pure parts
+// ---------------------------------------------------------------------------
+
+describe("parseRetryAfter", () => {
+  test("reads delta-seconds", () => {
+    expect(parseRetryAfter("120")).toBe(120_000);
+    expect(parseRetryAfter(" 5 ")).toBe(5_000);
+  });
+
+  test("reads an HTTP-date, relative to now", () => {
+    const now = Date.parse("2026-08-28T00:00:00Z");
+    expect(parseRetryAfter("Fri, 28 Aug 2026 00:00:30 GMT", now)).toBe(30_000);
+  });
+
+  test("never returns a negative wait for a date already past", () => {
+    const now = Date.parse("2026-08-28T00:01:00Z");
+    expect(parseRetryAfter("Fri, 28 Aug 2026 00:00:00 GMT", now)).toBe(0);
+  });
+
+  test("returns null for absent or unparseable headers, so the backoff decides instead", () => {
+    // null, not 0: a 0 would read as "retry immediately", which is the one
+    // answer a rate-limited endpoint definitely did not give.
+    expect(parseRetryAfter(null)).toBeNull();
+    expect(parseRetryAfter("")).toBeNull();
+    expect(parseRetryAfter("soon")).toBeNull();
+    expect(parseRetryAfter("12.5")).toBeNull();
+  });
+});
+
+describe("batchCodes", () => {
+  test("splits in order and loses nothing", () => {
+    const codes = COUNTRY_CODES.slice(0, 25);
+    const batches = batchCodes(codes, 10);
+    expect(batches.map((batch: string[]) => batch.length)).toEqual([10, 10, 5]);
+    expect(batches.flat()).toEqual(codes);
+  });
+
+  test("a size at or over the input is one batch, and an empty input is no batches", () => {
+    expect(batchCodes(["AA", "BB"], 500)).toEqual([["AA", "BB"]]);
+    expect(batchCodes([], 50)).toEqual([]);
+  });
+
+  test("a nonsense size still terminates rather than looping forever", () => {
+    // A zero or negative batch size would make the loop never advance, which
+    // fails as a hung nightly runner rather than as a red build.
+    expect(batchCodes(["AA", "BB"], 0)).toEqual([["AA"], ["BB"]]);
+  });
+});
+
+describe("buildQuery", () => {
+  test("every property carries a query, bounded to the codes it was handed", () => {
+    // A tenth property added to PROPERTIES with no case in the switch would
+    // throw at 3am inside the nightly job. This fails at build time instead.
+    for (const property of PROPERTIES) {
+      const query = buildQuery(property, ["PE", "CN"]);
+      expect(query, property.name).toMatch(/^SELECT DISTINCT/);
+      expect(query, property.name).toContain('"PE"');
+      expect(query, property.name).toContain('"CN"');
+      for (const column of property.columns) {
+        expect(query, `${property.name} selects ${column}`).toContain("?" + column);
+      }
+    }
+  });
+
+  test("the country-code query keeps the FILTER that makes it answer at all", () => {
+    // Measured against the live endpoint on 2026-08-27: the direct form
+    // `?item wdt:P297 ?code` with a VALUES-bound ?code returns HTTP 200, a CSV
+    // header and ZERO rows, while this form returns all 246. Simplifying it
+    // back would wipe the country universe, and the only thing standing
+    // between that and a committed artifact is the two-sided count band.
+    const query = buildQuery(PROPERTIES[0], COUNTRY_CODES);
+    expect(query).toContain("FILTER(?isoCode = ?code)");
+    expect(query).not.toMatch(/wdt:P297 \?code/);
+  });
+
+  test("an unknown property is refused rather than silently queried for nothing", () => {
+    expect(() =>
+      buildQuery({ name: "holidays", property: "P832", fields: [], columns: [], batch: 50 }, ["PE"])
+    ).toThrow(/no SPARQL query is defined/);
+  });
+});
+
+describe("COUNTRY_CODES", () => {
+  test("is the app's shard universe: 246 sorted, unique, alpha-2 codes", () => {
+    expect(COUNTRY_CODES).toHaveLength(EXPECTED_COUNTRIES);
+    expect(new Set(COUNTRY_CODES).size).toBe(COUNTRY_CODES.length);
+    expect([...COUNTRY_CODES].sort()).toEqual(COUNTRY_CODES);
+    for (const code of COUNTRY_CODES) expect(code).toMatch(/^[A-Z]{2}$/);
+    for (const code of ["CN", "PE", "JP", "CH", "SH"]) expect(COUNTRY_CODES).toContain(code);
+  });
+
+  test("excludes the codes Wikidata carries that the app ships no shard for", () => {
+    // Measured 2026-08-27: an unbounded P297 query answers with 259 codes, and
+    // these thirteen are the difference — exceptionally reserved codes,
+    // uninhabited territories, and the historical Netherlands Antilles, East
+    // Germany and Yugoslavia. Facts about East Germany would pass every gate in
+    // this file and answer a question no user can ask.
+    for (const code of ["AC", "AN", "AQ", "BV", "CP", "CQ", "DD", "DG", "HM", "PC", "TA", "UM", "YU"]) {
+      expect(COUNTRY_CODES, code).not.toContain(code);
+    }
   });
 });
 
@@ -827,13 +989,40 @@ const FILLER_POOL = (() => {
 const SAMPLE_FILLERS = FILLER_POOL.slice(0, EXPECTED_COUNTRIES - 5);
 
 /**
- * Six disjoint slices of a sample build whose fields sum to 238 — more than
- * 10% of its 2,209 facts — while each field stays above its own per-field
- * coverage floor and no country loses more than one field. Sized that way on
- * purpose: the point is to reach the DRIFT check specifically, rather than
- * being stopped one gate earlier for an unrelated reason.
+ * Six disjoint slices of a sample build whose fields sum to 131 — more than
+ * MAX_SHRINK_RATIO's 5% of its 2,209 facts — while each field stays above its
+ * own per-field coverage floor and no country loses more than one field. Sized
+ * that way on purpose: the point is to reach the DRIFT check specifically,
+ * rather than being stopped one gate earlier for an unrelated reason.
+ *
+ * Re-sized at Task 25 against the MEASURED floors, which are much tighter than
+ * Task 24's provisional guesses. The headroom each slice has left is now one
+ * or two countries wide for the last three fields (officialLanguages 13,
+ * drivingSide 11, lat 10) — which is the arithmetic that forced
+ * MAX_SHRINK_RATIO down to 0.05, because the largest loss that clears every
+ * floor at once is 9.3% and a 10% threshold could never have fired.
  */
 const SAMPLE_DRIFT_LOSS: [string, string[]][] = [
+  ["plugs", SAMPLE_FILLERS.slice(0, 40)],
+  ["voltageV", SAMPLE_FILLERS.slice(40, 70)],
+  ["emergency", SAMPLE_FILLERS.slice(70, 100)],
+  ["officialLanguages", SAMPLE_FILLERS.slice(100, 112)],
+  ["drivingSide", SAMPLE_FILLERS.slice(112, 122)],
+  ["lat", SAMPLE_FILLERS.slice(122, 131)],
+];
+
+/**
+ * The growth direction needs BIGGER slices than the shrink direction, and the
+ * asymmetry is the point rather than an oversight.
+ *
+ * `MIN_FIELD_COVERAGE` is checked against the BUILT artifact, which is healthy
+ * in a growth test — it is the PREVIOUS one that is made poor. So no coverage
+ * floor bounds how far these may go, and they are sized to clear
+ * MAX_GROWTH_RATIO's 10% instead of MAX_SHRINK_RATIO's 5%. Reusing the shrink
+ * slices here would leave the growth check with no killing test at all: 131
+ * fields is 6.3% growth, which passes.
+ */
+const SAMPLE_GROWTH_GAIN: [string, string[]][] = [
   ["plugs", SAMPLE_FILLERS.slice(0, 45)],
   ["voltageV", SAMPLE_FILLERS.slice(45, 92)],
   ["emergency", SAMPLE_FILLERS.slice(92, 141)],
@@ -1152,7 +1341,9 @@ describe("assertFactsSane", () => {
 
   test("rejects a fact count that rose more than 10% — a withhold rule may have stopped firing", () => {
     const previous = { countries: structuredClone(sampleBuilt().countries) };
-    applySampleDriftLoss(previous.countries);
+    for (const [field, codes] of SAMPLE_GROWTH_GAIN) {
+      for (const code of codes) delete previous.countries[code][field];
+    }
     expect(() => assertFactsSane(sampleBuilt(), previous)).toThrow(/fact count rose/);
   });
 
@@ -1460,19 +1651,21 @@ function dropRows(feed: Feed, property: string, codes: string[]): Feed {
 }
 
 /**
- * Six disjoint slices whose fields sum to more than 10% of a healthy build's
- * 2,208 facts, each sized so the property still answers plausibly (>= 80% of
- * last run's coverage) and still clears its own coverage floor. The point is
- * to reach the DRIFT check specifically, rather than being stopped one gate
- * earlier for an unrelated reason.
+ * Six disjoint slices whose fields sum to more than MAX_SHRINK_RATIO's 5% of a
+ * healthy build's 2,208 facts, each sized so the property still answers
+ * plausibly (>= 80% of last run's coverage) and still clears its own MEASURED
+ * coverage floor. The point is to reach the DRIFT check specifically, rather
+ * than being stopped one gate earlier for an unrelated reason — and the floors
+ * this has to stay above were re-measured at Task 25 from the shipping query,
+ * so they are far tighter than the numbers this was first sized against.
  */
 const DRIFT_SLICES: [string, string, string[]][] = [
-  ["plugs", "plugs", FILLERS.slice(0, 45)],
-  ["voltage", "voltageV", FILLERS.slice(45, 91)],
-  ["emergency", "emergency", FILLERS.slice(91, 140)],
-  ["languages", "officialLanguages", FILLERS.slice(140, 185)],
-  ["drivingSide", "drivingSide", FILLERS.slice(185, 211)],
-  ["coordinate", "lat", FILLERS.slice(211, 234)],
+  ["plugs", "plugs", FILLERS.slice(0, 40)],
+  ["voltage", "voltageV", FILLERS.slice(40, 70)],
+  ["emergency", "emergency", FILLERS.slice(70, 100)],
+  ["languages", "officialLanguages", FILLERS.slice(100, 112)],
+  ["drivingSide", "drivingSide", FILLERS.slice(112, 122)],
+  ["coordinate", "lat", FILLERS.slice(122, 131)],
 ];
 
 let healthyPayload: ReturnType<typeof writtenPayload>;
@@ -1691,7 +1884,7 @@ describe("run() aborts before any write primitive fires", () => {
     // in which nobody has a currency.
     const feed = healthyFeed();
     dropRows(feed, "currency", FILLERS.slice(0, 200));
-    await expectNoWrite(feed, /countries carry currencyCode, under the 210 floor/);
+    await expectNoWrite(feed, /countries carry currencyCode, under the 229 floor/);
   });
 
   test("a feed that drops a country the previous artifact had", async () => {
@@ -1707,9 +1900,14 @@ describe("run() aborts before any write primitive fires", () => {
   });
 
   test("a feed whose fact count rose more than 10% — a withhold rule may have stopped firing", async () => {
+    // SAMPLE_GROWTH_GAIN's ranges, not DRIFT_SLICES': no coverage floor bounds
+    // a growth test, because the floors run against the healthy BUILT artifact
+    // while it is the PREVIOUS one being made poor here.
     const previous = structuredClone(healthyPayload);
-    for (const [, field, codes] of DRIFT_SLICES) {
-      for (const code of codes) delete previous.countries[code][field];
+    for (const [field, codes] of SAMPLE_GROWTH_GAIN) {
+      for (const code of codes) {
+        if (previous.countries[code]) delete previous.countries[code][field];
+      }
     }
     await expectNoWrite(healthyFeed(), /fact count rose/, previous);
   });
