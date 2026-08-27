@@ -562,6 +562,38 @@ function curatedCodes(): string[] {
   return [...block[0].matchAll(/^ {2}([A-Z]{2}): \{/gm)].map((match) => match[1]);
 }
 
+/** The four `UNINGESTED_NAMES` names, parsed the same way and for the same reason. */
+function uningestedNames(): Record<string, string> {
+  const source = readFileSync(join(process.cwd(), "lib", "countries.ts"), "utf8");
+  const block = /const UNINGESTED_NAMES: Record<string, string> = \{([\s\S]*?)\n\};/.exec(source);
+  if (!block) throw new Error("could not find the UNINGESTED_NAMES block in lib/countries.ts");
+  const out: Record<string, string> = {};
+  for (const match of block[1].matchAll(/^ {2}([A-Z]{2}): "([^"]+)",$/gm)) {
+    out[match[1]] = JSON.parse(`"${match[2]}"`) as string;
+  }
+  return out;
+}
+
+/**
+ * Every alpha-2 code this app can produce, read off `ISO_NUMERIC_TO_ALPHA2`.
+ *
+ * The universe the subtraction below is taken over, and the reason it is this
+ * table rather than the `COUNTRY_CODES` already imported at the top of this
+ * file: that list is the 246 the ingest TARGETS, so subtracting the artifact
+ * from it could only ever yield the empty set — a check that passes by
+ * construction and sees nothing. The ISO table is what re-keys the topology and
+ * what the profile sweep walks, so it is the set of codes a user can arrive at.
+ */
+function isoAlpha2Codes(): string[] {
+  const source = readFileSync(join(process.cwd(), "lib", "countries.ts"), "utf8");
+  const block =
+    /export const ISO_NUMERIC_TO_ALPHA2: Readonly<Record<string, CountryCode>> = \{([\s\S]*?)\n\};/.exec(
+      source
+    );
+  if (!block) throw new Error("could not find the ISO_NUMERIC_TO_ALPHA2 block in lib/countries.ts");
+  return [...new Set([...block[1].matchAll(/"\d{3}": "([A-Z]{2})"/g)].map((match) => match[1]))];
+}
+
 /**
  * 246 named countries in the artifact, minus the 24 `CURATED` names itself.
  *
@@ -631,6 +663,100 @@ describe.skipIf(!hasAssets)("INGESTED_NAMES cross-check", () => {
     // hypothetical — if it were not, this whole precedence would be noise.
     expect(artifact!.countries.CN?.name).toBe("People's Republic of China");
     expect(artifact!.countries.TR?.name).toBe("Turkey");
+  });
+});
+
+/**
+ * The residue: ISO codes that neither `CURATED` nor the artifact names.
+ *
+ * Pinned as well as derived, for the reason `EXPECTED_INGESTED_NAMES` is — the
+ * reconciliation below compares two sets, and two sets both derived from a file
+ * that failed to parse are both empty and compare equal. This is the arming
+ * charge. Measured 2026-08-27: 250 codes in the ISO table, 246 named by the
+ * artifact, and the 24 CURATED names all sit inside those 246, so four fall out.
+ */
+const EXPECTED_UNINGESTED_NAMES = 4;
+
+describe.skipIf(!hasAssets)("UNINGESTED_NAMES cross-check", () => {
+  // Parsed once at describe scope, for the reason the block above is.
+  const names = hasAssets ? uningestedNames() : {};
+  const iso = hasAssets ? isoAlpha2Codes() : [];
+  const curatedSet = new Set(hasAssets ? curatedCodes() : []);
+  const artifactNamed = new Set(
+    hasAssets
+      ? Object.entries(artifact!.countries)
+          .filter(([, record]) => typeof record.name === "string" && record.name.length > 0)
+          .map(([code]) => code)
+      : []
+  );
+  /** The table, recomputed from the two files rather than read from the third. */
+  const residue = iso.filter((code) => !curatedSet.has(code) && !artifactNamed.has(code)).sort();
+
+  test("all three inputs are really there, or every check below is vacuous", () => {
+    expect(Object.keys(names)).toHaveLength(EXPECTED_UNINGESTED_NAMES);
+    expect(iso).toHaveLength(250);
+    expect(curatedSet.size).toBe(24);
+    expect(artifactNamed.size).toBe(MEASURED_COVERAGE.name);
+    // A row really was parsed, value and all — not just a key.
+    expect(names.AQ).toBe("Antarctica");
+  });
+
+  test("the table is exactly the codes nothing else names, in both directions", () => {
+    // THE WHOLE CONTRACT, and the reason this table can be four hand-typed rows
+    // without being hand-maintained: it is a subtraction, recomputed here on
+    // every run. A row for a code the artifact covers fails the first
+    // direction; a code nothing covers and nothing lists fails the second.
+    //
+    // Both directions are live. An ingest that widens past sovereign states
+    // picks up Antarctica and trips the first, at which point `getCountryName`
+    // already prefers the artifact's name and the row here is dead weight to
+    // delete. A future ISO entry — the way 983/XK was added — with no artifact
+    // record trips the second, which is the direction that rots silently: it is
+    // the shape that left 25 countries out of `SOUTHERN` while every entry in
+    // it passed, and the shape that would leave a country rendering as two
+    // letters on the map pane and the destination step.
+    const listed = Object.keys(names).sort();
+    expect(
+      listed.filter((code) => !residue.includes(code)),
+      `listed in UNINGESTED_NAMES but already named elsewhere: delete the row`
+    ).toEqual([]);
+    expect(
+      residue.filter((code) => !(code in names)),
+      `named by nothing at all and missing from UNINGESTED_NAMES in lib/countries.ts`
+    ).toEqual([]);
+    expect(listed).toEqual(residue);
+    // What the subtraction actually yields today, stated so a reader does not
+    // have to run it. All four are uninhabited, which is why the
+    // sovereign-state ingest never had them as candidates.
+    expect(residue).toEqual(["AQ", "BV", "HM", "UM"]);
+  });
+
+  test("the two the map draws are named, which is the defect this table exists for", () => {
+    // AQ and HM have a drawable feature in public/world-countries.json and are
+    // not in `SEARCH_ONLY`, so the world map offered a country whose pane then
+    // titled itself with two letters. BV and UM share the nameless state and
+    // are search-only; they are named too, because `getCountry` is total and
+    // search is the guaranteed path to every country.
+    expect(names.AQ).toBe("Antarctica");
+    expect(names.HM).toBe("Heard Island and McDonald Islands");
+    expect(names.BV).toBe("Bouvet Island");
+    expect(names.UM).toBe("United States Minor Outlying Islands");
+    // Not Natural Earth's abbreviation, which is what the map called HM while
+    // it was deferring to the topology: "Heard I. and McDonald Is."
+    expect(names.HM).not.toContain("I.");
+  });
+
+  test("all three tables are disjoint, so precedence stays structural", () => {
+    // The same argument the ingested/curated pair makes one block up, extended
+    // to three: `getCountry` resolves through a chain of `??`, and a chain is
+    // one refactor away from reordering. No key appearing twice is what makes
+    // reordering unobservable rather than merely discouraged.
+    const alsoCurated = Object.keys(names).filter((code) => curatedSet.has(code)).sort();
+    const alsoIngested = Object.keys(names).filter((code) => code in ingestedNames()).sort();
+    expect(alsoCurated, `curated and uningested both name: ${alsoCurated.join(", ")}`).toEqual([]);
+    expect(alsoIngested, `ingested and uningested both name: ${alsoIngested.join(", ")}`).toEqual(
+      []
+    );
   });
 });
 

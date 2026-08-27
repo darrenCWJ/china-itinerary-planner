@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getCountry, isCountryCode } from "./countries";
+import { getCountry, isCountryCode, uningestedCountryName } from "./countries";
 
 describe("getCountry", () => {
   test("returns the curated record for China", () => {
@@ -45,6 +45,35 @@ describe("getCountry", () => {
     expect(getCountry("AR").hemisphere).toBe("south");
     expect(getCountry("ZA").hemisphere).toBe("south");
     expect(getCountry("JP").hemisphere).toBe("north");
+  });
+});
+
+describe("uningestedCountryName", () => {
+  // The accessor lib/countryFacts.ts reads `UNINGESTED_NAMES` through, shaped
+  // like `curatedCountryName` beside it so both resolvers see the same rows.
+  // lib/countryFacts.test.ts owns the question of WHICH rows; this owns the
+  // narrower one of what the function returns.
+  test("answers for the four codes nothing else names", () => {
+    expect(uningestedCountryName("AQ")).toBe("Antarctica");
+    expect(uningestedCountryName("HM")).toBe("Heard Island and McDonald Islands");
+  });
+
+  test("normalises its input the way every other reader here does", () => {
+    expect(uningestedCountryName("aq")).toBe("Antarctica");
+    expect(uningestedCountryName("  aq  ")).toBe("Antarctica");
+  });
+
+  test("is null for a code another table already names", () => {
+    // Which is what makes the precedence in `getCountry` structural rather than
+    // a rule about the order of two `??`: there is no row here to reorder to.
+    expect(uningestedCountryName("CN")).toBeNull();
+    expect(uningestedCountryName("GA")).toBeNull();
+  });
+
+  test("is null for anything that is not a country code", () => {
+    for (const bad of ["", "   ", "CHN", "1", "🙂", "constructor", "ZZ"]) {
+      expect(uningestedCountryName(bad), bad).toBeNull();
+    }
   });
 });
 

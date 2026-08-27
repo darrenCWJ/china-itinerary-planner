@@ -1,4 +1,4 @@
-import { curatedCountryName } from "./countries";
+import { curatedCountryName, uningestedCountryName } from "./countries";
 import countryFactsJson from "../data/country-facts.json";
 
 /**
@@ -414,7 +414,7 @@ export function getCountryFacts(code: string, options: CountryFactsOptions = {})
  * taking the name as a PARAMETER buys: neither template has to know that the
  * answer comes from two tables, and there is exactly one merge to review.
  *
- * Hand-tuned first, ingested second, blank last:
+ * Hand-tuned first, ingested second, uningested third, blank last:
  *
  * - `lib/countries.ts`'s `CURATED` table wins for the 24 countries it names.
  *   It is hand-verified, it is what the app already calls them elsewhere, and
@@ -425,11 +425,24 @@ export function getCountryFacts(code: string, options: CountryFactsOptions = {})
  * - The artifact fills in the other 222. Before it, `getCountry("PE").name`
  *   was `"PE"` and the gap note read "We don't have PE-specific guidance…"
  *   for 90% of the world.
- * - `""` when neither has an answer, which means the code is not a country:
- *   `getCountryName("🙂")` and any code the artifact has no record for land
- *   here. `buildGapNote` returns `[]` for a blank name rather than writing a
- *   note that cannot say whose data is missing, and `powerAdapterItem` returns
- *   null — so the empty string is a real answer here and never a rendered one.
+ * - `UNINGESTED_NAMES` fills in the four the artifact has no record of at all,
+ *   and is consulted AFTER it rather than before. Those four are uninhabited —
+ *   AQ, BV, HM, UM — so the sovereign-state ingest never had them as
+ *   candidates; the table is derived by subtracting the artifact and `CURATED`
+ *   from the ISO code table, so it holds no code either of the other two names
+ *   and the order below cannot change an answer today. It is written in this
+ *   order because it is the order that ages correctly: an ingest that later
+ *   covers Antarctica speaks for it immediately, and the cross-check fails
+ *   until the now-redundant row is deleted. Before this, `getCountry("AQ")`
+ *   answered `"AQ"` and this answered `""`, while the world map beside them
+ *   said "Antarctica" — three resolvers, two wrong.
+ * - `""` when none of the three has an answer, which means the code is not a
+ *   country: `getCountryName("🙂")` lands here. `buildGapNote` returns `[]` for
+ *   a blank name rather than writing a note that cannot say whose data is
+ *   missing, and `powerAdapterItem` returns null — so the empty string is a
+ *   real answer here and never a rendered one. It is no longer where a real
+ *   country lands, which is why AQ, BV, HM and UM now get the gap note every
+ *   other factless country gets instead of a silently empty profile.
  *
  * `options` mirrors `getCountryFacts`'s so a test can drive this against a
  * fixture index instead of the committed artifact.
@@ -437,5 +450,5 @@ export function getCountryFacts(code: string, options: CountryFactsOptions = {})
 export function getCountryName(code: string, options: CountryFactsOptions = {}): string {
   const curated = curatedCountryName(code);
   if (curated !== null) return curated;
-  return getCountryFacts(code, options).name ?? "";
+  return getCountryFacts(code, options).name ?? uningestedCountryName(code) ?? "";
 }

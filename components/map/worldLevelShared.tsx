@@ -36,12 +36,27 @@ export interface Entry {
  * "Turkey").
  *
  * It used to win for the curated 24 and defer to Natural Earth for everyone
- * else, because `getCountry` had nothing else to give. Since `INGESTED_NAMES`
- * landed it answers all 246, so the topology's name is now the fallback for a
- * feature this app has no record of at all — Antarctica and the three other
- * codes the facts artifact never reached. Which means the map, the destination
- * step and the plan all call a country the same thing, rather than the map
- * calling it whatever its geometry file happened to say.
+ * else, because `getCountry` had nothing else to give. `INGESTED_NAMES` took
+ * that to 246 and `UNINGESTED_NAMES` to all 250 the ISO table knows, so the map,
+ * the destination step and the plan now call a country the same thing for every
+ * code any of them can produce — rather than the map calling it whatever its
+ * geometry file happened to say.
+ *
+ * ANTARCTICA IS WHY THE LAST FOUR MATTERED, and it is the case this fallback
+ * used to cover and no longer needs to. AQ and HM are drawn (they are not in
+ * `SEARCH_ONLY`) but the facts artifact has no record of either, so this
+ * function read "Antarctica" off Natural Earth while `getCountry` handed
+ * `MapExplorer` and `DestinationStep` the bare code — the map was right and the
+ * two panes it opened were wrong, which is the exact failure the paragraph above
+ * claims cannot happen. HM was worse than wrong: Natural Earth's name for it is
+ * the abbreviated "Heard I. and McDonald Is.", so agreeing with the topology
+ * would have been agreeing with an abbreviation.
+ *
+ * THE FALLBACK STAYS anyway, and is now genuinely unreachable rather than load
+ * bearing: it costs one `||` and covers a rebuilt topology that gains a feature
+ * keyed to something `ISO_NUMERIC_TO_ALPHA2` has never heard of. Rendering that
+ * feature's own name beats rendering two letters, which is what deleting this
+ * would go back to.
  */
 export function countryLabel(code: string, topologyName: string): string {
   const known = getCountry(code).name;

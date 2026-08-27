@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ISO_NUMERIC_TO_ALPHA2 } from "./countries";
+import { getCountry, ISO_NUMERIC_TO_ALPHA2 } from "./countries";
 import {
   SEARCH_ONLY,
   SEARCH_ONLY_REASONS,
@@ -131,6 +131,35 @@ describe("world topology reconciliation", () => {
       (code) => !hasPolygon(world!, code) && !isSearchOnly(code),
     );
     expect(unreconciled).toEqual([]);
+  });
+
+  it.skipIf(!hasAsset)("names every country it draws, in this app's own words", () => {
+    // THE CHECK THAT WAS MISSING. `countryLabel` in
+    // components/map/worldLevelShared.tsx renders `getCountry(code).name` and
+    // falls back to the topology's name when that comes back as the bare code —
+    // so a drawable country no table named looked FINE on the map and rendered
+    // as two letters the moment it was opened, in `MapExplorer`'s heading, its
+    // "← Back to …" control and `DestinationStep`'s country chip. Nothing
+    // failed, because the only resolver that could see the gap was the one
+    // papering over it.
+    //
+    // AQ and HM are what it cost: both are drawn, neither is in SEARCH_ONLY,
+    // and the facts artifact has no record of either because both are
+    // uninhabited. `UNINGESTED_NAMES` in lib/countries.ts names them now.
+    //
+    // Derived from the asset rather than from a list, so it covers a rebuild
+    // that introduces a feature no table has heard of — which is the only way
+    // this can come back.
+    const unnamed = [...worldCountryCodes(world!)]
+      .filter((code) => getCountry(code).name === code)
+      .sort();
+    expect(
+      unnamed,
+      `drawn on the world map but rendered as its own ISO code once opened: ${unnamed.join(", ")}`
+    ).toEqual([]);
+    // Armed: the filter walked the real 235, not an empty set.
+    expect(worldCountryCodes(world!).size).toBeGreaterThan(200);
+    expect(getCountry("AQ").name).toBe("Antarctica");
   });
 
   it.skipIf(!hasAsset)("keeps the spec's named small countries selectable", () => {

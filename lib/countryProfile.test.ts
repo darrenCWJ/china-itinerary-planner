@@ -464,10 +464,17 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     expect(pe.gapNote).toHaveLength(1);
     expect(pe.gapNote[0]).toContain("Peru-specific guidance");
     expect(pe.gapNote[0]).toContain("open reference data");
-    // Measured against the committed artifact: 61 of the 249 swept codes are
-    // missing at least one field and get the second line.
+    // Measured against the committed artifact: 65 of the 249 swept codes are
+    // missing at least one field and get the second line. It was 61 while AQ,
+    // BV, HM and UM were nameless — `buildGapNote` returns `[]` for a blank
+    // name rather than writing a note that cannot say whose data is missing, so
+    // those four had no gap note at all. Naming them in `UNINGESTED_NAMES`
+    // moves them into the ordinary case: the artifact has no record of any of
+    // them, so they are missing EVERY field the note can name and each takes
+    // both lines. Four profiles that rendered nothing now say what they lack.
     const twoLine = SWEPT.filter((code) => getCountryProfile(code).gapNote.length === 2);
-    expect(twoLine).toHaveLength(61);
+    expect(twoLine).toHaveLength(65);
+    for (const code of ["AQ", "BV", "HM", "UM"]) expect(twoLine).toContain(code);
     expect(getCountryProfile(twoLine[0]).gapNote[1]).toContain("Our data also has no ");
     // What the ingest's territorial-scope rule costs that number, DERIVED
     // rather than restated. The previous version of this comment named a moved
@@ -488,8 +495,16 @@ describe("a country the ingest reached gets the ingested sentences", () => {
       (code) => !["GP", "MQ", "UY"].includes(code)
     );
     expect(movedByTheRule).toEqual(["AF", "PW", "US"]);
-    // Which makes the "before" figure 58 — computed, not copied.
-    expect(twoLine.length - movedByTheRule.length).toBe(58);
+    // Which makes the "before" figure 58 — computed, not copied. The four the
+    // artifact has no record of AT ALL come off too, and they are DERIVED here
+    // rather than listed: AQ, BV, HM and UM are missing every field the note
+    // can name, so they take the second line for a reason the territorial-scope
+    // rule had no part in. They were not in this arithmetic before because they
+    // had no gap note at all — `buildGapNote` returns `[]` for a blank name,
+    // and until `UNINGESTED_NAMES` named them their name WAS blank.
+    const outsideTheArtifact = twoLine.filter((code) => !(code in COUNTRY_FACTS));
+    expect(outsideTheArtifact).toEqual(["AQ", "BV", "HM", "UM"]);
+    expect(twoLine.length - movedByTheRule.length - outsideTheArtifact.length).toBe(58);
     // Armed: the filter above is a whole-string match, so a reworded gap note
     // would silently empty it. GP, MQ and UY are the three it must still find
     // beside the three the rule moved. The string carries no country name any
@@ -547,7 +562,7 @@ describe("name is the traveller-facing one, for every country there is", () => {
     expect(getCountryProfile("").name).toBe("");
   });
 
-  test("no swept code is ever named after itself, and only four have no name", () => {
+  test("no swept code is ever named after itself, and none is nameless either", () => {
     // Collected and asserted once rather than ~500 expects: a per-code matcher
     // call in a loop puts thousands of them inside one test's timeout, which is
     // what commit 84cd61e was about.
@@ -560,14 +575,27 @@ describe("name is the traveller-facing one, for every country there is", () => {
     }
     // The bug, swept: not one of 249 codes renders as its own two letters.
     expect(namedAfterTheCode).toEqual([]);
-    // And the blanks are named, not bounded. All four are uninhabited —
-    // Antarctica, Bouvet Island, Heard & McDonald, US Minor Outlying Islands —
-    // so the sovereign-state ingest has no record for them and nobody is
-    // planning a trip there. A fifth appearing means the artifact lost a
-    // country, which is a thing to look at rather than to tolerate.
-    expect(nameless).toEqual(["AQ", "BV", "HM", "UM"]);
+    // AND NOT ONE IS BLANK EITHER, which this used to allow for four:
+    // ["AQ", "BV", "HM", "UM"] — uninhabited, so the sovereign-state ingest has
+    // no record of them and this resolver had nothing to return. That blank was
+    // not the harmless end of a chain it looked like. AQ and HM are DRAWN on
+    // the world map (they have a feature in public/world-countries.json and are
+    // not in `SEARCH_ONLY`), so a user could open Antarctica from the picker —
+    // where `countryLabel` read the name off the topology and got it right —
+    // into a pane that `getCountry` titled **AQ**. `UNINGESTED_NAMES` in
+    // lib/countries.ts names all four, and lib/countryFacts.test.ts's
+    // `UNINGESTED_NAMES cross-check` derives that table by subtracting the
+    // artifact and CURATED from the ISO code table, so it cannot go stale in
+    // either direction. A blank reappearing here means a code reached this app
+    // that all three tables missed.
+    expect(nameless).toEqual([]);
     // Armed: the sweep is the real list, not an empty one that passes for free.
+    // Both assertions above are `toEqual([])` now, and two empty arrays derived
+    // from a loop that never ran compare equal to two that ran 249 times.
     expect(SWEPT.length).toBeGreaterThan(240);
+    // Armed twice: the loop really read names, not 249 undefineds.
+    expect(getCountryProfile("AQ").name).toBe("Antarctica");
+    expect(getCountryProfile("PE").name).toBe("Peru");
   });
 });
 

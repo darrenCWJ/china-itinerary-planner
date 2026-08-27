@@ -158,6 +158,52 @@ const INGESTED_NAMES: Record<string, string> = {
 };
 
 /**
+ * The English name of every country neither table above names.
+ *
+ * DERIVED, NOT HAND-PICKED, and it is derived by subtraction rather than from a
+ * field: it is exactly `ISO_NUMERIC_TO_ALPHA2` minus `CURATED` minus every code
+ * `data/country-facts.json` names. `lib/countryFacts.test.ts`'s
+ * `UNINGESTED_NAMES cross-check` recomputes that subtraction from the two files
+ * on every run and compares it to these keys in BOTH directions, so the table
+ * cannot gain a row that something else already names, and cannot miss one that
+ * nothing does. Four codes fall out today: 250 codes in the ISO table, 246
+ * named by the artifact, and the 24 `CURATED` names are all inside those 246.
+ *
+ * ALL FOUR ARE UNINHABITED, which is why the artifact has no record of them —
+ * the ingest is bounded to sovereign states with a population, so Antarctica,
+ * Bouvet Island, Heard & McDonald and the US Minor Outlying Islands were never
+ * candidates. `SOUTHERN` below already carries three of them for the same
+ * reason and says so at length; this is that exception applied to the name.
+ *
+ * WHAT IT FIXES. `getCountry("AQ").name` was `"AQ"`, so opening Antarctica
+ * titled the map pane **AQ**, made its control read "← Back to AQ" and put
+ * **AQ** on the destination step's country chip — while the world map right
+ * beside them said *Antarctica*, because `countryLabel` in
+ * components/map/worldLevelShared.tsx fell back to the topology's name when
+ * `getCountry` handed back the bare code. Three resolvers, two answers, for the
+ * two codes a user can actually reach this way: AQ and HM both have a drawable
+ * feature in `public/world-countries.json` and are not in `SEARCH_ONLY`. HM
+ * gains more than a fix — the map called it Natural Earth's abbreviated "Heard
+ * I. and McDonald Is." and now calls it what everything else does.
+ *
+ * THE NAMES ARE THE ISO 3166-1 ENGLISH SHORT NAMES, which is the same register
+ * as the artifact's and therefore the register the other 246 are already in.
+ *
+ * THE ARTIFACT STILL WINS where it has an answer, and this table does not
+ * contain a code it names, so the precedence is structural rather than a rule
+ * in `getCountry` that could be reordered. `getCountryName` in
+ * lib/countryFacts.ts consults this last for the same reason: the day an ingest
+ * gains a record for one of these, that record speaks and the cross-check fails
+ * until the row here is deleted. The exception removes itself.
+ */
+const UNINGESTED_NAMES: Record<string, string> = {
+  AQ: "Antarctica",
+  BV: "Bouvet Island",
+  HM: "Heard Island and McDonald Islands",
+  UM: "United States Minor Outlying Islands",
+};
+
+/**
  * Southern-hemisphere countries, which invert the seasons.
  *
  * DERIVED, NOT HAND-MAINTAINED. Every code here is a country whose centroid
@@ -213,10 +259,15 @@ const INGESTED_NAMES: Record<string, string> = {
  * its sign from a centroid these three have none of. Left off, `getCountry`
  * fell through to its default and reported Antarctica's January as WINTER. That
  * is not a close call the way a country at -0.5 is: AQ's every square metre is
- * south of 60°S, BV sits at -54.4 and HM at -53.1, and the app draws all three
- * on the world map. They are the sole entries of `OUTSIDE_THE_ARTIFACT` in the
- * cross-check, which fails the day any of them gains a record — at which point
- * the sign rule covers them and the exception is deleted.
+ * south of 60°S, BV sits at -54.4 and HM at -53.1, and the app draws two of the
+ * three on the world map — BV has no 50m feature and is in `SEARCH_ONLY`, which
+ * reaches it by search instead. They are the sole entries of
+ * `OUTSIDE_THE_ARTIFACT` in the cross-check, which fails the day any of them
+ * gains a record — at which point the sign rule covers them and the exception
+ * is deleted. `UNINGESTED_NAMES` above is these three plus UM, being the same
+ * gap answered for a different field — the name. UM is absent HERE and present
+ * THERE, which is the one difference between the two lists: it needs a name
+ * like any other code, and it has never been listed as southern.
  */
 const SOUTHERN = new Set([
   "AO", "AQ", "AR", "AS", "AU", "BI", "BO", "BR", "BV", "BW", "CC", "CD",
@@ -319,15 +370,35 @@ export function curatedCountryName(code: string): string | null {
 }
 
 /**
+ * The name for a code that ONLY `UNINGESTED_NAMES` has, or `null`.
+ *
+ * Exists so lib/countryFacts.ts can consult that table without importing it,
+ * exactly as `curatedCountryName` above lets it consult `CURATED`. Both
+ * resolvers therefore read the same four rows, and `getCountryName` cannot
+ * disagree with `getCountry` about a code by reaching a table this one cannot.
+ *
+ * `null` means "the ISO table, the artifact or nothing at all names this",
+ * which is a narrower claim than `curatedCountryName`'s and never a rendered
+ * value — see `getCountryName` in lib/countryFacts.ts for where it is consumed
+ * and why it is consulted after the artifact rather than before it.
+ */
+export function uningestedCountryName(code: string): string | null {
+  const normalised = typeof code === "string" ? code.trim().toUpperCase() : "";
+  if (!isCountryCode(normalised)) return null;
+  return UNINGESTED_NAMES[normalised] ?? null;
+}
+
+/**
  * Total function: always returns a record, never throws. Callers render what
  * they get rather than branching on undefined, so an unrecognised code
  * degrades to a plain one instead of breaking the page it appears on.
  *
- * `name` resolves hand-tuned, then ingested, then the bare code — the same
- * order `getCountryName` in lib/countryFacts.ts applies, so the two can never
- * call one country two things. The bare code is now reached only by a code that
- * is not a country at all (`"ZZ"`), rather than by 222 of the 246 that are;
- * `getCountry("GA").name` was `"GA"` and is `"Gabon"`.
+ * `name` resolves hand-tuned, then ingested, then uningested, then the bare
+ * code — the same order `getCountryName` in lib/countryFacts.ts applies, so the
+ * two can never call one country two things. The bare code is now reached only
+ * by a code that is not a country at all (`"ZZ"`), rather than by 222 of the
+ * 246 the artifact covers (`getCountry("GA").name` was `"GA"` and is `"Gabon"`)
+ * or by the four it does not (`"AQ"` is `"Antarctica"`).
  */
 export function getCountry(code: string): Country {
   const normalised = typeof code === "string" ? code.trim().toUpperCase() : "";
@@ -336,7 +407,7 @@ export function getCountry(code: string): Country {
 
   return {
     code: known,
-    name: curated?.name ?? INGESTED_NAMES[known] ?? known,
+    name: curated?.name ?? INGESTED_NAMES[known] ?? UNINGESTED_NAMES[known] ?? known,
     localName: curated?.localName ?? null,
     hemisphere: SOUTHERN.has(known) ? "south" : "north",
     ...(curated?.accentHue !== undefined ? { accentHue: curated.accentHue } : {}),
