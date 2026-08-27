@@ -1753,10 +1753,17 @@ describe("assertFactsSane", () => {
     // The message says "not sorted and unique" and only the sorted half was
     // pinned: `["C","A"]` is caught element-wise, so the length comparison
     // that catches a duplicate could be deleted with nothing going red. A
-    // repeated letter renders as "uses type A/A/C", which is a broken sentence
+    // repeated letter renders as "uses type A/C/C", which is a broken sentence
     // rather than a wrong fact — and it is still not something to ship.
+    //
+    // The duplicate is at the END on purpose. `["A","A","C"]` dedupes to
+    // `["A","C"]`, whose second element already disagrees with the original's,
+    // so the element-wise walk catches it and the length clause is STILL
+    // unpinned — a first attempt at this test made exactly that mistake.
+    // `["A","C","C"]` dedupes to a strict prefix of itself, so every index the
+    // walk visits matches and only the length comparison can see it.
     const built = sampleBuilt();
-    built.countries[ANY].plugs = ["A", "A", "C"];
+    built.countries[ANY].plugs = ["A", "C", "C"];
     expect(() => assertFactsSane(built, null)).toThrow(/not sorted and unique/);
   });
 
