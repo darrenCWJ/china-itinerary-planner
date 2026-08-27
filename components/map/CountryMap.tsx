@@ -123,10 +123,10 @@ function CountryPlaceList({
   onTogglePlace: (place: MapPlace) => void;
 }) {
   const { name, code } = getCountry(country);
-  // `getCountry` is total and never throws. For a country outside its curated
-  // 24-entry table `name` is the uppercased code itself (lib/countries.ts:153,
-  // `curated?.name ?? known`), so this reads "PE" rather than "Peru". The `||`
-  // chain is the guard for the genuinely unrecognisable case, where both are "".
+  // `getCountry` is total and never throws, and since `INGESTED_NAMES` landed
+  // in lib/countries.ts it names all 246 countries rather than the curated 24 —
+  // so this reads "Peru", not "PE". The `||` chain is the guard for the case
+  // that is left: a code that is not a country at all, where both are "".
   const label = name || code || "this country";
   // A country's shard holds up to 750 cities and this list is a flat row of
   // chips with no virtualisation — which was fine when it held a handful of

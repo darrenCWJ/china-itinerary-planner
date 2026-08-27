@@ -731,6 +731,41 @@ describe("MapExplorer", () => {
     expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
   });
 
+  test("names the open country instead of printing its ISO code", async () => {
+    // The defect, and it was invisible to every data-layer test: `getCountry`
+    // fell back to the bare code for 222 of the 246 countries this map opens,
+    // so the pane's heading read "GA". Gabon has no curated row, no catalog and
+    // no shard here — the emptiest country there is — and it still has a name.
+    render(<Harness country="GA" />);
+    await settle();
+
+    // Two headings carry it: the pane's own (h3) and the place list's (h4).
+    expect(screen.getByRole("heading", { level: 3, name: "Gabon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "Gabon" })).toBeInTheDocument();
+    // The negative is armed by the positives above: a pane that rendered
+    // nothing at all would satisfy this line on its own.
+    expect(screen.queryByRole("heading", { name: "GA" })).not.toBeInTheDocument();
+    // And the country's name reaches the copy beside the heading, not just the
+    // heading — this sentence read "No map for GA yet".
+    expect(screen.getByText(/No map for Gabon yet/)).toBeInTheDocument();
+  });
+
+  test("the world level's way back names the country too", async () => {
+    render(<Harness country="GA" level="world" />);
+    await settle();
+    expect(screen.getByRole("button", { name: "← Back to Gabon" })).toBeInTheDocument();
+  });
+
+  test("a curated country keeps its editorial name, not the artifact's", async () => {
+    // The arming case for the whole change: the ingested table must not be
+    // allowed to rename the 24 countries a human wrote down. Wikidata calls
+    // this one "People's Republic of China".
+    render(<Harness country="CN" />);
+    await settle();
+    expect(document.body.textContent).toContain("China");
+    expect(document.body.textContent).not.toContain("People's Republic of China");
+  });
+
   test("a tap on a shard city resolves and is added under its GeoNames id", async () => {
     // The half of the acceptance test the client owns. `togglePlace` re-looks
     // the tapped place up in the `cities` state array and silently drops the

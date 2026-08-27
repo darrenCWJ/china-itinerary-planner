@@ -437,6 +437,107 @@ describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
   });
 });
 
+/**
+ * `INGESTED_NAMES` in lib/countries.ts, parsed back out as data.
+ *
+ * Source text rather than the exported table, for the reason `southernCodes`
+ * above reads source: the literal is what a human has to keep true after an
+ * ingest, and a check that imported the module could not tell a name that is
+ * checked in from one that is computed. The pattern refuses anything but a
+ * two-letter key and a double-quoted value, so a malformed row drops out of the
+ * parse and is caught by the count arming below rather than passing silently.
+ */
+function ingestedNames(): Record<string, string> {
+  const source = readFileSync(join(process.cwd(), "lib", "countries.ts"), "utf8");
+  const block = /const INGESTED_NAMES: Record<string, string> = \{([\s\S]*?)\n\};/.exec(source);
+  if (!block) throw new Error("could not find the INGESTED_NAMES block in lib/countries.ts");
+  const out: Record<string, string> = {};
+  for (const match of block[1].matchAll(/\b([A-Z]{2}): "((?:[^"\\]|\\.)*)"/g)) {
+    out[match[1]] = JSON.parse(`"${match[2]}"`) as string;
+  }
+  return out;
+}
+
+/** The 24 codes `CURATED` names, parsed the same way and for the same reason. */
+function curatedCodes(): string[] {
+  const source = readFileSync(join(process.cwd(), "lib", "countries.ts"), "utf8");
+  const block = /const CURATED: Record<[\s\S]*?\n\};/.exec(source);
+  if (!block) throw new Error("could not find the CURATED block in lib/countries.ts");
+  return [...block[0].matchAll(/^ {2}([A-Z]{2}): \{/gm)].map((match) => match[1]);
+}
+
+/**
+ * 246 named countries in the artifact, minus the 24 `CURATED` names itself.
+ *
+ * Pinned as well as reconciled, for the reason `EXPECTED_SOUTHERN` is: the
+ * reconciliation below compares two sets, and two sets both derived from a file
+ * that failed to parse are both empty and compare equal. This is the arming
+ * charge.
+ */
+const EXPECTED_INGESTED_NAMES = 222;
+
+describe.skipIf(!hasAssets)("INGESTED_NAMES cross-check", () => {
+  // Parsed once at describe scope. Every test below does list work only, so no
+  // test spends its wall-clock budget re-reading and re-parsing two files
+  // (commit 84cd61e).
+  const names = hasAssets ? ingestedNames() : {};
+  const curated = hasAssets ? curatedCodes() : [];
+  const curatedSet = new Set(curated);
+  const artifactNamed = hasAssets
+    ? Object.entries(artifact!.countries)
+        .filter(([, record]) => typeof record.name === "string" && record.name.length > 0)
+        .map(([code]) => code)
+    : [];
+
+  test("both tables are really there, or every check below is vacuous", () => {
+    expect(Object.keys(names)).toHaveLength(EXPECTED_INGESTED_NAMES);
+    expect(curated).toHaveLength(24);
+    expect(artifactNamed).toHaveLength(MEASURED_COVERAGE.name);
+    // A row really was parsed, value and all — not just a key.
+    expect(names.GA).toBe("Gabon");
+  });
+
+  test("every checked-in name is the artifact's, so the literal cannot go stale", () => {
+    const wrong: string[] = [];
+    for (const [code, name] of Object.entries(names)) {
+      const upstream = artifact!.countries[code]?.name;
+      if (upstream !== name) wrong.push(`${code}: "${name}" vs ${JSON.stringify(upstream)}`);
+    }
+    expect(
+      wrong,
+      `checked in with a name the artifact does not carry: ${wrong.join(", ")}`
+    ).toEqual([]);
+  });
+
+  test("every country the artifact names is checked in, which is the direction that rots", () => {
+    // THE OTHER HALF, and the one a one-directional check cannot see — exactly
+    // the failure that left 25 southern countries out of `SOUTHERN` while every
+    // entry in it passed. A country added by a later ingest and missing here
+    // renders as a bare ISO code on the map pane and on the destination step.
+    const unlisted = artifactNamed
+      .filter((code) => !curatedSet.has(code) && !(code in names))
+      .sort();
+    expect(
+      unlisted,
+      `named by the artifact but missing from INGESTED_NAMES in lib/countries.ts: ${unlisted.join(", ")}`
+    ).toEqual([]);
+  });
+
+  test("the two tables are disjoint, so the editorial name always wins structurally", () => {
+    // `getCountry` reads CURATED first, but a precedence that depends on the
+    // order of two `??` is one refactor away from inverting. The two tables
+    // sharing no key is what makes it impossible: CN cannot be resolved to
+    // "People's Republic of China" by any reordering, because this table has no
+    // CN row to resolve it from.
+    const overlap = Object.keys(names).filter((code) => curatedSet.has(code)).sort();
+    expect(overlap, `curated and ingested both name: ${overlap.join(", ")}`).toEqual([]);
+    // And the disagreement that disjointness protects is real, not
+    // hypothetical — if it were not, this whole precedence would be noise.
+    expect(artifact!.countries.CN?.name).toBe("People's Republic of China");
+    expect(artifact!.countries.TR?.name).toBe("Turkey");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The bundle constraint — where the 70 KB is allowed to be reachable from
 // ---------------------------------------------------------------------------

@@ -65,6 +65,99 @@ const CURATED: Record<string, Omit<Country, "code" | "hemisphere">> = {
 };
 
 /**
+ * The English name of every country `CURATED` above does not name.
+ *
+ * DERIVED, NOT HAND-MAINTAINED — the same shape, and for the same reason, as
+ * `SOUTHERN` below. Every entry is the `name` field of that country's record in
+ * `data/country-facts.json`, the CC0 Wikidata artifact, and
+ * `lib/countryFacts.test.ts`'s `INGESTED_NAMES cross-check` re-derives this
+ * table from it on every run in BOTH directions: a code here whose name differs
+ * from the artifact's fails, and a country the artifact names that is missing
+ * from here fails too. Regenerating after an ingest is a one-liner over the
+ * artifact's `name` fields; the test names every code that moved.
+ *
+ * WHAT IT FIXES. `getCountry(code).name` fell back to the bare code, so the
+ * map pane's heading, its "← Back to …" control, the destination step's
+ * country chip and its empty state all read **GA** rather than **Gabon** — for
+ * 222 of the 246 countries this app now opens, which is to say for everywhere
+ * except the 24 somebody hand-tuned. The name was never missing; it was in an
+ * artifact this module is forbidden to read.
+ *
+ * IT IS A LITERAL RATHER THAN A LOOKUP, and that is a bundle constraint, not an
+ * oversight. This module is a zero-import leaf, pinned as one by
+ * `lib/countryFacts.test.ts`, whose own comment names *this exact defect* and
+ * the tempting fix for it: "The tempting fix for `getCountry("PE").name ===
+ * "PE"` is to make THIS module fall back to the artifact." It is 70 KB and this
+ * module is imported by client components for accents, marks and hemispheres,
+ * so that fix would put the whole artifact into every page that wants a hue —
+ * and `MUST_STAY_CHEAP` in that file forbids it outright for
+ * components/map/MapExplorer.tsx, which is where the bare codes were being
+ * drawn. The 222 names are 4.1 KB. The derivation therefore happens in the
+ * test, which runs on every commit and has no bundle to pay for, and the answer
+ * is checked in.
+ *
+ * THE CURATED TABLE STILL WINS, and this table does not contain the codes it
+ * covers, so the precedence is structural rather than a rule in `getCountry`
+ * that could be reordered. The two disagree on purpose where both would have an
+ * answer: `CN` is "China" here and "People's Republic of China" upstream, `TR`
+ * is "Türkiye" and "Turkey". Those 24 rows are editorial, they are what the app
+ * already calls those countries everywhere else, and an ingest must never
+ * overwrite them — the same precedence `getCountryName` in lib/countryFacts.ts
+ * applies to the artifact, so the two resolvers cannot disagree about any code.
+ */
+const INGESTED_NAMES: Record<string, string> = {
+  AD: "Andorra", AE: "United Arab Emirates", AF: "Afghanistan", AG: "Antigua and Barbuda",
+  AI: "Anguilla", AL: "Albania", AM: "Armenia", AO: "Angola", AR: "Argentina",
+  AS: "American Samoa", AT: "Austria", AW: "Aruba", AX: "Åland", AZ: "Azerbaijan",
+  BA: "Bosnia and Herzegovina", BB: "Barbados", BD: "Bangladesh", BE: "Belgium",
+  BF: "Burkina Faso", BG: "Bulgaria", BH: "Bahrain", BI: "Burundi", BJ: "Benin",
+  BL: "Saint Barthélemy", BM: "Bermuda", BN: "Brunei", BO: "Bolivia",
+  BQ: "Caribbean Netherlands", BS: "The Bahamas", BT: "Bhutan", BW: "Botswana", BY: "Belarus",
+  BZ: "Belize", CA: "Canada", CC: "Cocos (Keeling) Islands",
+  CD: "Democratic Republic of the Congo", CF: "Central African Republic",
+  CG: "Republic of the Congo", CH: "Switzerland", CI: "Ivory Coast", CK: "Cook Islands",
+  CL: "Chile", CM: "Cameroon", CO: "Colombia", CR: "Costa Rica", CU: "Cuba", CV: "Cape Verde",
+  CW: "Curaçao", CX: "Christmas Island", CY: "Cyprus", CZ: "Czech Republic", DJ: "Djibouti",
+  DK: "Denmark", DM: "Dominica", DO: "Dominican Republic", DZ: "Algeria", EC: "Ecuador",
+  EE: "Estonia", EH: "Western Sahara", ER: "Eritrea", ET: "Ethiopia", FI: "Finland", FJ: "Fiji",
+  FK: "Falkland Islands", FM: "Federated States of Micronesia", FO: "Faroe Islands",
+  GA: "Gabon", GD: "Grenada", GE: "Georgia", GF: "French Guiana", GG: "Guernsey", GH: "Ghana",
+  GI: "Gibraltar", GL: "Greenland", GM: "The Gambia", GN: "Guinea", GP: "Guadeloupe",
+  GQ: "Equatorial Guinea", GS: "South Georgia and the South Sandwich Islands", GT: "Guatemala",
+  GU: "Guam", GW: "Guinea-Bissau", GY: "Guyana", HK: "Hong Kong", HN: "Honduras", HR: "Croatia",
+  HT: "Haiti", HU: "Hungary", IE: "Ireland", IL: "Israel", IM: "Isle of Man",
+  IO: "British Indian Ocean Territory", IQ: "Iraq", IR: "Iran", IS: "Iceland", JE: "Jersey",
+  JM: "Jamaica", JO: "Jordan", KE: "Kenya", KG: "Kyrgyzstan", KH: "Cambodia", KI: "Kiribati",
+  KM: "Comoros", KN: "Saint Kitts and Nevis", KP: "North Korea", KW: "Kuwait",
+  KY: "Cayman Islands", KZ: "Kazakhstan", LA: "Laos", LB: "Lebanon", LC: "Saint Lucia",
+  LI: "Liechtenstein", LK: "Sri Lanka", LR: "Liberia", LS: "Lesotho", LT: "Lithuania",
+  LU: "Luxembourg", LV: "Latvia", LY: "Libya", MC: "Monaco", MD: "Moldova", ME: "Montenegro",
+  MF: "Saint-Martin", MG: "Madagascar", MH: "Marshall Islands", MK: "North Macedonia",
+  ML: "Mali", MM: "Myanmar", MN: "Mongolia", MO: "Macau", MP: "Northern Mariana Islands",
+  MQ: "Martinique", MR: "Mauritania", MS: "Montserrat", MT: "Malta", MU: "Mauritius",
+  MV: "Maldives", MW: "Malawi", MY: "Malaysia", MZ: "Mozambique", NA: "Namibia",
+  NC: "New Caledonia", NE: "Niger", NF: "Norfolk Island", NG: "Nigeria", NI: "Nicaragua",
+  NL: "Kingdom of the Netherlands", NO: "Norway", NP: "Nepal", NR: "Nauru", NU: "Niue",
+  OM: "Oman", PA: "Panama", PE: "Peru", PF: "French Polynesia", PG: "Papua New Guinea",
+  PH: "Philippines", PK: "Pakistan", PL: "Poland", PM: "Saint Pierre and Miquelon",
+  PN: "Pitcairn Islands", PR: "Puerto Rico", PS: "Palestine", PW: "Palau", PY: "Paraguay",
+  QA: "Qatar", RE: "Réunion", RO: "Romania", RS: "Serbia", RU: "Russia", RW: "Rwanda",
+  SA: "Saudi Arabia", SB: "Solomon Islands", SC: "Seychelles", SD: "Sudan", SE: "Sweden",
+  SH: "Saint Helena, Ascension and Tristan da Cunha", SI: "Slovenia",
+  SJ: "Svalbard and Jan Mayen", SK: "Slovakia", SL: "Sierra Leone", SM: "San Marino",
+  SN: "Senegal", SO: "Somalia", SR: "Suriname", SS: "South Sudan", ST: "São Tomé and Príncipe",
+  SV: "El Salvador", SX: "Sint Maarten", SY: "Syria", SZ: "Eswatini",
+  TC: "Turks and Caicos Islands", TD: "Chad", TF: "French Southern and Antarctic Lands",
+  TG: "Togo", TJ: "Tajikistan", TK: "Tokelau", TL: "Timor-Leste", TM: "Turkmenistan",
+  TN: "Tunisia", TO: "Tonga", TT: "Trinidad and Tobago", TV: "Tuvalu", TW: "Taiwan",
+  TZ: "Tanzania", UA: "Ukraine", UG: "Uganda", UY: "Uruguay", UZ: "Uzbekistan",
+  VA: "Vatican City", VC: "Saint Vincent and the Grenadines", VE: "Venezuela",
+  VG: "British Virgin Islands", VI: "United States Virgin Islands", VU: "Vanuatu",
+  WF: "Wallis and Futuna", WS: "Samoa", XK: "Kosovo", YE: "Yemen", YT: "Mayotte", ZM: "Zambia",
+  ZW: "Zimbabwe",
+};
+
+/**
  * Southern-hemisphere countries, which invert the seasons.
  *
  * DERIVED, NOT HAND-MAINTAINED. Every code here is a country whose centroid
@@ -187,21 +280,20 @@ export function isCountryCode(s: string): boolean {
 }
 
 /**
- * The hand-tuned name for a code, or `null` when this table has none.
+ * The hand-tuned name for a code, or `null` when `CURATED` has none.
  *
- * `getCountry(code).name` cannot answer this question and must not be made to:
- * it falls back to the code itself, so `"PE"` is both a name it found and a
- * name it did not. The other 222 countries are named by the CC0 Wikidata
- * artifact, and `getCountryName` in lib/countryFacts.ts is where the two meet
- * — hand-tuned first, ingested second.
+ * A DIFFERENT QUESTION from `getCountry(code).name`, and still one that
+ * function cannot answer. It now names all 246 countries rather than 24, so it
+ * no longer confuses a name it found with a code it fell back on — but a
+ * `null` here means specifically "no human wrote this one down", which is what
+ * `getCountryName` in lib/countryFacts.ts branches on to decide whether the
+ * artifact may speak. `CN` proves the two are not the same question: this
+ * returns "China" and the artifact says "People's Republic of China".
  *
- * That direction is deliberate and it is a bundle constraint, not a taste.
- * This module is imported by client components for accents, marks and
- * hemispheres; `data/country-facts.json` is 70 KB. Reaching for the artifact
- * from HERE would put 70 KB into every page that resolves a country name,
- * including the ones that only want a hue. So this module stays a zero-import
- * leaf and the module that already pays for the artifact does the merging —
- * the same shape as `lib/geoNamesId.ts` against the 3.65 MB city index.
+ * This module reads no artifact to answer either question — see
+ * `INGESTED_NAMES` above for why the ingested half is a checked-in literal
+ * reconciled by a test rather than a lookup, and what the 70 KB alternative
+ * would have cost every page that only wanted a hue.
  */
 export function curatedCountryName(code: string): string | null {
   const normalised = typeof code === "string" ? code.trim().toUpperCase() : "";
@@ -213,6 +305,12 @@ export function curatedCountryName(code: string): string | null {
  * Total function: always returns a record, never throws. Callers render what
  * they get rather than branching on undefined, so an unrecognised code
  * degrades to a plain one instead of breaking the page it appears on.
+ *
+ * `name` resolves hand-tuned, then ingested, then the bare code — the same
+ * order `getCountryName` in lib/countryFacts.ts applies, so the two can never
+ * call one country two things. The bare code is now reached only by a code that
+ * is not a country at all (`"ZZ"`), rather than by 222 of the 246 that are;
+ * `getCountry("GA").name` was `"GA"` and is `"Gabon"`.
  */
 export function getCountry(code: string): Country {
   const normalised = typeof code === "string" ? code.trim().toUpperCase() : "";
@@ -221,7 +319,7 @@ export function getCountry(code: string): Country {
 
   return {
     code: known,
-    name: curated?.name ?? known,
+    name: curated?.name ?? INGESTED_NAMES[known] ?? known,
     localName: curated?.localName ?? null,
     hemisphere: SOUTHERN.has(known) ? "south" : "north",
     ...(curated?.accentHue !== undefined ? { accentHue: curated.accentHue } : {}),
