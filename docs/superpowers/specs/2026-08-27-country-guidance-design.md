@@ -82,11 +82,13 @@ Two coverage columns, because they measure different things and **they do not ag
 | `voltageV` | P2884 | 222 | **220** | socket tip; packing adapter line |
 | `drivingSide` | P1622 | 246 | **245** | driving tip |
 | `emergency[{number, role}]` | P2852 + P366 qualifier | 222 publishable | **218** | emergency tip |
-| `officialLanguages[]` | P37 (English labels) | 243 | **237** | language tip; packing translation line |
+| `officialLanguages[]` | P37 (English labels) | 243 | **239** | language tip; packing translation line |
 | `callingCode` | P474 | 242 | **238** | driving tip (second clause) |
 | `lat` *(test-only, never rendered)* | P625 | 246 | **245** | one cross-check test on `SOUTHERN` |
 
-Raw figures: Investigation 3, measured 2026-08-27 against the app's exact 246 shard codes. Post-withhold figures: the Design-3 prototype, same day, *after* the withhold rules below. **193/246 countries carry all seven rendered fields; 27 carry six, 10 carry five, 11 carry four, and 5 carry three or fewer — SH, TF, SJ, CX, IO, all uninhabited dependencies.** `officialLanguages` post-withhold was not measured and is marked unverified.
+Raw figures: Investigation 3, measured 2026-08-27 against the app's exact 246 shard codes. Post-withhold figures: the Design-3 prototype, same day, *after* the withhold rules below. **193/246 countries carry all seven rendered fields; 27 carry six, 10 carry five, 11 carry four, and 5 carry three or fewer — SH, TF, SJ, CX, IO, all uninhabited dependencies.**
+
+**RECONCILED after the shipping query ran.** The `officialLanguages` post-withhold cell above said 237 with a note beside it that the figure "was not measured and is marked unverified" — two statements about the same number, one of them written after the other stopped being true. It is now measured, and it is **239**: the territorial-scope rule in `pickLanguages` withholds six countries (AF, AZ, BE, BQ, PW, US), and two of those six — BE and AZ — are restored by a hand-verified `CURATED_FACTS` row, because their `applies to part` qualifier names a region of the country or a variety of the language rather than a territory the national claim excludes. The rendered-field histogram moved with it: **184/246 carry all seven**, not 193. The authority for every one of these numbers is `lib/countryFacts.test.ts`'s `MEASURED_COVERAGE`, which is pinned exactly against the committed artifact; this table is a record of the design's estimate and what it turned out to be.
 
 **Two discrepancies to reconcile at T25, not to paper over.** Driving side and latitude go 246 → 245 across the two runs, and currency 244 → 234. The currency drop is explained (withhold on multi-value); the 246 → 245 pair is not. **The shipping query must produce every number that lands in a comment or the report.** Investigation 3 measured this hazard directly: the same emergency-number question returned 0, then 84, then the correct 155 depending on `BIND`/`OPTIONAL` scoping inside Blazegraph.
 

@@ -435,14 +435,35 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     expect(pe.gapNote).toHaveLength(1);
     expect(pe.gapNote[0]).toContain("Peru-specific guidance");
     expect(pe.gapNote[0]).toContain("open reference data");
-    // Measured against the committed artifact: 63 of the 249 swept codes are
-    // missing at least one field and get the second line. It was 58 before the
-    // ingest's territorial-scope rule; the five that moved are AF, AZ, BE, BQ
-    // and PW, whose official languages are now withheld rather than stated
-    // wrongly. (US was already on this list, for its plugs.)
+    // Measured against the committed artifact: 61 of the 249 swept codes are
+    // missing at least one field and get the second line.
     const twoLine = SWEPT.filter((code) => getCountryProfile(code).gapNote.length === 2);
-    expect(twoLine).toHaveLength(63);
+    expect(twoLine).toHaveLength(61);
     expect(getCountryProfile(twoLine[0]).gapNote[1]).toContain("We also have no ");
+    // What the ingest's territorial-scope rule costs that number, DERIVED
+    // rather than restated. The previous version of this comment named a moved
+    // set of "AF, AZ, BE, BQ and PW" and put US outside it "for its plugs" —
+    // backwards on both counts. BQ was already two-line (it is missing plugs,
+    // voltage and emergency numbers as well) so it never moved; US carries
+    // every other rendered field, so its languages are its WHOLE gap and it
+    // moved. AZ and BE are off the list again, their languages restored by a
+    // hand-verified CURATED_FACTS row. So the set is read off the profiles
+    // instead: the codes whose only missing field is their languages, minus
+    // the three upstream never had any for.
+    const languagesAreTheWholeGap = twoLine.filter((code) => {
+      const profile = getCountryProfile(code);
+      return profile.gapNote[1] === `We also have no official language for ${profile.name}.`;
+    });
+    const movedByTheRule = languagesAreTheWholeGap.filter(
+      (code) => !["GP", "MQ", "UY"].includes(code)
+    );
+    expect(movedByTheRule).toEqual(["AF", "PW", "US"]);
+    // Which makes the "before" figure 58 — computed, not copied.
+    expect(twoLine.length - movedByTheRule.length).toBe(58);
+    // Armed: the filter above is a whole-string match, so a reworded gap note
+    // would silently empty it. GP, MQ and UY are the three it must still find
+    // beside the three the rule moved.
+    expect(languagesAreTheWholeGap).toHaveLength(6);
   });
 
   test("China gets no gap note, because it is researched by hand", () => {

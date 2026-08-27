@@ -1,6 +1,6 @@
 # Country facts report
 
-- Generated: 2026-08-27T14:20:38.533Z
+- Generated: 2026-08-27T15:46:34.441Z
 - Source: https://query.wikidata.org/sparql (Wikidata (CC0))
 - Licence: CC0-1.0
 - Contents: structured scalars only. Never prose, never a sentence.
@@ -29,7 +29,7 @@ simply does not run.
 | `voltageV` | 221 | 89.8% |
 | `drivingSide` | 245 | 99.6% |
 | `emergency` | 221 | 89.8% |
-| `officialLanguages` | 237 | 96.3% |
+| `officialLanguages` | 239 | 97.2% |
 | `callingCode` | 237 | 96.3% |
 | `lat` | 246 | 100.0% |
 
@@ -41,8 +41,8 @@ what we do not have.
 
 | Rendered fields | Countries |
 | --- | --- |
-| 7 of 7 | 182 |
-| 6 of 7 | 36 |
+| 7 of 7 | 184 |
+| 6 of 7 | 34 |
 | 5 of 7 | 12 |
 | 4 of 7 | 9 |
 | 3 of 7 | 7 |
@@ -99,17 +99,28 @@ Recorded so it is not re-litigated. Each of these was measured, not assumed.
 - **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**
   No structured source. Visa rules also depend on the traveller's passport, which
   the app does not know.
-- **Official languages for AF, AZ, BE, BQ, PW and US.** Measured 2026-08-27: every
-  P37 statement these six carry, or enough of them that the remainder is not a
-  national list, is qualified `applies to part` — upstream stating on the statement
-  itself that it is not a claim about the whole country. The United States is the
-  case that forces the rule: Carolinian and Chamorro apply to the Northern Marianas,
-  Hawaiian to Hawaii, Samoan to American Samoa and Spanish to Puerto Rico, while
-  English sits at deprecated rank — so an unfiltered query told a traveller the
-  United States has five official languages and none of them is English. Publishing
-  the unscoped remainder instead was measured and rejected: it leaves Azerbaijan
-  with `Azerbaijani Sign Language` alone, trading one false sentence for another. So
-  the whole field is withheld for all six and the gap note names it.
+- **Official languages for 7 of the 246 countries.**
+  The gap note names the field for every one of them. Both the list and the split below
+  are derived from this run rather than written down, so neither can drift from what was
+  actually published:
+  AF, BQ, GP, MQ, PW, US, UY
+  - **4 because every P37 statement upstream gives them is qualified
+    `applies to part`** — or enough of them that the remainder is not a national list.
+    Upstream is stating, on the statement itself, that this is not a claim about the
+    whole country. The United States is the case that forces the rule: Carolinian and
+    Chamorro apply to the Northern Marianas, Hawaiian to Hawaii, Samoan to American
+    Samoa and Spanish to Puerto Rico, while English sits at deprecated rank — so an
+    unfiltered query told a traveller the United States has five official languages and
+    none of them is English. Publishing the unscoped remainder instead was measured and
+    rejected: it leaves Azerbaijan with `Azerbaijani Sign Language` alone, trading one
+    false sentence for another. Where the qualifier names a PART of the country
+    (Belgium's language regions) or a VARIETY of the language (Standard Azerbaijani)
+    rather than a territory the national claim excludes, a hand-verified value is
+    carried instead and the whole field is not lost — see `CURATED_FACTS`.
+    AF, BQ, PW, US
+  - **3 because upstream states no official language at all** —
+    no truthy P37 statement, or none this ingest can publish.
+    GP, MQ, UY
 - **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole
   distinct P2853 value set across these countries is fourteen items, thirteen
   standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single
