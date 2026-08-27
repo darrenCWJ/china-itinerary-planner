@@ -91,19 +91,25 @@ function rescaleMinorUnits(value: number, fromDigits: number, toDigits: number):
 
 /**
  * Rates are pivot-currency units per 1 unit of foreign currency. Null when no
- * home currency is set.
+ * home currency is set, and null when the trip has no pivot at all.
  *
  * The pivot is a trailing parameter defaulting to CNY because rate semantics
  * are persisted: a trip saved before pivots existed holds CNY-relative rates,
  * and reading it with any other pivot would silently reprice the whole trip.
  * The default is the guarantee that never happens by accident.
+ *
+ * A `null` pivot is `currencyPivot`'s answer for a trip whose country has no
+ * researched currency (see lib/tripShared.ts). There is no unit to total in,
+ * so there is no total — the same shape as the no-home-currency case, and
+ * deliberately not "fall back to CNY", which is the defect this parameter grew
+ * a null for.
  */
 export function convertedTotals(
   totals: CurrencyAmount[],
   settings: CurrencySettings,
-  pivot = "CNY"
+  pivot: string | null = "CNY"
 ): ConvertedTotals | null {
-  if (settings.home === null) return null;
+  if (settings.home === null || pivot === null) return null;
   const pivotDigits = minorUnitDigits(pivot);
   let grandTotal = 0;
   const unconverted: CurrencyAmount[] = [];

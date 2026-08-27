@@ -141,17 +141,52 @@ export interface JournalEntry {
 export interface CurrencySettings {
   home: string | null;
   rates: Record<string, number>;
-  /** The currency the rates are against. Absent = legacy CNY-relative rates. */
-  pivot?: string;
+  /**
+   * The currency the rates are against. Three states, and they are three
+   * different facts rather than two:
+   *
+   * - a code — this trip's rates are expressed in it;
+   * - `null` — recorded at creation: nobody has researched a currency for this
+   *   trip's country, so there is no pivot to name;
+   * - ABSENT — legacy. Saved before this field existed, which means CNY.
+   *
+   * `null` exists because absent used to mean both of the last two at once.
+   * See `initialCurrencySettings` below.
+   */
+  pivot?: string | null;
 }
 
 /**
- * The pivot a trip's rates are expressed in. The only way callers should read
- * it: settings saved before the field existed are CNY-relative, so an absent
- * pivot is an explicit CNY rather than an unknown.
+ * The pivot a trip's rates are expressed in, or `null` when the trip has none.
+ *
+ * The only way callers should read the field, and the reason it is not
+ * `settings.pivot ?? "CNY"` any more.
+ *
+ * THAT DEFAULT WAS RIGHT ABOUT LEGACY ROWS AND WRONG ABOUT NEW ONES. The
+ * docblock said an absent pivot means legacy CNY — settings saved before the
+ * field existed, all of which belong to China trips, the same reasoning
+ * `tripCountry` documents for the persisted side. But `initialCurrencySettings`
+ * only ever STAMPED a pivot when `isCurrencyResearched` passed, so a
+ * brand-new trip to any of the eleven codes with no researched currency —
+ * Panama, Namibia, Lesotho, the Faroes, the Isle of Man, Saint Helena, the
+ * BIOT, and the four the facts artifact never reached — got an absent pivot
+ * too, and was then told its rates were in Chinese yuan. The Money tab read
+ * "Total CNY" and its rate editor asked a Panama traveller to price every
+ * currency against CNY.
+ *
+ * The fix is at the write end: `initialCurrencySettings` now always writes the
+ * key, so ABSENT can only be a legacy row and keeps meaning exactly what it
+ * meant. An unresearched country records `null` instead, which the money
+ * surfaces read as "no basis to convert" rather than as a currency.
+ *
+ * Trips created by earlier builds of this branch keep an absent pivot and will
+ * still read CNY. That population is dev-only — the branch is unmerged — and it
+ * is not distinguishable from a genuine legacy row by any rule, which is
+ * precisely why the distinction had to be written down at creation.
  */
-export function currencyPivot(settings: CurrencySettings): string {
-  return settings.pivot ?? "CNY";
+export function currencyPivot(settings: CurrencySettings): string | null {
+  // `=== undefined`, not `??`: `null` is an answer here, not a missing one.
+  return settings.pivot === undefined ? "CNY" : settings.pivot;
 }
 
 /**
@@ -165,24 +200,34 @@ export function currencyPivot(settings: CurrencySettings): string {
  * `lib/server/tripStore.ts` / `pgStore.ts`, which build their own fresh
  * literal instead.)
  *
- * The pivot is stamped only when `isCurrencyResearched` says the country's
- * currency is a fact rather than an absence (judgment call J-C1, see the
- * comment on `tripCurrency` above) — stamping a guess would persist it as
- * though it were researched, which is worse than leaving the pivot absent. An
- * absent pivot is not a gap: `currencyPivot` already reads it as the legacy
- * CNY default, so a country with no known currency degrades to exactly the
- * behaviour every pre-pivot trip has today.
+ * The pivot's VALUE is still stamped only when `isCurrencyResearched` says the
+ * country's currency is a fact rather than an absence (judgment call J-C1, see
+ * the comment on `tripCurrency` above) — stamping a guess would persist it as
+ * though it were researched. What changed is that the KEY is now always
+ * written, with `null` for an unresearched country.
+ *
+ * The old shape omitted the key entirely in that case, and the sentence
+ * justifying it — "an absent pivot is not a gap: `currencyPivot` reads it as
+ * the legacy CNY default" — was the defect. It reasoned about legacy China
+ * trips and applied the conclusion to a brand-new Panama one: absent meant
+ * both "saved before this field existed" and "this country has no researched
+ * currency", and the first of those means CNY. So a trip to Panama, Namibia,
+ * Lesotho or any of the other eight unresearched codes was priced in Chinese
+ * yuan from the moment it was created, on a live path.
+ *
+ * Writing `null` is what makes the two distinguishable. Absent can now only be
+ * a legacy row, and keeps meaning exactly what it meant.
  *
  * The predicate and the null check below ask the same question twice, and
  * deliberately: the predicate is the rule, the null is what TypeScript can
- * narrow on. Dropping the predicate for a bare `?? undefined` would stamp
- * nothing in the same cases while saying nothing about why.
+ * narrow on. Dropping the predicate for a bare `?? null` would stamp the same
+ * values while saying nothing about why.
  */
 export function initialCurrencySettings(countryCode: CountryCode): CurrencySettings {
   const pivot = isCurrencyResearched(countryCode)
     ? getCountryProfile(countryCode).currency
     : null;
-  return pivot === null ? { home: null, rates: {} } : { home: null, rates: {}, pivot };
+  return { home: null, rates: {}, pivot };
 }
 
 /**
@@ -201,15 +246,27 @@ export function initialCurrencySettings(countryCode: CountryCode): CurrencySetti
  * the save from ever discarding meaning it didn't intend to change.
  *
  * A legacy trip with no stored pivot must stay pivot-free: `existing.pivot`
- * is `undefined` there too, so `incoming.pivot ?? existing.pivot` is
- * `undefined`, and the spread below adds no key at all — never an explicit
- * `pivot: undefined`, which would be a different (and wrong) stored shape.
+ * is `undefined` there too, so the resolution below is `undefined`, and the
+ * spread adds no key at all — never an explicit `pivot: undefined`, which
+ * would be a different (and wrong) stored shape.
+ *
+ * THE ONE CASE THAT WRITES A PIVOT THE TRIP DID NOT HAVE is a stored `null`
+ * — a country with no researched currency — meeting a save that sets a home
+ * currency. The rates the member is about to enter need a unit, and the only
+ * one anybody has named is the home currency they just chose. Stamping it
+ * here is not a guess about the country: it is the member's own declaration,
+ * recorded once. Recorded rather than resolved at read time on purpose — a
+ * pivot that tracked `home` would silently reinterpret every stored rate the
+ * next time somebody changed it, and `existing.pivot` is a string from this
+ * point on, so it never moves again.
  */
 export function applyCurrencySettingsUpdate(
   existing: CurrencySettings,
   incoming: { home: string | null; rates: Record<string, number>; pivot?: string }
 ): CurrencySettings {
-  const pivot = incoming.pivot ?? existing.pivot;
+  const stored =
+    existing.pivot === null && incoming.home !== null ? incoming.home : existing.pivot;
+  const pivot = incoming.pivot ?? stored;
   return {
     home: incoming.home,
     rates: incoming.rates,
