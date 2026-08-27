@@ -353,14 +353,43 @@ function southernCodes(): string[] {
 const EQUATOR_STRADDLERS = new Set(["KE"]);
 
 /**
+ * Codes that belong in `SOUTHERN` although the artifact has no record for them,
+ * so the sign rule has no centroid to read.
+ *
+ * Exactly three, all uninhabited: AQ (Antarctica), BV (Bouvet Island) and HM
+ * (Heard & McDonald Islands). The ingest is bounded to sovereign states with a
+ * city shard, so it never sees them — and without an entry they fell through to
+ * `getCountry`'s default and reported Antarctica's January as WINTER. Their
+ * hemisphere is not a close call: AQ is entirely south of 60°S, BV is at -54.4
+ * and HM at -53.1.
+ *
+ * A list of CODES rather than a rule, for `EQUATOR_STRADDLERS`' reason: three
+ * names have to be argued for in a diff. The test below fails the day any of
+ * them GAINS a record, because at that point the sign rule covers it and the
+ * exception is cruft.
+ */
+const OUTSIDE_THE_ARTIFACT = new Set(["AQ", "BV", "HM"]);
+
+/**
  * The count `SOUTHERN` must hold, measured against the committed artifact:
- * 58 countries with a negative centroid, plus KE.
+ * 58 countries with a negative centroid, plus KE, plus the three uninhabited
+ * codes the artifact does not reach.
  *
  * Pinned as well as reconciled because the reconciliation below is a set
  * comparison, and a set comparison of two things derived from the same file
  * would pass on an empty file. This number is the arming charge.
  */
-const EXPECTED_SOUTHERN = 59;
+const EXPECTED_SOUTHERN = 62;
+
+/**
+ * "Inside a degree of the equator", as a number rather than as prose.
+ *
+ * It existed as a bare `1.5` inline while the comment beside it said "a
+ * degree", so the code and its own explanation disagreed and nothing could
+ * see it. Inclusive, because Ecuador's centroid is exactly -1 and the
+ * sentence "within a degree" is meant to include it.
+ */
+const NEAR_EQUATOR_DEGREES = 1;
 
 describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
   // Cheap, and hoisted out of every timed test body: parsing already happened
@@ -385,15 +414,28 @@ describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
     for (const code of southern) {
       const lat = artifact!.countries[code]?.lat;
       if (typeof lat !== "number") {
-        missingLat.push(code);
+        if (!OUTSIDE_THE_ARTIFACT.has(code)) missingLat.push(code);
         continue;
       }
       if (lat >= 0 && !EQUATOR_STRADDLERS.has(code)) wrong.push(`${code}=${lat}`);
     }
-    // One assertion per failure mode rather than two per country: 59 codes
-    // would otherwise be 118 `expect()` calls inside the timed region.
+    // One assertion per failure mode rather than two per country: 62 codes
+    // would otherwise be 124 `expect()` calls inside the timed region.
     expect(missingLat, `listed as southern but absent from the artifact: ${missingLat.join(", ")}`).toEqual([]);
     expect(wrong, `listed as southern but not south of the equator: ${wrong.join(", ")}`).toEqual([]);
+  });
+
+  test("each code excused from the artifact really is absent from it, so the excuse cannot rot", () => {
+    // The same rule `EQUATOR_STRADDLERS` gets one test below. An exception that
+    // no longer excepts anything is cruft nobody re-checks — and here the day
+    // it stops excepting is the day the sign rule can cover the code properly.
+    for (const code of OUTSIDE_THE_ARTIFACT) {
+      expect(
+        artifact!.countries[code],
+        `${code} now has a record, so its SOUTHERN entry should come from its centroid`
+      ).toBeUndefined();
+      expect(southernSet.has(code), `${code} is excused but not listed`).toBe(true);
+    }
   });
 
   test("every country south of the equator is listed, which is the direction that was missing", () => {
@@ -423,17 +465,33 @@ describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
 
   test("the near-equator countries are listed by name, not rounded away by a threshold", () => {
     // The honest answer to "is a centroid at -0.5 meaningfully southern?".
-    // These four have no summer or winter to speak of — they have wet and dry
-    // seasons — and this app has only two answers to give. They are listed on
-    // the sign of their centroid, which is at least what the data states, and
+    // These have no summer or winter to speak of — they have wet and dry
+    // seasons — and this app has only two answers to give. Each is placed on
+    // the sign of its centroid, which is at least what the data states, and
     // they are named here so the choice is visible rather than buried in a
-    // magic number. If a fifth country drifts inside a degree of the equator
+    // magic number. If another country drifts inside a degree of the equator
     // this goes red and somebody decides on purpose.
-    const nearEquator = negativeLat
-      .filter((code) => Math.abs(artifact!.countries[code].lat!) < 1.5)
+    //
+    // BOTH SIGNS, and the threshold matches the prose. The scan used to walk
+    // `negativeLat` at a hard-coded 1.5 while the comment beside it said "a
+    // degree": the number was wrong AND the half of the world it looked at
+    // was, so São Tomé and Príncipe at +0.32 — as close to the equator as
+    // Gabon and closer than Congo — was never named at all. It is northern
+    // by centroid and this app calls it northern; that is now a decision on
+    // the record rather than a country nothing looked at.
+    const nearEquator = Object.entries(artifact!.countries)
+      .filter(([, record]) => Math.abs(record.lat ?? 90) <= NEAR_EQUATOR_DEGREES)
+      .map(([code]) => code)
       .sort();
-    expect(nearEquator).toEqual(["CG", "EC", "GA", "NR"]);
-    for (const code of nearEquator) expect(southernSet.has(code), `${code} is listed`).toBe(true);
+    expect(nearEquator).toEqual(["CG", "EC", "GA", "KE", "NR", "ST"]);
+    // Each on the side its own centroid states — the straddler exception is
+    // the one place a human overrode that, and it is already named above.
+    for (const code of nearEquator) {
+      const shouldBeSouthern = artifact!.countries[code].lat! < 0 || EQUATOR_STRADDLERS.has(code);
+      expect(southernSet.has(code), `${code} is on the side its centroid states`).toBe(
+        shouldBeSouthern
+      );
+    }
   });
 });
 
