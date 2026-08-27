@@ -1554,11 +1554,13 @@ export function parseRetryAfter(header, now = Date.now()) {
  * merge, and it is not worth retrying either — a moved endpoint will still be
  * moved in ten seconds.
  */
-async function fetchWithRetry(url, { body, accept }) {
+export async function fetchWithRetry(url, { body, accept }) {
   let lastError = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     /** Set when the server itself told us how long to wait; overrides the backoff. */
     let requested = null;
+    /** Set when the answer is one no amount of waiting will change. */
+    let fatal = false;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -1572,6 +1574,7 @@ async function fetchWithRetry(url, { body, accept }) {
         redirect: 'follow',
       });
       if (res.status === 404) {
+        fatal = true;
         throw new Error(
           `HTTP 404 — the SPARQL endpoint moved or the query path changed; that is an outage, ` +
           `not an empty result`
@@ -1584,6 +1587,10 @@ async function fetchWithRetry(url, { body, accept }) {
       return await res.text();
     } catch (error) {
       lastError = error;
+      // A moved endpoint will still be moved in ten seconds, and the retry
+      // budget here is ten seconds. Retrying it would buy nothing and would
+      // triple the time the nightly job takes to report a real outage.
+      if (fatal) throw error;
       if (requested !== null && requested > MAX_RETRY_AFTER_MS) {
         // Not a retry decision: the server has asked for longer than this run
         // is willing to hold a CI runner open, so stop and let the property be
