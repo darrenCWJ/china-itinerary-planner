@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
-import { getCountryProfile } from "@/lib/countryProfile";
+import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { SEASON_EMOJI } from "@/lib/meta";
 import { bandsIn, MONTHS } from "@/lib/months";
 
@@ -17,7 +17,7 @@ interface Props {
    * October was told about "National Day Golden Week 🇨🇳", February showed
    * "Chinese New Year 🧧", and every month carried China's crowd curve under a
    * label reading *typical national crowd pressure*. Everything month-shaped
-   * below now comes from `getCountryProfile(country)`, including the season
+   * below now comes from `getCountryBaseProfile(country)`, including the season
    * word: MONTHS[].season is the northern table, which calls Peru's June
    * summer while the plan the same wizard builds says winter.
    */
@@ -43,13 +43,13 @@ export function MonthTimeline({ month, onMonth, country }: Props) {
     [monthFromClientX, onMonth]
   );
 
-  const profile = useMemo(() => getCountryProfile(country), [country]);
+  const profile = useMemo(() => getCountryBaseProfile(country), [country]);
   const info = MONTHS[month - 1];
   const season = profile.seasonOfMonth(month);
   // Absent, never flat: a country with no researched crowd curve renders no
   // crowd element at all rather than a row of three-out-of-five dots, which
   // would be a claim that every month there is equally busy. See
-  // `CountryProfile.crowdByMonth`.
+  // `CountryBaseProfile.crowdByMonth`.
   const crowd = profile.crowdByMonth?.[month - 1] ?? null;
   const holidays = profile.holidays;
   const activeBands = bandsIn(holidays, month);

@@ -54,12 +54,21 @@ describe("tripCurrency", () => {
     expect(tripCurrency(tripData({}))).toBe("CNY");
   });
 
-  test("a country with no researched currency profile reads as null, never the neutral profile's USD placeholder", () => {
-    // getCountryProfile("JP").currency is "USD" today — an admitted
-    // placeholder (lib/countryProfile.ts), not a fact about Japan. Showing
-    // that guess to a member would be wrong-by-commission, so this must read
-    // as an honest "we don't know" instead.
-    expect(tripCurrency(tripData({ country: "JP" }))).toBeNull();
+  test("a country with no known currency reads as null, never a guess", () => {
+    // "XX" and not another real country. Japan used to be the fixture here,
+    // back when every non-China profile carried an admitted "USD" placeholder;
+    // since T27 Japan's currency is the artifact's real JPY, and any real code
+    // is one upstream edit away from becoming researched overnight. "XX" is
+    // permanently unassigned by ISO 3166, so it cannot stop being the case
+    // this test is about.
+    expect(tripCurrency(tripData({ country: "XX" }))).toBeNull();
+  });
+
+  test("a country the facts artifact covers reads as that currency", () => {
+    // The other half. Without it, `tripCurrency` returning null for everything
+    // would satisfy every other test in this describe.
+    expect(tripCurrency(tripData({ country: "JP" }))).toBe("JPY");
+    expect(tripCurrency(tripData({ country: "PE" }))).toBe("PEN");
   });
 });
 
@@ -68,12 +77,18 @@ describe("initialCurrencySettings", () => {
     expect(initialCurrencySettings("CN")).toEqual({ home: null, rates: {}, pivot: "CNY" });
   });
 
-  test("J-C1: stamps nothing for a country with no researched currency profile", () => {
-    // getCountryProfile("JP").currency is "USD" today — an admitted
-    // placeholder (lib/countryProfile.ts), not a fact about Japan. Stamping
-    // it would persist a guess as fact, which is worse than an absent pivot
-    // — the absent case already reads as the legacy CNY default.
-    expect(initialCurrencySettings("JP")).toEqual({ home: null, rates: {} });
+  test("J-C1: stamps nothing for a country with no known currency", () => {
+    // "XX", not a real country — see the note on tripCurrency above. Stamping
+    // a guess would persist it as fact, which is worse than an absent pivot:
+    // the absent case already reads as the legacy CNY default.
+    expect(initialCurrencySettings("XX")).toEqual({ home: null, rates: {} });
+  });
+
+  test("stamps the artifact's currency for a country the ingest reached", () => {
+    // The arming half: "stamps nothing" is satisfied by a function that stamps
+    // nothing for anyone.
+    expect(initialCurrencySettings("JP")).toEqual({ home: null, rates: {}, pivot: "JPY" });
+    expect(initialCurrencySettings("PE")).toEqual({ home: null, rates: {}, pivot: "PEN" });
   });
 
   test("never returns the same object reference across calls", () => {
@@ -84,7 +99,7 @@ describe("initialCurrencySettings", () => {
     // removed as an orphan once every caller stopped falling back to it),
     // so this proves freshness the direct way: two calls never alias.
     expect(initialCurrencySettings("CN")).not.toBe(initialCurrencySettings("CN"));
-    expect(initialCurrencySettings("JP")).not.toBe(initialCurrencySettings("JP"));
+    expect(initialCurrencySettings("XX")).not.toBe(initialCurrencySettings("XX"));
   });
 });
 

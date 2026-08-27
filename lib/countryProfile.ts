@@ -1,240 +1,190 @@
-import { DEFAULT_AIRPORT_RADIUS_KM } from "./airports";
+import { getCountryBaseProfile, type CountryBaseProfile } from "./countryBaseProfile";
 import { getCountry } from "./countries";
+import { CN_GENERAL_TIPS, CN_PACKING } from "./countryData/cn";
 import {
-  CN_BOOKING_COPY,
-  CN_DEPARTURE_AFTERNOON,
-  CN_DEPARTURE_EVENING,
-  CN_GENERAL_TIPS,
-  CN_HOP_NOTE,
-  CN_HOP_TITLE,
-  CN_KIDS_TIP,
-  CN_PACKING,
-  CN_RAIL_KMH,
-  CN_WINTER_CLOTHING_NOTE,
-} from "./countryData/cn";
-import {
-  NEUTRAL_BOOKING_COPY,
-  NEUTRAL_DEPARTURE_AFTERNOON,
-  NEUTRAL_DEPARTURE_EVENING,
-  NEUTRAL_HOP_NOTE,
-  NEUTRAL_HOP_TITLE,
-  NEUTRAL_KIDS_TIP,
+  NEUTRAL_ADAPTER_ITEM,
+  NEUTRAL_DOCUMENTS_GROUP,
+  NEUTRAL_OFFLINE_MAPS_ITEM,
   NEUTRAL_PACKING,
+  NEUTRAL_PAYMENT_CARD_ITEM,
+  NEUTRAL_TECH_GROUP,
   NEUTRAL_TIPS,
-  NEUTRAL_WINTER_CLOTHING_NOTE,
 } from "./countryData/neutral";
+import { getCountryFacts, getCountryName, type CountryFacts } from "./countryFacts";
 import {
-  FLIGHT_BUFFER_H,
-  FLIGHT_KMH,
-  FLIGHT_THRESHOLD_KM,
-  GROUND_TRANSFER_KMH,
-  RAIL_BUFFER_H,
-} from "./countryData/transportDefaults";
-import {
-  HOLIDAY_BANDS,
-  NATIONAL_CROWD,
-  REGION_MONTHS,
-  seasonOfMonth,
-  type HolidayBand,
-  type RegionMonthClimate,
-} from "./months";
-import type { CountryCode, PackingGroup, Season } from "./types";
+  buildGapNote,
+  cashBackupItem,
+  factTips,
+  powerAdapterItem,
+  translationPackItem,
+} from "./countryTips";
+import type { PackingGroup } from "./types";
 
 /**
- * The country a generator assumes when its input does not name one.
+ * Where the CC0 country facts finally reach a traveller.
  *
- * One constant rather than a `?? "CN"` in each generator: `buildItinerary` and
- * `buildPackingList` are handed the same `TripInput`, and two literals that
- * drift apart would give one trip two countries' copy. `TripInput.country` is
- * optional because trips saved before the field existed do not carry it, and
- * every one of those is a China trip — the same reasoning `tripCountry` in
- * lib/tripShared.ts documents at length for the persisted side.
+ * Three branches, and the middle one is the whole point of Tasks 24–27:
+ *
+ * - **CN** — the hand-written profile, untouched. It is researched by a human,
+ *   it is richer than anything the ingest produces, and `countryProfile.test.ts`
+ *   pins it byte for byte. Those pins are the ingest's self-check, not a test
+ *   to relax: `countryTips.test.ts` proves the same template layer fed China's
+ *   *ingested* facts reproduces a line a human wrote here before Wikidata was
+ *   ever queried.
+ * - **facts present** — the neutral profile with the ingested sentences layered
+ *   on: `tips` gains the five fact templates, `packing` gains the plug line,
+ *   the cash line and the translation pack, `currency` becomes the ISO code and
+ *   `gapNote` names what is still missing.
+ * - **neither** — the neutral profile, with a gap note if we at least know what
+ *   the country is called. `factsProfile` fed an empty record is exactly this,
+ *   and a test pins the two equal, so the branch is a readable name for a
+ *   boundary rather than a second definition that can drift.
+ *
+ * **`currency` is `string | null` since T27, and the null is load-bearing.**
+ * It used to fall back to a documented `"USD"` placeholder, with
+ * `isCurrencyResearched` mirroring `getCountryProfile`'s CN-only dispatch to
+ * keep that placeholder off the money surfaces. The placeholder is gone: an
+ * unknown currency is now absent, and `isCurrencyResearched` reads the absence
+ * instead of re-deriving it. The two must always move together — see its
+ * docblock at the bottom of this file.
+ *
+ * **The 70 KB lives here, deliberately, and not one module lower.** This is the
+ * only country module that reads `data/country-facts.json`, through
+ * lib/countryFacts.ts. Everything that does not need a fact reads
+ * lib/countryBaseProfile.ts instead — see that file's header for the four
+ * client components this split exists for, and lib/countryFacts.test.ts for the
+ * transitive import walk that fails the build if one of them reaches back here.
  */
-export const DEFAULT_COUNTRY: CountryCode = "CN";
 
 /**
- * Country-specific sentences the generators splice into their own output.
- *
- * These are not tips or packing items in their own right — each one is a
- * fragment that only makes sense in the place the generator puts it, which is
- * why they live here rather than in `tips`.
+ * Re-exported so the generators keep one import for "which country, and what
+ * does it say". The types are not re-exported: a caller that wants
+ * `TransportProfile` or `CountryCopy` alone wants lib/countryBaseProfile.ts,
+ * and reaching for them through here would pull the artifact into its bundle
+ * for a type that is erased at compile time.
  */
-export interface CountryCopy {
-  /** Added to the tips when the party includes children. */
-  kidsTip: string;
-  /**
-   * Extra winter clothing item, appended after the generic cold-weather ones.
-   * `null` when nothing country-specific is known — never a hedge.
-   */
-  winterClothingNote: string | null;
-}
+export { DEFAULT_COUNTRY } from "./countryBaseProfile";
 
-export interface TransportProfile {
-  /**
-   * null = no meaningful rail estimate for this country.
-   *
-   * Read by `estimateLeg` in lib/route.ts, and load-bearing there: null means
-   * no leg is ever scored as rail. Such a leg is flown when an airport pair
-   * resolves and beats the ground transfer to reach it, and is an `overland`
-   * leg — distance, and deliberately no duration — otherwise.
-   */
-  railKmh: number | null;
-  flightThresholdKm: number;
-  flightKmh: number;
-  railBufferH: number;
-  flightBufferH: number;
-  /** Average door-to-door speed between a city centre and its airport — not country-specific. */
-  groundTransferKmh: number;
-  /** Radius searched for a nearby airport, in km — not country-specific. */
-  airportSearchRadiusKm: number;
-  /**
-   * Generation-time copy: where and how far ahead to book.
-   *
-   * `suggestRoute` emits it on two different conditions, because the two
-   * versions of this copy make two different claims. A researched country's
-   * names its network ("every leg is high-speed-rail friendly — book on
-   * 12306"), so it is emitted only on an all-ground route and only when
-   * `railKmh` is non-null; its premise is that the traveller is about to spend
-   * the trip on trains, which is false wherever rail is withheld. The neutral
-   * version names no network and no vendor, so it rides out on any route with
-   * a measured distance — a country with no rail still has transport to book,
-   * and going silent there would be a gap where there is no gap.
-   */
-  bookingCopy: string[];
-  /**
-   * Title for the itinerary item that moves the party to a new city.
-   * A template: `{city}` is substituted with the arrival city by the caller,
-   * so the sentence stays reviewable as one string rather than as
-   * concatenation spread across the generator.
-   */
-  hopTitle: string;
-  /** Note under the hop title, or `null` when nothing can be claimed. */
-  hopNote: string | null;
-  /**
-   * Last-day copy. `evening` is used when transit already took the morning,
-   * `afternoon` when the afternoon is free to travel.
-   */
-  departureCopy: { evening: string; afternoon: string };
-}
-
-export interface CountryProfile {
-  /** Hemisphere-aware, unlike the bare months.ts version it wraps. */
-  seasonOfMonth(month: number): Season;
-  /**
-   * Crowd pressure per calendar month, 1 (quiet) – 5 (peak), or `null` when
-   * nobody has researched this country.
-   *
-   * `null` rather than a flat twelve-long row of 3s, and the distinction is the
-   * whole point: a flat row is not the absence of a claim. Rendered under the
-   * label its consumers use — *typical national crowd pressure this month* — it
-   * states that every month is equally busy, which is a brand-new unsourced
-   * claim invented by the very code that was meant to remove one. Consumers
-   * render no crowd element at all when this is null.
-   */
-  crowdByMonth: number[] | null;
-  holidays: HolidayBand[];
+export interface CountryProfile extends CountryBaseProfile {
   /** The whole packing document, not a set of deltas. */
   packing: PackingGroup[];
-  transport: TransportProfile;
   /** Generation-time tips, snapshotted into the trip when it is created. */
   tips: string[];
-  /** Sentences the generators splice into their own output. */
-  copy: CountryCopy;
-  /** Rows for a region, or null when this country has no climate table. */
-  climateFor(region: string): RegionMonthClimate[] | null;
-  /** Currency conversion pivot. */
-  currency: string;
+  /**
+   * ISO 4217 conversion pivot, or `null` when no currency is known.
+   *
+   * Null rather than a placeholder. A guessed pivot reaches the Money tab as a
+   * fact about the destination, and every consumer of this field has to be able
+   * to tell "we know" from "we do not" — which a fallback code makes impossible.
+   * `isCurrencyResearched` is exactly `currency !== null`.
+   */
+  currency: string | null;
+  /**
+   * The honesty surface: what our data does not cover for this country.
+   *
+   * Empty for China (researched by hand, nothing to disclaim) and for a code
+   * that is not a country (a note that cannot say whose data is missing is not
+   * a statement anyone can act on). Never snapshotted into a trip — it is a
+   * claim about our current coverage, not about the trip, so it must shrink as
+   * coverage improves. T28 renders it.
+   */
+  gapNote: string[];
+}
+
+/** Fresh groups with fresh item arrays, so a caller may edit what it is handed. */
+function copyPacking(groups: readonly PackingGroup[]): PackingGroup[] {
+  return groups.map((group) => ({ ...group, items: [...group.items] }));
 }
 
 /**
- * Southern seasons are the northern ones half a year away. Shifting the month
- * rather than mapping the season keeps months.ts as the single definition of
- * where the season boundaries fall.
+ * Put `item` next to `anchor`, or at the end when the anchor has gone.
+ *
+ * The fallback is the point. The anchors are the neutral document's own
+ * exported strings, so they cannot drift by rewording — but a future edit that
+ * *removes* one would otherwise silently drop the fact item, which is the one
+ * outcome this whole feature exists to prevent. Appending keeps the sentence.
+ * `countryProfile.test.ts` pins that every anchor is still found, so the
+ * fallback stays a safety net rather than the path production takes.
  */
-function seasonIn(hemisphere: "north" | "south", month: number): Season {
-  return seasonOfMonth(hemisphere === "south" ? ((month + 5) % 12) + 1 : month);
+function spliced(items: string[], anchor: string, offset: 0 | 1, item: string): string[] {
+  const at = items.indexOf(anchor);
+  const out = [...items];
+  out.splice(at === -1 ? out.length : at + offset, 0, item);
+  return out;
 }
 
 /**
- * China's climate table is keyed by the app's own region union. A plain index
- * would resolve inherited keys ("constructor", "toString") to something that
- * is not a climate row, so ownership is checked rather than truthiness.
+ * The neutral packing document with the facts spliced in, group by group.
+ *
+ * Shaped after China's hand-written document, which is the one packing list in
+ * this repo a human verified: the plug-and-voltage line *replaces* the generic
+ * adapter rather than sitting beside it, and the currency cash line follows the
+ * payment-card item. The translation pack is an addition, not a replacement —
+ * `NEUTRAL_OFFLINE_MAPS_ITEM` covers maps too, and it fires for the many
+ * countries that have more than one official language.
  */
-function chinaClimate(region: string): RegionMonthClimate[] | null {
-  if (!Object.prototype.hasOwnProperty.call(REGION_MONTHS, region)) return null;
-  const rows = (REGION_MONTHS as Record<string, RegionMonthClimate[]>)[region];
-  return rows.map((row) => ({ ...row }));
-}
+function factsPacking(countryName: string, facts: CountryFacts): PackingGroup[] {
+  const adapter = powerAdapterItem(countryName, facts);
+  const cash = cashBackupItem(facts);
+  const pack = translationPackItem(facts);
 
-/**
- * The half of a transport profile that is about aircraft, airports and taxis
- * rather than about one country's networks. Read from the leaf the estimator
- * used to read directly, and now the only definition of these numbers: since
- * T22, `route.ts`'s exported `TRANSPORT` *is* the default country's profile,
- * so the two cannot disagree because they are the same object.
- */
-const TRANSPORT_DEFAULTS = {
-  flightThresholdKm: FLIGHT_THRESHOLD_KM,
-  flightKmh: FLIGHT_KMH,
-  railBufferH: RAIL_BUFFER_H,
-  flightBufferH: FLIGHT_BUFFER_H,
-  groundTransferKmh: GROUND_TRANSFER_KMH,
-  /** Not country-specific: the radius the airport index is searched over. */
-  airportSearchRadiusKm: DEFAULT_AIRPORT_RADIUS_KM,
-} as const;
+  return copyPacking(NEUTRAL_PACKING).map((group) => {
+    if (group.title === NEUTRAL_DOCUMENTS_GROUP && cash !== null) {
+      return { ...group, items: spliced(group.items, NEUTRAL_PAYMENT_CARD_ITEM, 1, cash) };
+    }
+    if (group.title === NEUTRAL_TECH_GROUP) {
+      let items = group.items;
+      if (adapter !== null) {
+        const at = items.indexOf(NEUTRAL_ADAPTER_ITEM);
+        items = at === -1 ? [adapter, ...items] : items.map((it, i) => (i === at ? adapter : it));
+      }
+      if (pack !== null) items = spliced(items, NEUTRAL_OFFLINE_MAPS_ITEM, 0, pack);
+      return { ...group, items };
+    }
+    return group;
+  });
+}
 
 function chinaProfile(): CountryProfile {
   return {
-    seasonOfMonth: (month) => seasonIn("north", month),
-    crowdByMonth: [...NATIONAL_CROWD],
-    holidays: HOLIDAY_BANDS.map((band) => ({ ...band })),
-    packing: CN_PACKING.map((group) => ({ ...group, items: [...group.items] })),
-    transport: {
-      railKmh: CN_RAIL_KMH,
-      ...TRANSPORT_DEFAULTS,
-      bookingCopy: [...CN_BOOKING_COPY],
-      hopTitle: CN_HOP_TITLE,
-      hopNote: CN_HOP_NOTE,
-      departureCopy: { evening: CN_DEPARTURE_EVENING, afternoon: CN_DEPARTURE_AFTERNOON },
-    },
+    ...getCountryBaseProfile("CN"),
+    packing: copyPacking(CN_PACKING),
     tips: [...CN_GENERAL_TIPS],
-    copy: { kidsTip: CN_KIDS_TIP, winterClothingNote: CN_WINTER_CLOTHING_NOTE },
-    climateFor: chinaClimate,
     currency: "CNY",
+    // Researched by hand. There is no open-reference-data caveat to make.
+    gapNote: [],
   };
 }
 
-function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
+/**
+ * Everything a country gets before its facts are known.
+ *
+ * The gap note still fires here, and that is the case it matters most for: a
+ * country the ingest never reached is the one whose blank tips panel most needs
+ * an explanation. It is empty only when `countryName` is blank, which means the
+ * code is not a country at all.
+ */
+function neutralProfile(code: string, countryName: string): CountryProfile {
   return {
-    seasonOfMonth: (month) => seasonIn(hemisphere, month),
-    // Absent, not flat — see the field's doc comment on CountryProfile.
-    crowdByMonth: null,
-    holidays: [],
-    packing: NEUTRAL_PACKING.map((group) => ({ ...group, items: [...group.items] })),
-    transport: {
-      // Rail speed is a claim about a specific network, so it is withheld.
-      // Cruise speed and airport overhead are not country-specific, so the
-      // flight estimate stays useful everywhere. What this null buys, in
-      // lib/route.ts: no rail leg, no 🚄, and no rail booking copy for any
-      // country nobody has researched a network for.
-      railKmh: null,
-      ...TRANSPORT_DEFAULTS,
-      bookingCopy: [...NEUTRAL_BOOKING_COPY],
-      hopTitle: NEUTRAL_HOP_TITLE,
-      hopNote: NEUTRAL_HOP_NOTE,
-      departureCopy: {
-        evening: NEUTRAL_DEPARTURE_EVENING,
-        afternoon: NEUTRAL_DEPARTURE_AFTERNOON,
-      },
-    },
+    ...getCountryBaseProfile(code),
+    packing: copyPacking(NEUTRAL_PACKING),
     tips: [...NEUTRAL_TIPS],
-    copy: { kidsTip: NEUTRAL_KIDS_TIP, winterClothingNote: NEUTRAL_WINTER_CLOTHING_NOTE },
-    climateFor: () => null,
-    currency:
-      // Placeholder pivot. A country without a researched profile has no known
-      // currency, and the interface has no room for "unknown" — see the money
-      // module, where the pivot a trip was priced in is persisted per trip.
-      "USD",
+    currency: null,
+    gapNote: buildGapNote(countryName, {}),
+  };
+}
+
+function factsProfile(code: string, countryName: string, facts: CountryFacts): CountryProfile {
+  return {
+    ...getCountryBaseProfile(code),
+    packing: factsPacking(countryName, facts),
+    // Neutral first, facts after: the three neutral lines are about the trip
+    // (passport, bank, offline maps) and hold everywhere, and the fact lines
+    // are about the place. Reversing them would open the panel with a currency
+    // code.
+    tips: [...NEUTRAL_TIPS, ...factTips(facts)],
+    currency: facts.currencyCode ?? null,
+    gapNote: buildGapNote(countryName, facts),
   };
 }
 
@@ -245,26 +195,40 @@ function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
  * breaking generation.
  *
  * Fresh objects each call: the arrays are copies, so a caller that mutates
- * what it is handed cannot corrupt the curated tables for everyone else.
+ * what it is handed cannot corrupt the curated tables for everyone else. That
+ * survives the facts artifact only because `getCountryFacts` re-reads through
+ * its own validator on every call — see its docblock, which names this contract
+ * as the reason it is not memoised.
  */
 export function getCountryProfile(code: string): CountryProfile {
-  const country = getCountry(code);
-  return country.code === "CN" ? chinaProfile() : neutralProfile(country.hemisphere);
+  if (getCountry(code).code === "CN") return chinaProfile();
+
+  const facts = getCountryFacts(code);
+  const countryName = getCountryName(code);
+  return Object.keys(facts).length > 0
+    ? factsProfile(code, countryName, facts)
+    : neutralProfile(code, countryName);
 }
 
 /**
- * Whether `getCountryProfile(code).currency` reflects real currency research
- * rather than `neutralProfile`'s admitted USD placeholder (see the comment on
- * that field above). Only China has a currency-researched profile today —
- * this mirrors `getCountryProfile`'s own CN-only dispatch exactly, so the two
- * can never disagree about which countries are "researched."
+ * Whether `getCountryProfile(code).currency` is a fact rather than an absence.
  *
  * Exists for callers (the live-rates page, Task 7) that must never present a
- * placeholder pivot as fact — see judgment call J-C1 in
- * docs/superpowers/plans/2026-08-17-pr4-currency-pivot-plan.md. A future
- * researched profile for another country should extend the check here, which
- * keeps this the one place "researched" is decided.
+ * guess as fact — see judgment call J-C1 in
+ * docs/superpowers/plans/2026-08-17-pr4-currency-pivot-plan.md. Before T27 the
+ * profile handed out a documented `"USD"` placeholder for every unresearched
+ * country and this predicate mirrored `getCountryProfile`'s CN-only dispatch to
+ * keep that placeholder off the money surfaces.
+ *
+ * The placeholder is gone: `currency` is `null` where nothing is known, and
+ * this reads that null instead of re-deriving which countries are researched.
+ * Re-deriving is what it must never go back to. **The predicate and the field
+ * have to move together** — a predicate that still answered "CN only" while the
+ * field carried Japan's real JPY would report a fact as a guess, and one that
+ * answered "always" while the field could be null would report a guess as a
+ * fact. Neither is a compile error, and `countryProfile.test.ts` sweeps the two
+ * against each other over every country there is.
  */
 export function isCurrencyResearched(code: string): boolean {
-  return getCountry(code).code === "CN";
+  return getCountryProfile(code).currency !== null;
 }

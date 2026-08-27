@@ -9,24 +9,47 @@
  * Zero imports, by contract — see `cn.ts`'s header and `countryData.test.ts`.
  */
 
+/**
+ * The neutral packing group titles, and the three neutral items the facts
+ * layer in lib/countryProfile.ts edits around.
+ *
+ * Named here, and read from here by both sides, so the two cannot drift. The
+ * facts layer replaces the generic adapter line with the plug-and-voltage one
+ * when it knows the sockets, slips a currency-named cash line in after the
+ * payment-card item, and puts a single-language translation pack in front of
+ * the generic offline-maps line. A retyped copy of any of these strings over
+ * there would go stale the day this file is reworded, and the failure mode is
+ * silent: the anchor stops matching, and the fact item lands somewhere else.
+ *
+ * This stays a zero-import leaf — these are its own strings, exported under a
+ * name rather than duplicated.
+ */
+export const NEUTRAL_DOCUMENTS_GROUP = "Documents & Money";
+export const NEUTRAL_TECH_GROUP = "Tech";
+export const NEUTRAL_PAYMENT_CARD_ITEM =
+  "A payment card that works abroad, and a small amount of local cash";
+export const NEUTRAL_ADAPTER_ITEM = "Universal power adapter";
+export const NEUTRAL_OFFLINE_MAPS_ITEM =
+  "Offline maps and a translation app downloaded before you fly";
+
 export const NEUTRAL_PACKING = [
   {
-    title: "Documents & Money",
+    title: NEUTRAL_DOCUMENTS_GROUP,
     emoji: "🛂",
     items: [
       "Passport with at least six months' validity, plus any visa you need",
-      "A payment card that works abroad, and a small amount of local cash",
+      NEUTRAL_PAYMENT_CARD_ITEM,
       "Travel insurance policy details",
       "Copies of your bookings, stored offline",
     ],
   },
   {
-    title: "Tech",
+    title: NEUTRAL_TECH_GROUP,
     emoji: "🔌",
     items: [
-      "Universal power adapter",
+      NEUTRAL_ADAPTER_ITEM,
       "Phone and power bank",
-      "Offline maps and a translation app downloaded before you fly",
+      NEUTRAL_OFFLINE_MAPS_ITEM,
     ],
   },
   {

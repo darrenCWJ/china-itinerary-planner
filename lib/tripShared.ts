@@ -32,15 +32,20 @@ export function tripCountry(data: TripData): CountryCode {
 }
 
 /**
- * The trip's destination currency, or `null` when that country has no
- * currency-researched profile yet. Deliberately never
- * `getCountryProfile(code).currency` unguarded — for every country besides
- * China that value is an admitted placeholder ("USD", see
- * `neutralProfile` in lib/countryProfile.ts), and showing a guess to a
- * member as though it were the destination's real currency is worse than
- * showing nothing (judgment call J-C1). `isCurrencyResearched` is the one
- * place that distinction is decided, so this and `getCountryProfile` can
- * never disagree about which countries are "researched."
+ * The trip's destination currency, or `null` when nothing is known about that
+ * country's currency.
+ *
+ * Read through `isCurrencyResearched` rather than off the profile directly,
+ * and that is not redundant now that the predicate IS `currency !== null`: it
+ * is the one place the "fact or absence?" question is answered, and routing
+ * every money surface through it is what stops a future caller from
+ * re-deriving the answer with its own rule (judgment call J-C1).
+ *
+ * Until T27 the profile handed out an admitted "USD" placeholder for every
+ * country besides China, and this guard was what kept that guess off the Money
+ * tab. The guess is gone — an unknown currency is now absent at the source —
+ * so this returns null on strictly fewer countries than it did, and never on a
+ * country whose ISO currency code the CC0 facts artifact actually carries.
  */
 export function tripCurrency(data: TripData): string | null {
   const code = tripCountry(data);
@@ -162,16 +167,23 @@ export function currencyPivot(settings: CurrencySettings): string {
  * literal instead.)
  *
  * The pivot is stamped only when `isCurrencyResearched` says the country's
- * currency is a fact rather than `neutralProfile`'s admitted USD placeholder
- * (judgment call J-C1, see the comment on `tripCurrency` above) — stamping a
- * guess would persist it as though it were researched, which is worse than
- * leaving the pivot absent. An absent pivot is not a gap: `currencyPivot`
- * already reads it as the legacy CNY default, so an unresearched country's
- * trip degrades to exactly the behaviour every pre-pivot trip has today.
+ * currency is a fact rather than an absence (judgment call J-C1, see the
+ * comment on `tripCurrency` above) — stamping a guess would persist it as
+ * though it were researched, which is worse than leaving the pivot absent. An
+ * absent pivot is not a gap: `currencyPivot` already reads it as the legacy
+ * CNY default, so a country with no known currency degrades to exactly the
+ * behaviour every pre-pivot trip has today.
+ *
+ * The predicate and the null check below ask the same question twice, and
+ * deliberately: the predicate is the rule, the null is what TypeScript can
+ * narrow on. Dropping the predicate for a bare `?? undefined` would stamp
+ * nothing in the same cases while saying nothing about why.
  */
 export function initialCurrencySettings(countryCode: CountryCode): CurrencySettings {
-  if (!isCurrencyResearched(countryCode)) return { home: null, rates: {} };
-  return { home: null, rates: {}, pivot: getCountryProfile(countryCode).currency };
+  const pivot = isCurrencyResearched(countryCode)
+    ? getCountryProfile(countryCode).currency
+    : null;
+  return pivot === null ? { home: null, rates: {} } : { home: null, rates: {}, pivot };
 }
 
 /**

@@ -1,5 +1,9 @@
 import { nearestAirports, DEFAULT_AIRPORT_RADIUS_KM, type Airport } from "./airports";
-import { DEFAULT_COUNTRY, getCountryProfile, type TransportProfile } from "./countryProfile";
+import {
+  DEFAULT_COUNTRY,
+  getCountryBaseProfile,
+  type TransportProfile,
+} from "./countryBaseProfile";
 import { haversineKm, type LatLon } from "./geo";
 
 export interface RoutePlace {
@@ -115,7 +119,7 @@ export interface RouteSuggestion {
  * moving the country data down into zero-import leaves. countryProfile does
  * not import this module, so there is no cycle to reintroduce.
  */
-export const TRANSPORT: TransportProfile = getCountryProfile(DEFAULT_COUNTRY).transport;
+export const TRANSPORT: TransportProfile = getCountryBaseProfile(DEFAULT_COUNTRY).transport;
 
 function roundHalf(n: number): number {
   return Math.round(n * 2) / 2;

@@ -314,18 +314,69 @@ describe("a Peru trip still produces a plan", () => {
     expect(plan.days.every((d) => d.items.length > 0)).toBe(true);
   });
 
-  test("the tips are the neutral set plus the neutral kids tip", () => {
+  test("the tips are the neutral set, Peru's own facts, then the neutral kids tip", () => {
+    // T27 added the middle five. They come from the CC0 Wikidata artifact via
+    // lib/countryTips.ts, and every one is a statement about Peru rather than
+    // about China — which is what this gate was always asking for and could
+    // not have until the facts existed.
     expect(plan.tips).toEqual([
       "Check your passport validity and entry requirements well before you book.",
       "Tell your bank you are travelling so your cards keep working.",
       "Download offline maps and a translation pack before you leave.",
+      "Prices are in PEN. Set your home currency on the Money tab for live conversions.",
+      "Sockets are type A, B and C at 220 V — bring a universal adapter.",
+      "Emergency numbers: 105 police, 116 fire, 106 or 117 ambulance.",
+      "Aymara, Quechua and Spanish are official languages — download an offline translation pack before you go.",
+      "Traffic drives on the right. The international dialling code is +51.",
       "Travelling with kids: pack light and allow buffer time between stops.",
     ]);
     expect(plan.tips.slice(0, NEUTRAL_TIPS.length)).toEqual([...NEUTRAL_TIPS]);
   });
 
-  test("the country packing groups are the neutral document", () => {
-    expect(packing.slice(0, NEUTRAL_PACKING.length)).toEqual(NEUTRAL_PACKING);
+  test("the country packing groups are the neutral document with Peru's facts spliced in", () => {
+    // Was `toEqual(NEUTRAL_PACKING)`. T27 splices two fact lines in: the
+    // plug-and-voltage adapter REPLACES the generic one, as China's
+    // hand-written document does, and the currency cash line follows the
+    // payment-card item. No third line — Peru has three official languages, so
+    // no single-language translation pack is claimed.
+    expect(packing.slice(0, NEUTRAL_PACKING.length)).toEqual([
+      {
+        title: "Documents & Money",
+        emoji: "\u{1F6C2}",
+        items: [
+          "Passport with at least six months' validity, plus any visa you need",
+          "A payment card that works abroad, and a small amount of local cash",
+          "Some PEN cash as a backup",
+          "Travel insurance policy details",
+          "Copies of your bookings, stored offline",
+        ],
+      },
+      {
+        title: "Tech",
+        emoji: "\u{1F50C}",
+        items: [
+          "Universal power adapter (Peru uses type A/B/C plugs, 220V)",
+          "Phone and power bank",
+          "Offline maps and a translation app downloaded before you fly",
+        ],
+      },
+      {
+        title: "Health & Comfort",
+        emoji: "\u{1F48A}",
+        items: [
+          "Prescription medicines in their original packaging",
+          "Basic meds: stomach relief, painkillers, motion sickness",
+          "Reusable water bottle",
+          "Comfortable broken-in walking shoes",
+        ],
+      },
+    ]);
+    // Still the neutral document underneath: same groups in the same order,
+    // and every neutral item still present bar the generic adapter the
+    // specific one replaced.
+    expect(packing.slice(0, NEUTRAL_PACKING.length).map((g) => g.title)).toEqual(
+      NEUTRAL_PACKING.map((g) => g.title)
+    );
     expect(NEUTRAL_PACKING).toHaveLength(3);
   });
 

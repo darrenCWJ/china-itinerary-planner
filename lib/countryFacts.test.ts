@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   COUNTRY_CODES,
@@ -389,5 +389,160 @@ describe("data/country-facts.json stays out of the bundles that only want a name
     const tips = FILES.find((file) => file.path === "lib/countryTips.ts")!;
     expect(tips.code).toContain('import type { CountryFacts');
     expect(valueImportOf(tips.code, /countryFacts/)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bundle constraint, transitively — added by T27
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve one import specifier to a file in the scanned tree, or null.
+ *
+ * `@/x` is the tsconfig alias for the repo root and `./x` / `../x` are
+ * relative; a bare specifier is a package and never the artifact. Extensions
+ * are tried in the order the bundler tries them.
+ */
+function resolveSpecifier(from: string, spec: string, known: Set<string>): string | null {
+  let base: string;
+  if (spec.startsWith("@/")) base = spec.slice(2);
+  else if (spec.startsWith(".")) base = posix.normalize(posix.join(posix.dirname(from), spec));
+  else return null;
+  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
+    if (known.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Who imports whom, by VALUE. `import type` is erased at compile time and
+ * costs no bytes, so it is not an edge — which is exactly why lib/countryTips.ts
+ * may name `CountryFacts` and still not reach the artifact.
+ */
+function valueImportGraph(files: { path: string; code: string }[]): Map<string, string[]> {
+  const known = new Set(files.map((file) => file.path));
+  const graph = new Map<string, string[]>();
+  for (const file of files) {
+    const out = new Set<string>();
+    for (const match of file.code.matchAll(/import\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/g)) {
+      const resolved = resolveSpecifier(file.path, match[1], known);
+      if (resolved !== null) out.add(resolved);
+    }
+    graph.set(file.path, [...out]);
+  }
+  return graph;
+}
+
+/** Whether `target` is reachable from `start` by following value imports. */
+function reaches(graph: Map<string, string[]>, start: string, target: string): boolean {
+  const seen = new Set([start]);
+  const stack = [start];
+  while (stack.length > 0) {
+    const next = stack.pop() as string;
+    for (const edge of graph.get(next) ?? []) {
+      if (edge === target) return true;
+      if (!seen.has(edge)) {
+        seen.add(edge);
+        stack.push(edge);
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * The 70 KB is allowed in a bundle that reads a fact, and nowhere else.
+ *
+ * The direct-importer test above stopped being enough the moment T27 wired the
+ * facts into `getCountryProfile`: nothing imports the JSON but lib/countryFacts.ts,
+ * and every module that imports THAT one inherits the bytes. What matters is
+ * which `"use client"` entry points reach it along any path at all, which is a
+ * graph question, not a grep one.
+ *
+ * The split that keeps the list short is lib/countryBaseProfile.ts — see its
+ * header. Four map and route components read a country's seasons, crowd,
+ * holidays, climate and transport and none of its facts; before the split they
+ * would have paid 70 KB for data nothing on the page reads.
+ */
+describe("only the surfaces that read a fact pay for the artifact", () => {
+  const FILES = sourceFiles();
+  const GRAPH = valueImportGraph(FILES);
+  const ARTIFACT_READER = "lib/countryFacts.ts";
+  const CLIENTS = FILES.filter((file) => /^\s*["']use client["']/m.test(file.code)).map(
+    (file) => file.path
+  );
+
+  /**
+   * Seasons, crowd, holidays, climate, transport — and the modules that serve
+   * them. Every one of these is rendered on pages that read no country fact,
+   * so a `true` here is 70 KB of dead weight in a map bundle.
+   */
+  const MUST_STAY_CHEAP = [
+    "components/map/MapExplorer.tsx",
+    "components/map/MonthTimeline.tsx",
+    "components/map/PlacePopup.tsx",
+    "components/trip/RouteMap.tsx",
+    "lib/countryBaseProfile.ts",
+    "lib/countries.ts",
+    "lib/months.ts",
+    "lib/route.ts",
+    "lib/tripSeason.ts",
+  ];
+
+  test("the walk resolves real edges, or every check below is vacuous", () => {
+    // Three independent arming claims: the tree was walked, the client set is
+    // real, and the graph resolves both a direct edge and a transitive path.
+    expect(FILES.length).toBeGreaterThan(150);
+    expect(CLIENTS.length).toBeGreaterThan(40);
+    expect(GRAPH.get("lib/countryProfile.ts")).toContain(ARTIFACT_READER);
+    // PlanStep reaches it three hops away (→ itinerary → countryProfile →
+    // countryFacts) and names it nowhere, so a `true` for it can only come
+    // from the transitive walk actually working.
+    const planStep = FILES.find((file) => file.path === "components/PlanStep.tsx");
+    expect(planStep?.code).not.toContain("countryFacts");
+    expect(reaches(GRAPH, "components/PlanStep.tsx", ARTIFACT_READER)).toBe(true);
+  });
+
+  test("`import type` is not an edge, so the template layer stays free", () => {
+    // lib/countryTips.ts names `CountryFacts` in an `import type`. If the walk
+    // counted that, every consumer of a tip template would look like it paid
+    // for the artifact and this whole contract would be noise.
+    expect(GRAPH.get("lib/countryTips.ts")).not.toContain(ARTIFACT_READER);
+    expect(reaches(GRAPH, "lib/countryTips.ts", ARTIFACT_READER)).toBe(false);
+  });
+
+  test("no map, route or calendar surface reaches the artifact", () => {
+    const offenders = MUST_STAY_CHEAP.filter((path) => reaches(GRAPH, path, ARTIFACT_READER));
+    expect(offenders).toEqual([]);
+    // The list is real files, not typos that can never fail.
+    const scanned = FILES.map((file) => file.path);
+    for (const path of MUST_STAY_CHEAP) expect(scanned).toContain(path);
+    expect(MUST_STAY_CHEAP).toHaveLength(9);
+  });
+
+  test("the client entry points that pay for it are exactly these", () => {
+    // Pinned, not bounded. Every name here reads a country fact — a tip, a
+    // packing item, a gap note or the money pivot — and the list is short
+    // because lib/countryBaseProfile.ts exists. A new name appearing is not
+    // necessarily wrong, but it is 70 KB in one more bundle and it should be
+    // a decision somebody made rather than one that happened.
+    const paying = CLIENTS.filter((path) => reaches(GRAPH, path, ARTIFACT_READER)).sort();
+    expect(paying).toEqual([
+      "app/plan/page.tsx",
+      "components/PlanStep.tsx",
+      "components/TripView.tsx",
+      "components/shell/TripAccentProvider.tsx",
+      "components/trip/BalancesCard.tsx",
+      "components/trip/DayCard.tsx",
+      "components/trip/ExpenseForm.tsx",
+      "components/trip/KitTab.tsx",
+      "components/trip/MoneyTab.tsx",
+      "components/trip/PackingSection.tsx",
+      "components/trip/PlanTab.tsx",
+      "components/trip/TodayTab.tsx",
+      "components/trip/TrackerTab.tsx",
+    ]);
+    // And the complement is not empty: most client components pay nothing.
+    expect(CLIENTS.length - paying.length).toBeGreaterThan(20);
   });
 });

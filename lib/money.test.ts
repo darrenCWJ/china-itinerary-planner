@@ -153,9 +153,14 @@ describe("convertedTotals", () => {
 
   test("the country profile supplies the pivot with no special-casing", () => {
     const settings = { home: "SGD", rates: { SGD: 5.2 } };
-    expect(convertedTotals(totals, settings, getCountryProfile("CN").currency)).toEqual(
-      convertedTotals(totals, settings)
-    );
+    const pivot = getCountryProfile("CN").currency;
+    // Narrowing, and an assertion in its own right. `currency` is
+    // `string | null` since T27, and `convertedTotals` defaults its pivot to
+    // "CNY" — so a null slipping through here would take the default and make
+    // the comparison below tautologically true. This is what stops it.
+    expect(pivot).toBe("CNY");
+    if (pivot === null) return;
+    expect(convertedTotals(totals, settings, pivot)).toEqual(convertedTotals(totals, settings));
   });
 
   test("a zero-decimal expense converts into a two-decimal pivot", () => {
