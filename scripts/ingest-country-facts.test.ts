@@ -531,6 +531,26 @@ describe("buildQuery", () => {
       buildQuery({ name: "holidays", property: "P832", fields: [], columns: [], batch: 50 }, ["PE"])
     ).toThrow(/no SPARQL query is defined/);
   });
+
+  test("the language query asks about STATEMENTS, because the scope lives in a qualifier", () => {
+    // The mutation this exists to catch: reverting to `?c wdt:P37 ?item`.
+    // `wdt:` throws qualifiers away, and `P518 applies to part` is the only
+    // thing that distinguishes "official in the United States" from "official
+    // in Puerto Rico" — so the truthy form published "Carolinian, Chamorro,
+    // Hawaiian, Samoan and Spanish are official languages" about the US.
+    const languages = PROPERTIES.find((property) => property.name === "languages")!;
+    const query = buildQuery(languages, ["US", "NO"]);
+    expect(query).toContain("?c p:P37 ?st");
+    expect(query).toContain("?st a wikibase:BestRank");
+    expect(query).toContain("BIND(EXISTS { ?st pq:P518 ?part } AS ?scoped)");
+    expect(query).not.toMatch(/wdt:P37/);
+    // And the column has to be SELECTed, not merely bound: `parseBindings`
+    // refuses a response missing a declared column, so a query that stopped
+    // returning it demotes the property and carries yesterday's values
+    // forward rather than silently publishing every scoped statement.
+    expect(languages.columns).toContain("scoped");
+    expect(query).toContain("?scoped");
+  });
 });
 
 describe("COUNTRY_CODES", () => {
@@ -699,13 +719,14 @@ describe("pickLanguages", () => {
   });
 
   test("drops Guinea's meta-item by id and KEEPS French, which the boundary could not", () => {
-    // The one non-language among the 215 distinct P37 items measured
-    // 2026-08-27. T26 refused it at the reader by label shape, which costs
-    // Guinea the whole field because a language list is all-or-nothing there.
-    // Dropped here, the surviving set is what upstream actually states.
+    // The meta-item among the 215 distinct P37 items measured 2026-08-27. T26
+    // refused it at the reader by label shape, which costs Guinea the whole
+    // field because a language list is all-or-nothing there. Dropped here, the
+    // surviving set is what upstream actually states.
     expect(pickLanguages(GUINEA_LANGUAGE_ROWS)).toEqual({
       names: ["French"],
-      soleDroppedMeta: false,
+      soleDropped: false,
+      territoriallyScoped: false,
     });
   });
 
@@ -717,18 +738,102 @@ describe("pickLanguages", () => {
     expect(pickLanguages(relabelled).names).toEqual(["French"]);
   });
 
-  test("flags a country whose ONLY language value is the meta-item instead of silently emptying it", () => {
+  test("flags a country whose ONLY language value is a dropped item instead of silently emptying it", () => {
     expect(pickLanguages([{ country: "XX", item: entity("Q1339026"), value: "languages of Guinea" }])).toEqual({
       names: null,
-      soleDroppedMeta: true,
+      soleDropped: true,
+      territoriallyScoped: false,
     });
   });
 
-  test("the dropped-item set is exactly the one measured meta-item", () => {
+  test("drops Norway's two WRITTEN FORMS and keeps the languages they are forms of", () => {
+    // NO's real P37 answer, measured 2026-08-27. Bokmal and Nynorsk are the
+    // two written standards OF Norwegian, which Norway also lists in its own
+    // right, so publishing all four made `languageTip` name one language three
+    // times: "Bokmal, Norwegian, Nynorsk and Sami are official languages".
+    const rows: Row[] = [
+      { country: "NO", item: entity("Q25167"), value: "Bokm\u00e5l", scoped: "false" },
+      { country: "NO", item: entity("Q9043"), value: "Norwegian", scoped: "false" },
+      { country: "NO", item: entity("Q25164"), value: "Nynorsk", scoped: "false" },
+      { country: "NO", item: entity("Q56463"), value: "S\u00e1mi", scoped: "false" },
+    ];
+    expect(pickLanguages(rows).names).toEqual(["Norwegian", "S\u00e1mi"]);
+  });
+
+  test("drops the Philippines' code-switching register and keeps the constitutional pair", () => {
+    // PH's real P37 answer, measured 2026-08-27. Taglish is the Tagalog and
+    // English register Manila speaks - its own statement is qualified `nature
+    // of statement: de facto` - and "English, Filipino and Taglish are
+    // official languages" is not a sentence anybody can act on.
+    const rows: Row[] = [
+      { country: "PH", item: entity("Q1860"), value: "English", scoped: "false" },
+      { country: "PH", item: entity("Q33298"), value: "Filipino", scoped: "false" },
+      { country: "PH", item: entity("Q2530387"), value: "Taglish", scoped: "false" },
+    ];
+    expect(pickLanguages(rows).names).toEqual(["English", "Filipino"]);
+  });
+
+  test("withholds the WHOLE field when any statement applies to only part of the country", () => {
+    // THE UNITED STATES. Every truthy P37 statement it carries is scoped to a
+    // territory - Carolinian and Chamorro to the Northern Marianas, Hawaiian
+    // to Hawaii, Samoan to American Samoa, Spanish to Puerto Rico - and
+    // English's is at deprecated rank, so it is absent from a truthy query
+    // altogether. Unfiltered, the app told a traveller the United States has
+    // five official languages and none of them is English, then SAVED that
+    // sentence into the trip and republished it on the public briefing link.
+    const rows: Row[] = [
+      { country: "US", item: entity("Q28427"), value: "Carolinian", scoped: "true" },
+      { country: "US", item: entity("Q33262"), value: "Chamorro", scoped: "true" },
+      { country: "US", item: entity("Q33569"), value: "Hawaiian", scoped: "true" },
+      { country: "US", item: entity("Q34011"), value: "Samoan", scoped: "true" },
+      { country: "US", item: entity("Q1321"), value: "Spanish", scoped: "true" },
+    ];
+    expect(pickLanguages(rows)).toEqual({
+      names: null,
+      soleDropped: false,
+      territoriallyScoped: true,
+    });
+  });
+
+  test("withholds even when unscoped statements survive, because a partial list is its own falsehood", () => {
+    // AZERBAIJAN, measured 2026-08-27, and the reason this rule is
+    // all-or-nothing rather than a filter. Azerbaijani is the SCOPED
+    // statement - upstream used `applies to part` to name a variety, "Standard
+    // Azerbaijani", rather than a territory - so publishing the remainder
+    // leaves `Azerbaijani Sign Language` alone, which `languageTip` renders as
+    // "Azerbaijani Sign Language is the official language". Trading a false
+    // sentence about the United States for a false one about Azerbaijan is not
+    // a fix.
+    const rows: Row[] = [
+      { country: "AZ", item: entity("Q9292"), value: "Azerbaijani", scoped: "true" },
+      { country: "AZ", item: entity("Q36386"), value: "Azerbaijani Sign Language", scoped: "false" },
+    ];
+    expect(pickLanguages(rows).names).toBeNull();
+    expect(pickLanguages(rows).territoriallyScoped).toBe(true);
+  });
+
+  test("a missing or false scope column publishes normally, so an unscoped feed is not a wipe", () => {
+    // `?scoped` is a SPARQL boolean rendered as the literal text "true" or
+    // "false". Anything else - an absent column, an empty cell - means the
+    // statement said nothing about scope, which is the ordinary case for 434
+    // of the 451 measured rows and must not withhold.
+    expect(pickLanguages([{ country: "PE", item: entity("Q1321"), value: "Spanish" }]).names).toEqual(["Spanish"]);
+    expect(
+      pickLanguages([{ country: "PE", item: entity("Q1321"), value: "Spanish", scoped: "" }]).names
+    ).toEqual(["Spanish"]);
+    expect(
+      pickLanguages([{ country: "PE", item: entity("Q1321"), value: "Spanish", scoped: "FALSE" }]).names
+    ).toEqual(["Spanish"]);
+  });
+
+  test("the dropped-item set is exactly the four measured non-languages", () => {
     // Measured 2026-08-27: 451 P37 rows, 243 countries, 215 distinct items,
-    // and exactly one of them is not a language. A second id here would be a
-    // rule nobody measured.
-    expect([...DROPPED_LANGUAGE_ITEMS]).toEqual(["Q1339026"]);
+    // and 42 distinct `P31` classes across them. Exactly four items are not a
+    // language a traveller could learn - one meta-item, two written forms of
+    // Norwegian, one code-switching register. A fifth id here would be a rule
+    // nobody measured. Sorted so the assertion does not depend on insertion
+    // order.
+    expect([...DROPPED_LANGUAGE_ITEMS].sort()).toEqual(["Q1339026", "Q25164", "Q25167", "Q2530387"]);
   });
 });
 
@@ -873,7 +978,7 @@ describe("buildFacts", () => {
         { country: "GN", value: "Republic of Guinea" },
       ],
     });
-    expect(built.diagnostics.soleDroppedMetaLanguages).toEqual(["GN"]);
+    expect(built.diagnostics.soleDroppedLanguages).toEqual(["GN"]);
     expect(built.countries.GN.officialLanguages).toBeUndefined();
     expect(built.diagnostics.withheld.name).toEqual(["GN"]);
     expect(built.countries.GN.name).toBeUndefined();
@@ -1268,7 +1373,8 @@ function sampleBuilt(): {
     countries: ordered,
     diagnostics: {
       soleDroppedArticlePlugs: [],
-      soleDroppedMetaLanguages: [],
+      soleDroppedLanguages: [],
+      scopedLanguages: [],
       curatedFired: [],
       curatedStale: [],
       withheld: {},
@@ -1462,13 +1568,26 @@ describe("assertFactsSane", () => {
     expect(() => assertFactsSane(built, null)).toThrow(/as their ONLY plug value/);
   });
 
-  test("rejects a build where the language meta-item became a country's only value", () => {
+  test("rejects a build where a dropped language item became a country's only value", () => {
     // The LIVE-DATA invariant for `DROPPED_LANGUAGE_ITEMS`, armed exactly like
-    // the plug article's. Dropping Q1339026 by id is lossless only while zero
-    // countries rely on it.
+    // the plug article's. Dropping Q1339026, Bokmål, Nynorsk and Taglish by id
+    // is lossless only while zero countries rely on them.
     const built = sampleBuilt();
-    built.diagnostics.soleDroppedMetaLanguages = ["GN"];
-    expect(() => assertFactsSane(built, null)).toThrow(/as their ONLY official-language value/);
+    built.diagnostics.soleDroppedLanguages = ["GN"];
+    expect(() => assertFactsSane(built, null)).toThrow(/as their official-language values/);
+  });
+
+  test("does NOT reject a build where a country's languages were all territorially scoped", () => {
+    // The deliberate asymmetry with the check above, pinned so it cannot be
+    // "tidied" into symmetry. A dropped id emptying a country means the drop
+    // list has outgrown its measurement; a scoped statement emptying one is
+    // the rule working — it is what stops the United States being told
+    // Carolinian is one of its official languages. US, AF, AZ, BE, BQ and PW
+    // are measured members of that set, and the nightly job must not go red
+    // for them.
+    const built = sampleBuilt();
+    built.diagnostics.scopedLanguages = ["US", "BE"];
+    expect(() => assertFactsSane(built, null)).not.toThrow();
   });
 
   test.each([
@@ -2127,7 +2246,7 @@ describe("run() aborts before any write primitive fires", () => {
     await expectNoWrite(feed, /PE.name is "Republic of Peru"/);
   });
 
-  test("a feed where the language meta-item became a country's only value", async () => {
+  test("a feed where a dropped language item became a country's only value", async () => {
     const feed = healthyFeed();
     dropRows(feed, "languages", [FILLERS[0]]);
     (feed.languages as Row[]).push({
@@ -2135,7 +2254,24 @@ describe("run() aborts before any write primitive fires", () => {
       item: `http://www.wikidata.org/entity/${[...DROPPED_LANGUAGE_ITEMS][0]}`,
       value: "languages of Nowhere",
     });
-    await expectNoWrite(feed, /as their ONLY official-language value/);
+    await expectNoWrite(feed, /as their official-language values/);
+  });
+
+  test("a feed whose languages are ALL territorially scoped still writes, because that is the rule working", async () => {
+    // The end-to-end half of the asymmetry: the United States shape, driven
+    // through the real build-gate-write path. It must produce a file, and that
+    // file must simply have no `officialLanguages` for the country — not an
+    // empty array, not a partial list, and not an aborted run.
+    const feed = healthyFeed();
+    dropRows(feed, "languages", [FILLERS[0]]);
+    (feed.languages as Row[]).push(
+      { country: FILLERS[0], item: entity("Q33569"), value: "Hawaiian", scoped: "true" },
+      { country: FILLERS[0], item: entity("Q1321"), value: "Spanish", scoped: "true" }
+    );
+    const dataDir = freshDataDir();
+    await run({ fetchBindings: loaderFor(feed), dataDir });
+    expect(writtenPayload().countries[FILLERS[0]].officialLanguages).toBeUndefined();
+    expect(Object.keys(writtenPayload().countries[FILLERS[0]]).length).toBeGreaterThan(1);
   });
 
   test("a feed where a curated override has gone stale", async () => {

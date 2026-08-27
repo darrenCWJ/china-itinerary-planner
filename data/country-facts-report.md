@@ -1,6 +1,6 @@
 # Country facts report
 
-- Generated: 2026-08-27T08:33:43.041Z
+- Generated: 2026-08-27T14:20:38.533Z
 - Source: https://query.wikidata.org/sparql (Wikidata (CC0))
 - Licence: CC0-1.0
 - Contents: structured scalars only. Never prose, never a sentence.
@@ -29,7 +29,7 @@ simply does not run.
 | `voltageV` | 221 | 89.8% |
 | `drivingSide` | 245 | 99.6% |
 | `emergency` | 221 | 89.8% |
-| `officialLanguages` | 243 | 98.8% |
+| `officialLanguages` | 237 | 96.3% |
 | `callingCode` | 237 | 96.3% |
 | `lat` | 246 | 100.0% |
 
@@ -41,11 +41,11 @@ what we do not have.
 
 | Rendered fields | Countries |
 | --- | --- |
-| 7 of 7 | 187 |
-| 6 of 7 | 31 |
+| 7 of 7 | 182 |
+| 6 of 7 | 36 |
 | 5 of 7 | 12 |
-| 4 of 7 | 10 |
-| 3 of 7 | 6 |
+| 4 of 7 | 9 |
+| 3 of 7 | 7 |
 
 ## Thinnest records
 
@@ -57,6 +57,7 @@ what we do not have.
 | SJ | 5 |
 | CX | 5 |
 | CC | 5 |
+| BQ | 5 |
 | WF | 6 |
 | TK | 6 |
 | SX | 6 |
@@ -65,7 +66,6 @@ what we do not have.
 | NA | 6 |
 | MP | 6 |
 | LS | 6 |
-| IM | 6 |
 
 ## Not derivable
 
@@ -99,6 +99,17 @@ Recorded so it is not re-litigated. Each of these was measured, not assumed.
 - **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**
   No structured source. Visa rules also depend on the traveller's passport, which
   the app does not know.
+- **Official languages for AF, AZ, BE, BQ, PW and US.** Measured 2026-08-27: every
+  P37 statement these six carry, or enough of them that the remainder is not a
+  national list, is qualified `applies to part` — upstream stating on the statement
+  itself that it is not a claim about the whole country. The United States is the
+  case that forces the rule: Carolinian and Chamorro apply to the Northern Marianas,
+  Hawaiian to Hawaii, Samoan to American Samoa and Spanish to Puerto Rico, while
+  English sits at deprecated rank — so an unfiltered query told a traveller the
+  United States has five official languages and none of them is English. Publishing
+  the unscoped remainder instead was measured and rejected: it leaves Azerbaijan
+  with `Azerbaijani Sign Language` alone, trading one false sentence for another. So
+  the whole field is withheld for all six and the gap note names it.
 - **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole
   distinct P2853 value set across these countries is fourteen items, thirteen
   standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single
