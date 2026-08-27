@@ -1,4 +1,5 @@
-# Refreshes the worldwide city catalog from GeoNames' cities500 dump.
+# Refreshes the worldwide city catalog from GeoNames' cities500 dump, and the
+# per-country facts artifact from Wikidata.
 #
 # Commits only when the catalog actually changed. `scripts/ingest-cities.mjs`
 # preserves the previous `generatedAt` on every artifact whose payload is
@@ -7,10 +8,15 @@
 # `stampedPayload` — so a quiet day produces a byte-identical tree. That is
 # what keeps this from committing 246 shards and a 3.7 MB index every night,
 # and it is verified by Task 6 Step 6 rather than assumed here.
+# `scripts/ingest-country-facts.mjs` uses the same `stampedPayload` idiom for
+# data/country-facts.json, verified byte-identical across five consecutive
+# live runs on a quiet day — that is what the change test below depends on.
 #
 # A commit here triggers a Vercel deploy, so the artifacts reach production
-# without anyone doing anything. That is also why the ingest script aborts
-# BEFORE writing when a sanity check fails: nothing looks at this run.
+# without anyone doing anything. That is also why every ingest step below
+# aborts BEFORE writing when its own sanity check fails: nothing looks at this
+# run. ingest-country-facts.mjs's `assertFactsSane` carries 34 throw sites and
+# sits above `mkdirSync`, same shape as the other two scripts.
 #
 # ...and it is why this job runs the test suite ITSELF, in "Verify the
 # artifacts" below, before it is allowed to commit. GitHub does not create
@@ -33,7 +39,9 @@
 # call to be made, rather than in a production incident.
 #
 # GeoNames is CC BY 4.0 — attribution required. The credit lives in
-# components/plan/GeoNamesCredit.tsx, not here.
+# components/plan/GeoNamesCredit.tsx, not here. Wikidata (country facts) is
+# CC0 — no attribution condition — so it adds nothing there; see
+# data/country-facts-report.md's own Attribution section for the record.
 name: Refresh cities
 
 on:
@@ -73,14 +81,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # 24 for stable TypeScript type stripping: both scripts import
-          # lib/*.ts leaves directly rather than keeping a copy that could drift.
+          # 24 for stable TypeScript type stripping: ingest-cities.mjs imports
+          # lib/*.ts leaves directly rather than keeping a copy that could
+          # drift. enrich-cities.mjs and ingest-country-facts.mjs are
+          # node:fs|path|url only and don't need it for that reason, but run
+          # under the same setup-node step.
           node-version: 24
           cache: npm
 
-      # Both ingest scripts still run on Node built-ins alone — this install is
-      # for vitest, so "Verify the artifacts" below can run. It is first so a
-      # broken lockfile fails in seconds instead of after an hour of ingest.
+      # All three ingest scripts still run on Node built-ins alone — this
+      # install is for vitest, so "Verify the artifacts" below can run. It is
+      # first so a broken lockfile fails in seconds instead of after an hour
+      # of ingest.
       # legacy-peer-deps: .npmrc sets it and `npm ci` honours it, kept explicit
       # for the reason ci.yml gives.
       - run: npm ci --legacy-peer-deps
@@ -98,42 +110,55 @@ jobs:
       - name: Enrich the top cities per country
         run: node scripts/enrich-cities.mjs
 
-      # The whole suite, not a hand-picked subset: lib/cityShard.test.ts and
-      # lib/server/cityIndex.test.ts are the two files that read these
-      # artifacts off disk today, but naming them here would be a list that
-      # silently stops being complete the day someone adds a third. `npm test`
-      # is also literally ci.yml's gate, which is the point — see the header.
-      # `npx tsc --noEmit`, ci.yml's other half, is deliberately not repeated:
-      # these scripts write JSON only, so every TypeScript file in the tree is
-      # byte-identical to the commit CI already type-checked.
+      # A third, independent source (Wikidata), run here so its output is
+      # covered by "Verify the artifacts" below rather than sailing past it.
+      # Introduces no new outage coupling: enrich-cities.mjs above already
+      # depends on the same Wikidata SPARQL endpoint. `assertFactsSane` runs
+      # before any write, same as the two ingests above — see the header.
+      - name: Ingest country facts
+        run: node scripts/ingest-country-facts.mjs
+
+      # The whole suite, not a hand-picked subset: lib/cityShard.test.ts,
+      # lib/server/cityIndex.test.ts and lib/countryFacts.test.ts are the
+      # files that read these artifacts off disk today, but naming them here
+      # would be a list that silently stops being complete the day someone
+      # adds a fourth. `npm test` is also literally ci.yml's gate, which is
+      # the point — see the header. `npx tsc --noEmit`, ci.yml's other half,
+      # is deliberately not repeated: these scripts write JSON only, so every
+      # TypeScript file in the tree is byte-identical to the commit CI
+      # already type-checked.
       - name: Verify the artifacts against the repo's own tests
         run: npm test
 
-      - name: Commit if the catalog changed
+      - name: Commit if the catalog or facts changed
         run: |
           # `git status --porcelain`, not `git diff --quiet`: `git diff` is
           # blind to untracked files, and `assertSane` explicitly accepts a
           # country GeoNames newly covers — whose shard arrives untracked.
-          # refresh-airports.yml can use `git diff` only because it watches one
-          # always-tracked file.
+          # data/country-facts.json is the same shape of risk: a country
+          # Wikidata newly answers for arrives untracked too. refresh-airports
+          # .yml can use `git diff` only because it watches one always-tracked
+          # file.
           #
           # This short-circuit is only reachable because every artifact under
           # these paths is byte-stable on a quiet day (see the header). If this
-          # job commits every night, that is what broke — check Task 6 Step 6.
-          CHANGED="$(git status --porcelain -- public/cities data/cities-index.json data/cities-enrich-targets.json)"
+          # job commits every night, that is what broke — check Task 6 Step 6
+          # for the city artifacts, or re-run ingest-country-facts.mjs twice in
+          # a row and diff for the facts artifact.
+          CHANGED="$(git status --porcelain -- public/cities data/cities-index.json data/cities-enrich-targets.json data/country-facts.json)"
           if [ -z "$CHANGED" ]; then
-            echo "No change in the city catalog — nothing to commit."
+            echo "No change in the city catalog or country facts — nothing to commit."
             exit 0
           fi
           echo "$CHANGED" | head -20
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # data/cities-report.md is staged but deliberately NOT part of the
-          # change test above: it is prose about the catalog, not something the
-          # app reads, so it rides along with a real change instead of being
-          # able to cause one.
-          git add public/cities data/cities-index.json data/cities-enrich-targets.json data/cities-report.md
-          git commit -m "chore: refresh cities from GeoNames"
+          # data/cities-report.md and data/country-facts-report.md are staged
+          # but deliberately NOT part of the change test above: both are prose
+          # about the data, not something the app reads, so each rides along
+          # with a real change instead of being able to cause one.
+          git add public/cities data/cities-index.json data/cities-enrich-targets.json data/cities-report.md data/country-facts.json data/country-facts-report.md
+          git commit -m "chore: refresh cities and country facts"
           # The concurrency group keeps the other refresh job out of this
           # window, but a human push to main can still land inside it and make
           # this a non-fast-forward. Rebase the one data commit onto their tip
