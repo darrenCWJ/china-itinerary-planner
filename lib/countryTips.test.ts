@@ -97,7 +97,7 @@ describe("golden output", () => {
       "Prices are in PEN. Set your home currency on the Money tab for live conversions.",
       "Sockets are type A, B and C at 220 V — bring a universal adapter.",
       "Emergency numbers: 105 police, 116 fire, 106 or 117 ambulance.",
-      "Aymara, Quechua and Spanish are official languages — download an offline translation pack before you go.",
+      "Aymara, Quechua and Spanish are official languages.",
       "Traffic drives on the right. The international dialling code is +51.",
     ]);
     expect(powerAdapterItem("Peru", PE)).toBe(
@@ -122,7 +122,7 @@ describe("golden output", () => {
       "Prices are in CNY. Set your home currency on the Money tab for live conversions.",
       "Sockets are type A, C and I at 220 V — bring a universal adapter.",
       "Emergency numbers: 110 police, 119 fire, 120 ambulance.",
-      "Putonghua is the official language — download an offline translation pack before you go.",
+      "Putonghua is the official language.",
       "Traffic drives on the right. The international dialling code is +86.",
     ]);
     expect(cashBackupItem(CN)).toBe("Some CNY cash as a backup");
@@ -143,7 +143,7 @@ describe("golden output", () => {
       // Singular, and bare: upstream gives no role for 999, and inventing one
       // ("general", "emergency") would be this module writing a fact.
       "Emergency number: 999.",
-      "English is the official language — download an offline translation pack before you go.",
+      "English is the official language.",
       // Driving side alone. The dialling clause is simply absent rather than
       // taking the driving-side clause down with it.
       "Traffic drives on the left.",
@@ -153,7 +153,7 @@ describe("golden output", () => {
     expect(translationPackItem(SH)).toBe("Offline English translation pack");
     expect(buildGapNote("Saint Helena", SH)).toEqual([
       "These notes come from open reference data. We don't have Saint Helena-specific guidance on payments, connectivity, booking channels or public holidays yet — and we'd rather leave that blank than guess.",
-      "We also have no currency, plug types, mains voltage or dialling code for Saint Helena.",
+      "Our data also has no currency, plug types, mains voltage or dialling code for this country.",
     ]);
   });
 
@@ -165,16 +165,42 @@ describe("golden output", () => {
     // carry more than four official languages.
     expect(languageTip(ZA)).toBe(
       "Afrikaans, English, Northern Sotho, Sesotho, South African Sign Language, Southern Ndebele, " +
-        "Swazi, Tsonga, Tswana, Venda, Xhosa and Zulu are official languages — download an offline " +
-        "translation pack before you go."
+        "Swazi, Tsonga, Tswana, Venda, Xhosa and Zulu are official languages."
     );
     // One number serving three roles. Listing the entries flat would repeat it
     // three times; dropping two would discard the roles it covers.
     expect(emergencyTip(ZA)).toBe("Emergency number: 112 police, fire and ambulance.");
     expect(buildGapNote("South Africa", ZA)).toEqual([
       "These notes come from open reference data. We don't have South Africa-specific guidance on payments, connectivity, booking channels or public holidays yet — and we'd rather leave that blank than guess.",
-      "We also have no plug types for South Africa.",
+      "Our data also has no plug types for this country.",
     ]);
+  });
+
+  test("the language tip states the fact and issues no instruction", () => {
+    // THE DEFECT. It used to end "— download an offline translation pack
+    // before you go", four tips below NEUTRAL_TIPS' "Download offline maps and
+    // a translation pack before you leave." Same instruction, twice, in one
+    // panel, for the 239 countries whose languages the artifact carries.
+    // `countryProfile.test.ts` holds the other half: every country still gets
+    // that instruction, exactly once, from the neutral tip.
+    expect(languageTip(PE)).toBe("Aymara, Quechua and Spanish are official languages.");
+    expect(languageTip(SH)).toBe("English is the official language.");
+    const imperative = /\b(download|bring|set|book|carry|install|check|tell)\b/i;
+    const offenders: string[] = [];
+    for (const code of Object.keys(COUNTRY_FACTS)) {
+      const tip = languageTip(getCountryFacts(code));
+      if (tip !== null && imperative.test(tip)) offenders.push(`${code}: ${tip}`);
+    }
+    expect(offenders).toEqual([]);
+    // Armed: the sweep found language tips to look at, and the regex it uses
+    // does fire on a line that carries an instruction.
+    const withLanguages = Object.keys(COUNTRY_FACTS).filter(
+      (code) => languageTip(getCountryFacts(code)) !== null
+    );
+    expect(withLanguages).toHaveLength(239);
+    expect(imperative.test("Download offline maps and a translation pack before you leave.")).toBe(
+      true
+    );
   });
 
   test("the two duplicate-role shapes, from the two real countries that have them", () => {
@@ -348,7 +374,7 @@ describe("every field, individually absent", () => {
     // Only the gap note, and it names all six.
     expect(buildGapNote("Nowhere", {})).toEqual([
       "These notes come from open reference data. We don't have Nowhere-specific guidance on payments, connectivity, booking channels or public holidays yet — and we'd rather leave that blank than guess.",
-      "We also have no currency, plug types, mains voltage, emergency numbers, official language or dialling code for Nowhere.",
+      "Our data also has no currency, plug types, mains voltage, emergency numbers, official language or dialling code for this country.",
     ]);
   });
 
@@ -416,7 +442,7 @@ describe("the gap note", () => {
     for (const { field, label } of GAP_NOTE_FIELDS) {
       const note = buildGapNote("Peru", without(PE, field));
       expect(note, `${field}`).toHaveLength(2);
-      expect(note[1]).toBe(`We also have no ${label} for Peru.`);
+      expect(note[1]).toBe(`Our data also has no ${label} for this country.`);
       // And names none of the other five. This is the half that catches a note
       // listing a field that IS present.
       for (const other of GAP_NOTE_FIELDS) {
@@ -441,11 +467,48 @@ describe("the gap note", () => {
 
   test("joins the labels with commas and a final or, in the fixed order", () => {
     expect(buildGapNote("Nowhere", { currencyCode: "PEN" })[1]).toBe(
-      "We also have no plug types, mains voltage, emergency numbers, official language or dialling code for Nowhere."
+      "Our data also has no plug types, mains voltage, emergency numbers, official language or dialling code for this country."
     );
     expect(buildGapNote("Nowhere", { callingCode: "+51" })[1]).toContain(
       "currency, plug types, mains voltage, emergency numbers or official language"
     );
+  });
+
+  test("line 2 says whose data is short, not what the country is like", () => {
+    // THE DEFECT. It read "We also have no official language for United
+    // States", which a reader takes as "the United States has no official
+    // language" — a claim about the country, from a sentence whose only job
+    // is to describe our coverage. The subject is now our data, and it can no
+    // longer be read the other way.
+    const line = buildGapNote("United States", without(PE, "officialLanguages"))[1];
+    expect(line).toBe("Our data also has no official language for this country.");
+    expect(line.startsWith("Our data")).toBe(true);
+  });
+
+  test("line 2 needs no article, because it interpolates no country name", () => {
+    // THE SECOND HALF, and the larger one. `for ${name}` wanted a "the" for
+    // "United States", "Philippines", "Isle of Man" and dozens more, must not
+    // have one for "Peru", and would have to REMOVE one for "The Bahamas" and
+    // "The Gambia" — which is a rule that is wrong for some of 246 names
+    // forever. Line 1 already names the country, attributively, which is the
+    // one position every name reads correctly in. So line 2 names none.
+    //
+    // Swept, not sampled: no country's line 2 contains its own name.
+    const offenders: string[] = [];
+    let swept = 0;
+    for (const code of Object.keys(COUNTRY_FACTS)) {
+      const name = getCountryName(code);
+      const line = buildGapNote(name, getCountryFacts(code))[1];
+      if (line === undefined) continue;
+      swept += 1;
+      if (line.includes(name)) offenders.push(`${code}: ${line}`);
+    }
+    expect(offenders).toEqual([]);
+    // Armed: 60 countries are missing at least one of the six fields, so the
+    // loop above is reading real second lines rather than skipping every one.
+    expect(swept).toBeGreaterThan(50);
+    // And armed the other way: the name is still on line 1, where it belongs.
+    expect(buildGapNote("United States", PE)[0]).toContain("United States-specific");
   });
 
   test("is withheld entirely when the country cannot be named", () => {
@@ -525,7 +588,7 @@ describe("the boundary validator", () => {
     expect(facts).toEqual({});
     expect(factTips(facts)).toEqual([]);
     expect(buildGapNote("Peru", facts)[1]).toBe(
-      "We also have no currency, plug types, mains voltage, emergency numbers, official language or dialling code for Peru."
+      "Our data also has no currency, plug types, mains voltage, emergency numbers, official language or dialling code for this country."
     );
   });
 
@@ -600,7 +663,7 @@ describe("the boundary and the committed artifact agree", () => {
     expect(raw.countries.GN.officialLanguages).toEqual(["French"]);
     expect(getCountryFacts("GN").officialLanguages).toEqual(["French"]);
     expect(languageTip(getCountryFacts("GN"))).toBe(
-      "French is the official language — download an offline translation pack before you go."
+      "French is the official language."
     );
     expect(translationPackItem(getCountryFacts("GN"))).toBe("Offline French translation pack");
     expect(buildGapNote("Guinea", getCountryFacts("GN"))).toHaveLength(1);

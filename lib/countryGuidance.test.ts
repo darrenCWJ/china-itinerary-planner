@@ -327,7 +327,7 @@ describe("a Peru trip still produces a plan", () => {
       "Prices are in PEN. Set your home currency on the Money tab for live conversions.",
       "Sockets are type A, B and C at 220 V — bring a universal adapter.",
       "Emergency numbers: 105 police, 116 fire, 106 or 117 ambulance.",
-      "Aymara, Quechua and Spanish are official languages — download an offline translation pack before you go.",
+      "Aymara, Quechua and Spanish are official languages.",
       "Traffic drives on the right. The international dialling code is +51.",
       "Travelling with kids: pack light and allow buffer time between stops.",
     ]);

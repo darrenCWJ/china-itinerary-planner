@@ -124,8 +124,8 @@ describe("PlanStep — the gap note", () => {
     // else. The four named here are exactly the four it is missing — a note
     // that named a field the country HAS would be a false claim of ignorance.
     expect(paragraphs[1]).toBe(
-      "We also have no currency, plug types, mains voltage or dialling code for " +
-        "Saint Helena, Ascension and Tristan da Cunha."
+      "Our data also has no currency, plug types, mains voltage or dialling code for " +
+        "this country."
     );
   });
 });

@@ -141,15 +141,30 @@ export function emergencyTip(facts: CountryFacts): string | null {
  * The cost is honest and visible: South Africa's twelve are all named, and
  * `countryTips.test.ts` carries that exact output as a golden so the cost is
  * reviewed rather than discovered.
+ *
+ * **It states the fact and stops.** It used to end "— download an offline
+ * translation pack before you go", four lines under `NEUTRAL_TIPS`' own
+ * "Download offline maps and a translation pack before you leave." Two
+ * templates carrying one instruction is not two pieces of advice, it is the
+ * same instruction twice — for 239 of the 246 countries — and a panel that
+ * repeats itself is a panel a traveller stops reading, which costs them the
+ * tips that were worth reading.
+ *
+ * The instruction stays on the neutral tip because that is the line every
+ * country gets: the seven with no official language in the artifact (AF, BQ,
+ * GP, MQ, PW, US, UY) never had this tip, so they lose nothing here and still
+ * get the advice. Stripping the neutral line instead and letting this one
+ * carry the instruction is the mirror-image mistake — it would leave exactly
+ * those seven, the countries we know least about, the only ones never told to
+ * download a translation pack. `countryProfile.test.ts` sweeps every country
+ * for the instruction and pins the count at one.
  */
 export function languageTip(facts: CountryFacts): string | null {
   const languages = facts.officialLanguages;
   if (languages === undefined || languages.length === 0) return null;
-  const subject =
-    languages.length === 1
-      ? `${languages[0]} is the official language`
-      : `${joinWith(languages, "and")} are official languages`;
-  return `${subject} — download an offline translation pack before you go.`;
+  return languages.length === 1
+    ? `${languages[0]} is the official language.`
+    : `${joinWith(languages, "and")} are official languages.`;
 }
 
 /**
@@ -255,6 +270,24 @@ export const GAP_NOTE_FIELDS = [
  * Line 2 only when one of the six fields above is absent, naming exactly
  * those and nothing else. A country carrying all six gets one line.
  *
+ * **Line 2 is about our data, and names no country.** It read "We also have no
+ * official language for United States", which a reader takes as a claim about
+ * the country — the exact opposite of what this note is for. Two things were
+ * wrong with it and the second is the larger one. It wanted an article the
+ * template cannot supply: "for Netherlands", "for Philippines", "for Isle of
+ * Man", "for Czech Republic" all want a "the" that "for Peru" and "for Japan"
+ * must not have, and a rule that decides that for 246 names is a rule that
+ * will be wrong for some of them forever — while the two names that carry
+ * their own article ("The Bahamas", "The Gambia") would need it taken away
+ * again. So the sentence stops putting a name in a slot that needs one.
+ *
+ * Nothing is lost by dropping it. Line 1 has already said whose data this is,
+ * one paragraph above and always rendered with it, and it says so
+ * ATTRIBUTIVELY — "United States-specific guidance" — which is the one
+ * position every name in the artifact reads correctly in without an article.
+ * What is left is a sentence whose subject is our data, which is what this
+ * note always meant to be about.
+ *
  * Returns `[]` for a blank country name. A note that cannot say whose data is
  * missing is not a statement anyone can act on, and the only codes that
  * produce a blank name are not countries: `getCountry("🙂").name` is `""`.
@@ -277,6 +310,8 @@ export function buildGapNote(countryName: string, facts: CountryFacts): string[]
   const missing = GAP_NOTE_FIELDS.filter(({ field }) => facts[field] === undefined).map(
     ({ label }) => label
   );
-  if (missing.length > 0) lines.push(`We also have no ${joinWith(missing, "or")} for ${name}.`);
+  if (missing.length > 0) {
+    lines.push(`Our data also has no ${joinWith(missing, "or")} for this country.`);
+  }
   return lines;
 }

@@ -128,8 +128,8 @@ describe("BriefingView — the gap note on the unauthenticated briefing", () => 
     const paragraphs = [...screen.getByRole("note").querySelectorAll("p")].map((p) => p.textContent);
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[1]).toBe(
-      "We also have no currency, plug types, mains voltage or dialling code for " +
-        "Saint Helena, Ascension and Tristan da Cunha."
+      "Our data also has no currency, plug types, mains voltage or dialling code for " +
+        "this country."
     );
   });
 

@@ -382,9 +382,38 @@ describe("a country the ingest reached gets the ingested sentences", () => {
       "Prices are in PEN. Set your home currency on the Money tab for live conversions.",
       "Sockets are type A, B and C at 220 V — bring a universal adapter.",
       "Emergency numbers: 105 police, 116 fire, 106 or 117 ambulance.",
-      "Aymara, Quechua and Spanish are official languages — download an offline translation pack before you go.",
+      "Aymara, Quechua and Spanish are official languages.",
       "Traffic drives on the right. The international dialling code is +51.",
     ]);
+  });
+
+  test("every country is told to download a translation pack exactly once", () => {
+    // THE DEFECT, and the reason it is pinned here rather than in
+    // countryTips.test.ts: neither template was wrong on its own. NEUTRAL_TIPS
+    // said "Download offline maps and a translation pack before you leave" and
+    // `languageTip` ended "— download an offline translation pack before you
+    // go", four lines apart, for 239 of the 246 countries. Only the assembled
+    // panel shows it, so only a test over assembled panels can hold it down.
+    //
+    // Counted over China too, whose hand-written tips carry their own version
+    // of the line and must keep carrying exactly one.
+    const counts = new Map<string, number>();
+    for (const code of ["CN", ...SWEPT]) {
+      const mentions = getCountryProfile(code).tips.filter((tip) => /translation/i.test(tip));
+      counts.set(code, mentions.length);
+    }
+    const wrong = [...counts].filter(([, n]) => n !== 1).map(([code, n]) => `${code}: ${n}`);
+    expect(wrong).toEqual([]);
+    // Armed on both sides. The sweep is not empty, and the seven countries the
+    // artifact has no official language for — the ones that never had the
+    // language tip, and so the ones a fix in the wrong direction would have
+    // silently left with no advice at all — are each still told exactly once.
+    expect(counts.size).toBeGreaterThan(245);
+    for (const code of ["AF", "BQ", "GP", "MQ", "PW", "US", "UY"]) {
+      expect(getCountryProfile(code).tips.filter((tip) => /translation/i.test(tip))).toEqual([
+        "Download offline maps and a translation pack before you leave.",
+      ]);
+    }
   });
 
   test("the packing document carries the plug line and the cash line", () => {
@@ -439,7 +468,7 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     // missing at least one field and get the second line.
     const twoLine = SWEPT.filter((code) => getCountryProfile(code).gapNote.length === 2);
     expect(twoLine).toHaveLength(61);
-    expect(getCountryProfile(twoLine[0]).gapNote[1]).toContain("We also have no ");
+    expect(getCountryProfile(twoLine[0]).gapNote[1]).toContain("Our data also has no ");
     // What the ingest's territorial-scope rule costs that number, DERIVED
     // rather than restated. The previous version of this comment named a moved
     // set of "AF, AZ, BE, BQ and PW" and put US outside it "for its plugs" —
@@ -450,10 +479,11 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     // hand-verified CURATED_FACTS row. So the set is read off the profiles
     // instead: the codes whose only missing field is their languages, minus
     // the three upstream never had any for.
-    const languagesAreTheWholeGap = twoLine.filter((code) => {
-      const profile = getCountryProfile(code);
-      return profile.gapNote[1] === `We also have no official language for ${profile.name}.`;
-    });
+    const languagesAreTheWholeGap = twoLine.filter(
+      (code) =>
+        getCountryProfile(code).gapNote[1] ===
+        "Our data also has no official language for this country."
+    );
     const movedByTheRule = languagesAreTheWholeGap.filter(
       (code) => !["GP", "MQ", "UY"].includes(code)
     );
@@ -462,7 +492,8 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     expect(twoLine.length - movedByTheRule.length).toBe(58);
     // Armed: the filter above is a whole-string match, so a reworded gap note
     // would silently empty it. GP, MQ and UY are the three it must still find
-    // beside the three the rule moved.
+    // beside the three the rule moved. The string carries no country name any
+    // more — line 2 names none, so one literal matches all six.
     expect(languagesAreTheWholeGap).toHaveLength(6);
   });
 

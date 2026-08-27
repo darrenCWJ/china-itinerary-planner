@@ -360,8 +360,8 @@ describe("buildBriefing resolves the gap note from the trip's country", () => {
     const b = buildBriefing(inCountry("SH"), PUBLIC_PLAIN);
     expect(b.gapNote).toHaveLength(2);
     expect(b.gapNote[1]).toBe(
-      "We also have no currency, plug types, mains voltage or dialling code for " +
-        "Saint Helena, Ascension and Tristan da Cunha."
+      "Our data also has no currency, plug types, mains voltage or dialling code for " +
+        "this country."
     );
   });
 
