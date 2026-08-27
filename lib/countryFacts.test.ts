@@ -527,34 +527,30 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     // necessarily wrong, but it is 70 KB in one more bundle and it should be
     // a decision somebody made rather than one that happened.
     //
-    // T28 added two, deliberately, and the reason is recorded here rather than
-    // in a commit message. Rendering the gap note on the briefing needs the
-    // trip's country; `buildBriefing` resolves it, so lib/briefing.ts now
-    // reaches the artifact, and components/shell/ShareMenu.tsx (which builds an
-    // in-app briefing client-side) and components/shell/AppShell.tsx (which
-    // mounts ShareMenu) inherit it.
+    // T28 added components/shell/ShareMenu.tsx and components/shell/AppShell.tsx
+    // on the argument that both are mounted from app/layout.tsx, which already
+    // paid through components/shell/TripAccentProvider.tsx — so two more names
+    // cost nothing measurable. The argument was sound and the premise was the
+    // defect: the root layout paid on EVERY route, /login and the
+    // unauthenticated /b/[code] briefing included, which quietly mooted this
+    // whole contract. T28b removed the premise, so all three names are gone:
     //
-    // The alternative was worse, not cheaper: had components/trip/BriefingView.tsx
-    // resolved the note itself it would have joined this list AND dragged the
-    // 70 KB into app/b/[code]/page.tsx, the UNAUTHENTICATED bearer-link route,
-    // whose client bundle otherwise carries no country data at all. Keeping the
-    // resolution in lib/briefing.ts keeps that page server-side-only for the
-    // artifact.
+    //   - TripAccentProvider now reads `tripCountry` from lib/tripCountry.ts,
+    //     a leaf that value-imports nothing. It never needed a profile.
+    //   - ShareMenu loads its briefing through `dynamic(() => import(...))`, so
+    //     `buildBriefing` and the artifact land in their own chunk instead of
+    //     the shell's. AppShell, which only mounts ShareMenu, came free.
     //
-    // And the two new names cost nothing measurable: both are mounted from
-    // app/layout.tsx, which already reaches the artifact through
-    // components/shell/TripAccentProvider.tsx — already on this list, already
-    // in the root layout, already shipping those bytes to every route. The
-    // arming test below pins that relationship so this justification cannot
-    // quietly stop being true.
+    // components/shell/ShareBriefing.tsx is what took their place, and it is
+    // the far side of that dynamic import: still a client component, still
+    // paying the 70 KB, but only for a member who opens Share and expands the
+    // briefing. See the root-layout contract below.
     const paying = CLIENTS.filter((path) => reaches(GRAPH, path, ARTIFACT_READER)).sort();
     expect(paying).toEqual([
       "app/plan/page.tsx",
       "components/PlanStep.tsx",
       "components/TripView.tsx",
-      "components/shell/AppShell.tsx",
-      "components/shell/ShareMenu.tsx",
-      "components/shell/TripAccentProvider.tsx",
+      "components/shell/ShareBriefing.tsx",
       "components/trip/BalancesCard.tsx",
       "components/trip/DayCard.tsx",
       "components/trip/ExpenseForm.tsx",
@@ -569,20 +565,100 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     expect(CLIENTS.length - paying.length).toBeGreaterThan(20);
   });
 
-  test("the two names T28 added are free riders on a bundle that already paid", () => {
-    // The justification above rests on one fact: the root layout already
-    // reaches the artifact without ShareMenu or AppShell, through
-    // TripAccentProvider. If that ever stopped being true, admitting two more
-    // root-layout components would start costing real bytes on every route and
-    // the comment above would be a stale excuse. So it is asserted, not
-    // assumed.
-    const layout = FILES.find((file) => file.path === "app/layout.tsx");
-    expect(layout?.code).toContain("components/shell/TripAccentProvider");
-    expect(layout?.code).toContain("components/shell/AppShell");
-    expect(reaches(GRAPH, "components/shell/TripAccentProvider.tsx", ARTIFACT_READER)).toBe(true);
+  /**
+   * app/layout.tsx, and everything it mounts.
+   *
+   * This is the assertion whose ABSENCE let the defect stand. Until T28b the
+   * root layout reached the artifact twice over — through TripAccentProvider,
+   * which wanted one field off `data.input`, and through AppShell → ShareMenu
+   * → lib/briefing.ts — and because the layout wraps every route, the 70 KB
+   * shipped to /login, which no signed-in user has ever reached, and to
+   * /b/[code], the unauthenticated bearer-link briefing. Every per-surface pin
+   * above was true the whole time and none of them could see it: they ask which
+   * SURFACES pay, and the layout is not a surface, it is the floor.
+   *
+   * Measured 2026-08-27: the layout's subtree fell from 41 modules to 18.
+   */
+  const ROOT_LAYOUT = "app/layout.tsx";
+  const ROOT_LAYOUT_SUBTREE = [
+    ROOT_LAYOUT,
+    "components/shell/AppShell.tsx",
+    "components/shell/PrefsProvider.tsx",
+    "components/shell/ShareMenu.tsx",
+    "components/shell/ShellTripContext.tsx",
+    "components/shell/TripAccentProvider.tsx",
+    "lib/tripCountry.ts",
+  ];
 
-    // And the public briefing page is the thing the split protects: it renders
-    // BriefingView, and BriefingView must not resolve the gap note itself.
+  test("the root layout reaches the artifact from nowhere, so every route starts free", () => {
+    // ARMED three ways, because a `false` out of a graph walk is exactly the
+    // shape a broken walk produces for free.
+    //
+    // (1) An app/ entry point that genuinely DOES pay is still detected, so a
+    // walk that resolved no app/ specifier at all cannot pass here. /b/[code]
+    // calls buildBriefing server-side, which is allowed and is the point: the
+    // bytes are on the server, not in that page's client bundle.
+    expect(reaches(GRAPH, "app/b/[code]/page.tsx", ARTIFACT_READER)).toBe(true);
+    // (2) The layout's own edges resolved. Pinned rather than counted: a new
+    // root-layout import is 70 KB on every route if it reaches the artifact,
+    // so admitting one should be a line in this diff.
+    expect([...(GRAPH.get(ROOT_LAYOUT) ?? [])].sort()).toEqual([
+      "components/shell/AppShell.tsx",
+      "components/shell/ShellTripContext.tsx",
+      "components/shell/TripAccentProvider.tsx",
+    ]);
+    // (3) The paths listed below are real files, not typos that can never fail.
+    const scanned = FILES.map((file) => file.path);
+    for (const path of ROOT_LAYOUT_SUBTREE) expect(scanned).toContain(path);
+
+    const offenders = ROOT_LAYOUT_SUBTREE.filter((path) =>
+      reaches(GRAPH, path, ARTIFACT_READER)
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  test("the accent bridge reads a leaf, not the module that pays", () => {
+    // TripAccentProvider needs `data.input.country ?? "CN"` and nothing else. It
+    // used to import that from lib/tripShared.ts, which reaches the artifact
+    // through `tripCurrency` — 70 KB for a one-line accessor, on every route.
+    const leaf = FILES.find((file) => file.path === "lib/tripCountry.ts")!;
+    expect(leaf.code).toContain("export function tripCountry");
+    // A leaf in the strong sense: both its imports are `import type`, so the
+    // walk resolves no edge out of it at all.
+    expect(GRAPH.get("lib/tripCountry.ts")).toEqual([]);
+    // And the bridge really reads it from there. Without this, the test above
+    // would keep passing if someone inlined the backfill instead.
+    const bridge = FILES.find(
+      (file) => file.path === "components/shell/TripAccentProvider.tsx"
+    )!;
+    expect(valueImportOf(bridge.code, /tripCountry/)).toBe(true);
+    expect(valueImportOf(bridge.code, /tripShared/)).toBe(false);
+    // lib/tripShared.ts still re-exports the name, so nothing that already reads
+    // a fact had to change its import.
+    const shared = FILES.find((file) => file.path === "lib/tripShared.ts")!;
+    expect(shared.code).toContain("export { tripCountry };");
+  });
+
+  test("the in-app briefing is a chunk of its own, not part of the shell", () => {
+    // The other root-layout path: AppShell mounts ShareMenu on every route, and
+    // ShareMenu used to import `buildBriefing`, which resolves the gap note and
+    // therefore the artifact. A static import here is the whole defect.
+    const menu = FILES.find((file) => file.path === "components/shell/ShareMenu.tsx")!;
+    expect(valueImportOf(menu.code, /lib\/briefing/)).toBe(false);
+    // The dynamic import that replaced it. The walk does not count it as an
+    // edge, and that is correct rather than convenient: the bundler splits it
+    // into a chunk fetched when the disclosure opens, so those bytes are not in
+    // the shell's.
+    expect(menu.code).toContain('import("./ShareBriefing")');
+    // The split is real, not cosmetic: the module on the far side of it is where
+    // the artifact actually lands.
+    expect(reaches(GRAPH, "components/shell/ShareBriefing.tsx", ARTIFACT_READER)).toBe(true);
+  });
+
+  test("the public briefing page renders without resolving a fact itself", () => {
+    // Unchanged from T28, and still what the lib/briefing.ts split protects:
+    // /b/[code] renders BriefingView, and BriefingView must not resolve the gap
+    // note, or the artifact lands in the bearer-link client bundle.
     expect(reaches(GRAPH, "components/trip/BriefingView.tsx", ARTIFACT_READER)).toBe(false);
     const view = FILES.find((file) => file.path === "components/trip/BriefingView.tsx");
     expect(view?.code).not.toContain("countryProfile");
