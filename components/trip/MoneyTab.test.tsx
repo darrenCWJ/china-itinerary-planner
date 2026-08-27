@@ -259,3 +259,49 @@ describe("converted-totals rows use the displayed-currency set (Minor 3)", () =>
     expect(screen.queryByText("¥123.45")).not.toBeInTheDocument();
   });
 });
+
+describe("the expense form's quick currencies on a China trip", () => {
+  /**
+   * THE ONE PLACE CHINA'S RENDERED OUTPUT LEGITIMATELY MOVED, pinned so it
+   * stays a decision instead of decaying into unnoticed drift.
+   *
+   * `d2ae2a6` replaced ExpenseForm's module-level `QUICK_CURRENCIES =
+   * ["CNY", "SGD"]` with `[tripCurrency, currencySettings.home]`, deduped.
+   * The branch rule is that China's rendered output must not change, and this
+   * narrowly does — in exactly one case, and only ever by REMOVING a button
+   * nothing entitled the member to. SGD was never a fact about China; it was a
+   * fact about this app's first users, who happened to be in Singapore.
+   *
+   * Both halves are pinned because only the pair states the decision: the
+   * member who HAS a home currency is unaffected, and the member who has not
+   * set one loses a free SGD button rather than gaining a wrong default.
+   */
+  function currencyOptions(): string[] {
+    fireEvent.click(screen.getByRole("button", { name: "+ Add expense" }));
+    const select = screen.getByLabelText("Currency") as HTMLSelectElement;
+    return [...select.options].map((o) => o.value);
+  }
+
+  test("a member who has never set a home currency gets CNY alone, not a free SGD button", () => {
+    renderMoneyTab({
+      currencySettings: { home: null, rates: {}, pivot: "CNY" },
+      tripCurrency: "CNY",
+    });
+
+    // Was ["CNY", "SGD", "other"] under the hardcoded pair. The SGD button was
+    // never earned by anything in the trip's data, and offering it made a
+    // one-tap mistake out of a currency this member has never named.
+    expect(currencyOptions()).toEqual(["CNY", "other"]);
+  });
+
+  test("a Singapore member on a China trip still gets exactly CNY then SGD", () => {
+    renderMoneyTab({
+      currencySettings: { home: "SGD", rates: { SGD: 0.19 }, pivot: "CNY" },
+      tripCurrency: "CNY",
+    });
+
+    // Byte-for-byte the old hardcoded pair, in the old order — now because the
+    // DATA says so rather than because a literal did.
+    expect(currencyOptions()).toEqual(["CNY", "SGD", "other"]);
+  });
+});

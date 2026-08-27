@@ -64,6 +64,18 @@ export function MoneyTab({
    * one, has no unit anybody has named. The form asks for three letters
    * instead of guessing, which is what `currencyPivot` already does with the
    * converted total.
+   *
+   * THIS IS THE ONE PLACE CHINA'S RENDERED OUTPUT MOVED, and the exception is
+   * deliberate rather than an oversight. The branch rule is that a China trip
+   * renders exactly what it rendered before; a Singapore member on a China
+   * trip still gets exactly `["CNY", "SGD"]`, in that order, so the rule holds
+   * for the case it was written about. What changes is the member who has
+   * NEVER set a home currency: they used to get a free SGD button and now get
+   * CNY alone. SGD was never a fact about China — it was a fact about this
+   * app's first users — and a one-tap button for a currency nobody on the trip
+   * has named is a mistake waiting to be tapped, not a convenience. Both cases
+   * are pinned in MoneyTab.test.tsx so the exception stays a decision on the
+   * record rather than drift somebody later mistakes for a regression.
    */
   const quickCurrencies = useMemo(
     () => [...new Set([tripCurrency, currencySettings.home].filter((c): c is string => c !== null))],
