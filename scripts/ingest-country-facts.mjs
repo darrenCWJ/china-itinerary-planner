@@ -1263,17 +1263,22 @@ export const REQUIRED_NAMES = {
  * null everywhere — the `assertExtractQualitySane` lesson, where a healthy
  * record count hid every description being replaced by a stub.
  *
- * MEASURED. Every floor below is the SHIPPING query's own post-withhold
- * coverage on 2026-08-27 — Task 25's run, not the design prototype's — less
- * exactly ten countries of headroom, one rule,
- * applied uniformly, so a reader can recompute each number rather than trust
- * it. Measured coverage, out of 246:
+ * MEASURED, and now DERIVED rather than described. `MEASURED_FIELD_COVERAGE`
+ * below is the shipping query's own post-withhold coverage OF THE COMMITTED
+ * ARTIFACT, out of 246. Eight of the ten floors are written as that number
+ * less `FIELD_HEADROOM`, so the arithmetic is executable and a reader
+ * recomputes it rather than trusting it. The two floors written as LITERALS
+ * are the two deliberate deviations, and the code shape is the tell: a literal
+ * floor is a pinned judgement that must NOT follow a future measurement down.
  *
- *   currencyCode 239   currencyName 239   plugs 207   voltageV 221
- *   drivingSide  245   emergency    221   officialLanguages 243
- *   callingCode  237   lat 246
+ * The table used to live in this comment as prose, and five of its numbers had
+ * gone stale against the file they described — one of them promising a safety
+ * margin the gate does not actually deliver. Hence it is code now. Headroom
+ * for any row is `MEASURED_FIELD_COVERAGE[f] - MIN_FIELD_COVERAGE[f]`, and
+ * `ingest-country-facts.test.ts` asserts the uniform rule, both deviations,
+ * and the exact count at which the gate flips.
  *
- * Three of these move against Task 24's provisional guesses and each is a
+ * Three rows moved against Task 24's provisional guesses and each is a
  * finding rather than a rounding:
  *
  * - `currencyCode` 234 -> 239. The design's prototype filtered labels to
@@ -1292,17 +1297,36 @@ export const REQUIRED_NAMES = {
  *   are withheld rather than guessed at; see `PLUG_LETTERS`. The floor tracks
  *   the measurement under the same -10 rule as every other row.
  *
- * `officialLanguages` measured 243 at Task 25 and measures 237 now, and the
- * FLOOR DOES NOT MOVE. The six-country fall is the territorial-scope rule in
- * `pickLanguages` doing its job — AF, AZ, BE, BQ, PW and US carry P37
- * statements upstream itself marks as applying to only part of the country,
- * and the United States one published a flat falsehood. Under the -10 rule
- * this row would now read 227; it stays at 233, because lowering a gate to
- * admit the fix that tripped it is how a gate becomes decoration. Four
- * countries of headroom is tighter than every other row here and that is the
- * point: the next six countries to lose their languages should stop the
- * nightly job, not pass it. The deviation is recorded here rather than left
- * for a reader to spot, exactly like `name`'s two.
+ * `officialLanguages` IS PINNED AT 233 AND DOES NOT MOVE WITH ITS
+ * MEASUREMENT. Task 25 measured 243. The territorial-scope rule in
+ * `pickLanguages` then withheld the whole field from six countries whose only
+ * P37 statements upstream itself marks as applying to part of the country —
+ * and the United States one published a flat falsehood — taking the row to
+ * 237. Commit 017468c gave two of those six back by hand (`CURATED_FACTS`' BE
+ * and AZ rows, whose qualifiers name a language region or a language VARIETY
+ * rather than a territory beside the country), so it measures 239 today and
+ * the countries without the field are AF, BQ, GP, MQ, PW, US and UY — three of
+ * which upstream simply has no P37 for and which never lost anything.
+ *
+ * Under the uniform rule this row would read 229. It stays at 233, because
+ * lowering a gate to admit the fix that tripped it is how a gate becomes
+ * decoration.
+ *
+ * THE MARGIN THAT LEAVES, STATED CORRECTLY, because the previous version of
+ * this sentence was wrong in the UNSAFE direction: 239 - 233 = 6, and the gate
+ * is `covered < floor`. So SIX countries can lose their languages and the
+ * nightly job still PASSES — it lands exactly ON the floor, not under it — and
+ * the SEVENTH is the one that stops it. The old comment promised six would
+ * stop it, a margin one country wider than the code delivers. Six is tighter
+ * than the eight uniform rows and looser than `name`'s two.
+ *
+ * Six silent losses is more than I would choose. The floor is deliberately
+ * left alone anyway: RAISING it is a judgement about how much of the world may
+ * quietly go quiet overnight, it belongs to a human with the nightly job's
+ * history in front of them, and a floor that is wrong but fails loudly beats a
+ * floor nobody chose. What is fixed here is that the margin is now stated
+ * correctly and asserted in a test, so whoever touches it next is choosing
+ * rather than inheriting a false one.
  *
  * `name` is the ONE row that does not take ten countries of headroom, and the
  * deviation is deliberate rather than an oversight. Measured 246 of 246 -
@@ -1315,17 +1339,35 @@ export const REQUIRED_NAMES = {
  * that leaves: enough that a single upstream label deletion does not stop the
  * world's refresh, tight enough that a systemic label failure does.
  */
+export const MEASURED_FIELD_COVERAGE = {
+  name: 246,
+  currencyCode: 239,
+  currencyName: 239,
+  plugs: 207,
+  voltageV: 221,
+  drivingSide: 245,
+  emergency: 221,
+  officialLanguages: 239,
+  callingCode: 237,
+  lat: 246,
+};
+
+/** Countries of slack under the measurement, for every row that takes the rule. */
+const FIELD_HEADROOM = 10;
+
 export const MIN_FIELD_COVERAGE = {
+  /** PINNED. See the `name` paragraph above — the rule would say 236. */
   name: 244,
-  currencyCode: 229,
-  currencyName: 229,
-  plugs: 197,
-  voltageV: 211,
-  drivingSide: 235,
-  emergency: 211,
+  currencyCode: MEASURED_FIELD_COVERAGE.currencyCode - FIELD_HEADROOM,
+  currencyName: MEASURED_FIELD_COVERAGE.currencyName - FIELD_HEADROOM,
+  plugs: MEASURED_FIELD_COVERAGE.plugs - FIELD_HEADROOM,
+  voltageV: MEASURED_FIELD_COVERAGE.voltageV - FIELD_HEADROOM,
+  drivingSide: MEASURED_FIELD_COVERAGE.drivingSide - FIELD_HEADROOM,
+  emergency: MEASURED_FIELD_COVERAGE.emergency - FIELD_HEADROOM,
+  /** PINNED. See the `officialLanguages` paragraph above — the rule would say 229. */
   officialLanguages: 233,
-  callingCode: 227,
-  lat: 236,
+  callingCode: MEASURED_FIELD_COVERAGE.callingCode - FIELD_HEADROOM,
+  lat: MEASURED_FIELD_COVERAGE.lat - FIELD_HEADROOM,
 };
 
 /**
