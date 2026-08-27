@@ -298,11 +298,21 @@ describe("empty state — the trip's country has no researched currency", () => 
     );
     open();
 
-    expect(await screen.findByText(/haven't researched/i)).toBeInTheDocument();
     // Extras the member actually spent in are still worth showing even though
     // the destination's own currency is unknown — priced against the pivot,
     // which (unlike `tripCurrency`) is never null.
-    expect(screen.getByText(/1 CNY = 4\.00 THB/)).toBeInTheDocument();
+    //
+    // This row is what the wait has to be pinned to, and getting that backwards
+    // is what made this test flaky. The "haven't researched" notice renders
+    // straight off `tripCurrency === null`, with no fetch involved, so
+    // `findByText` on *it* resolves on its first poll — often before the stubbed
+    // fetch has resolved and re-rendered — and the synchronous `getByText` for
+    // the rate row that followed then read a DOM that legitimately did not have
+    // it yet. Waiting on the last thing to arrive instead makes the order the
+    // component actually produces the order the test reads, and asserts both
+    // exactly as before.
+    expect(await screen.findByText(/1 CNY = 4\.00 THB/)).toBeInTheDocument();
+    expect(screen.getByText(/haven't researched/i)).toBeInTheDocument();
   });
 });
 
