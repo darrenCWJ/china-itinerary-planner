@@ -1,8 +1,10 @@
+import { curatedCountryName } from "./countries";
 import countryFactsJson from "../data/country-facts.json";
 
 /**
  * The reader for `data/country-facts.json` — the CC0 Wikidata artifact the
- * T25 ingest built and a human committed.
+ * ingest built and a human committed — and the one place a country NAME is
+ * resolved (`getCountryName`, at the bottom).
  *
  * Structured after lib/countryImagery.ts, deliberately and for the same two
  * reasons: the data is bundled by a static import rather than read from disk
@@ -48,6 +50,21 @@ export interface EmergencyNumber {
  * render as a broken sentence where an absent one renders as nothing at all.
  */
 export interface CountryFacts {
+  /**
+   * The country's English name, e.g. `"Peru"` — Wikidata's own label for the
+   * item carrying that ISO code.
+   *
+   * Identity rather than a fact: it is what the sentences in lib/countryTips.ts
+   * CALL the country, not something we learned about going there. The ingest
+   * keeps it outside its `FACT_FIELDS` for that reason, so a record carrying
+   * only a name is omitted from the artifact entirely.
+   *
+   * Read it through `getCountryName`, not from here, wherever a name is being
+   * shown: the hand-tuned table in lib/countries.ts wins where it has an entry
+   * (`China`, not `People's Republic of China`; `Türkiye`, not `Turkey`), and
+   * this fills in the other 222.
+   */
+  readonly name?: string;
   /** ISO 4217 alpha-3, e.g. `"PEN"`. */
   readonly currencyCode?: string;
   /**
@@ -85,6 +102,22 @@ export type CountryFactsIndex = Readonly<Record<string, CountryFacts>>;
  * the pre-2015 name — Peru dropped "nuevo" that year and the unit is now the
  * sol. So the artifact publishes a label that is simply wrong, and it publishes
  * 238 more that nobody has checked.
+ *
+ * RE-EXAMINED against the live endpoint on 2026-08-27, when the ingest gained
+ * the country name and the question "is a correct currency name obtainable?"
+ * had to be answered rather than assumed. It is not:
+ *
+ * - The `en`/`mul` COALESCE that rescued the euro does not help here. Q204656
+ *   has an English label and no `mul` one, and that English label is
+ *   `Nuevo sol`.
+ * - `P1813` ("short name") is empty for every currency sampled (PEN, CNY, JPY,
+ *   GBP, MXN, CHF), so there is no better property to switch to.
+ * - The field is not even consistent about WHAT it names: JPY's label is `yen`
+ *   and MXN's is `peso`, generic units rather than the Japanese yen or the
+ *   Mexican peso. "Prices are in peso" is wrong in a different way from
+ *   "Prices are in Nuevo sol", and no rule distinguishes them.
+ *
+ * So this stays carried, validated and unrendered.
  *
  * A one-country correction would fix the country we happened to look at and
  * leave the class untouched, which is the worse outcome: it makes the field
@@ -125,8 +158,9 @@ export const CURATED_FACTS: CountryFactsIndex = {};
  * Longest a fact string may be.
  *
  * Measured against the committed artifact on 2026-08-27: the longest
- * `currencyName` is 27 characters and the longest official language is 31, so
- * nothing legitimate is near this. The ceiling exists because the file is
+ * `currencyName` is 27 characters, the longest official language is 31, and
+ * the longest country name is 44 (`South Georgia and the South Sandwich
+ * Islands`), so nothing legitimate is near this. The ceiling exists because the file is
  * called country-FACTS and that name is a guardrail — the failure this whole
  * design is shaped to prevent is a SENTENCE arriving from upstream and being
  * rendered as advice. Paired with the prose check below, which is the same
@@ -178,27 +212,49 @@ function allOrNothing<T>(value: unknown, read: (item: unknown) => T | undefined)
 /**
  * A language, not a Wikidata category about languages.
  *
- * Measured 2026-08-27 across the committed artifact's 215 distinct language
- * values: exactly one is not a language. Guinea's P37 includes Q35759,
- * *"languages of Guinea"* — a meta-item — beside French, and rendered by
- * `languageTip` it reads "languages of Guinea is the official language". That
- * is risk 2 of the design ("a template renders a true fact into a false
- * sentence") arriving in real data on the first build.
+ * **Fixed upstream, and this is now belt and braces.** T26 measured one
+ * non-language among the artifact's 215 distinct P37 values — Guinea's
+ * *"languages of Guinea"*, a meta-item, which `languageTip` rendered as
+ * "languages of Guinea is the official language" — and refused it HERE, by
+ * label shape. That cost Guinea French as well, because `allOrNothing` is what
+ * stops a filter from silently strengthening a claim: keeping French alone
+ * would state that French is Guinea's *only* official language, which is an
+ * assertion this module would be making rather than reading.
  *
- * The value is refused rather than filtered out of the list, because
- * `allOrNothing` is what stops a filter from silently strengthening a claim:
- * keeping French alone would state that French is Guinea's *only* official
- * language, which is an assertion this module would be making, not reading.
- * So Guinea loses the field and the gap note says so out loud.
+ * The extract now drops that item by its Q-id (`DROPPED_LANGUAGE_ITEMS`,
+ * Q1339026 — measured, and NOT the Q35759 this comment first named), so the
+ * committed artifact carries `["French"]` and Guinea has its language tip
+ * back. What upstream states is what ships.
  *
- * The upstream fix belongs to the ingest's extract; `countryTips.test.ts` pins
- * the drop by name, so the day the artifact stops carrying the meta-item this
- * goes red and the rule can be deleted rather than rotting.
+ * This rule stays because the ingest's gate protects the ARTIFACT while this
+ * protects the RENDER — from an artifact hand-edited, or served from a stale
+ * deploy built before that drop existed. `countryTips.test.ts` pins both
+ * halves: that no committed record carries a meta-item any more, and that this
+ * rule still refuses one arriving by another route.
  */
 const languageName = (value: unknown): string | undefined => {
   const text = factText(value);
   if (text === undefined) return undefined;
   return /^languages? of /i.test(text) ? undefined : text;
+};
+
+/**
+ * A country name, not a label lookup that failed.
+ *
+ * `factText` already refuses prose, padding, emptiness and anything over 80
+ * characters — the longest real name is 44 (`South Georgia and the South
+ * Sandwich Islands`). The extra rule here is the bare Q-id: an unlabelled
+ * Wikidata item comes back AS its id on this endpoint, and `Q148` rendered
+ * into "We don't have Q148-specific guidance" reads to a traveller as a
+ * researched answer rather than as a broken lookup. The ingest's gate refuses
+ * the same shape; stated twice on purpose, for the reason `voltage` is — that
+ * gate protects the artifact, this one protects the render from an artifact
+ * edited by hand or served from a stale deploy.
+ */
+const countryNameText = (value: unknown): string | undefined => {
+  const text = factText(value);
+  if (text === undefined) return undefined;
+  return /^Q[1-9][0-9]*$/.test(text) ? undefined : text;
 };
 
 /** A single IEC plug-type letter. Measured set in the artifact: A, B, C, E–L, N. */
@@ -242,6 +298,7 @@ export function readCountryFactsRecord(raw: unknown): CountryFacts | null {
   const record = asRecord(raw);
   if (!record) return null;
 
+  const name = countryNameText(record.name);
   const currencyCode =
     typeof record.currencyCode === "string" && /^[A-Z]{3}$/.test(record.currencyCode)
       ? record.currencyCode
@@ -263,6 +320,7 @@ export function readCountryFactsRecord(raw: unknown): CountryFacts | null {
       : undefined;
 
   const facts: CountryFacts = {
+    ...(name !== undefined ? { name } : {}),
     ...(currencyCode !== undefined ? { currencyCode } : {}),
     ...(currencyName !== undefined ? { currencyName } : {}),
     ...(plugs !== undefined ? { plugs } : {}),
@@ -344,4 +402,38 @@ export function getCountryFacts(code: string, options: CountryFactsOptions = {})
   const curated = readCountryFactsRecord(asRecord(options.curated ?? CURATED_FACTS)?.[key]);
   if (!ingested && !curated) return {};
   return { ...(ingested ?? {}), ...(curated ?? {}) };
+}
+
+/**
+ * The name the sentences in lib/countryTips.ts call a country.
+ *
+ * **The one place a country name is resolved**, which is what
+ * `powerAdapterItem(countryName, facts)` and `buildGapNote(countryName, facts)`
+ * taking the name as a PARAMETER buys: neither template has to know that the
+ * answer comes from two tables, and there is exactly one merge to review.
+ *
+ * Hand-tuned first, ingested second, blank last:
+ *
+ * - `lib/countries.ts`'s `CURATED` table wins for the 24 countries it names.
+ *   It is hand-verified, it is what the app already calls them elsewhere, and
+ *   it is the more traveller-facing of the two — `China` over Wikidata's
+ *   `People's Republic of China`, `Türkiye` over its `Turkey`. That precedence
+ *   is `CURATED_HEROES`' and `CURATED_FACTS`' rule: a human-verified value
+ *   beats an upstream one, per field.
+ * - The artifact fills in the other 222. Before it, `getCountry("PE").name`
+ *   was `"PE"` and the gap note read "We don't have PE-specific guidance…"
+ *   for 90% of the world.
+ * - `""` when neither has an answer, which means the code is not a country:
+ *   `getCountryName("🙂")` and any code the artifact has no record for land
+ *   here. `buildGapNote` returns `[]` for a blank name rather than writing a
+ *   note that cannot say whose data is missing, and `powerAdapterItem` returns
+ *   null — so the empty string is a real answer here and never a rendered one.
+ *
+ * `options` mirrors `getCountryFacts`'s so a test can drive this against a
+ * fixture index instead of the committed artifact.
+ */
+export function getCountryName(code: string, options: CountryFactsOptions = {}): string {
+  const curated = curatedCountryName(code);
+  if (curated !== null) return curated;
+  return getCountryFacts(code, options).name ?? "";
 }

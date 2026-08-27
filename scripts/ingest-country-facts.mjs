@@ -6,9 +6,22 @@
  * app ships a city shard for — from Wikidata's SPARQL endpoint, plus
  * data/country-facts-report.md describing what was and was not derivable.
  *
- * STRUCTURED SCALARS ONLY, NEVER PROSE. Currency code and name, plug letters,
- * mains voltage, driving side, emergency numbers with their roles, official
- * languages, dialling code and a centroid latitude used by one cross-check.
+ * STRUCTURED SCALARS ONLY, NEVER PROSE. The country's English name, currency
+ * code and name, plug letters, mains voltage, driving side, emergency numbers
+ * with their roles, official languages, dialling code and a centroid latitude
+ * used by one cross-check.
+ *
+ * The NAME is identity, not a fact, and the difference is enforced rather than
+ * asserted: it sits in `RECORD_FIELDS` so every shape rule applies to it, and
+ * it is deliberately absent from `FACT_FIELDS` so `factCount` - the unit every
+ * drift check in this file counts in - does not move by 246 the night this
+ * field was added. It exists because the sentences in lib/countryTips.ts have
+ * to name the country ("We don't have Peru-specific guidance...") and
+ * lib/countries.ts's hand-tuned table covers 24 of the 246: the other 222 read
+ * "We don't have PE-specific guidance..." without it. Hand-writing 246 names
+ * was the alternative, and it is the thing the honest-gap rule exists to
+ * refuse - so the name comes from the same CC0 source, under the same gates,
+ * as every other value here.
  * The sentences a traveller reads are written by hand in reviewed TypeScript
  * (lib/countryTips.ts, Task 26) from these scalars; no upstream string is ever
  * rendered as advice. The artifact is called `country-facts`, not
@@ -86,6 +99,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
  * optional and an ABSENT field is the honest answer — never an empty string,
  * never an empty array, never a placeholder.
  * @typedef {{
+ *   name?: string,
  *   currencyCode?: string,
  *   currencyName?: string,
  *   plugs?: string[],
@@ -105,6 +119,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
  * upstream has since made redundant.
  * @typedef {{
  *   soleDroppedArticlePlugs: string[],
+ *   soleDroppedMetaLanguages: string[],
  *   curatedFired: string[],
  *   curatedStale: string[],
  *   withheld: Record<string, string[]>,
@@ -309,6 +324,35 @@ export const PLUG_LETTER_SET = new Set(Object.values(PLUG_LETTERS));
  */
 export const DROPPED_PLUG_ITEMS = new Set(['Q60740126']);
 
+/**
+ * Q1339026 is `languages of Guinea` - a Wikidata META-ITEM, an article-shaped
+ * container about a country's languages, used as a P37 value by GN alone.
+ *
+ * Measured 2026-08-27 by the shipping query across all 246 codes: 451 P37 rows
+ * over 243 countries, 215 distinct language items, and this is the ONLY one
+ * that is not a language. Rendered by `languageTip` it reads "languages of
+ * Guinea is the official language - download an offline translation pack", so
+ * it is design risk 2 ("a template renders a true fact into a false sentence")
+ * arriving in real data.
+ *
+ * T26 refused it at the boundary instead, by label shape, and said the fix
+ * belongs here - correctly, because refusing it there costs Guinea the WHOLE
+ * field: `allOrNothing` cannot keep French without asserting that French is
+ * Guinea's only official language, which is a claim the reader would be making
+ * rather than reading. Dropped here, by ID, the same claim is made by the
+ * SOURCE: what is left is exactly the set upstream states, minus a value that
+ * was never a language. Guinea keeps French, and the boundary's label rule
+ * stays as belt and braces against a hand-edited or stale artifact.
+ *
+ * By id and not by label, for `DROPPED_PLUG_ITEMS`'s reason: an upstream label
+ * edit must not silently re-admit it. Measured zero countries carry a
+ * meta-item as their SOLE P37 value, and - exactly as for the plug article -
+ * that assumption is enforced rather than trusted: `buildFacts` records any
+ * country withheld only because of this, and `assertFactsSane` refuses to
+ * write when that list is non-empty.
+ */
+export const DROPPED_LANGUAGE_ITEMS = new Set(['Q1339026']);
+
 /** Emergency numbers are two to six digits. LANDMINE 4's shape check. */
 const EMERGENCY_NUMBER = /^[0-9]{2,6}$/;
 
@@ -354,6 +398,35 @@ const MAX_PLUGS = 8;
 const MAX_EMERGENCY_ENTRIES = 8;
 /** Longest any single upstream label may be before it reads as a leaked blob. */
 const MAX_TEXT_CHARS = 80;
+
+/**
+ * The country's English name, from the item's own `rdfs:label`.
+ *
+ * The name a traveller reads in "We don't have Peru-specific guidance..." and
+ * in "Universal power adapter (Peru uses type A/B/C plugs, 220V)". Measured
+ * 2026-08-27 across all 246 codes: 246 rows, one per country, none blank, none
+ * multi-valued, none over 80 characters and none a bare Q-id - which is what
+ * makes the floor in `MIN_FIELD_COVERAGE` a tight one rather than a hopeful
+ * one.
+ *
+ * Withholds on more than one distinct value rather than picking, because two
+ * names for one ISO code means two items carry that code and the join has
+ * stopped being about one country; and withholds over `MAX_TEXT_CHARS` rather
+ * than letting the gate abort, because one strange upstream label must cost
+ * that country its name, not cost the other 245 their nightly refresh. (The
+ * gate still refuses a blob that reaches a record any OTHER way - through
+ * carry-forward from an artifact written before this rule existed, or through
+ * a typo in a curated row.)
+ *
+ * The longest measured names are `South Georgia and the South Sandwich
+ * Islands` (44) and `Saint Helena, Ascension and Tristan da Cunha` (44), so
+ * the 80-character ceiling has room for a real name and none for a sentence.
+ */
+export function pickName(rows) {
+  const names = [...new Set((rows ?? []).map((row) => collapse(row.value)).filter((name) => name !== ''))];
+  if (names.length !== 1) return null;
+  return names[0].length > MAX_TEXT_CHARS ? null : names[0];
+}
 
 /**
  * The one currency a traveller transacts in. LANDMINE 2.
@@ -511,11 +584,22 @@ export function pickCallingCode(rows) {
   return /^\+[0-9]{1,4}$/.test(code) ? code : null;
 }
 
-/** P37 English labels, deduplicated and sorted so a quiet rebuild is byte-identical. */
+/**
+ * P37 English labels, deduplicated and sorted so a quiet rebuild is
+ * byte-identical, with `DROPPED_LANGUAGE_ITEMS` removed by id first.
+ *
+ * Shaped like `pickPlugs` and for the same reason: it returns the names plus
+ * the one thing a finished record cannot show - that the field is absent only
+ * because a meta-item was everything this country had. That flag is a gate
+ * input, not an artifact field.
+ */
 export function pickLanguages(rows) {
-  const names = [...new Set((rows ?? []).map((row) => collapse(row.value)).filter((name) => name !== ''))].sort();
-  if (names.length === 0) return null;
-  return names.length > MAX_LANGUAGES ? null : names;
+  const all = rows ?? [];
+  const kept = all.filter((row) => !DROPPED_LANGUAGE_ITEMS.has(entityId(row.item)));
+  if (all.length > 0 && kept.length === 0) return { names: null, soleDroppedMeta: true };
+  const names = [...new Set(kept.map((row) => collapse(row.value)).filter((name) => name !== ''))].sort();
+  if (names.length === 0) return { names: null, soleDroppedMeta: false };
+  return { names: names.length > MAX_LANGUAGES ? null : names, soleDroppedMeta: false };
 }
 
 /**
@@ -532,10 +616,22 @@ export function pickLatitude(rows) {
 }
 
 /**
- * Field order inside a record, so a rebuild with no data change is
- * byte-identical and the nightly workflow has nothing to commit. Also the
- * gate's known-field allowlist: a column the query starts returning under a
- * new name would otherwise land in the artifact unexamined.
+ * The nine FACTS - the things this ingest learned about travelling somewhere.
+ *
+ * `factCount` counts exactly these, and `factCount` is the unit every drift
+ * check in this file speaks in: the 5% shrink band, the 10% growth band, the
+ * one-field-per-country loss grace, "this country lost every fact", and the
+ * rule that a country with nothing to say is omitted rather than written as
+ * `{}`. All of those are calibrated against a per-country ceiling of nine.
+ *
+ * `name` is NOT here, and that is the load-bearing half of adding it. A name
+ * is who the record is about, not something we learned about going there - so
+ * counting it would have moved the committed baseline by 246 in a single
+ * night: an 11.7% jump against 2,098 facts, over `MAX_GROWTH_RATIO`, which
+ * would have meant loosening a calibrated gate to admit a schema change. Left
+ * out, every one of those bands keeps the meaning it was measured with, and a
+ * country carrying a name and nothing else still counts zero and is still
+ * omitted - the neutral profile already says everything such a record could.
  */
 export const FACT_FIELDS = [
   'currencyCode',
@@ -550,9 +646,24 @@ export const FACT_FIELDS = [
 ];
 
 /**
+ * Every key a record may carry, in the order it carries them, so a rebuild
+ * with no data change is byte-identical and the nightly workflow has nothing
+ * to commit. Also the gate's known-field allowlist: a column the query starts
+ * returning under a new name would otherwise land in the artifact unexamined,
+ * and every shape rule - no empty strings, no sentinels, no bare Q-ids, no
+ * blobs - walks this list rather than `FACT_FIELDS`, so the name is checked
+ * exactly as hard as everything beside it.
+ *
+ * Identity first: a reader opening the artifact sees which country a record is
+ * about before what it says.
+ */
+export const RECORD_FIELDS = ['name', ...FACT_FIELDS];
+
+/**
  * The seven fields that reach a user, in the order the gap note names them.
  * `currencyName` rides with `currencyCode` and `lat` is never rendered, so
- * neither is here.
+ * neither is here. `name` is not a field the gap note can report missing - it
+ * is what the gap note calls the country.
  */
 export const RENDERED_FIELDS = [
   'currencyCode',
@@ -564,11 +675,11 @@ export const RENDERED_FIELDS = [
   'callingCode',
 ];
 
-/** One record with its keys in `FACT_FIELDS` order and its absent fields absent. */
+/** One record with its keys in `RECORD_FIELDS` order and its absent fields absent. */
 function orderRecord(record) {
   /** @type {CountryFacts} */
   const ordered = {};
-  for (const field of FACT_FIELDS) {
+  for (const field of RECORD_FIELDS) {
     if (record[field] !== undefined) ordered[field] = record[field];
   }
   return ordered;
@@ -595,10 +706,11 @@ export function factCount(record) {
  * the rows-per-answering-country density the shipping query returned on
  * 2026-08-27 by the shipping query over all 246 codes.
  *
- *   currency 268 rows / 244 countries = 1.10   plugs   508 / 222 = 2.29
- *   voltage  234 / 222 = 1.05                  driving 247 / 246 = 1.00
- *   emergency 648 / 246 = 2.63                 languages 451 / 243 = 1.86
- *   callingCode 248 / 242 = 1.02               coordinate 246 / 246 = 1.00
+ *   name     246 rows / 246 countries = 1.00   currency 268 / 244 = 1.10
+ *   plugs    508 / 222 = 2.29                  voltage  234 / 222 = 1.05
+ *   driving  247 / 246 = 1.00                  emergency 648 / 246 = 2.63
+ *   languages 451 / 243 = 1.86                 callingCode 248 / 242 = 1.02
+ *   coordinate 246 / 246 = 1.00
  *
  * The rule, applied uniformly: the largest size in {50, 100, 150, 200} whose
  * measured density keeps ONE request under 250 rows. That is roughly a tenth
@@ -614,12 +726,13 @@ export function factCount(record) {
  */
 export const PROPERTIES = [
   { name: 'codes', property: 'P297', fields: [], columns: ['code'], batch: 246 },
+  { name: 'name', property: 'rdfs:label', fields: ['name'], columns: ['country', 'value'], batch: 200 },
   { name: 'currency', property: 'P38/P498', fields: ['currencyCode', 'currencyName'], columns: ['country', 'code', 'name'], batch: 200 },
   { name: 'plugs', property: 'P2853', fields: ['plugs'], columns: ['country', 'item', 'itemLabel'], batch: 100 },
   { name: 'voltage', property: 'P2884', fields: ['voltageV'], columns: ['country', 'value'], batch: 200 },
   { name: 'drivingSide', property: 'P1622', fields: ['drivingSide'], columns: ['country', 'value'], batch: 200 },
   { name: 'emergency', property: 'P2852', fields: ['emergency'], columns: ['country', 'number', 'role'], batch: 50 },
-  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'value'], batch: 100 },
+  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'item', 'value'], batch: 100 },
   { name: 'callingCode', property: 'P474', fields: ['callingCode'], columns: ['country', 'value'], batch: 200 },
   { name: 'coordinate', property: 'P625', fields: ['lat'], columns: ['country', 'lat'], batch: 200 },
 ];
@@ -636,7 +749,9 @@ export const PROPERTIES = [
  * as `{}`. lib/countryProfile.ts falls through to the neutral profile for a
  * country it has no facts for, which is already the honest default; an empty
  * record would be a second way of saying the same thing and the two would
- * drift.
+ * drift. A record carrying ONLY a name is omitted by the same rule, because
+ * `factCount` does not count the name - measured 2026-08-27, zero of the 246
+ * are in that position, every one of them carrying at least four facts.
  */
 export function buildFacts(byProperty) {
   const codes = [
@@ -644,6 +759,7 @@ export function buildFacts(byProperty) {
   ].sort();
 
   const grouped = {
+    name: groupByCountry(byProperty?.name),
     currency: groupByCountry(byProperty?.currency),
     plugs: groupByCountry(byProperty?.plugs),
     voltage: groupByCountry(byProperty?.voltage),
@@ -666,14 +782,20 @@ export function buildFacts(byProperty) {
   /** @type {Diagnostics} */
   const diagnostics = {
     soleDroppedArticlePlugs: [],
+    soleDroppedMetaLanguages: [],
     curatedFired: [],
     curatedStale: [],
-    withheld: { currency: [], plugs: [], voltage: [], emergency: [] },
+    withheld: { name: [], currency: [], plugs: [], voltage: [], emergency: [] },
   };
 
   for (const code of codes) {
     /** @type {CountryFacts} */
     const record = {};
+
+    const nameRows = grouped.name.get(code) ?? [];
+    const name = pickName(nameRows);
+    if (name !== null) record.name = name;
+    else if (nameRows.length > 0) diagnostics.withheld.name.push(code);
 
     const currencyRows = grouped.currency.get(code) ?? [];
     const currency = pickCurrency(currencyRows);
@@ -702,7 +824,8 @@ export function buildFacts(byProperty) {
     else if (emergencyRows.length > 0) diagnostics.withheld.emergency.push(code);
 
     const languages = pickLanguages(grouped.languages.get(code) ?? []);
-    if (languages !== null) record.officialLanguages = languages;
+    if (languages.names) record.officialLanguages = languages.names;
+    if (languages.soleDroppedMeta) diagnostics.soleDroppedMetaLanguages.push(code);
 
     const callingCode = pickCallingCode(grouped.callingCode.get(code) ?? []);
     if (callingCode !== null) record.callingCode = callingCode;
@@ -820,7 +943,7 @@ export function applyCurated(built, curated = CURATED_FACTS) {
  * run, and one run measures a level, not a variance: every property answered
  * its full expected coverage, so there is no night-to-night spread here to
  * calibrate against yet. What that run did establish is the shape this ratio
- * has to survive — nine independent property queries in 22 batched requests,
+ * has to survive — ten independent property queries in 24 batched requests,
  * where a single batch bailing out fails its whole property (see
  * `fetchPropertyRows`) and arrives here as a zero, not as 80%.
  */
@@ -964,6 +1087,34 @@ export const CN_CROSS_CHECK = {
 };
 
 /**
+ * The two names this ingest is checked against, measured 2026-08-27 by the
+ * shipping query.
+ *
+ * CN because it is the reproduction country - every other cross-check in this
+ * file is anchored on it - and PE because it is the design's acceptance case
+ * and the country whose missing name was the blocker this field exists to
+ * clear: `getCountry("PE").name` is `"PE"`, so before this the gap note read
+ * "We don't have PE-specific guidance..." for 222 of 246 countries.
+ *
+ * `People's Republic of China` is Wikidata's own English label for the item
+ * whose P297 is `CN` (Q148), carried verbatim rather than shortened, because
+ * shortening it here would be this ingest editing its source. The traveller
+ * never reads it: `lib/countries.ts` carries the hand-tuned `China`, and
+ * `getCountryName` in lib/countryFacts.ts prefers the hand-tuned name over the
+ * ingested one for all 24 curated countries - which is why the reproduction
+ * gate on `Universal power adapter (China uses type A/C/I plugs, 220V)` is
+ * unaffected by what this line says.
+ *
+ * Pinned exactly, so an upstream rename reddens the nightly job rather than
+ * quietly changing what a traveller reads. That is the same trade
+ * `CN_CROSS_CHECK` makes.
+ */
+export const REQUIRED_NAMES = {
+  CN: "People's Republic of China",
+  PE: 'Peru',
+};
+
+/**
  * Per-field floors, because 246 records can all survive while one field goes
  * null everywhere — the `assertExtractQualitySane` lesson, where a healthy
  * record count hid every description being replaced by a stub.
@@ -1000,8 +1151,20 @@ export const CN_CROSS_CHECK = {
  * `officialLanguages` was marked unverified by the design. Measured
  * post-withhold: 243, identical to its raw coverage — no country trips the
  * 40-language ceiling, so nothing is withheld. It is verified now.
+ *
+ * `name` is the ONE row that does not take ten countries of headroom, and the
+ * deviation is deliberate rather than an oversight. Measured 246 of 246 -
+ * every country answers, exactly once, with a label that is neither blank, nor
+ * multi-valued, nor over the character ceiling - so the -10 rule would set a
+ * floor of 236 and quietly permit ten countries to be called "PE" instead of
+ * "Peru". A missing name is not a thin fact, it is a sentence that reads as
+ * broken software; and unlike every field above it, `name` has no withhold
+ * rule that can legitimately fire in bulk. Two countries of headroom is what
+ * that leaves: enough that a single upstream label deletion does not stop the
+ * world's refresh, tight enough that a systemic label failure does.
  */
 export const MIN_FIELD_COVERAGE = {
+  name: 244,
   currencyCode: 229,
   currencyName: 229,
   plugs: 197,
@@ -1072,7 +1235,7 @@ const BARE_ENTITY_ID = /^Q[1-9][0-9]*$/;
 function recordStrings(record) {
   /** @type {{ path: string, value: string }[]} */
   const found = [];
-  for (const field of FACT_FIELDS) {
+  for (const field of RECORD_FIELDS) {
     const value = record[field];
     if (typeof value === 'string') found.push({ path: field, value });
     else if (Array.isArray(value)) {
@@ -1160,13 +1323,13 @@ export function assertFactsSane(built, previous) {
     }
     if (factCount(record) === 0) {
       throw new Error(
-        `${code} is present with an empty record — a country with no facts is OMITTED, so the ` +
-        `neutral profile answers for it; an empty record is a second way of saying the same ` +
-        `thing and the two would drift`
+        `${code} is present with an empty record — a country with no facts is OMITTED even when ` +
+        `upstream gave it a name, so the neutral profile answers for it; an empty record is a ` +
+        `second way of saying the same thing and the two would drift`
       );
     }
     for (const field of Object.keys(record)) {
-      if (!FACT_FIELDS.includes(field)) {
+      if (!RECORD_FIELDS.includes(field)) {
         throw new Error(
           `${code} carries an unknown field "${field}" — the query is returning a column this ` +
           `build has never examined, and it would reach the client unreviewed`
@@ -1301,6 +1464,16 @@ export function assertFactsSane(built, previous) {
     );
   }
 
+  if ((diagnostics.soleDroppedMetaLanguages?.length ?? 0) > 0) {
+    throw new Error(
+      `${diagnostics.soleDroppedMetaLanguages.length} country/countries ` +
+      `(${diagnostics.soleDroppedMetaLanguages.slice(0, 10).join(', ')}) have ` +
+      `${[...DROPPED_LANGUAGE_ITEMS].join(', ')} as their ONLY official-language value. Dropping ` +
+      `that meta-item by id is lossless only while zero countries rely on it — measured zero on ` +
+      `2026-08-27 — so this refuses the write rather than quietly costing them their language tip`
+    );
+  }
+
   if ((diagnostics.curatedStale?.length ?? 0) > 0) {
     throw new Error(
       `CURATED_FACTS rows ${diagnostics.curatedStale.join(', ')} no longer fire — upstream now ` +
@@ -1332,6 +1505,21 @@ export function assertFactsSane(built, previous) {
       throw new Error(
         `CN has no emergency number ${number} (has ${[...cnNumbers].join(', ') || 'none'}) — ` +
         `110 police, 119 fire and 120 ambulance are the answer this ingest is checked against`
+      );
+    }
+  }
+
+  // --- The two pinned names ------------------------------------------------
+  // The reproduction gate's sibling. A name is the one value here that is read
+  // back to the traveller verbatim, so a wrong one is not a thin field, it is
+  // a sentence about the wrong country.
+  for (const [code, expected] of Object.entries(REQUIRED_NAMES)) {
+    if (countries[code]?.name !== expected) {
+      throw new Error(
+        `${code}.name is ${JSON.stringify(countries[code]?.name)}, expected ` +
+        `${JSON.stringify(expected)} — the gap note and the packing line read this back to a ` +
+        `traveller word for word, so a rename upstream must stop the build rather than change ` +
+        `what they are told`
       );
     }
   }
@@ -1507,10 +1695,10 @@ const MAX_RETRY_AFTER_MS = 60_000;
  *
  * WDQS asks clients to keep concurrency low rather than to hit a published
  * quota, so the politeness rule here is one request in flight at a time with a
- * full second between them. Measured cost on 2026-08-27: 22 requests for a
- * whole build (1 codes + 2 + 3 + 2 + 2 + 5 + 3 + 2 + 2), so the delay adds
- * about 21 s to a run whose queries themselves total under 10 s. That is a
- * price worth paying nightly for a free public endpoint.
+ * full second between them. Measured cost on 2026-08-27: 24 requests for a
+ * whole build (1 codes + 2 name + 2 + 3 + 2 + 2 + 5 + 3 + 2 + 2), so the delay
+ * adds about 23 s to a run whose queries themselves total well under a minute.
+ * That is a price worth paying nightly for a free public endpoint.
  */
 const POLITENESS_DELAY_MS = 1_000;
 
@@ -1700,7 +1888,7 @@ export function stampedPayload(previous, body, now) {
  */
 export function buildReport({ countries, generatedAt }) {
   const records = Object.entries(countries);
-  const coverage = FACT_FIELDS.map((field) => {
+  const coverage = RECORD_FIELDS.map((field) => {
     const covered = records.filter(([, record]) => record[field] !== undefined).length;
     return `| \`${field}\` | ${covered} | ${records.length === 0 ? '0.0' : ((covered / records.length) * 100).toFixed(1)}% |`;
   });
@@ -1732,6 +1920,11 @@ export function buildReport({ countries, generatedAt }) {
     '- Contents: structured scalars only. Never prose, never a sentence.',
     '',
     `**${records.length} countries carry at least one fact.**`,
+    '',
+    "Every record also carries the country's English NAME, from the item's own",
+    '`rdfs:label`. It is identity rather than a fact — it is what the sentences in',
+    '`lib/countryTips.ts` call the country — so it is not counted as one, and a record',
+    'carrying nothing but a name would be omitted exactly like an empty one.',
     '',
     'A country with none is absent from the artifact entirely and falls through to',
     "`lib/countryProfile.ts`'s neutral profile, which is the honest default. A field",
@@ -1780,6 +1973,16 @@ export function buildReport({ countries, generatedAt }) {
     '- **Climate normals.** These need station data of a different order of size, and',
     '  they are the highest-value future addition — climate is what actually answers',
     '  "when should I go".',
+    '- **A currency NAME a traveller could be shown.** The code is carried and rendered;',
+    '  the name is carried and never rendered. Measured 2026-08-27 on the currency items',
+    '  themselves: PE\'s is `Nuevo sol`, the pre-2015 name Peru dropped that year, and the',
+    '  `mul` fallback does not fix it (Q204656 has an English label and no `mul` one).',
+    '  Nor is the field consistent in what it names — JP\'s is `yen` and MX\'s is `peso`,',
+    '  generic units rather than the Japanese yen or the Mexican peso — and P1813',
+    '  ("short name") is empty for every one sampled, so no better property exists to',
+    '  switch to. One label being provably stale while 238 more are unchecked is not a',
+    '  one-country correction; it is a field that cannot be shown. See the block comment',
+    '  in `lib/countryFacts.ts`.',
     '- **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**',
     '  No structured source. Visa rules also depend on the traveller\'s passport, which',
     '  the app does not know.',
@@ -1901,6 +2104,19 @@ export function buildQuery(property, codes) {
   FILTER(?isoCode = ?code)
 }`;
 
+    // The country's own label. One triple and a label, and the label is the
+    // whole point: `?c` here is the item whose P297 is the ISO code, so the
+    // name is the name of the exact entity every other query in this file
+    // joins through - NL's is "Kingdom of the Netherlands" for the same reason
+    // its P38 answers EUR/USD/AWG/XCG, and that consistency is worth more than
+    // a prettier name from a second item nothing else here speaks about.
+    case 'name':
+      return `SELECT DISTINCT ?country ?value WHERE {
+  ${valuesClause('country', codes)}
+  ?c wdt:P297 ?country .
+  ${labelWithMulFallback('?c', 'value')}
+}`;
+
     // P38 -> P498. The name is the currency item's own label, so `EUR` and
     // "euro" always come from one item and can never be paired across two.
     case 'currency':
@@ -1966,12 +2182,16 @@ export function buildQuery(property, codes) {
   }
 }`;
 
+    // `?item` is selected as well as its label for `pickPlugs`'s reason:
+    // `DROPPED_LANGUAGE_ITEMS` acts on the Q-id, so dropping Guinea's
+    // "languages of Guinea" meta-item survives an upstream label edit while
+    // dropping it by label would not.
     case 'languages':
-      return `SELECT DISTINCT ?country ?value WHERE {
+      return `SELECT DISTINCT ?country ?item ?value WHERE {
   ${valuesClause('country', codes)}
   ?c wdt:P297 ?country .
-  ?c wdt:P37 ?language .
-  ${labelWithMulFallback('?language', 'value')}
+  ?c wdt:P37 ?item .
+  ${labelWithMulFallback('?item', 'value')}
 }`;
 
     case 'callingCode':

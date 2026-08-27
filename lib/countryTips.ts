@@ -24,9 +24,17 @@ import type { CountryFacts, EmergencyNumber } from "./countryFacts";
  * right, by a source that never saw Wikidata.
  *
  * **What is deliberately not here.** `currencyName` is never rendered (Peru's
- * committed label is the pre-2015 "Nuevo sol" and 238 more are unchecked — see
- * lib/countryFacts.ts), no template picks a "primary" official language out of
- * an alphabetical set, and nothing states a season, a crowd level or a holiday.
+ * committed label is the pre-2015 "Nuevo sol", 238 more are unchecked, and the
+ * 2026-08-27 re-measurement found no better property — see lib/countryFacts.ts),
+ * no template picks a "primary" official language out of an alphabetical set,
+ * and nothing states a season, a crowd level or a holiday.
+ *
+ * **Where the country name comes from.** The two templates that need one take
+ * it as a PARAMETER, so this module has one import and no table of its own.
+ * `getCountryName` in lib/countryFacts.ts is the single place that resolves it
+ * — the hand-tuned name where lib/countries.ts has one, the ingested Wikidata
+ * label for the other 222 countries, and `""` for a code that is not a
+ * country, which both name-taking functions treat as "say nothing".
  */
 
 /**
@@ -187,7 +195,10 @@ export function factTips(facts: CountryFacts): string[] {
  * it is not self-referential.
  *
  * Takes the country name as an argument rather than looking it up, so this
- * module stays a pure template layer with one import.
+ * module stays a pure template layer with one import. Callers get the name
+ * from `getCountryName`, which prefers lib/countries.ts's hand-tuned "China"
+ * over the artifact's "People's Republic of China" — this exact string is why
+ * that precedence is the way round it is.
  */
 export function powerAdapterItem(countryName: string, facts: CountryFacts): string | null {
   const { plugs, voltageV } = facts;
