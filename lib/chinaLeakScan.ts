@@ -19,11 +19,22 @@
 /**
  * What must never appear in a plan for a country that is not China.
  *
- * Every one of these is a real string this repo emits for CN — see
- * `lib/countryData/cn.ts`, which holds all of them between its tips, its
- * packing document, its booking copy and its hop titles. That is deliberate:
- * a token nothing in the codebase can produce would make the arming proof
- * below impossible to satisfy honestly.
+ * Every one of these is a real string this repo emits for CN, and they come
+ * from three modules, not one:
+ *
+ * - **`lib/countryData/cn.ts`** — twelve of them, across its tips, its packing
+ *   document, its booking copy and its hop title: `China`, `Alipay`, `WeChat`,
+ *   `VPN`, `RMB`, `¥`, `12306`, `Trip.com`, `Amap`, `Pleco`, `高德`,
+ *   `high-speed rail`.
+ * - **`lib/meta.ts`** — `🚄`, which is `KIND_EMOJI.travel`.
+ * - **`lib/months.ts`** — `Chinese` (`HOLIDAY_BANDS[0].name`), `🧧`
+ *   (its emoji) and `🇨🇳` (National Day Golden Week's).
+ *
+ * A token nothing in the codebase can produce could never be armed, so
+ * `worldwidePlan.test.ts` asserts every entry here is still found in those
+ * three modules' real values. Without that, misspelling one is invisible: the
+ * scanner keeps finding its own spelling, and the arming proof over a China
+ * plan only exercises the twelve that reach a scanned surface.
  */
 export const CHINA_TOKENS = [
   "China",
@@ -45,14 +56,23 @@ export const CHINA_TOKENS = [
 ] as const;
 
 /**
- * CJK Unified Ideographs — the `[一-鿿]` range T30 names, spelled in escapes so
- * the source stays reviewable in an editor that cannot render the block.
+ * CJK Unified Ideographs — the `[一-鿿]` range T30 names.
  *
  * `U+4E00`–`U+9FFF`. Deliberately not the extension blocks or kana: the claim
  * is "no Chinese text reached this plan", and the base block is what every
  * string in `cn.ts` is written in.
+ *
+ * **Not `/g`, deliberately.** A global regex carries a mutable `lastIndex`, so
+ * an importer calling `.test()` on a shared one gets alternating true/false on
+ * identical input. `chinaLeaks` builds its own global copy below; this stays
+ * safe for anyone who reaches for it directly.
+ *
+ * The upper bound is the hazard: `鿿` renders as nothing meaningful in most
+ * editors, so a mojibake or a bad paste could lower it silently and blind the
+ * scan to `高`, `长`, `面` and everything else above the new ceiling.
+ * `worldwidePlan.test.ts` pins both ends of the range for that reason.
  */
-export const CJK_IDEOGRAPH = /[一-鿿]/gu;
+export const CJK_IDEOGRAPH = /[一-鿿]/u;
 
 /**
  * Every China marker present in `text`, distinct and in a stable order.
@@ -75,10 +95,11 @@ export const CJK_IDEOGRAPH = /[一-鿿]/gu;
 export function chinaLeaks(text: string): string[] {
   const haystack = text.toLowerCase();
   const tokens = CHINA_TOKENS.filter((token) => haystack.includes(token.toLowerCase()));
-  // A fresh matcher each call. `CJK_IDEOGRAPH` is /g, and a shared `lastIndex`
-  // would make the second scan of the same string answer differently from the
-  // first — the exact shape of a scan that passes for the wrong reason.
-  const ideographs = new Set(text.match(new RegExp(CJK_IDEOGRAPH)) ?? []);
+  // A fresh global matcher each call, built from the non-global source above.
+  // A shared /g regex would carry `lastIndex` between calls and make the second
+  // scan of the same string answer differently from the first — the exact shape
+  // of a scan that passes for the wrong reason.
+  const ideographs = new Set(text.match(new RegExp(CJK_IDEOGRAPH.source, "gu")) ?? []);
   return [...tokens, ...ideographs];
 }
 
