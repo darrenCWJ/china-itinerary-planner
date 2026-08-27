@@ -362,17 +362,25 @@ export function suggestRoute(
   // "rail" and ungrounded, and the slower-than-rail fallback above, which
   // also returns "rail" with the full city-to-city km still over threshold.
   const ground = withDistance.filter(isGroundLeg);
-  if (
+  if (transport.railKmh === null) {
+    // A country with no researched rail network still has transport to book —
+    // flights, coaches, whatever the traveller ends up on — and the neutral
+    // copy names none of them, which is exactly why it is safe to emit here.
+    //
+    // What is *not* safe is the researched branch below: China's copy says
+    // "every leg is high-speed-rail friendly — book seats on 12306", and a
+    // country whose profile withholds a rail speed has no such rail. Two
+    // sentences, two premises; only the rail one is gated on rail.
+    //
+    // Still gated on there being a measured distance: a route made entirely of
+    // hand-typed places has no coordinates, so nothing here knows whether the
+    // hops are long-distance at all, and "fares climb close to the date" would
+    // be a claim about a journey we cannot see.
+    if (withDistance.length > 0) notes.push(...transport.bookingCopy);
+  } else if (
     legs.length > 0 &&
     ground.length === legs.length &&
-    ground.every((l) => l.km <= transport.flightThresholdKm) &&
-    // The copy tells the traveller how to book the rail they are about to
-    // spend the trip on. A country whose profile withholds a rail speed has
-    // no such rail — its ground legs are overland — so there is nothing to
-    // book and the note goes with it. Without this guard the neutral booking
-    // copy rides out on an all-overland Peru route: a true-sounding sentence
-    // resting on a false premise, which is the leak this task exists to close.
-    transport.railKmh !== null
+    ground.every((l) => l.km <= transport.flightThresholdKm)
   ) {
     notes.push(...transport.bookingCopy);
   }

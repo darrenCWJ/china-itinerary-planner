@@ -1044,3 +1044,89 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     expect(FILES.some((f) => f.path === CREDIT), `${CREDIT} is missing`).toBe(true);
   });
 });
+
+describe("C8 — a season is never derived from the bare northern table", () => {
+  /**
+   * `lib/months.ts`'s `seasonOfMonth` is hardcoded northern-hemisphere, and it
+   * says so. `getCountryProfile(code).seasonOfMonth` is the hemisphere-aware
+   * wrapper, and `resolveTripSeason` is the rule the write route applies to a
+   * saved trip (app/api/trips/route.ts).
+   *
+   * app/plan/page.tsx called the bare one, so the wizard previewed one season
+   * and the server saved the opposite for every southern-hemisphere country — a
+   * June Peru trip previewed summer and saved winter. No test file may live
+   * under app/ (vitest.config.mts includes only lib/, scripts/ and components/),
+   * so the call site is held down here, as text, while the rule it now calls is
+   * unit-tested in lib/tripSeason.test.ts. Neither half covers the bug alone.
+   *
+   * Scoped to app/ and components/: lib/countryProfile.ts imports the bare
+   * function on purpose — it is what the wrapper wraps.
+   */
+  const RENDERING = (path: string) => path.startsWith("app/") || path.startsWith("components/");
+
+  /**
+   * Whether a file pulls `seasonOfMonth` out of lib/months rather than off a
+   * country profile. Matched on the import, not on the call, because reading it
+   * off a profile is destructuring — `const { seasonOfMonth } = profile` in
+   * components/trip/RouteMap.tsx — and a call-shaped scan would condemn the fix
+   * along with the bug.
+   */
+  const importsBareSeason = (code: string): boolean => {
+    for (const match of code.matchAll(/import\s+([^;]*?)\s+from\s*["\']([^"\']+)["\']/g)) {
+      const clause = match[1];
+      const source = match[2];
+      if (!/(^|\/)months$/.test(source)) continue;
+      if (/\bseasonOfMonth\b/.test(clause)) return true;
+      // A namespace import hides which bindings are used, so it is refused
+      // outright rather than trusted.
+      if (/^\s*\*\s+as\s+\w+/.test(clause)) return true;
+    }
+    return false;
+  };
+
+  it("no wizard or component derives a season from lib/months directly", () => {
+    const offenders = FILES.filter((f) => RENDERING(f.path) && importsBareSeason(f.code)).map(
+      (f) => f.path
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("scanned the files it claims to have scanned", () => {
+    // The iteration floor. An empty result proves nothing if the collector
+    // walked nothing, and the offender list above is exactly that shape.
+    const scanned = FILES.filter((f) => RENDERING(f.path)).map((f) => f.path);
+    expect(scanned.length).toBeGreaterThan(40);
+    expect(scanned).toContain("app/plan/page.tsx");
+    expect(scanned).toContain("components/map/MonthTimeline.tsx");
+    expect(scanned).toContain("components/map/PlacePopup.tsx");
+  });
+
+  it("still recognises the bare import when it sees one", () => {
+    // Two independent halves: an empty offender list means nothing unless the
+    // predicate is known to fire.
+    expect(importsBareSeason('import { seasonOfMonth } from "@/lib/months";')).toBe(true);
+    expect(importsBareSeason('import { MONTHS, seasonOfMonth } from "@/lib/months";')).toBe(true);
+    expect(importsBareSeason('import { seasonOfMonth } from "./months";')).toBe(true);
+    expect(importsBareSeason('import {\n  seasonOfMonth,\n} from "@/lib/months";')).toBe(true);
+    expect(importsBareSeason('import * as months from "@/lib/months";')).toBe(true);
+
+    // And tolerates what it must — every line here is the fix, not the bug.
+    expect(importsBareSeason('import { MONTHS } from "@/lib/months";')).toBe(false);
+    expect(importsBareSeason("const { seasonOfMonth } = getCountryProfile(country);")).toBe(false);
+    expect(importsBareSeason("const s = profile.seasonOfMonth(month);")).toBe(false);
+    expect(importsBareSeason('import { seasonOfMonth } from "./somethingElse";')).toBe(false);
+  });
+
+  it("the wizard routes its picked month through the write route's own rule", () => {
+    // The positive half of the same contract: "does not call the wrong one" is
+    // satisfied by a file that derives no season at all.
+    const page = FILES.find((f) => f.path === "app/plan/page.tsx");
+    expect(page, "app/plan/page.tsx is missing from the scan").toBeDefined();
+    expect(page?.code).toContain("@/lib/tripSeason");
+    expect(page?.code).toContain("resolveTripSeason(");
+    // Twice: once where the month is picked, once where the country changes
+    // under an already-picked month. The second is the same bug in the other
+    // order of the same two clicks.
+    expect(page?.code.match(/resolveTripSeason\(/g) ?? []).toHaveLength(2);
+  });
+});

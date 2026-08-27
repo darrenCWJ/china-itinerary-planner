@@ -90,10 +90,15 @@ export interface TransportProfile {
   /**
    * Generation-time copy: where and how far ahead to book.
    *
-   * `suggestRoute` emits this as the note on an all-ground route, and only
-   * when `railKmh` is non-null: the note's premise is that the traveller is
-   * about to spend the trip on trains, which is false wherever rail is
-   * withheld.
+   * `suggestRoute` emits it on two different conditions, because the two
+   * versions of this copy make two different claims. A researched country's
+   * names its network ("every leg is high-speed-rail friendly — book on
+   * 12306"), so it is emitted only on an all-ground route and only when
+   * `railKmh` is non-null; its premise is that the traveller is about to spend
+   * the trip on trains, which is false wherever rail is withheld. The neutral
+   * version names no network and no vendor, so it rides out on any route with
+   * a measured distance — a country with no rail still has transport to book,
+   * and going silent there would be a gap where there is no gap.
    */
   bookingCopy: string[];
   /**
@@ -115,8 +120,18 @@ export interface TransportProfile {
 export interface CountryProfile {
   /** Hemisphere-aware, unlike the bare months.ts version it wraps. */
   seasonOfMonth(month: number): Season;
-  /** Crowd pressure per calendar month, 1 (quiet) – 5 (peak). */
-  crowdByMonth: number[];
+  /**
+   * Crowd pressure per calendar month, 1 (quiet) – 5 (peak), or `null` when
+   * nobody has researched this country.
+   *
+   * `null` rather than a flat twelve-long row of 3s, and the distinction is the
+   * whole point: a flat row is not the absence of a claim. Rendered under the
+   * label its consumers use — *typical national crowd pressure this month* — it
+   * states that every month is equally busy, which is a brand-new unsourced
+   * claim invented by the very code that was meant to remove one. Consumers
+   * render no crowd element at all when this is null.
+   */
+  crowdByMonth: number[] | null;
   holidays: HolidayBand[];
   /** The whole packing document, not a set of deltas. */
   packing: PackingGroup[];
@@ -150,9 +165,6 @@ function chinaClimate(region: string): RegionMonthClimate[] | null {
   const rows = (REGION_MONTHS as Record<string, RegionMonthClimate[]>)[region];
   return rows.map((row) => ({ ...row }));
 }
-
-/** Flat, so nothing is claimed about a country nobody has researched. */
-const FLAT_CROWD = 3;
 
 /**
  * The half of a transport profile that is about aircraft, airports and taxis
@@ -195,7 +207,8 @@ function chinaProfile(): CountryProfile {
 function neutralProfile(hemisphere: "north" | "south"): CountryProfile {
   return {
     seasonOfMonth: (month) => seasonIn(hemisphere, month),
-    crowdByMonth: Array.from({ length: 12 }, () => FLAT_CROWD),
+    // Absent, not flat — see the field's doc comment on CountryProfile.
+    crowdByMonth: null,
     holidays: [],
     packing: NEUTRAL_PACKING.map((group) => ({ ...group, items: [...group.items] })),
     transport: {

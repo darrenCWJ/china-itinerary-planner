@@ -578,6 +578,7 @@ export function MapExplorer({
           <PlacePopup
             place={hover.place}
             month={month}
+            country={countryCode}
             position={hover.pos}
             containerWidth={mapWrapRef.current?.clientWidth ?? 640}
           />
@@ -593,7 +594,7 @@ export function MapExplorer({
       )}
 
       <div className="mt-4 border-t border-dashed border-[var(--line-1)] pt-4">
-        <MonthTimeline month={month} onMonth={handleMonth} />
+        <MonthTimeline month={month} onMonth={handleMonth} country={countryCode} />
       </div>
 
       {route && (

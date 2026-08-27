@@ -97,11 +97,22 @@ export const HOLIDAY_BANDS: HolidayBand[] = [
   },
 ];
 
-/** Bands overlapping a given month (1–12). */
-export function bandsForMonth(month: number): HolidayBand[] {
+/**
+ * Bands from a given list that overlap a given month (1–12).
+ *
+ * Takes the list rather than closing over `HOLIDAY_BANDS`, because those bands
+ * are China's: every country profile carries its own list (empty for all but
+ * China today) and the overlap arithmetic is the same for all of them.
+ */
+export function bandsIn(bands: readonly HolidayBand[], month: number): HolidayBand[] {
   const start = month - 1;
   const end = month;
-  return HOLIDAY_BANDS.filter((b) => b.from < end && b.to > start);
+  return bands.filter((b) => b.from < end && b.to > start);
+}
+
+/** Bands overlapping a given month (1–12), from China's own table. */
+export function bandsForMonth(month: number): HolidayBand[] {
+  return bandsIn(HOLIDAY_BANDS, month);
 }
 
 export interface RegionMonthClimate {
