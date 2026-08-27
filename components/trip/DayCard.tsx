@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { DayPlan, ScheduledItem } from "@/lib/itinerary";
-import { KIND_EMOJI, SLOT_META, ticketKindMeta } from "@/lib/meta";
+import { kindEmoji, SLOT_META, ticketKindMeta } from "@/lib/meta";
 import type { PlanOp } from "@/lib/planOps";
 import { itemCheckKey, type Ticket } from "@/lib/tripShared";
 import type { TimeSlot } from "@/lib/types";
@@ -24,9 +24,27 @@ interface DayCardProps {
   onToggle: (key: string, checked: boolean) => void;
   /** Sends one plan edit; resolves to an error message or null. */
   onOp: (op: PlanOp) => Promise<string | null>;
+  /**
+   * The glyph for a `kind: "travel"` row, from `travelEmoji(railKmh)`.
+   *
+   * A prop rather than a lookup because this component is handed a `DayPlan`
+   * and nothing else — it has never known which country the trip is in, which
+   * is exactly how it came to draw China's 🚄 over every hop on earth. Its
+   * parent already resolves the country profile for the gap note.
+   */
+  travelEmoji: string;
 }
 
-export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, onOp }: DayCardProps) {
+export function DayCard({
+  day,
+  isToday,
+  tickets,
+  checkedBy,
+  isMember,
+  onToggle,
+  onOp,
+  travelEmoji,
+}: DayCardProps) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -117,6 +135,7 @@ export function DayCard({ day, isToday, tickets, checkedBy, isMember, onToggle, 
               checkedBy={checkedBy}
               canCheck={isMember}
               onToggle={onToggle}
+              travelEmoji={travelEmoji}
               controls={
                 isMember ? (
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 print:hidden">
@@ -321,18 +340,20 @@ function ItemRow({
   canCheck,
   onToggle,
   controls,
+  travelEmoji,
 }: {
   item: ScheduledItem;
   checkedBy: Map<string, string>;
   canCheck: boolean;
   onToggle: (key: string, checked: boolean) => void;
   controls: React.ReactNode;
+  travelEmoji: string;
 }) {
   const slot = SLOT_META[item.slot];
   const checkKey = itemCheckKey(item.id);
   const by = checkedBy.get(checkKey);
   const isCheckable = item.kind === "activity" || item.kind === "custom";
-  const kindEmoji = KIND_EMOJI[item.kind];
+  const emoji = kindEmoji(item.kind, travelEmoji);
   return (
     <li className="flex gap-3">
       <span className="w-24 shrink-0 pt-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-2)]">
@@ -359,7 +380,7 @@ function ItemRow({
                   : "text-sm font-medium"
             }
           >
-            {kindEmoji && <span aria-hidden>{kindEmoji} </span>}
+            {emoji && <span aria-hidden>{emoji} </span>}
             {item.time && <span className="font-mono text-xs text-[var(--accent-ink)]">{item.time} </span>}
             {item.title}
             {by && <span className="ml-1 text-[11px] text-[var(--accent-ink)]"> · done by {by}</span>}

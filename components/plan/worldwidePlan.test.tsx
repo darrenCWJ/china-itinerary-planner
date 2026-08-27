@@ -7,6 +7,7 @@ import { PlanTab } from "@/components/trip/PlanTab";
 import { buildBriefing, type Briefing } from "@/lib/briefing";
 import { chinaLeaks, peruMisses } from "@/lib/chinaLeakScan";
 import type { TripInput } from "@/lib/itinerary";
+import { NEUTRAL_TRAVEL_EMOJI, RAIL_TRAVEL_EMOJI } from "@/lib/meta";
 import { resolveDestinations } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { resolveTripSeason } from "@/lib/tripSeason";
@@ -151,24 +152,50 @@ function renderBriefing(trip: Assembled): string {
 afterEach(cleanup);
 
 /**
- * ⚠ FINDING 1 — the render-time rail glyph, on every country.
+ * FINDING 1 (T30), fixed — the render-time rail glyph, on every country.
  *
- * `lib/meta.ts`'s `KIND_EMOJI.travel` is `"🚄"`, stamped on every `kind:
+ * `lib/meta.ts`'s `KIND_EMOJI.travel` was `"🚄"`, stamped on every `kind:
  * "travel"` itinerary item by all three renderers (`PlanStep`'s `PlanItem`,
- * `DayCard`, `BriefingView`'s `DayPanel`). It is not country-aware, so a
- * Peruvian hop whose *title* is the neutral "Travel to Cusco" is drawn with a
+ * `DayCard`, `BriefingView`'s `DayPanel`). It was not country-aware, so a
+ * Peruvian hop whose *title* is the neutral "Travel to Cusco" was drawn with a
  * Chinese high-speed-train glyph — on the unauthenticated briefing included.
  *
- * **This is the seam this gate exists to find.** The generated plan is clean:
- * `lib/worldwidePlan.test.ts` scans the same trip's data and reports nothing,
- * because the glyph does not exist until render. Every data-layer suite in the
- * phase is blind to it, and so is the design — the guidance design asserts
- * "Zero 🚄 anywhere" for Peru but no task in T20–T32 touches `lib/meta.ts`.
+ * **This is the seam this gate exists to find, and the reason it had to be a
+ * RENDER test.** The generated plan was always clean: `lib/worldwidePlan.test.ts`
+ * scans the same trip's data and reports nothing, because the glyph does not
+ * exist until render. Every data-layer suite in the phase was blind to it, and
+ * so was the design — it asserts "Zero 🚄 anywhere" for Peru while no task in
+ * T20–T32 touched `lib/meta.ts`. Nothing but a scan of `innerHTML` could have
+ * caught it, which is what the three `chinaLeaks(render…)` pins below are.
  *
- * Not fixed here. The fix threads a country through three renderers and needs a
- * country on `Briefing`, which is a feature change, not an acceptance gate.
+ * The glyph now comes from `travelEmoji(railKmh)`: `🚄` where a country has a
+ * researched rail speed, `🧭` where it has none. Not `✈️` — the resolution is
+ * per country, not per leg, so a plane would be the same unsourced claim
+ * reversed. Both glyphs are asserted in both directions below: a Peru surface
+ * must show the neutral one and never the rail one, a China surface the
+ * reverse. Without the positive halves of those pairs, "no 🚄 on the Peru page"
+ * would also be satisfied by rendering no hop at all.
  */
-const RAIL_GLYPH = "🚄";
+const RAIL_GLYPH = RAIL_TRAVEL_EMOJI;
+const NEUTRAL_GLYPH = NEUTRAL_TRAVEL_EMOJI;
+
+/**
+ * `innerHTML` with the tags taken out, so a glyph can be pinned NEXT TO the hop
+ * it belongs to rather than merely somewhere on the page.
+ *
+ * Each renderer wraps the glyph differently — `PlanStep` and `DayCard` emit
+ * `<span aria-hidden>… </span>` before the title, `BriefingView` puts both in
+ * one span — so the raw markup has no shared substring to match. Stripping tags
+ * leaves the one thing all three agree on: "<glyph> <title>".
+ *
+ * This is not fussiness. `🧳` was the first choice for the neutral glyph and it
+ * is ALSO the wizard's travellers chip ("🧳 2 adults + 1 kid"), which would have
+ * made a bare `toContain` pass on a page that drew no hop at all — an arming
+ * assertion that armed nothing.
+ */
+function hopLine(html: string): string {
+  return html.replace(/<[^>]*>/g, "");
+}
 
 /**
  * FINDING 2 (T30), resolved by T31 — the wizard's static China branding.
@@ -223,35 +250,58 @@ describe("T30 jsdom — the trip that gets rendered", () => {
  * only ever shrinks is a gate; one that forgives a category is not.
  */
 describe("T30 jsdom — the negative half", () => {
-  test("the saved trip's plan and packing leak only the render-time rail glyph", () => {
-    expect(chinaLeaks(renderTripPage(peru))).toEqual([RAIL_GLYPH]);
+  test("the saved trip's plan and packing are clean", () => {
+    expect(chinaLeaks(renderTripPage(peru))).toEqual([]);
+    // Armed: the page really drew a hop, and drew it with the glyph a country
+    // that has no researched rail speed earns. Without this the empty scan
+    // above is equally satisfied by a page that rendered no travel item.
+    expect(hopLine(renderTripPage(peru))).toContain(`${NEUTRAL_GLYPH} Travel to Cusco`);
   });
 
-  test("the unauthenticated briefing leaks only the render-time rail glyph", () => {
+  test("the unauthenticated briefing is clean", () => {
     // `plan.tips` reaches a bearer-link holder here, with no login in front of
     // it. This is the surface the phase's honesty rule matters most on — and it
-    // is where a Chinese train is currently drawn over a Peruvian hop.
-    expect(chinaLeaks(renderBriefing(peru))).toEqual([RAIL_GLYPH]);
+    // is where a Chinese train used to be drawn over a Peruvian hop.
+    expect(chinaLeaks(renderBriefing(peru))).toEqual([]);
+    expect(hopLine(renderBriefing(peru))).toContain(`${NEUTRAL_GLYPH} Travel to Cusco`);
   });
 
-  test("the wizard leaks the rail glyph and the unowned share-card CJK, and nothing else", () => {
-    // Post-T31: neither "China" nor 启/程 reach the Peru wizard any longer —
-    // the chop renders nothing (Peru has no curated mark) and the headline
-    // now names Peru's own code. `chinaLeaks` reports tokens in CHINA_TOKENS
-    // order first — only "🚄" still matches — then CJK codepoints in the
-    // order they appear in the document: the share-a-trip card is the only
-    // source left.
-    expect(chinaLeaks(renderWizard(peru))).toEqual([RAIL_GLYPH, "一", "起", "走"]);
+  test("the wizard leaks only the unowned share-card CJK, and nothing else", () => {
+    // Post-fix: no token matches at all. `chinaLeaks` reports CHINA_TOKENS
+    // first and CJK codepoints after them, so an empty token half in front of
+    // these three is the whole claim — "China" and 启/程 went with T31, 🚄 with
+    // the country-aware glyph. `一起走` is `ShareTripCard`'s, on no task's
+    // file list; see the constant's docblock.
+    expect(chinaLeaks(renderWizard(peru))).toEqual(["一", "起", "走"]);
     // Spelled out above, and cross-checked against the constant here, so the
     // two cannot drift and the constant's docblock stays the explanation.
-    expect(chinaLeaks(renderWizard(peru)).filter((l) => l !== RAIL_GLYPH)).toEqual(
-      UNOWNED_SHARE_CARD_CJK
-    );
+    expect(chinaLeaks(renderWizard(peru))).toEqual(UNOWNED_SHARE_CARD_CJK);
+    // Armed the same way as the other two surfaces.
+    expect(hopLine(renderWizard(peru))).toContain(`${NEUTRAL_GLYPH} Travel to Cusco`);
     // T31's arming proof, direction one: a country with no curated mark shows
     // no chop at all — neither China's old hardcoded one nor any other.
     expect(renderWizard(peru)).not.toContain("启程");
     expect(renderWizard(peru)).not.toContain("同行");
     expect(renderWizard(peru)).not.toContain("China");
+  });
+
+  /**
+   * The headline, which no China-token scan can see.
+   *
+   * "Your PE itinerary" contains no Chinese marker and omits no Peru fact, so
+   * both halves of this gate passed over it in silence. It is here because it
+   * is the same class of defect as the glyph — a render-only string naming the
+   * wrong thing — and the only instrument that catches it is an assertion about
+   * what the page actually says.
+   */
+  test("the wizard headline names Peru, not its ISO code", () => {
+    const wizard = renderWizard(peru);
+    expect(wizard).toContain("Your Peru itinerary");
+    expect(wizard).not.toContain("Your PE itinerary");
+    // Armed from the other side. CN is one of lib/countries.ts's 24 curated
+    // names AND is in the facts artifact, so China reads the same either way —
+    // which is the point: the fix moved the source without moving China's copy.
+    expect(renderWizard(china)).toContain("Your China itinerary");
   });
 
   test("everything the generators produced is clean — the leaks are render-only", () => {
@@ -260,20 +310,44 @@ describe("T30 jsdom — the negative half", () => {
     // renderer, which is why no data-layer suite in the phase can see it.
     expect(chinaLeaks(JSON.stringify(peru.data))).toEqual([]);
     expect(chinaLeaks(JSON.stringify(peru.briefing))).toEqual([]);
-    // And the item it is stamped on is a travel hop with neutral copy.
+    // And the item the glyph is stamped on is a travel hop with neutral copy.
     const hop = peru.data.plan.days
       .flatMap((d) => d.items)
       .find((i) => i.kind === "travel");
     expect(hop?.title).toBe("Travel to Cusco");
     expect(hop?.note).toBeUndefined();
+    // Both glyphs stay render-only. The persisted plan carries neither, so a
+    // regression can only ever come back through a renderer — which is why
+    // this file, and not a data-layer suite, is where they are pinned.
+    expect(JSON.stringify(peru.data)).not.toContain(NEUTRAL_GLYPH);
+    expect(JSON.stringify(peru.data)).not.toContain(RAIL_GLYPH);
   });
 
-  test("the rail glyph is the travel item's, not something structural", () => {
-    // If it ever appears on a surface with no travel item, it came from
-    // somewhere else and the pin above is measuring the wrong thing.
+  /**
+   * The three surfaces render real documents, or every `toEqual([])` above is
+   * satisfied by a blank string.
+   *
+   * `peruMisses` covers this from the positive side, but only for Peru facts.
+   * This is the cheap direct guard, and it is the one that reddens if a render
+   * helper is ever wired to return "" — the mutation an exclusion-shaped gate
+   * is least able to see.
+   */
+  test("the scanned surfaces are real renders, not empty strings", () => {
+    for (const html of [renderWizard(peru), renderTripPage(peru), renderBriefing(peru)]) {
+      expect(html.length).toBeGreaterThan(2000);
+      expect(html).toContain("Cusco");
+    }
+  });
+
+  test("the hop glyph is the travel item's, not something structural", () => {
+    // If either glyph appears on a surface with no travel item, it came from
+    // somewhere else and the pins above are measuring the wrong thing.
     const noHops = { ...peru.briefing, days: peru.briefing.days.slice(0, 1) };
     expect(noHops.days[0].items.every((i) => i.kind !== "travel")).toBe(true);
-    expect(chinaLeaks(renderBriefing({ ...peru, briefing: noHops }))).toEqual([]);
+    const html = renderBriefing({ ...peru, briefing: noHops });
+    expect(chinaLeaks(html)).toEqual([]);
+    expect(html).not.toContain(NEUTRAL_GLYPH);
+    expect(html).not.toContain(RAIL_GLYPH);
   });
 });
 
@@ -317,6 +391,15 @@ describe("T30 jsdom — the arming proof", () => {
     for (const token of ["Alipay", "WeChat", "VPN", "12306", "high-speed rail"]) {
       expect(leaks).toContain(token);
     }
+    // The glyph fix, armed from China's side on all three surfaces (here and
+    // in the two tests below): CN has a researched rail speed, so it keeps 🚄
+    // and never shows the neutral one. Without these, `travelEmoji` returning
+    // the neutral glyph unconditionally would satisfy every Peru pin above.
+    expect(leaks).toContain(RAIL_GLYPH);
+    expect(hopLine(renderTripPage(china))).toContain(
+      `${RAIL_GLYPH} High-speed rail or flight to`
+    );
+    expect(renderTripPage(china)).not.toContain(NEUTRAL_GLYPH);
   });
 
   test("the identical scan over the rendered China briefing reports leaks", () => {
@@ -328,6 +411,11 @@ describe("T30 jsdom — the arming proof", () => {
     // CJK reaches this surface twice over: through cn.ts's "Amap 高德" tip and
     // through the curated `localName` the briefing carries for Beijing.
     expect(leaks).toContain("北");
+    expect(leaks).toContain(RAIL_GLYPH);
+    expect(hopLine(renderBriefing(china))).toContain(
+      `${RAIL_GLYPH} High-speed rail or flight to`
+    );
+    expect(renderBriefing(china)).not.toContain(NEUTRAL_GLYPH);
   });
 
   test("the identical scan over the rendered China wizard reports leaks", () => {
@@ -335,6 +423,9 @@ describe("T30 jsdom — the arming proof", () => {
     for (const token of ["China", "Alipay", "WeChat", "RMB", "¥", "Pleco", "high-speed rail"]) {
       expect(leaks).toContain(token);
     }
+    expect(leaks).toContain(RAIL_GLYPH);
+    expect(hopLine(renderWizard(china))).toContain(`${RAIL_GLYPH} High-speed rail or flight to`);
+    expect(renderWizard(china)).not.toContain(NEUTRAL_GLYPH);
     // T31's arming proof, direction two: CN still shows a chop, so the "no
     // chop for Peru" assertion above cannot pass because the feature is
     // simply broken. It is `同行`, not the old hardcoded `启程` — see the

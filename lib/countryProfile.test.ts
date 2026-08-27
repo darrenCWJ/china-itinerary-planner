@@ -436,6 +436,71 @@ describe("a country the ingest reached gets the ingested sentences", () => {
 // Currency
 // ---------------------------------------------------------------------------
 
+/**
+ * `name` — what the profile calls this country to a traveller.
+ *
+ * Added so a client component can have the facts-backed name without importing
+ * lib/countryFacts.ts: `components/PlanStep.tsx` may not name that module
+ * (lib/countryFacts.test.ts pins that it does not, as the arming assertion for
+ * its transitive-import walk), and the alternative it was using —
+ * `getCountry(code).name` — falls back to the bare code, so the wizard headline
+ * read "Your PE itinerary" for the 222 countries lib/countries.ts does not
+ * curate.
+ */
+describe("name is the traveller-facing one, for every country there is", () => {
+  test("hand-tuned beats ingested, and it is the same rule getCountryName has", () => {
+    // CN is in BOTH tables and they disagree: lib/countries.ts says "China",
+    // the CC0 artifact says "People's Republic of China". The curated one wins,
+    // which is what makes this a precedence test rather than a spelling one.
+    expect(getCountryProfile("CN").name).toBe("China");
+    expect(COUNTRY_FACTS.CN?.name).toBe("People's Republic of China");
+    // Same disagreement, opposite spelling direction, so a `name` wired to the
+    // artifact instead would redden here too rather than only on CN.
+    expect(getCountryProfile("TR").name).toBe("T\u00fcrkiye");
+    expect(COUNTRY_FACTS.TR?.name).toBe("Turkey");
+  });
+
+  test("an uncurated country gets its real name, not its code", () => {
+    // The defect this field exists to fix, stated on the country it was found
+    // on and on two more so it cannot pass by a single lucky record.
+    expect(getCountryProfile("PE").name).toBe("Peru");
+    expect(getCountryProfile("NP").name).toBe("Nepal");
+    expect(getCountryProfile("BO").name).toBe("Bolivia");
+  });
+
+  test("a code that is not a country has no name, and says so with a blank", () => {
+    // Not the code, and not a hedge: the blank is what `buildGapNote` and
+    // `powerAdapterItem` already branch on, and the wizard drops the word
+    // rather than printing "Your XX itinerary".
+    expect(getCountryProfile("XX").name).toBe("");
+    expect(getCountryProfile("\ud83d\ude42").name).toBe("");
+    expect(getCountryProfile("").name).toBe("");
+  });
+
+  test("no swept code is ever named after itself, and only four have no name", () => {
+    // Collected and asserted once rather than ~500 expects: a per-code matcher
+    // call in a loop puts thousands of them inside one test's timeout, which is
+    // what commit 84cd61e was about.
+    const nameless: string[] = [];
+    const namedAfterTheCode: string[] = [];
+    for (const code of SWEPT) {
+      const name = getCountryProfile(code).name;
+      if (name === "") nameless.push(code);
+      if (name === code) namedAfterTheCode.push(code);
+    }
+    // The bug, swept: not one of 249 codes renders as its own two letters.
+    expect(namedAfterTheCode).toEqual([]);
+    // And the blanks are named, not bounded. All four are uninhabited —
+    // Antarctica, Bouvet Island, Heard & McDonald, US Minor Outlying Islands —
+    // so the sovereign-state ingest has no record for them and nobody is
+    // planning a trip there. A fifth appearing means the artifact lost a
+    // country, which is a thing to look at rather than to tolerate.
+    expect(nameless).toEqual(["AQ", "BV", "HM", "UM"]);
+    // Armed: the sweep is the real list, not an empty one that passes for free.
+    expect(SWEPT.length).toBeGreaterThan(240);
+  });
+});
+
 describe("currency is a fact or an absence, never a placeholder", () => {
   test("a country the artifact covers reads its ISO code", () => {
     expect(getCountryProfile("JP").currency).toBe("JPY");
