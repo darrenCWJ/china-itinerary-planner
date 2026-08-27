@@ -79,17 +79,26 @@ const MEASURED_COVERAGE: Record<string, number> = {
   voltageV: 221,
   drivingSide: 245,
   emergency: 221,
-  officialLanguages: 243,
+  // 237, not the 243 Task 25 measured. Six countries — AF, AZ, BE, BQ, PW and
+  // US — carry only P37 statements upstream itself marks `applies to part`,
+  // which is upstream saying they are not claims about the whole country, so
+  // the ingest withholds the whole field for them. The FLOOR in
+  // `MIN_FIELD_COVERAGE` deliberately did NOT move down with it; the comment
+  // there says why.
+  officialLanguages: 237,
   callingCode: 237,
   lat: 246,
 };
 
 /**
- * Measured: 70,443 bytes for 246 countries, 2,098 facts and 246 names, 10,387
- * gzipped.
+ * Measured: 70,014 bytes for 246 countries, 2,092 facts and 246 names.
+ *
+ * It was 70,443 for 2,098 facts (10,387 gzipped) before the territorial-scope
+ * language rule withheld six countries' official languages. The artifact got
+ * smaller, which is the direction an honest gap moves a budget.
  *
  * The design's prototype said 50,265 and said to re-measure rather than carry
- * it forward; the real figure is 40% larger, mostly because 243 countries
+ * it forward; the real figure is 40% larger, mostly because 237 countries
  * carry their official languages and `currencyName` ships beside every code.
  * Adding the country name cost 4,927 bytes — 1,440 gzipped — which is the
  * price of every gap note and every packing line naming a country instead of
@@ -183,6 +192,51 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
     expect(pe.officialLanguages).toContain("Spanish");
   });
 
+  test("states nothing false about the official languages of the US, the Philippines or Norway", () => {
+    // THE THREE PINNED CASES. Each was a sentence the app rendered, saved into
+    // TripPlan.tips, and republished on the unauthenticated /b/[code] link —
+    // so a wrong value here is not a bad template, it is a falsehood a rebuild
+    // cannot recall. They are pinned by name because a coverage number cannot
+    // see any of them: all three countries answered, and answered wrongly.
+    const countries = artifact!.countries;
+
+    // US: every truthy P37 statement upstream carries is scoped to a territory
+    // (Carolinian and Chamorro to the Northern Marianas, Hawaiian to Hawaii,
+    // Samoan to American Samoa, Spanish to Puerto Rico) and English's is at
+    // deprecated rank, so there is no national list to state. WITHHELD, and
+    // the gap note says so — which is the promise the feature already made.
+    expect(countries.US?.officialLanguages).toBeUndefined();
+    // Armed: US must still be a rich record, or "withheld" and "we lost the
+    // United States" would look identical here.
+    expect(countries.US?.currencyCode).toBe("USD");
+    expect(countries.US?.callingCode).toBe("+1");
+
+    // PH: Taglish is the Tagalog/English code-switching register Manila
+    // speaks, not a language anybody ships a translation pack for. Dropped by
+    // id; English and Filipino, which are the constitutional pair, stay.
+    expect(countries.PH?.officialLanguages).toEqual(["English", "Filipino"]);
+
+    // NO: Bokmål and Nynorsk are the two WRITTEN FORMS of Norwegian, which
+    // Norway lists alongside Norwegian itself — so the old value named one
+    // language three times. Dropped by id; the Language Act's actual pair
+    // stays.
+    expect(countries.NO?.officialLanguages).toEqual(["Norwegian", "Sámi"]);
+
+    // The rule that produced the US answer, stated as a set rather than as one
+    // country. NINE countries carry no language field: six because every P37
+    // statement upstream gives them is territorially scoped (AF, AZ, BE, BQ,
+    // PW, US) and three because upstream states no official language at all
+    // (GP, MQ, UY — the first two are French overseas departments whose item
+    // carries none, and Uruguay's Spanish is de facto and unstated). Pinned as
+    // one list so a future upstream edit that re-admits any of them has to be
+    // looked at rather than absorbed.
+    const withheld = Object.entries(countries)
+      .filter(([, record]) => record.officialLanguages === undefined)
+      .map(([code]) => code)
+      .sort();
+    expect(withheld).toEqual(["AF", "AZ", "BE", "BQ", "GP", "MQ", "PW", "US", "UY"]);
+  });
+
   test("has the per-field coverage the shipping query measured", () => {
     const records = Object.values(artifact!.countries);
     for (const [field, expected] of Object.entries(MEASURED_COVERAGE)) {
@@ -205,10 +259,12 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
       RENDERED_FIELDS.some((field) => record[field as keyof CountryFacts] === undefined)
     );
     expect(withGaps.length).toBeGreaterThan(0);
-    // Measured 2026-08-27: 187 of 246 carry all seven, 31 carry six, 12 five,
-    // 10 four and 6 three or fewer. Pinned as the complement, so a build where
+    // Measured against the committed artifact: 182 of 246 carry all seven. It
+    // was 187 before the territorial-scope rule; the five that moved are AF,
+    // AZ, BE, BQ and PW, each of which carried every other rendered field.
+    // (US was already one short.) Pinned as the complement, so a build where
     // the gaps quietly disappeared fails here.
-    expect(records.length - withGaps.length).toBe(187);
+    expect(records.length - withGaps.length).toBe(182);
     // ABSENT, never empty. An empty array or an empty string would render as a
     // broken sentence where an absent field renders as nothing at all.
     for (const [code, record] of records) {
@@ -265,14 +321,12 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
 });
 
 /**
- * lib/countries.ts's hand-written `SOUTHERN` list, re-derived from source.
+ * lib/countries.ts's `SOUTHERN` list, re-derived from source.
  *
  * Read out of the file rather than imported, because `SOUTHERN` is
- * module-private and the design is explicit that it is NOT retired: it encodes
- * a judgement ("countries straddling the equator are listed by where their
- * travel season actually falls") that a centroid latitude would overrule, and
- * lib/isoTopology.test.ts already scans the same block. The regex approach is
- * that file's precedent, not a new one.
+ * module-private and should stay private — it is not a registry of supported
+ * countries. lib/isoTopology.test.ts already scans the same block; the regex
+ * approach is that file's precedent, not a new one.
  */
 function southernCodes(): string[] {
   const source = readFileSync(join(process.cwd(), "lib", "countries.ts"), "utf8");
@@ -284,31 +338,76 @@ function southernCodes(): string[] {
 /**
  * The only consumer of the ingested `lat` field. It is never rendered.
  *
- * Measured 2026-08-27 against the committed artifact: of the 34 codes in
- * `SOUTHERN`, exactly one has a non-negative centroid — KE at +0.1, Kenya
- * straddling the equator with its travel season set by the southern half. The
- * design predicted ID, KE, BR and CD would be candidates; only KE actually is,
- * and the other three have negative centroids. So the exception list is one
- * country long, and it is named rather than tolerated as a range.
+ * Codes that belong in `SOUTHERN` although their centroid is NOT negative.
+ * Exactly one: KE at +0.1. Kenya straddles the equator, and Nairobi, the Mara
+ * and the coast — everywhere a visitor actually goes — are south of it, so its
+ * travel season is the southern one. That judgement predates the centroid data
+ * and survives it, which is why it is a named exception rather than something
+ * a threshold rounds away.
+ *
+ * It is a list of CODES, not a latitude band, on purpose. A band of "within
+ * half a degree" would silently admit whatever else drifted into it; a name has
+ * to be argued for in a diff. The second test below fails if Wikidata ever
+ * moves KE's centroid south, so the exception cannot rot into cruft either.
  */
 const EQUATOR_STRADDLERS = new Set(["KE"]);
 
+/**
+ * The count `SOUTHERN` must hold, measured against the committed artifact:
+ * 58 countries with a negative centroid, plus KE.
+ *
+ * Pinned as well as reconciled because the reconciliation below is a set
+ * comparison, and a set comparison of two things derived from the same file
+ * would pass on an empty file. This number is the arming charge.
+ */
+const EXPECTED_SOUTHERN = 59;
+
 describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
-  test("every hand-listed southern country really is south, or is a named straddler", () => {
-    const southern = southernCodes();
-    // Arming: the loop below passes vacuously on an empty list, and
-    // lib/isoTopology.test.ts already pins this block at >= 30 codes.
-    expect(southern.length).toBeGreaterThanOrEqual(30);
+  // Cheap, and hoisted out of every timed test body: parsing already happened
+  // at module scope, so each test below does list work and nothing else.
+  const southern = hasAssets ? southernCodes() : [];
+  const southernSet = new Set(southern);
+  const negativeLat = hasAssets
+    ? Object.entries(artifact!.countries)
+        .filter(([, record]) => typeof record.lat === "number" && record.lat < 0)
+        .map(([code]) => code)
+    : [];
+
+  test("the list and the artifact are both really there, or every check below is vacuous", () => {
+    expect(southern.length).toBe(EXPECTED_SOUTHERN);
+    expect(new Set(southern).size).toBe(southern.length);
+    expect(negativeLat.length).toBeGreaterThanOrEqual(50);
+  });
+
+  test("every listed southern country really is south, or is a named straddler", () => {
     const wrong: string[] = [];
-    let checked = 0;
+    const missingLat: string[] = [];
     for (const code of southern) {
       const lat = artifact!.countries[code]?.lat;
-      expect(lat, `${code} has no latitude in the artifact`).toBeTypeOf("number");
-      checked++;
-      if (lat! >= 0 && !EQUATOR_STRADDLERS.has(code)) wrong.push(`${code}=${lat}`);
+      if (typeof lat !== "number") {
+        missingLat.push(code);
+        continue;
+      }
+      if (lat >= 0 && !EQUATOR_STRADDLERS.has(code)) wrong.push(`${code}=${lat}`);
     }
-    expect(checked).toBe(southern.length);
+    // One assertion per failure mode rather than two per country: 59 codes
+    // would otherwise be 118 `expect()` calls inside the timed region.
+    expect(missingLat, `listed as southern but absent from the artifact: ${missingLat.join(", ")}`).toEqual([]);
     expect(wrong, `listed as southern but not south of the equator: ${wrong.join(", ")}`).toEqual([]);
+  });
+
+  test("every country south of the equator is listed, which is the direction that was missing", () => {
+    // THE OTHER HALF. The original check only ever walked `SOUTHERN`, so it
+    // could see a wrong entry and never a missing one — and 25 countries
+    // (Ecuador, Gabon, the Comoros, Mauritius, the Falklands, Christmas
+    // Island, and 19 more) were absent from the list while passing it. A trip
+    // to any of them in June was called summer when it is winter, and the
+    // season drives the packing list, the crowd curve and the plan's copy.
+    const unlisted = negativeLat.filter((code) => !southernSet.has(code)).sort();
+    expect(
+      unlisted,
+      `south of the equator but missing from SOUTHERN in lib/countries.ts: ${unlisted.join(", ")}`
+    ).toEqual([]);
   });
 
   test("each named straddler is still a straddler, so the exception cannot rot", () => {
@@ -320,6 +419,21 @@ describe.skipIf(!hasAssets)("SOUTHERN cross-check", () => {
       expect(lat, `${code} is on the exception list but no longer needs to be`).toBeGreaterThanOrEqual(0);
       expect(lat, `${code} is too far north to be called a straddler`).toBeLessThan(5);
     }
+  });
+
+  test("the near-equator countries are listed by name, not rounded away by a threshold", () => {
+    // The honest answer to "is a centroid at -0.5 meaningfully southern?".
+    // These four have no summer or winter to speak of — they have wet and dry
+    // seasons — and this app has only two answers to give. They are listed on
+    // the sign of their centroid, which is at least what the data states, and
+    // they are named here so the choice is visible rather than buried in a
+    // magic number. If a fifth country drifts inside a degree of the equator
+    // this goes red and somebody decides on purpose.
+    const nearEquator = negativeLat
+      .filter((code) => Math.abs(artifact!.countries[code].lat!) < 1.5)
+      .sort();
+    expect(nearEquator).toEqual(["CG", "EC", "GA", "NR"]);
+    for (const code of nearEquator) expect(southernSet.has(code), `${code} is listed`).toBe(true);
   });
 });
 

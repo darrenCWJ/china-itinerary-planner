@@ -420,10 +420,13 @@ describe("a country the ingest reached gets the ingested sentences", () => {
     expect(pe.gapNote).toHaveLength(1);
     expect(pe.gapNote[0]).toContain("Peru-specific guidance");
     expect(pe.gapNote[0]).toContain("open reference data");
-    // Measured 2026-08-27 against the committed artifact: 58 of the 249 swept
-    // codes are missing at least one field and get the second line.
+    // Measured against the committed artifact: 63 of the 249 swept codes are
+    // missing at least one field and get the second line. It was 58 before the
+    // ingest's territorial-scope rule; the five that moved are AF, AZ, BE, BQ
+    // and PW, whose official languages are now withheld rather than stated
+    // wrongly. (US was already on this list, for its plugs.)
     const twoLine = SWEPT.filter((code) => getCountryProfile(code).gapNote.length === 2);
-    expect(twoLine).toHaveLength(58);
+    expect(twoLine).toHaveLength(63);
     expect(getCountryProfile(twoLine[0]).gapNote[1]).toContain("We also have no ");
   });
 

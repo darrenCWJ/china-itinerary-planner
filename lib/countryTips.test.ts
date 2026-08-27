@@ -580,10 +580,10 @@ describe("the boundary and the committed artifact agree", () => {
     }
     // Armed: an artifact that failed to parse would leave both empty and green.
     expect(Object.keys(raw.countries)).toHaveLength(246);
-    // 2,098 facts plus one name per country. The name is not a fact — the
+    // 2,092 facts plus one name per country. The name is not a fact — the
     // ingest keeps it out of `FACT_FIELDS` so no drift band moves by 246 — but
     // it IS a field this reader has to carry, so it is compared like one.
-    expect(compared).toBe(2344);
+    expect(compared).toBe(2338);
     // Nothing is dropped any more. T26 refused Guinea's "languages of Guinea"
     // meta-item here, by label, which cost Guinea French with it; the ingest
     // now drops that item by its Q-id upstream, so what the artifact carries is
@@ -618,8 +618,11 @@ describe("the boundary and the committed artifact agree", () => {
         if (/^languages? of /i.test(language)) meta.push(`${code}: ${language}`);
       }
     }
-    // Armed: measured 450 language values across 243 countries.
-    expect(scanned).toBe(450);
+    // Armed: measured 422 language values across the 237 countries that carry
+    // the field. It was 450 across 243 before the ingest's territorial-scope
+    // rule withheld six countries' languages and dropped Norway's two written
+    // forms and the Philippines' code-switching register.
+    expect(scanned).toBe(422);
     expect(meta).toEqual([]);
     // And the rule still refuses one arriving by another route — a hand-edited
     // artifact, or a stale deploy built before the ingest dropped it.
@@ -630,7 +633,7 @@ describe("the boundary and the committed artifact agree", () => {
 
   test("no field's value is altered on the way through", () => {
     // Dropping is the sanctioned outcome; changing a value is not. This is the
-    // "does not repair" rule checked against 2,344 real values rather than
+    // "does not repair" rule checked against 2,338 real values rather than
     // against the handful of malformed fixtures above.
     let checked = 0;
     for (const [code, record] of Object.entries(raw.countries)) {
@@ -641,7 +644,7 @@ describe("the boundary and the committed artifact agree", () => {
         expect(read[field], `${code}.${field}`).toEqual(value);
       }
     }
-    expect(checked).toBe(2344);
+    expect(checked).toBe(2338);
   });
 });
 

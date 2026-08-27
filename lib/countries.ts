@@ -57,16 +57,54 @@ const CURATED: Record<string, Omit<Country, "code" | "hemisphere">> = {
 /**
  * Southern-hemisphere countries, which invert the seasons.
  *
- * A latitude lookup would be better and is what the spec calls for, but no
- * country centroid data exists in the repo yet. Until it does, an explicit
- * list beats silently treating the whole world as northern — the bug this
- * data exists to fix. Countries straddling the equator are listed by where
- * their travel season actually falls.
+ * DERIVED, NOT HAND-MAINTAINED. Every code here is a country whose centroid
+ * latitude in `data/country-facts.json` is negative, plus the named
+ * straddlers below. The artifact has carried a `lat` for all 246 countries
+ * since the country-facts ingest landed, and
+ * `lib/countryFacts.test.ts`'s `SOUTHERN cross-check` re-derives this set from
+ * it in BOTH directions on every run: a code listed here whose centroid is not
+ * negative fails, and a country whose centroid IS negative and is missing from
+ * here fails too.
+ *
+ * The second direction is the one that was missing. This list was hand-written
+ * when no centroid data existed in the repo, the check that arrived later only
+ * ever walked the list, and the list had 34 of the 58 negative-latitude
+ * countries — so Ecuador, Gabon, Mauritius, the Falklands, the Comoros and 20
+ * others were told a June trip was summer when it is winter. A one-directional
+ * check cannot see a missing entry; that is why the reconciliation is
+ * bidirectional and why this comment says derived rather than curated.
+ *
+ * IT IS A LITERAL RATHER THAN A LOOKUP, and that is a bundle constraint, not
+ * an oversight. This module is a zero-import leaf, pinned as one by
+ * `lib/countryFacts.test.ts`, because client components import it for accents,
+ * marks and hemispheres; `data/country-facts.json` is 70 KB, so reading the
+ * latitudes here at runtime would put the whole artifact into every page that
+ * wants a hue. The derivation therefore happens in the test, which runs on
+ * every commit and has no bundle to pay for, and the answer is checked in.
+ * Regenerating after an ingest is a one-liner over the artifact's `lat`
+ * fields; the test tells you exactly which codes moved.
+ *
+ * TWO JUDGEMENTS SIT ON TOP OF THE SIGN, both named rather than rounded:
+ *
+ * - KE (+0.1) is listed although its centroid is north of the equator. Kenya
+ *   straddles it, and Nairobi, the Mara and the coast — everywhere a visitor
+ *   goes — are south of it, so its travel season is the southern one. It is
+ *   the sole entry on `EQUATOR_STRADDLERS` in the cross-check, which fails if
+ *   Wikidata ever moves the centroid south and makes the exception cruft.
+ * - CG (-0.75), EC (-1.0), GA (-0.68) and NR (-0.53) are listed on the sign
+ *   alone, and NO THRESHOLD EXCLUDES THEM. Within a degree of the equator
+ *   neither hemisphere's seasons mean anything — these places have wet and dry
+ *   seasons, not summer and winter — and this app has only two answers to
+ *   give. Rounding them to "north" would be picking the wrong one of two wrong
+ *   answers and hiding the choice in a magic number; the sign is at least the
+ *   one the data states. Naming them here is the honest version of that.
  */
 const SOUTHERN = new Set([
-  "AO", "AR", "AU", "BI", "BO", "BR", "BW", "CD", "CL", "FJ", "ID", "KE",
-  "LS", "MG", "MW", "MZ", "NA", "NC", "NZ", "PE", "PF", "PG", "PY", "RW",
-  "SB", "SZ", "TL", "TZ", "UY", "VU", "WS", "ZA", "ZM", "ZW",
+  "AO", "AR", "AS", "AU", "BI", "BO", "BR", "BW", "CC", "CD", "CG", "CK",
+  "CL", "CX", "EC", "FJ", "FK", "GA", "GS", "ID", "IO", "KE", "KM", "LS",
+  "MG", "MU", "MW", "MZ", "NA", "NC", "NF", "NR", "NU", "NZ", "PE", "PF",
+  "PG", "PN", "PY", "RE", "RW", "SB", "SC", "SH", "SZ", "TF", "TK", "TL",
+  "TO", "TV", "TZ", "UY", "VU", "WF", "WS", "YT", "ZA", "ZM", "ZW",
 ]);
 
 /**

@@ -115,11 +115,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
  * What the build learned about itself, for the gate to inspect. None of it is
  * written to the artifact; it exists so `assertFactsSane` can refuse things a
  * finished record cannot show — a plug field withheld because the only value
- * upstream carried was a Wikipedia article, or a hand-verified override that
- * upstream has since made redundant.
+ * upstream carried was a Wikipedia article, a language field withheld because
+ * every statement upstream had was scoped to one territory, or a hand-verified
+ * override that upstream has since made redundant.
  * @typedef {{
  *   soleDroppedArticlePlugs: string[],
- *   soleDroppedMetaLanguages: string[],
+ *   soleDroppedLanguages: string[],
+ *   scopedLanguages: string[],
  *   curatedFired: string[],
  *   curatedStale: string[],
  *   withheld: Record<string, string[]>,
@@ -325,33 +327,52 @@ export const PLUG_LETTER_SET = new Set(Object.values(PLUG_LETTERS));
 export const DROPPED_PLUG_ITEMS = new Set(['Q60740126']);
 
 /**
- * Q1339026 is `languages of Guinea` - a Wikidata META-ITEM, an article-shaped
- * container about a country's languages, used as a P37 value by GN alone.
+ * P37 values that are not a language a traveller could be told to learn.
  *
- * Measured 2026-08-27 by the shipping query across all 246 codes: 451 P37 rows
- * over 243 countries, 215 distinct language items, and this is the ONLY one
- * that is not a language. Rendered by `languageTip` it reads "languages of
- * Guinea is the official language - download an offline translation pack", so
- * it is design risk 2 ("a template renders a true fact into a false sentence")
- * arriving in real data.
+ * FOUR ids, and each is here because the FULL universe was measured, not
+ * because one country looked odd. Re-measured 2026-08-27 across all 246 codes:
+ * 451 P37 rows over 243 countries, 215 distinct items, and the distinct set of
+ * `P31` classes those items carry is 42 values long — small enough to read
+ * end to end, which is how this list was closed rather than guessed at.
  *
- * T26 refused it at the boundary instead, by label shape, and said the fix
- * belongs here - correctly, because refusing it there costs Guinea the WHOLE
- * field: `allOrNothing` cannot keep French without asserting that French is
- * Guinea's only official language, which is a claim the reader would be making
- * rather than reading. Dropped here, by ID, the same claim is made by the
- * SOURCE: what is left is exactly the set upstream states, minus a value that
- * was never a language. Guinea keeps French, and the boundary's label rule
- * stays as belt and braces against a hand-edited or stale artifact.
+ * - `Q1339026` `languages of Guinea` — a META-ITEM, an article-shaped
+ *   container about a country's languages, used by GN alone. It is the only
+ *   item in the universe whose class is `languages of a country` (Q55958305).
+ *   Rendered by `languageTip` it reads "languages of Guinea is the official
+ *   language - download an offline translation pack", which is design risk 2
+ *   ("a template renders a true fact into a false sentence") in real data.
+ * - `Q25167` `Bokmål` and `Q25164` `Nynorsk` — the two items in the universe
+ *   whose class is `målform` (Q14860523), the Norwegian word for a WRITTEN
+ *   FORM of a language. Both are written standards OF Norwegian, which Norway
+ *   also lists separately, so publishing them made NO read "Bokmål, Norwegian,
+ *   Nynorsk and Sámi are official languages" — a list naming one language
+ *   three times. Dropped, Norway reads "Norwegian and Sámi", which is what its
+ *   Language Act says.
+ * - `Q2530387` `Taglish` — the only item in the universe whose class is
+ *   `code-switching` (Q255615). It is the Tagalog/English register Manila
+ *   speaks, not a language anybody publishes a translation pack for, and its
+ *   own P37 statement is qualified `nature of statement: de facto`.
+ *
+ * BY CLASS WOULD HAVE BEEN WRONG, and the measurement is why this is an id
+ * list rather than the class filter it looks like it wants to be. `register`
+ * (Q286576) sounds like exactly the right thing to exclude and it is the class
+ * of `Hindi`, `Urdu` and `Tajik`; `language family` is the class of `Greek`,
+ * `Albanian` and `Sámi`; `technical standard` is the class of
+ * `Standard Chinese`; `academic discipline` is the class of `Māori`. A class
+ * rule would have cost IN, PK, TJ, GR, AL, NO, SG, HK, MO and NZ real
+ * languages to catch three items. Only `målform`, `code-switching` and
+ * `languages of a country` are clean, and between them they contain exactly
+ * the four ids above.
  *
  * By id and not by label, for `DROPPED_PLUG_ITEMS`'s reason: an upstream label
- * edit must not silently re-admit it. Measured zero countries carry a
- * meta-item as their SOLE P37 value, and - exactly as for the plug article -
- * that assumption is enforced rather than trusted: `buildFacts` records any
- * country withheld only because of this, and `assertFactsSane` refuses to
- * write when that list is non-empty.
+ * edit must not silently re-admit one. Measured zero countries carry ONLY
+ * dropped items, and - exactly as for the plug article - that assumption is
+ * enforced rather than trusted: `buildFacts` records any country withheld only
+ * because of this, and `assertFactsSane` refuses to write when that list is
+ * non-empty. GN keeps French, NO keeps Norwegian and Sámi, PH keeps English
+ * and Filipino.
  */
-export const DROPPED_LANGUAGE_ITEMS = new Set(['Q1339026']);
+export const DROPPED_LANGUAGE_ITEMS = new Set(['Q1339026', 'Q25164', 'Q25167', 'Q2530387']);
 
 /** Emergency numbers are two to six digits. LANDMINE 4's shape check. */
 const EMERGENCY_NUMBER = /^[0-9]{2,6}$/;
@@ -584,29 +605,77 @@ export function pickCallingCode(rows) {
   return /^\+[0-9]{1,4}$/.test(code) ? code : null;
 }
 
+/** A `?scoped` cell, which SPARQL renders as `true`/`false`. */
+const isTrue = (value) => collapse(value).toLowerCase() === 'true';
+
 /**
  * P37 English labels, deduplicated and sorted so a quiet rebuild is
- * byte-identical, with `DROPPED_LANGUAGE_ITEMS` removed by id first.
+ * byte-identical, with two rules ahead of that: territorial scope, then
+ * `DROPPED_LANGUAGE_ITEMS` by id.
  *
- * Shaped like `pickPlugs` and for the same reason: it returns the names plus
- * the one thing a finished record cannot show - that the field is absent only
- * because a meta-item was everything this country had. That flag is a gate
- * input, not an artifact field.
+ * THE TERRITORIAL RULE IS THE ONE THAT MATTERS. `?scoped` is true when the
+ * statement carries a `P518 applies to part` qualifier — upstream saying, on
+ * the statement itself, that this is NOT a claim about the whole country. The
+ * United States is the case that forces it: every one of its truthy P37
+ * statements is scoped to a territory (Carolinian and Chamorro to the Northern
+ * Marianas, Hawaiian to Hawaii, Samoan to American Samoa, Spanish to Puerto
+ * Rico), and English's is DEPRECATED rank, so an unfiltered query published
+ * "Carolinian, Chamorro, Hawaiian, Samoan and Spanish are official languages —
+ * download an offline translation pack before you go" about the United States.
+ *
+ * ANY scoped statement withholds the WHOLE field, which is `pickPlugs`'s BS 546
+ * rule applied to the same kind of ambiguity, and the alternative was measured
+ * before it was rejected. Dropping only the scoped statements and publishing
+ * the remainder leaves AZ with `Azerbaijani Sign Language` ALONE — Azerbaijani
+ * itself is the scoped one, because upstream used `applies to part` to name a
+ * variety rather than a territory — and `languageTip` renders a one-item list
+ * as "X is the official language". Trading a false sentence about the United
+ * States for a false sentence about Azerbaijan is not a fix. Whole-field, the
+ * gap note names the field and nobody is told anything untrue.
+ *
+ * Measured 2026-08-27 across all 246 codes, the whole cost is SIX countries:
+ * AF, AZ, BE, BQ, PW, US. `P1001 applies to jurisdiction` is checked for by
+ * name in the query comment and is used by ZERO statements in this universe,
+ * so it deliberately gets no rule here — a rule that can only fire on a value
+ * nobody has seen is the dead `Type D`/`Type M` row `PLUG_LETTERS` already
+ * had to delete.
+ *
+ * Shaped like `pickPlugs`: it returns the names plus the two things a finished
+ * record cannot show — that the field is absent because every statement was
+ * territorially scoped, or because a dropped id was everything this country
+ * had. Both are gate and report inputs, not artifact fields.
  */
 export function pickLanguages(rows) {
   const all = rows ?? [];
+  if (all.some((row) => isTrue(row.scoped))) {
+    return { names: null, soleDropped: false, territoriallyScoped: true };
+  }
   const kept = all.filter((row) => !DROPPED_LANGUAGE_ITEMS.has(entityId(row.item)));
-  if (all.length > 0 && kept.length === 0) return { names: null, soleDroppedMeta: true };
+  if (all.length > 0 && kept.length === 0) {
+    return { names: null, soleDropped: true, territoriallyScoped: false };
+  }
   const names = [...new Set(kept.map((row) => collapse(row.value)).filter((name) => name !== ''))].sort();
-  if (names.length === 0) return { names: null, soleDroppedMeta: false };
-  return { names: names.length > MAX_LANGUAGES ? null : names, soleDroppedMeta: false };
+  if (names.length === 0) return { names: null, soleDropped: false, territoriallyScoped: false };
+  return {
+    names: names.length > MAX_LANGUAGES ? null : names,
+    soleDropped: false,
+    territoriallyScoped: false,
+  };
 }
 
 /**
- * P625 latitude. Never rendered — its only consumer is Task 25's cross-check
- * that every code in lib/countries.ts's hand-written `SOUTHERN` list really is
- * in the southern hemisphere, or is on that check's named
- * equator-straddling exception list.
+ * P625 latitude. Never rendered — it is the SOURCE OF TRUTH for which
+ * hemisphere a country is in.
+ *
+ * lib/countries.ts's `SOUTHERN` set is derived from this field and reconciled
+ * against it in BOTH directions by lib/countryFacts.test.ts: a code listed
+ * with a non-negative centroid fails, and a code with a negative centroid that
+ * is not listed fails too. The second half is the one that was missing — the
+ * check used to be one-directional, and 25 southern countries were quietly
+ * told a June trip was summer.
+ *
+ * `SOUTHERN` is not a live lookup because lib/countries.ts is a zero-import
+ * leaf and this artifact is 70 KB; see the block comment on `SOUTHERN` itself.
  */
 export function pickLatitude(rows) {
   const values = [...new Set((rows ?? []).map((row) => Number.parseFloat(collapse(row.lat))))];
@@ -732,7 +801,7 @@ export const PROPERTIES = [
   { name: 'voltage', property: 'P2884', fields: ['voltageV'], columns: ['country', 'value'], batch: 200 },
   { name: 'drivingSide', property: 'P1622', fields: ['drivingSide'], columns: ['country', 'value'], batch: 200 },
   { name: 'emergency', property: 'P2852', fields: ['emergency'], columns: ['country', 'number', 'role'], batch: 50 },
-  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'item', 'value'], batch: 100 },
+  { name: 'languages', property: 'P37', fields: ['officialLanguages'], columns: ['country', 'item', 'value', 'scoped'], batch: 100 },
   { name: 'callingCode', property: 'P474', fields: ['callingCode'], columns: ['country', 'value'], batch: 200 },
   { name: 'coordinate', property: 'P625', fields: ['lat'], columns: ['country', 'lat'], batch: 200 },
 ];
@@ -782,7 +851,8 @@ export function buildFacts(byProperty) {
   /** @type {Diagnostics} */
   const diagnostics = {
     soleDroppedArticlePlugs: [],
-    soleDroppedMetaLanguages: [],
+    soleDroppedLanguages: [],
+    scopedLanguages: [],
     curatedFired: [],
     curatedStale: [],
     withheld: { name: [], currency: [], plugs: [], voltage: [], emergency: [] },
@@ -825,7 +895,8 @@ export function buildFacts(byProperty) {
 
     const languages = pickLanguages(grouped.languages.get(code) ?? []);
     if (languages.names) record.officialLanguages = languages.names;
-    if (languages.soleDroppedMeta) diagnostics.soleDroppedMetaLanguages.push(code);
+    if (languages.soleDropped) diagnostics.soleDroppedLanguages.push(code);
+    if (languages.territoriallyScoped) diagnostics.scopedLanguages.push(code);
 
     const callingCode = pickCallingCode(grouped.callingCode.get(code) ?? []);
     if (callingCode !== null) record.callingCode = callingCode;
@@ -1148,9 +1219,17 @@ export const REQUIRED_NAMES = {
  *   are withheld rather than guessed at; see `PLUG_LETTERS`. The floor tracks
  *   the measurement under the same -10 rule as every other row.
  *
- * `officialLanguages` was marked unverified by the design. Measured
- * post-withhold: 243, identical to its raw coverage — no country trips the
- * 40-language ceiling, so nothing is withheld. It is verified now.
+ * `officialLanguages` measured 243 at Task 25 and measures 237 now, and the
+ * FLOOR DOES NOT MOVE. The six-country fall is the territorial-scope rule in
+ * `pickLanguages` doing its job — AF, AZ, BE, BQ, PW and US carry P37
+ * statements upstream itself marks as applying to only part of the country,
+ * and the United States one published a flat falsehood. Under the -10 rule
+ * this row would now read 227; it stays at 233, because lowering a gate to
+ * admit the fix that tripped it is how a gate becomes decoration. Four
+ * countries of headroom is tighter than every other row here and that is the
+ * point: the next six countries to lose their languages should stop the
+ * nightly job, not pass it. The deviation is recorded here rather than left
+ * for a reader to spot, exactly like `name`'s two.
  *
  * `name` is the ONE row that does not take ten countries of headroom, and the
  * deviation is deliberate rather than an oversight. Measured 246 of 246 -
@@ -1464,15 +1543,24 @@ export function assertFactsSane(built, previous) {
     );
   }
 
-  if ((diagnostics.soleDroppedMetaLanguages?.length ?? 0) > 0) {
+  if ((diagnostics.soleDroppedLanguages?.length ?? 0) > 0) {
     throw new Error(
-      `${diagnostics.soleDroppedMetaLanguages.length} country/countries ` +
-      `(${diagnostics.soleDroppedMetaLanguages.slice(0, 10).join(', ')}) have ` +
-      `${[...DROPPED_LANGUAGE_ITEMS].join(', ')} as their ONLY official-language value. Dropping ` +
-      `that meta-item by id is lossless only while zero countries rely on it — measured zero on ` +
+      `${diagnostics.soleDroppedLanguages.length} country/countries ` +
+      `(${diagnostics.soleDroppedLanguages.slice(0, 10).join(', ')}) have nothing but ` +
+      `${[...DROPPED_LANGUAGE_ITEMS].join(', ')} as their official-language values. Dropping ` +
+      `those items by id is lossless only while zero countries rely on them — measured zero on ` +
       `2026-08-27 — so this refuses the write rather than quietly costing them their language tip`
     );
   }
+
+  // Territorially scoped languages are NOT refused here, and the asymmetry is
+  // deliberate. A dropped id withholding a whole country is a sign the drop
+  // list has outgrown its measurement; a scoped statement withholding a whole
+  // country is the rule working exactly as designed — it is what stops the
+  // United States being told Carolinian is one of its official languages. The
+  // set is measured, named in the report and pinned by name in
+  // lib/countryFacts.test.ts, and the `officialLanguages` floor in
+  // `MIN_FIELD_COVERAGE` is what bounds it growing without anybody noticing.
 
   if ((diagnostics.curatedStale?.length ?? 0) > 0) {
     throw new Error(
@@ -1986,6 +2074,17 @@ export function buildReport({ countries, generatedAt }) {
     '- **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**',
     '  No structured source. Visa rules also depend on the traveller\'s passport, which',
     '  the app does not know.',
+    '- **Official languages for AF, AZ, BE, BQ, PW and US.** Measured 2026-08-27: every',
+    '  P37 statement these six carry, or enough of them that the remainder is not a',
+    '  national list, is qualified `applies to part` — upstream stating on the statement',
+    '  itself that it is not a claim about the whole country. The United States is the',
+    '  case that forces the rule: Carolinian and Chamorro apply to the Northern Marianas,',
+    '  Hawaiian to Hawaii, Samoan to American Samoa and Spanish to Puerto Rico, while',
+    '  English sits at deprecated rank — so an unfiltered query told a traveller the',
+    '  United States has five official languages and none of them is English. Publishing',
+    '  the unscoped remainder instead was measured and rejected: it leaves Azerbaijan',
+    '  with `Azerbaijani Sign Language` alone, trading one false sentence for another. So',
+    '  the whole field is withheld for all six and the gap note names it.',
     '- **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole',
     '  distinct P2853 value set across these countries is fourteen items, thirteen',
     '  standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single',
@@ -2182,16 +2281,46 @@ export function buildQuery(property, codes) {
   }
 }`;
 
+    // Statement-level, and NOT `wdt:P37`, because the thing that makes a P37
+    // value publishable is a QUALIFIER and `wdt:` throws qualifiers away.
+    // `P518 applies to part` is upstream saying, on the statement itself, that
+    // this is not a claim about the whole country: every truthy P37 statement
+    // the United States carries is scoped to a territory, so the `wdt:` form
+    // published "Carolinian, Chamorro, Hawaiian, Samoan and Spanish are
+    // official languages" about the US. `?scoped` carries that fact out to
+    // `pickLanguages`, which withholds the whole field — the withhold decision
+    // stays in reviewed JavaScript where the diagnostics and the gate can see
+    // it, rather than disappearing into a FILTER whose effect nothing can
+    // count.
+    //
+    // `?st a wikibase:BestRank` is the truthy filter `wdt:` would have given
+    // for free, and it matters here beyond tidiness: US English is DEPRECATED
+    // rank ("wrong property", disputed by the Constitution, subject of
+    // Executive Order 14224), so it is absent from both forms and no rule in
+    // this file may pretend otherwise.
+    //
+    // `P1001 applies to jurisdiction` is the other qualifier that would mean
+    // the same thing. Measured 2026-08-27 across all 246 codes, it appears on
+    // ZERO P37 statements, so it deliberately gets no clause — see
+    // `PLUG_LETTERS` on the dead `Type D`/`Type M` rows.
+    //
     // `?item` is selected as well as its label for `pickPlugs`'s reason:
     // `DROPPED_LANGUAGE_ITEMS` acts on the Q-id, so dropping Guinea's
-    // "languages of Guinea" meta-item survives an upstream label edit while
-    // dropping it by label would not.
+    // "languages of Guinea" meta-item, or Norway's two written forms, survives
+    // an upstream label edit while dropping them by label would not.
+    //
+    // Measured 2026-08-27: this form returns 451 rows over 243 countries, the
+    // same as the `wdt:` form it replaces, so the batch density in
+    // `PROPERTIES` is unchanged.
     case 'languages':
-      return `SELECT DISTINCT ?country ?item ?value WHERE {
+      return `SELECT DISTINCT ?country ?item ?value ?scoped WHERE {
   ${valuesClause('country', codes)}
   ?c wdt:P297 ?country .
-  ?c wdt:P37 ?item .
+  ?c p:P37 ?st .
+  ?st a wikibase:BestRank .
+  ?st ps:P37 ?item .
   ${labelWithMulFallback('?item', 'value')}
+  BIND(EXISTS { ?st pq:P518 ?part } AS ?scoped)
 }`;
 
     case 'callingCode':
