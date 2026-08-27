@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { Topology } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
-import { getCountryProfile } from "@/lib/countryProfile";
+import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
@@ -372,7 +372,7 @@ export function MapExplorer({
    * falls back to its default profile, which is China's — so a Peruvian route
    * was scored at Chinese high-speed-rail speed and drawn with a 🚄.
    */
-  const transport = useMemo(() => getCountryProfile(countryCode).transport, [countryCode]);
+  const transport = useMemo(() => getCountryBaseProfile(countryCode).transport, [countryCode]);
 
   const { route, unresolvedCount } = useMemo(() => {
     const routePlaces: RoutePlace[] = [];

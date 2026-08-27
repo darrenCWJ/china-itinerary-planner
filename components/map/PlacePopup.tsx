@@ -1,6 +1,6 @@
 "use client";
 
-import { getCountryProfile } from "@/lib/countryProfile";
+import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { bandsIn, highlightFor, regionMonthClimate } from "@/lib/months";
 import {
   FIT_COLORS,
@@ -31,7 +31,7 @@ const POPUP_W = 260;
 
 /** Hover card following the cursor over a map marker. */
 export function PlacePopup({ place, month, position, containerWidth, country }: Props) {
-  const profile = getCountryProfile(country);
+  const profile = getCountryBaseProfile(country);
   const fit = fitForPlace(place, month);
   // regionMonthClimate is China-only data (see lib/months.ts); a place from
   // outside China's seven regions has no row to read, so this degrades to no
@@ -41,7 +41,7 @@ export function PlacePopup({ place, month, position, containerWidth, country }: 
   const seasonNote = place.seasonNotes?.[season];
   const highlight = place.kind === "curated" ? highlightFor(place.id, month) : undefined;
   // null, not a flat curve, for a country nobody has researched — the crowd
-  // line is then not rendered at all. See `CountryProfile.crowdByMonth`.
+  // line is then not rendered at all. See `CountryBaseProfile.crowdByMonth`.
   const crowd = profile.crowdByMonth?.[month - 1] ?? null;
   const band = bandsIn(profile.holidays, month)[0];
   const hasCrowdLine = crowd !== null || band !== undefined;

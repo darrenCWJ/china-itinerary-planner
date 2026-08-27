@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Topology } from "topojson-specification";
 import { CountryMap, hasDetailLevel } from "@/components/map/CountryMap";
 import type { MapPlace } from "@/components/map/mapTypes";
-import { getCountryProfile } from "@/lib/countryProfile";
+import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { latLonOf } from "@/lib/geo";
 import type { TripPlan } from "@/lib/itinerary";
@@ -95,7 +95,7 @@ export function routeMonth(startDate: string | null, season: Season, country: st
     const month = Number(startDate.slice(5, 7));
     if (Number.isInteger(month) && month >= 1 && month <= 12) return month;
   }
-  const { seasonOfMonth } = getCountryProfile(country);
+  const { seasonOfMonth } = getCountryBaseProfile(country);
   for (let month = 1; month <= 12; month++) {
     if (seasonOfMonth(month) === season) return month;
   }

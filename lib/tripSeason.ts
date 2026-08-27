@@ -1,4 +1,4 @@
-import { getCountryProfile } from "./countryProfile";
+import { getCountryBaseProfile } from "./countryBaseProfile";
 import type { Season } from "./types";
 
 /**
@@ -24,5 +24,5 @@ export function resolveTripSeason(
   // not be allowed to produce a confidently nonsense season.
   if (!Number.isInteger(month) || month < 1 || month > 12) return clientSeason;
 
-  return getCountryProfile(country).seasonOfMonth(month);
+  return getCountryBaseProfile(country).seasonOfMonth(month);
 }
