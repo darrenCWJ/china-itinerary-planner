@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, posix, relative, sep } from "node:path";
 import { describe, expect, it, test } from "vitest";
 // The ingest script's entry-point guard means importing it here does not also
 // run `main()` and refetch 13 MB — the idiom scripts/ingest-cities.test.ts
@@ -644,9 +644,26 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
    * which is a page-level metadata string and renders no city at all. A
    * contract whose first finding is a false positive gets an allowlist entry
    * that then licenses a real violation in that file forever.
+   *
+   * `destinationName` SINGULAR was the blind spot, and it was a wide one. It is
+   * the per-day field `lib/itinerary.ts` fills from the resolved destination's
+   * `name` — the same GeoNames string as the plural, one day at a time — and it
+   * is what every surface that draws a day panel renders. Six components named
+   * it and none was visible to this contract: the plan tab and its day cards,
+   * the day builder, the tracker's today strip, the join-code guest view, and
+   * the briefing that the unauthenticated /b/[code] page serves.
+   *
+   * `BriefingCity` was proposed alongside it and is deliberately NOT here. It
+   * exists only in lib/briefing.ts, a `.ts` file, while `namesCityData` below
+   * requires `.tsx` under app/ or components/ — so the token would match
+   * nothing and buy a false sense of coverage. Widening the scan surface to
+   * lib/ is a different and much larger argument (every module that shapes city
+   * data would become a candidate, and none of them renders anything), and it
+   * is not made here.
    */
   const CITY_NAME_TOKENS = [
     /\bdestinationNames\b/,
+    /\bdestinationName\b/,
     /\.destinations\b/,
     /\bCatalogHit\b/,
     /\bMapCity\b/,
@@ -666,32 +683,155 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
   const rendersCredit = (f: SourceFile) => f.code.includes("<GeoNamesCredit");
 
   /**
-   * Explicit, and every entry says which surface covers it.
+   * One import specifier resolved to a file in the scanned tree, or null.
    *
-   * These files DO render city names — they are not innocent — but they are
-   * only ever mounted inside a parent that renders the credit next to them, so
-   * a second copy would be duplicate chrome rather than a second disclosure.
-   * `coveredBy` is checked below: the named parent has to still exist, still
-   * import this file, and still render the credit itself. An entry whose parent
-   * stopped doing any of those is an exemption nobody needs, and left unchecked
-   * it silently licenses the next real violation in that file — the same
-   * failure mode C4's allowlist check exists to prevent.
+   * `@/x` is the tsconfig alias for the repo root and `./x` / `../x` are
+   * relative; a bare specifier is a package and mounts nothing of ours. The
+   * same resolver lib/countryFacts.test.ts uses for its bundle walk.
    */
-  const ALLOWED: ReadonlyArray<{ path: string; coveredBy: string; why: string }> = [
+  const resolveSpecifier = (from: string, spec: string, known: Set<string>): string | null => {
+    let base: string;
+    if (spec.startsWith("@/")) base = spec.slice(2);
+    else if (spec.startsWith(".")) base = posix.normalize(posix.join(posix.dirname(from), spec));
+    else return null;
+    for (const candidate of [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
+      if (known.has(candidate)) return candidate;
+    }
+    return null;
+  };
+
+  /**
+   * Who mounts whom: for every file, the files that import it.
+   *
+   * Static and dynamic imports both, because both mount components — ShareMenu
+   * reaches ShareBriefing through `dynamic(() => import("./ShareBriefing"))`
+   * and a static-only walk would report it as mounted by nobody, which reads
+   * exactly like a root entry point and would let it pass the coverage test
+   * below for free. `import type` is excluded: it renders nothing.
+   */
+  const importersOf = (() => {
+    const known = new Set(FILES.map((f) => f.path));
+    const map = new Map<string, string[]>();
+    for (const file of FILES) {
+      const specs = new Set<string>();
+      for (const m of file.code.matchAll(/import\s+(?!type\b)[^;]*?from\s*["']([^"']+)["']/g)) {
+        specs.add(m[1]);
+      }
+      for (const m of file.code.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)) specs.add(m[1]);
+      for (const spec of specs) {
+        const resolved = resolveSpecifier(file.path, spec, known);
+        if (resolved === null) continue;
+        const list = map.get(resolved);
+        if (list) list.push(file.path);
+        else map.set(resolved, [file.path]);
+      }
+    }
+    return (path: string): string[] => [...new Set(map.get(path) ?? [])].sort();
+  })();
+
+  /**
+   * Whether every way of getting this file on screen passes through the credit.
+   *
+   * True when the file renders the credit itself, or when it has importers and
+   * ALL of them are covered. A file with no importers is a root — a page or a
+   * layout — and a root that does not render the credit covers nothing, which
+   * is what makes this terminate on an honest answer rather than on optimism.
+   *
+   * Recursion is what the nesting demands: DayCard is mounted only by PlanTab,
+   * which renders no credit of its own and is mounted only by TripView, which
+   * does. A one-hop rule can express "MapExplorer sits inside DestinationStep"
+   * and cannot express that, so it would force either a duplicate credit on
+   * every day card or an allowlist entry naming a parent that does not credit.
+   */
+  const coverage = new Map<string, boolean>();
+  const isCovered = (path: string, stack: Set<string> = new Set()): boolean => {
+    const cached = coverage.get(path);
+    if (cached !== undefined) return cached;
+    // A cycle has no crediting root along it. Not cached: the same file may be
+    // covered through a different, acyclic path.
+    if (stack.has(path)) return false;
+    const file = FILES.find((f) => f.path === path);
+    if (!file) return false;
+    if (rendersCredit(file)) {
+      coverage.set(path, true);
+      return true;
+    }
+    stack.add(path);
+    const importers = importersOf(path);
+    const result = importers.length > 0 && importers.every((next) => isCovered(next, stack));
+    stack.delete(path);
+    coverage.set(path, result);
+    return result;
+  };
+
+  /**
+   * Explicit, and every entry names every surface that mounts it.
+   *
+   * These files DO render city names — they are not innocent — but every way of
+   * getting them on screen passes through a parent that renders the credit, so
+   * a second copy would be duplicate chrome rather than a second disclosure.
+   * Three things are checked below, and the middle one is new:
+   *
+   *   1. the file still renders city data, so a stale exemption is deleted
+   *      rather than left licensing whatever that file grows into;
+   *   2. `mountedIn` is EXACTLY the set of files that import it — so a second,
+   *      uncredited mount added later fails instead of hiding behind the first;
+   *   3. every named mount is covered, recursively, terminating at a file that
+   *      renders the credit.
+   *
+   * Check 2 is what this contract was missing, and it found a real gap the
+   * moment it was written. `BriefingView` has two mounts: app/b/[code]/page.tsx,
+   * which credits it, and components/shell/ShareBriefing.tsx, whose entire
+   * ancestry — ShareMenu → AppShell → app/layout.tsx — renders no credit at
+   * all. A single-parent allowlist entry would have been true about the first
+   * mount and silent about the second, which is worse than no entry: it reads
+   * as a discharged obligation. ShareBriefing now renders the credit itself.
+   */
+  const ALLOWED: ReadonlyArray<{ path: string; mountedIn: readonly string[]; why: string }> = [
     {
       path: "components/map/MapExplorer.tsx",
-      coveredBy: "components/DestinationStep.tsx",
+      mountedIn: ["components/DestinationStep.tsx"],
       why: "Renders MapCity pins, but only ever as DestinationStep's map pane — the credit sits directly above it, under the search.",
     },
     {
       path: "components/plan/PlaceSearch.tsx",
-      coveredBy: "components/DestinationStep.tsx",
+      mountedIn: ["components/DestinationStep.tsx"],
       why: "Renders CatalogHit rows, but only ever as DestinationStep's search box — DestinationStep renders the credit immediately beneath it.",
     },
     {
       path: "components/PlanStep.tsx",
-      coveredBy: "app/plan/page.tsx",
+      mountedIn: ["app/plan/page.tsx"],
       why: "Renders the generated plan's destination names, but only ever as step 2 of the wizard — app/plan/page.tsx carries the credit beside its footer, where it survives print.",
+    },
+    {
+      path: "components/trip/PlanTab.tsx",
+      mountedIn: ["components/TripView.tsx"],
+      why: "Renders each day's destinationName, but only ever as TripView's plan tab — TripView renders the credit at the foot of the same page.",
+    },
+    {
+      path: "components/trip/GuestTripView.tsx",
+      mountedIn: ["components/TripView.tsx"],
+      why: "Renders the guest day list's destinationName, but only ever as TripView's guest branch — which renders the credit directly beneath it, for the join-code viewer who may never open /plan.",
+    },
+    {
+      path: "components/trip/DayCard.tsx",
+      mountedIn: ["components/trip/PlanTab.tsx"],
+      why: "One day of the plan tab, repeated per day. PlanTab is itself covered by TripView's credit; a credit under every day card would be chrome, not disclosure.",
+    },
+    {
+      path: "components/plan/DayBuilder.tsx",
+      mountedIn: ["components/trip/PlanTab.tsx"],
+      why: "The plan tab's add-to-day panel, mounted nowhere else. Covered by TripView through PlanTab.",
+    },
+    {
+      path: "components/trip/TrackerTab.tsx",
+      mountedIn: ["components/trip/TodayTab.tsx"],
+      why: "Today's destinationName in the tracker strip. TodayTab renders no credit but is mounted only by TripView, which does.",
+    },
+    {
+      path: "components/trip/BriefingView.tsx",
+      mountedIn: ["app/b/[code]/page.tsx", "components/shell/ShareBriefing.tsx"],
+      why: "Renders every day panel's destinationName. Both mounts credit it: the public bearer-link page in its footer, and the Share panel's briefing — which had no crediting ancestor until this contract learned to walk the mount graph.",
     },
   ];
 
@@ -776,27 +916,64 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     ).toBe(true);
   });
 
-  it("keeps its own allowlist honest — parent still exists, imports it, and credits", () => {
-    for (const { path, coveredBy } of ALLOWED) {
-      const file = FILES.find((f) => f.path === path);
-      expect(file, `${path} is allowlisted but not in the tree`).toBeDefined();
-      expect(
-        namesCityData(file!),
-        `${path} is allowlisted but no longer renders city data — drop the entry`
-      ).toBe(true);
+  it("resolves real mount edges, or the allowlist checks below are vacuous", () => {
+    // Three arming claims. A static edge, a nested one, and — the one a
+    // static-only walk misses — the dynamic import ShareMenu uses.
+    expect(importersOf("components/trip/PlanTab.tsx")).toEqual(["components/TripView.tsx"]);
+    expect(importersOf("components/trip/DayCard.tsx")).toEqual(["components/trip/PlanTab.tsx"]);
+    expect(importersOf("components/shell/ShareBriefing.tsx")).toEqual([
+      "components/shell/ShareMenu.tsx",
+    ]);
+    // And a package specifier is not an edge to anything in the tree.
+    expect(importersOf("react")).toEqual([]);
+  });
 
-      const parent = FILES.find((f) => f.path === coveredBy);
-      expect(parent, `${path} is covered by ${coveredBy}, which is not in the tree`).toBeDefined();
-      const moduleName = path.replace(/^.*\//, "").replace(/\.tsx$/, "");
-      expect(
-        parent!.code,
-        `${coveredBy} no longer imports ${moduleName}, so it cannot be covering it`
-      ).toContain(moduleName);
-      expect(
-        rendersCredit(parent!),
-        `${coveredBy} no longer renders the credit, so ${path} is uncovered`
-      ).toBe(true);
+  it("calls a file covered only when every route to it credits", () => {
+    // Armed in both directions, because a coverage walk that answered `true`
+    // for everything would make the allowlist meaningless and a walk that
+    // answered `false` for everything would only look strict.
+    expect(isCovered("components/TripView.tsx")).toBe(true); // renders it itself
+    expect(isCovered("components/trip/PlanTab.tsx")).toBe(true); // one hop
+    expect(isCovered("components/trip/DayCard.tsx")).toBe(true); // two hops
+    // AppShell renders no credit, and its only importer is the root layout,
+    // which renders none either and is imported by nothing. That chain ends at
+    // an honest "no" rather than running out of parents and assuming yes.
+    expect(isCovered("components/shell/AppShell.tsx")).toBe(false);
+    expect(isCovered("app/layout.tsx")).toBe(false);
+  });
+
+  it("keeps its own allowlist honest — still renders city data, and every mount credits", () => {
+    const stale: string[] = [];
+    const missingMounts: string[] = [];
+    const uncovered: string[] = [];
+    for (const { path, mountedIn } of ALLOWED) {
+      const file = FILES.find((f) => f.path === path);
+      if (!file) {
+        stale.push(`${path}: allowlisted but not in the tree`);
+        continue;
+      }
+      if (!namesCityData(file)) {
+        stale.push(`${path}: no longer renders city data — drop the entry`);
+        continue;
+      }
+      // EXACTLY the importers, not a subset. A second mount added later is the
+      // failure this catches: it would be uncredited and invisible behind the
+      // first one, which is how a licence obligation quietly stops being met.
+      const actual = importersOf(path);
+      if (JSON.stringify(actual) !== JSON.stringify([...mountedIn].sort())) {
+        missingMounts.push(`${path}: mounted in ${actual.join(", ") || "nothing"}`);
+        continue;
+      }
+      const bad = mountedIn.filter((parent) => !isCovered(parent));
+      if (bad.length > 0) uncovered.push(`${path}: uncovered mount(s) ${bad.join(", ")}`);
     }
+    // One assertion per failure mode rather than four per entry: nine entries
+    // would otherwise be dozens of `expect()` calls inside the timed region.
+    expect(stale, `stale allowlist entries: ${stale.join("; ")}`).toEqual([]);
+    expect(missingMounts, `allowlist does not name every mount: ${missingMounts.join("; ")}`).toEqual(
+      []
+    );
+    expect(uncovered, `allowlisted but uncredited on some route: ${uncovered.join("; ")}`).toEqual([]);
   });
 
   /**
@@ -989,7 +1166,14 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     expect(listed.length).toBeGreaterThanOrEqual(5);
   });
 
-  test.each(["app/plan/page.tsx", "components/DestinationStep.tsx", "components/TripView.tsx", "app/b/[code]/page.tsx", "components/home/TripsDashboard.tsx"])(
+  test.each([
+    "app/plan/page.tsx",
+    "components/DestinationStep.tsx",
+    "components/TripView.tsx",
+    "app/b/[code]/page.tsx",
+    "components/home/TripsDashboard.tsx",
+    "components/shell/ShareBriefing.tsx",
+  ])(
     "%s renders GeoNamesCredit",
     (path) => {
       // The enumerated floor, kept alongside the derived scan rather than
