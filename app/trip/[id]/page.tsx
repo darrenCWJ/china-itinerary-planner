@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { TripView } from "@/components/TripView";
 
 export const metadata: Metadata = {
-  title: "Shared trip — China Itinerary Planner",
+  title: "Shared trip — Itinerary Planner",
 };
 
 export default async function TripPage({ params }: { params: Promise<{ id: string }> }) {

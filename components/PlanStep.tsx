@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { GapNote } from "@/components/plan/GapNote";
+import { getCountry } from "@/lib/countries";
 import { DEFAULT_COUNTRY, getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { buildItinerary, type ScheduledItem, type TripInput } from "@/lib/itinerary";
@@ -57,6 +58,12 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
 
   const seasonMeta = SEASONS.find((s) => s.id === input.season);
   const travellers = input.adults + input.kids;
+  /**
+   * The chop is the country's, not China's — same fix as TripView.tsx's
+   * hero: `Country.mark` only carries a glyph for countries that have earned
+   * one, so a country without a mark gets no chop rather than China's 启程.
+   */
+  const country = getCountry(input.country ?? DEFAULT_COUNTRY);
 
   const toggleChecked = (item: string) =>
     setChecked((prev) => {
@@ -69,11 +76,13 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
   return (
     <section>
       <div className="relative overflow-hidden rounded-2xl bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))] p-6 text-[var(--paper)] sm:p-8">
-        <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
-          启程
-        </span>
+        {country.mark && (
+          <span aria-hidden className="seal-round absolute right-6 top-6 hidden border-[var(--paper)]/80 text-[var(--paper)]/90 sm:inline-flex">
+            {country.mark}
+          </span>
+        )}
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Boarding pass</p>
-        <h2 className="mt-2 font-display text-3xl font-bold">Your China itinerary</h2>
+        <h2 className="mt-2 font-display text-3xl font-bold">Your {country.name} itinerary</h2>
         <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
           {destinations.map((d) => d.name.toUpperCase()).join(" → ")}
         </p>
