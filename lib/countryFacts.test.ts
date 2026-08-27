@@ -526,11 +526,34 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     // because lib/countryBaseProfile.ts exists. A new name appearing is not
     // necessarily wrong, but it is 70 KB in one more bundle and it should be
     // a decision somebody made rather than one that happened.
+    //
+    // T28 added two, deliberately, and the reason is recorded here rather than
+    // in a commit message. Rendering the gap note on the briefing needs the
+    // trip's country; `buildBriefing` resolves it, so lib/briefing.ts now
+    // reaches the artifact, and components/shell/ShareMenu.tsx (which builds an
+    // in-app briefing client-side) and components/shell/AppShell.tsx (which
+    // mounts ShareMenu) inherit it.
+    //
+    // The alternative was worse, not cheaper: had components/trip/BriefingView.tsx
+    // resolved the note itself it would have joined this list AND dragged the
+    // 70 KB into app/b/[code]/page.tsx, the UNAUTHENTICATED bearer-link route,
+    // whose client bundle otherwise carries no country data at all. Keeping the
+    // resolution in lib/briefing.ts keeps that page server-side-only for the
+    // artifact.
+    //
+    // And the two new names cost nothing measurable: both are mounted from
+    // app/layout.tsx, which already reaches the artifact through
+    // components/shell/TripAccentProvider.tsx — already on this list, already
+    // in the root layout, already shipping those bytes to every route. The
+    // arming test below pins that relationship so this justification cannot
+    // quietly stop being true.
     const paying = CLIENTS.filter((path) => reaches(GRAPH, path, ARTIFACT_READER)).sort();
     expect(paying).toEqual([
       "app/plan/page.tsx",
       "components/PlanStep.tsx",
       "components/TripView.tsx",
+      "components/shell/AppShell.tsx",
+      "components/shell/ShareMenu.tsx",
       "components/shell/TripAccentProvider.tsx",
       "components/trip/BalancesCard.tsx",
       "components/trip/DayCard.tsx",
@@ -544,5 +567,24 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     ]);
     // And the complement is not empty: most client components pay nothing.
     expect(CLIENTS.length - paying.length).toBeGreaterThan(20);
+  });
+
+  test("the two names T28 added are free riders on a bundle that already paid", () => {
+    // The justification above rests on one fact: the root layout already
+    // reaches the artifact without ShareMenu or AppShell, through
+    // TripAccentProvider. If that ever stopped being true, admitting two more
+    // root-layout components would start costing real bytes on every route and
+    // the comment above would be a stale excuse. So it is asserted, not
+    // assumed.
+    const layout = FILES.find((file) => file.path === "app/layout.tsx");
+    expect(layout?.code).toContain("components/shell/TripAccentProvider");
+    expect(layout?.code).toContain("components/shell/AppShell");
+    expect(reaches(GRAPH, "components/shell/TripAccentProvider.tsx", ARTIFACT_READER)).toBe(true);
+
+    // And the public briefing page is the thing the split protects: it renders
+    // BriefingView, and BriefingView must not resolve the gap note itself.
+    expect(reaches(GRAPH, "components/trip/BriefingView.tsx", ARTIFACT_READER)).toBe(false);
+    const view = FILES.find((file) => file.path === "components/trip/BriefingView.tsx");
+    expect(view?.code).not.toContain("countryProfile");
   });
 });

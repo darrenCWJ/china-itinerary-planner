@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { DayBuilder } from "@/components/plan/DayBuilder";
+import { GapNote } from "@/components/plan/GapNote";
+import { getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import type { TripPlan } from "@/lib/itinerary";
 import type { PlanOp } from "@/lib/planOps";
@@ -68,6 +70,17 @@ export function PlanTab({
   forcedAt = 0,
   mutate,
 }: Props) {
+  /**
+   * The honesty surface, resolved from the trip's country at render and never
+   * from `plan`.
+   *
+   * `country` is `tripCountry(data)`, handed down by TripView. Reading it here
+   * rather than snapshotting a note into `plan` is the whole point: `plan.tips`
+   * is frozen when the trip is created, and this is a claim about our current
+   * coverage rather than about the trip, so it must shrink as the data
+   * improves. Empty for China and for any code that is not a country.
+   */
+  const gapNote = getCountryProfile(country).gapNote;
   const [view, setView] = useState<View>("list");
   const [newDayDest, setNewDayDest] = useState("");
   const [addingDay, setAddingDay] = useState(false);
@@ -228,19 +241,27 @@ export function PlanTab({
         </>
       )}
 
-      {plan.tips.length > 0 && (
+      {(plan.tips.length > 0 || gapNote.length > 0) && (
         <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-5 text-sm">
           <p className="font-semibold">Good to know</p>
-          <ul className="mt-2 space-y-1.5">
-            {plan.tips.map((tip) => (
-              <li key={tip} className="flex gap-2">
-                <span aria-hidden className="text-[var(--seal)]">
-                  ※
-                </span>
-                <span>{tip}</span>
-              </li>
-            ))}
-          </ul>
+          {plan.tips.length > 0 && (
+            <ul className="mt-2 space-y-1.5">
+              {plan.tips.map((tip) => (
+                <li key={tip} className="flex gap-2">
+                  <span aria-hidden className="text-[var(--seal)]">
+                    ※
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/*
+            Outside the list, deliberately. A country whose tips list is empty
+            is the one that most needs the explanation, which is why the block
+            now opens on either condition rather than on tips alone.
+          */}
+          <GapNote lines={gapNote} />
         </div>
       )}
     </div>

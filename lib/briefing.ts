@@ -1,8 +1,9 @@
+import { getCountryProfile } from "./countryProfile";
 import { DESTINATIONS } from "./data";
 import type { ItemKind } from "./itinerary";
 import { dayDate, sortTickets } from "./tickets";
 import { interestMeta } from "./meta";
-import type { Ticket, TicketKind, TripPayload } from "./tripShared";
+import { tripCountry, type Ticket, type TicketKind, type TripPayload } from "./tripShared";
 import type { Interest, TimeSlot } from "./types";
 
 export interface BriefingCity {
@@ -70,6 +71,27 @@ export interface Briefing {
     pace: PacePoint[];
   };
   logistics: { tips: string[]; bookings: BriefingBooking[] };
+  /**
+   * What our data does not cover for this trip's country — muted copy rendered
+   * as a note beside `logistics.tips`, never as one of them (T28).
+   *
+   * Derived here rather than carried on `TripData`, and the distinction is the
+   * point. `logistics.tips` above is a *copy of a snapshot*: `plan.tips` was
+   * frozen when the trip was created and is served back unchanged forever,
+   * which is right for advice a traveller acted on. This is a statement about
+   * our current coverage, so it is recomputed from `tripCountry(payload.data)`
+   * every time a briefing is built — a briefing is a per-request view of the
+   * trip, never persisted — and it shrinks as the facts artifact grows.
+   *
+   * Empty for China, which is researched by hand and has nothing to disclaim.
+   *
+   * Computed in this module rather than in `BriefingView` so the briefing
+   * *renderer* stays free of the 70 KB facts artifact: `app/b/[code]/page.tsx`
+   * is an unauthenticated server page that calls `buildBriefing` server-side,
+   * and a client component resolving the note itself would ship those bytes to
+   * every bearer-link holder. See `lib/countryFacts.test.ts`.
+   */
+  gapNote: string[];
   /** Members and progress — null on a redacted (public) briefing. */
   crew: { members: string[]; checkedCount: number } | null;
   redacted: boolean;
@@ -184,6 +206,7 @@ export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Brie
         toBooking(t, !opts.redacted || opts.includeBookings)
       ),
     },
+    gapNote: getCountryProfile(tripCountry(data)).gapNote,
     crew: opts.redacted
       ? null
       : { members: payload.members.map((m) => m.name), checkedCount: payload.checks.length },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BarChart } from "@/components/briefing/charts/BarChart";
 import { ColumnChart } from "@/components/briefing/charts/ColumnChart";
+import { GapNote } from "@/components/plan/GapNote";
 import type { Briefing, BriefingDay } from "@/lib/briefing";
 import { KIND_EMOJI, SLOT_META, ticketKindMeta } from "@/lib/meta";
 
@@ -136,7 +137,9 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
         </section>
       )}
 
-      {(briefing.logistics.bookings.length > 0 || briefing.logistics.tips.length > 0) && (
+      {(briefing.logistics.bookings.length > 0 ||
+        briefing.logistics.tips.length > 0 ||
+        briefing.gapNote.length > 0) && (
         <section>
           <h3 className="font-display text-2xl text-[var(--ink-0)]">Logistics</h3>
           {briefing.logistics.bookings.length > 0 && (
@@ -180,6 +183,15 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
               ))}
             </ul>
           )}
+          {/*
+            A bearer-link holder sees the tips, so they see the disclaimer about
+            them too — as a sibling of the list, never a row in it. The lines
+            come off the briefing, which `buildBriefing` recomputed from the
+            trip's country: this component never resolves them itself, which is
+            what keeps the 70 KB facts artifact out of the public /b/[code]
+            bundle.
+          */}
+          <GapNote lines={briefing.gapNote} />
         </section>
       )}
     </div>

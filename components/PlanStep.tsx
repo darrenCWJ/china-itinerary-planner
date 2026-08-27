@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { GapNote } from "@/components/plan/GapNote";
+import { DEFAULT_COUNTRY, getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { buildItinerary, type ScheduledItem, type TripInput } from "@/lib/itinerary";
 import { KIND_EMOJI, SEASONS, SLOT_META } from "@/lib/meta";
@@ -36,6 +38,21 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
   );
   const plan = useMemo(() => buildItinerary(input, allDestinations), [input, allDestinations]);
   const packing = useMemo(() => buildPackingList(input, destinations), [input, destinations]);
+  /**
+   * Resolved here, at render, and deliberately NOT read off `plan`.
+   *
+   * `plan.tips` is snapshotted into the trip when it is created, which is right
+   * for advice a traveller acted on. The gap note is the opposite kind of
+   * statement — it is about what *we* currently know, so it has to shrink as
+   * coverage improves rather than be frozen with the trip. `input.country ??
+   * DEFAULT_COUNTRY` is the same resolution `buildItinerary` and
+   * `buildPackingList` use, so the note can never disagree with the tips it
+   * disclaims.
+   */
+  const gapNote = useMemo(
+    () => getCountryProfile(input.country ?? DEFAULT_COUNTRY).gapNote,
+    [input.country]
+  );
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
 
   const seasonMeta = SEASONS.find((s) => s.id === input.season);
@@ -173,14 +190,20 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
 
           <div>
             <h3 className="font-display text-xl font-bold">Good to know</h3>
-            <ul className="mt-3 space-y-2 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 text-sm">
-              {plan.tips.map((tip) => (
-                <li key={tip} className="flex gap-2">
-                  <span aria-hidden className="text-[var(--seal)]">※</span>
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 text-sm">
+              {plan.tips.length > 0 && (
+                <ul className="space-y-2">
+                  {plan.tips.map((tip) => (
+                    <li key={tip} className="flex gap-2">
+                      <span aria-hidden className="text-[var(--seal)]">※</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {/* Sibling of the list, never a row in it — see GapNote's docblock. */}
+              <GapNote lines={gapNote} />
+            </div>
           </div>
         </aside>
       </div>
