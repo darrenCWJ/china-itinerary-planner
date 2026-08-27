@@ -6,6 +6,7 @@ import {
   DROPPED_PLUG_ITEMS,
   EMERGENCY_ROLE_SET,
   EXPECTED_COUNTRIES,
+  MEASURED_FIELD_COVERAGE,
   MIN_FIELD_COVERAGE,
   PLUG_LETTERS,
   PLUG_LETTER_SET,
@@ -2738,5 +2739,74 @@ describe.skipIf(!hasArtifact)("data/country-facts.json", () => {
       RENDERED_FIELDS.some((field) => record[field] === undefined)
     );
     expect(withGaps.length).toBeGreaterThan(0);
+  });
+
+  test("MEASURED_FIELD_COVERAGE is what the committed artifact actually carries", () => {
+    // The constant the floors are derived FROM, checked against the file it
+    // claims to describe. Without this the derivation is only as good as a
+    // number somebody typed — which is the exact failure this replaced: the
+    // measured table used to live in a comment and five of its numbers had
+    // drifted from the artifact.
+    const records = Object.values(artifact().countries);
+    for (const [field, expected] of Object.entries(MEASURED_FIELD_COVERAGE)) {
+      const covered = records.filter((record) => record[field] !== undefined).length;
+      expect(covered, `${field} coverage`).toBe(expected);
+    }
+  });
+
+  test("every floor takes ten countries of headroom except the two pinned rows", () => {
+    // The uniform rule, and both deviations, asserted rather than described.
+    // A future edit that quietly re-pins a third row has to change this list.
+    const headroom = Object.fromEntries(
+      Object.entries(MIN_FIELD_COVERAGE).map(([field, floor]) => [
+        field,
+        MEASURED_FIELD_COVERAGE[field as keyof typeof MEASURED_FIELD_COVERAGE] - floor,
+      ])
+    );
+    expect(headroom).toEqual({
+      name: 2,
+      currencyCode: 10,
+      currencyName: 10,
+      plugs: 10,
+      voltageV: 10,
+      drivingSide: 10,
+      emergency: 10,
+      officialLanguages: 6,
+      callingCode: 10,
+      lat: 10,
+    });
+  });
+
+  test("the officialLanguages floor lets SIX countries go silently and stops the seventh", () => {
+    // THE CLAIM THE COMMENT USED TO GET WRONG, IN THE UNSAFE DIRECTION. It
+    // promised that "the next six countries to lose their languages should
+    // stop the nightly job"; the gate is `covered < floor`, so six lands
+    // exactly ON the floor and passes. Only the seventh is under it.
+    //
+    // Written as a boundary pair rather than a sentence, because a sentence is
+    // what drifted. If anybody moves the floor or the measurement, this fails
+    // and states the real margin instead of restating a stale one.
+    const headroom =
+      MEASURED_FIELD_COVERAGE.officialLanguages - MIN_FIELD_COVERAGE.officialLanguages;
+    expect(headroom).toBe(6);
+
+    const stripLanguages = (count: number) => {
+      const countries = artifact().countries;
+      const losable = Object.keys(countries).filter(
+        // Never CN: it is the reproduction country every other cross-check in
+        // the file is anchored on, and an earlier gate would reject the build
+        // for a different reason, leaving this floor untested.
+        (code) => code !== "CN" && countries[code].officialLanguages !== undefined
+      );
+      for (const code of losable.slice(0, count)) delete countries[code].officialLanguages;
+      return () => assertFactsSane({ countries, diagnostics: {} }, null);
+    };
+
+    // Exactly on the floor — 233 of 246 — and the nightly job ships it.
+    expect(stripLanguages(headroom)).not.toThrow();
+    // One further, 232, and it stops.
+    expect(stripLanguages(headroom + 1)).toThrow(
+      /only 232 countries carry officialLanguages, under the 233 floor/
+    );
   });
 });

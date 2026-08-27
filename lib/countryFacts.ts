@@ -137,8 +137,10 @@ export type CountryFactsIndex = Readonly<Record<string, CountryFacts>>;
  *
  * Empty, and that is the intended steady state rather than an unfinished job.
  * `scripts/ingest-country-facts.mjs` carries its own `CURATED_FACTS` for the
- * five countries whose UPSTREAM shape defeats the withhold rules (NL, FR, PL,
- * ZW, MO); those are repaired before the artifact is written. This table is
+ * seven countries whose UPSTREAM shape defeats the withhold rules (NL, FR, PL,
+ * ZW, MO for currency, and BE and AZ for the languages the territorial-scope
+ * rule withheld — see `017468c`); those are repaired before the artifact is
+ * written. This table is
  * the different escape hatch — it can override a value the artifact already
  * publishes, which the ingest's table structurally cannot, because a row there
  * whose field upstream supplies is judged *stale* and refuses the write.
