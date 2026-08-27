@@ -25,8 +25,6 @@ export const CATEGORIES: { id: ExpenseCategory; label: string; emoji: string }[]
   { id: "other", label: "Other", emoji: "💳" },
 ];
 
-const QUICK_CURRENCIES = ["CNY", "SGD"];
-
 /**
  * A currency-appropriate amount for the "couldn't parse that" hint: "128 or
  * 128.50" for a two-decimal currency, "128.500" for three, plain "128" for a
@@ -45,12 +43,35 @@ type Props = {
   myName: string;
   initial?: Expense;
   submitLabel: string;
+  /**
+   * The one-tap currency options, most likely first. THE TRIP'S OWN, supplied
+   * by the caller — this used to be a module-level `["CNY", "SGD"]`, so an
+   * expense added on a trip to Peru defaulted to Chinese yuan and the traveller
+   * had to notice and correct it before every single entry. The default is
+   * whatever the caller puts first.
+   *
+   * May be EMPTY, and that is a state rather than a bug: a trip to a country
+   * with no researched currency, by a member who has not set a home currency,
+   * has no unit anybody has named. The form then offers "Other…" alone and
+   * asks for three letters, which is the same honesty `currencyPivot` applies
+   * to the totals row — filling that blank with CNY is exactly what commit
+   * c01c1e5 removed from the Money tab.
+   */
+  quickCurrencies: string[];
   onSubmit: (draft: ExpenseDraft) => Promise<string | null>;
   onCancel?: () => void;
 };
 
-export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, onCancel }: Props) {
-  const initialQuick = !initial || QUICK_CURRENCIES.includes(initial.currency);
+export function ExpenseForm({
+  members,
+  myName,
+  initial,
+  submitLabel,
+  quickCurrencies,
+  onSubmit,
+  onCancel,
+}: Props) {
+  const initialQuick = !initial || quickCurrencies.includes(initial.currency);
   const [date, setDate] = useState(initial?.date ?? todayIso());
   const [title, setTitle] = useState(initial?.title ?? "");
   const [category, setCategory] = useState<ExpenseCategory>(initial?.category ?? "food");
@@ -58,7 +79,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
     initial ? minorToMajorInput(initial.amount, initial.currency) : ""
   );
   const [currencyPick, setCurrencyPick] = useState(
-    initialQuick ? (initial?.currency ?? "CNY") : "other"
+    initialQuick ? (initial?.currency ?? quickCurrencies[0] ?? "other") : "other"
   );
   const [customCurrency, setCustomCurrency] = useState(initialQuick ? "" : initial!.currency);
   const [paidBy, setPaidBy] = useState(initial?.paidBy ?? myName);
@@ -131,7 +152,7 @@ export function ExpenseForm({ members, myName, initial, submitLabel, onSubmit, o
             <select value={currencyPick} aria-label="Currency"
               className="rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 text-sm text-[var(--ink-0)]"
               onChange={(e) => setCurrencyPick(e.target.value)}>
-              {QUICK_CURRENCIES.map((c) => (
+              {quickCurrencies.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
               <option value="other">Other…</option>

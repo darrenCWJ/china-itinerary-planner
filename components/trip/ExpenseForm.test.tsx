@@ -28,6 +28,7 @@ async function renderAndResaveUntouched(expense: Expense): Promise<ExpenseDraft>
       myName="Ada"
       initial={expense}
       submitLabel="Save changes"
+      quickCurrencies={["JPY"]}
       onSubmit={async (draft) => {
         submitted = draft;
         return null;
@@ -40,6 +41,77 @@ async function renderAndResaveUntouched(expense: Expense): Promise<ExpenseDraft>
   await waitFor(() => expect(submitted).not.toBeNull());
   return submitted as unknown as ExpenseDraft;
 }
+
+describe("the currency picker is the trip's, not a hardcoded pair", () => {
+  const noop = async () => null;
+
+  test("a new expense defaults to the first quick currency the caller supplies", () => {
+    // It used to default to "CNY" from a module-level `["CNY", "SGD"]`, so an
+    // expense on a trip to Peru was priced in Chinese yuan until the traveller
+    // noticed — on every entry. Asserted on the rendered select value, because
+    // the default IS what the form submits when nobody touches the control.
+    render(
+      <ExpenseForm
+        members={members}
+        myName="Ada"
+        submitLabel="Add expense"
+        quickCurrencies={["PEN", "SGD"]}
+        onSubmit={noop}
+      />
+    );
+    const select = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(select.value).toBe("PEN");
+    expect([...select.options].map((o) => o.value)).toEqual(["PEN", "SGD", "other"]);
+    expect(screen.queryByText("CNY")).toBeNull();
+  });
+
+  test("no researched currency and no home currency asks for one instead of guessing", () => {
+    // The honest end state, matching what `currencyPivot` does to the totals
+    // row: nothing has named a unit, so the form does not name one either. The
+    // custom-code input is shown rather than a blank picker, so the member can
+    // still record the expense.
+    render(
+      <ExpenseForm
+        members={members}
+        myName="Ada"
+        submitLabel="Add expense"
+        quickCurrencies={[]}
+        onSubmit={noop}
+      />
+    );
+    const select = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(select.value).toBe("other");
+    expect([...select.options].map((o) => o.value)).toEqual(["other"]);
+    expect(screen.getByLabelText("Custom currency code")).toBeTruthy();
+  });
+
+  test("an existing expense keeps its own currency even when it is not on the quick list", () => {
+    render(
+      <ExpenseForm
+        members={members}
+        myName="Ada"
+        initial={{
+          id: "e1",
+          date: "2026-08-27",
+          title: "Taxi",
+          category: "transport",
+          amount: 1_000,
+          currency: "KRW",
+          paidBy: "Ada",
+          splitAmong: members,
+          notes: null,
+          addedBy: "Ada",
+          createdAt: 1,
+        }}
+        submitLabel="Save changes"
+        quickCurrencies={["PEN"]}
+        onSubmit={noop}
+      />
+    );
+    expect((screen.getByLabelText("Currency") as HTMLSelectElement).value).toBe("other");
+    expect((screen.getByLabelText("Custom currency code") as HTMLInputElement).value).toBe("KRW");
+  });
+});
 
 describe("re-saving an edited expense untouched", () => {
   test("a three-decimal currency (KWD) keeps its stored amount, not ten times it", async () => {
