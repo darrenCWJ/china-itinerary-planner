@@ -1,0 +1,16 @@
+# Generated artifacts must arrive in the working tree exactly as their
+# generator wrote them.
+#
+# `lib/contracts.test.ts` compares data/cities-report.md byte-for-byte against
+# what `scripts/ingest-cities.mjs` would emit, which is the only thing making
+# the GeoNames CC BY 4.0 attribution contract enforceable rather than
+# decorative. The generators write LF. Git stores LF. But `core.autocrlf=true`
+# — the Windows default, and set on this repo — rewrites text files to CRLF on
+# checkout, so a FRESH CLONE ON WINDOWS failed that contract on line endings
+# alone, for a reason with nothing to do with attribution. CI never saw it
+# because CI is Linux.
+#
+# A licence guard that goes red for a spurious reason is a guard people learn
+# to ignore, so pin the eol rather than relaxing the comparison.
+data/*.md   text eol=lf
+data/*.json text eol=lf
