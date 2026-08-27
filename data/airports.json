@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-26T04:52:40.718Z",
+ "generatedAt": "2026-08-27T15:11:36.602Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -1248,8 +1248,8 @@
    "name": "Amderma Airport",
    "municipality": "Amderma",
    "country": "RU",
-   "lat": 69.76329803466797,
-   "lon": 61.556400299072266,
+   "lat": 69.763712,
+   "lon": 61.556711,
    "size": "medium"
   },
   {

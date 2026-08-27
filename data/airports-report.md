@@ -1,6 +1,6 @@
 # Airports catalog report
 
-- Generated: 2026-08-26T04:52:40.718Z
+- Generated: 2026-08-27T15:11:36.602Z
 - Source: https://davidmegginson.github.io/ourairports-data/airports.csv
 - Licence: Public domain (OurAirports, regenerated nightly)
 - Filter: scheduled_service = yes AND iata_code present
