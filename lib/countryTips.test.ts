@@ -269,14 +269,39 @@ function everyOutput(name: string, facts: CountryFacts): string[] {
   ].filter((value): value is string => value !== null);
 }
 
-function assertWellFormed(label: string, lines: readonly string[]): void {
+/**
+ * Every way `lines` breaks the rules above, named — nothing asserted here.
+ *
+ * Collecting rather than asserting per line is load-bearing for the 246-country
+ * sweep further down, which runs this over every country the artifact carries.
+ * At 13 forbidden patterns plus two shape checks per line, over 2,043 rendered
+ * lines and 1,154 tips, the assert-as-you-go version made ~33,000 `expect()`
+ * calls in one test body. Measured on an idle machine: the templates those
+ * calls check take **8ms** to run, and building the assertion objects takes
+ * **199ms** — 96% of the test spent on the harness rather than on the code
+ * under test. vitest bills a test's body to a wall-clock `testTimeout`, so the
+ * sweep was burning a 5000ms budget on 8ms of real work, and it timed out in
+ * 6 of 6 runs of this repo's 3x-concurrent-suite repro. One assertion over a
+ * collected list checks exactly the same things for ~8ms.
+ *
+ * It also reports better than it used to. An `expect()` per line aborts on the
+ * first bad one, so a template that broke forty countries showed you one of
+ * them; this hands back all of them.
+ */
+function wellFormedViolations(label: string, lines: readonly string[]): string[] {
+  const violations: string[] = [];
   for (const line of lines) {
     for (const [why, pattern] of FORBIDDEN) {
-      expect(pattern.test(line), `${label} — ${why}: |${line}|`).toBe(false);
+      if (pattern.test(line)) violations.push(`${label} — ${why}: |${line}|`);
     }
-    expect(line, label).toBe(line.trim());
-    expect(line.length, label).toBeGreaterThan(0);
+    if (line !== line.trim()) violations.push(`${label} — not trimmed: |${line}|`);
+    if (line.length === 0) violations.push(`${label} — empty line`);
   }
+  return violations;
+}
+
+function assertWellFormed(label: string, lines: readonly string[]): void {
+  expect(wellFormedViolations(label, lines)).toEqual([]);
 }
 
 describe("every field, individually absent", () => {
@@ -331,15 +356,21 @@ describe("every field, individually absent", () => {
     // The generalised half. The parameterised test above proves the rule on
     // one country; this proves it on the 246 shapes that actually exist.
     let swept = 0;
+    // Collected, then asserted once — see `wellFormedViolations` for why every
+    // check in this loop reports into a list instead of calling `expect`.
+    const violations: string[] = [];
     for (const code of Object.keys(COUNTRY_FACTS)) {
       const lines = everyOutput(`Country ${code}`, getCountryFacts(code));
-      assertWellFormed(code, lines);
+      violations.push(...wellFormedViolations(code, lines));
       for (const tip of factTips(getCountryFacts(code))) {
-        expect(/^[A-Z]/.test(tip), `${code} tip is not capitalised: |${tip}|`).toBe(true);
-        expect(tip.endsWith("."), `${code} tip has no full stop: |${tip}|`).toBe(true);
+        if (!/^[A-Z]/.test(tip)) violations.push(`${code} tip is not capitalised: |${tip}|`);
+        if (!tip.endsWith(".")) violations.push(`${code} tip has no full stop: |${tip}|`);
       }
       swept += lines.length;
     }
+    // Sliced only so a broad break prints readably; the count in the message is
+    // the real total, and any violation at all still fails this line.
+    expect(violations.slice(0, 25), `${violations.length} malformed line(s)`).toEqual([]);
     // Armed. Every assertion above lives inside a loop, so an artifact that
     // failed to load would leave this test green with nothing checked.
     expect(Object.keys(COUNTRY_FACTS)).toHaveLength(246);
