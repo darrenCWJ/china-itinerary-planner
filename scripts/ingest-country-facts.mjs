@@ -634,7 +634,15 @@ const isTrue = (value) => collapse(value).toLowerCase() === 'true';
  * gap note names the field and nobody is told anything untrue.
  *
  * Measured 2026-08-27 across all 246 codes, the whole cost is SIX countries:
- * AF, AZ, BE, BQ, PW, US. `P1001 applies to jurisdiction` is checked for by
+ * AF, AZ, BE, BQ, PW, US. TWO OF THE SIX ARE RESCUED BY HAND rather than left
+ * withheld — see `CURATED_FACTS`' BE and AZ rows. The rule is right and its
+ * answer is wrong for those two, because their P518 values name a part of the
+ * country (Belgium's language regions) or a variety of the language (Standard
+ * Azerbaijani) rather than a territory the national claim excludes. Telling
+ * those apart means judging what the qualifier's VALUE is, which is a question
+ * about sovereignty rather than a shape a picker can check, so it is answered
+ * once by a human in a row that a test asserts still FIRES. The four that stay
+ * withheld stay withheld. `P1001 applies to jurisdiction` is checked for by
  * name in the query comment and is used by ZERO statements in this universe,
  * so it deliberately gets no rule here — a rule that can only fire on a value
  * nobody has seen is the dead `Type D`/`Type M` row `PLUG_LETTERS` already
@@ -981,6 +989,54 @@ export const CURATED_FACTS = {
   ZW: { currencyCode: 'USD', currencyName: 'United States dollar' },
   /** P38 yields HKD/MOP, because the item covers the wider administrative history. */
   MO: { currencyCode: 'MOP', currencyName: 'Macanese pataca' },
+  /**
+   * Every one of Belgium's three P37 statements is `applies to part`, so
+   * `pickLanguages` withholds the whole field — correctly as a RULE, wrongly
+   * as an ANSWER, and the difference is what this row records.
+   *
+   * Measured 2026-08-27 by the shipping query: 36 truthy statement rows over
+   * exactly THREE distinct items — Dutch (Q7411), French (Q150) and German
+   * (Q188) — and the P518 qualifier on each names a region or a municipality
+   * INSIDE Belgium: Flanders, the Walloon Region, the Brussels-Capital
+   * Region, the German-speaking Community, and the language-facility communes
+   * (Welkenraedt, Mouscron, Comines-Warneton, Voeren, Linkebeek and the rest).
+   *
+   * That is the opposite of the United States shape the rule was written for.
+   * There, the scope qualifier said "this language is official in a territory
+   * and the country as a whole has no such claim". Here it says "this is
+   * WHICH of the country's three national languages governs WHERE" — Article
+   * 4 of the Belgian Constitution divides the country into four language
+   * regions, so a per-region qualifier is how upstream encodes a fact that IS
+   * national. Dutch, French and German is the constitutional trio; it is what
+   * a Belgian passport is printed in and what `languageTip` should say.
+   *
+   * The rule stays whole-field, because it cannot tell those two shapes apart
+   * without reading the qualifier's VALUE and deciding whether that value is
+   * a part of the country or a territory beside it — a judgement about
+   * sovereignty, not a shape a picker can check. So the judgement is made
+   * here, by a human, once, with the upstream shape recorded beside it.
+   */
+  BE: { officialLanguages: ['Dutch', 'French', 'German'] },
+  /**
+   * Azerbaijan's withhold is the same rule and a third shape again: the P518
+   * qualifier names neither a part of the country nor a territory beside it,
+   * but a VARIETY of the language.
+   *
+   * Measured 2026-08-27: two truthy statements. Azerbaijani (Q9292) is
+   * qualified `applies to part: Standard Azerbaijani` — upstream saying which
+   * register is official, which is a refinement of a national claim rather
+   * than a limit on it. Azerbaijani Sign Language (Q55698568) is unqualified.
+   * `pickLanguages`'s own doc-comment already names why the remainder cannot
+   * be published: it leaves the sign language ALONE, and `languageTip` renders
+   * a one-item list as "Azerbaijani Sign Language is the official language".
+   *
+   * Article 21 of Azerbaijan's constitution makes Azerbaijani the state
+   * language, singular. That is the value here. The sign language is
+   * deliberately NOT included: it is recognised, it is not the language a
+   * traveller needs a phrasebook for, and this field feeds a packing line
+   * about offline translation packs.
+   */
+  AZ: { officialLanguages: ['Azerbaijani'] },
 };
 
 /**
@@ -1990,8 +2046,20 @@ export function stampedPayload(previous, body, now) {
  * every time the previous run's numbers differed. Everything below is a pure
  * function of the records, so a rebuild with no data change produces a
  * byte-identical report and `git status` stays clean.
+ *
+ * `scopedLanguages` is the one input that is NOT a record, and it is still not
+ * a run count: it is `diagnostics.scopedLanguages`, the set of countries whose
+ * P37 statements upstream qualified `applies to part`. Same query, same
+ * answer, same output — see `languageGap` below for why the alternative was a
+ * literal that drifted, and for what `null` means.
+ *
+ * @param {{
+ *   countries: Record<string, CountryFacts>,
+ *   generatedAt: string,
+ *   scopedLanguages?: string[] | null,
+ * }} input
  */
-export function buildReport({ countries, generatedAt }) {
+export function buildReport({ countries, generatedAt, scopedLanguages = null }) {
   const records = Object.entries(countries);
   const coverage = RECORD_FIELDS.map((field) => {
     const covered = records.filter(([, record]) => record[field] !== undefined).length;
@@ -2015,6 +2083,70 @@ export function buildReport({ countries, generatedAt }) {
     rendered.set(carried, (rendered.get(carried) ?? 0) + 1);
   }
   const histogram = [...rendered.entries()].sort((a, b) => b[0] - a[0]);
+
+  /**
+   * The languages bullet under `## Not derivable`, DERIVED — and the only
+   * reader `diagnostics.scopedLanguages` has.
+   *
+   * It used to be a frozen literal reading "AF, AZ, BE, BQ, PW and US", which
+   * named six while the artifact beside it withheld nine: the three the rule
+   * has nothing to do with (upstream states no official language for them at
+   * all) were simply missing from a sentence that claimed to explain the gap.
+   * A hand-written list of what a rule did is a second copy of the answer, and
+   * the two drifted the first time anything moved.
+   *
+   * Both halves come from what actually happened: the WHO from the artifact,
+   * the WHY from the run's own diagnostic. That is the point of reading the
+   * diagnostic rather than re-deriving the rule here — a diagnostic nothing
+   * reads is one nobody notices going wrong.
+   *
+   * `scopedLanguages === null` means the P37 query was demoted this run and
+   * its values were carried forward, so the diagnostic is empty because
+   * nothing was measured rather than because nothing was scoped. Attributing
+   * every withheld country to "upstream states none" on that night would be
+   * the frozen list's failure with extra steps, so the split is withheld
+   * instead and the reason is printed.
+   */
+  const withheldLanguages = records
+    .filter(([, record]) => record.officialLanguages === undefined)
+    .map(([code]) => code)
+    .sort();
+  const scopedSet = new Set(scopedLanguages ?? []);
+  const scopedHere = withheldLanguages.filter((code) => scopedSet.has(code));
+  const unstatedHere = withheldLanguages.filter((code) => !scopedSet.has(code));
+  const languageGap = withheldLanguages.length === 0 ? [] : [
+    `- **Official languages for ${withheldLanguages.length} of the ${records.length} countries.**`,
+    '  The gap note names the field for every one of them. Both the list and the split below',
+    '  are derived from this run rather than written down, so neither can drift from what was',
+    '  actually published:',
+    `  ${withheldLanguages.join(', ')}`,
+    ...(scopedLanguages === null
+      ? [
+        '  - **Why each one is withheld is not stated this run.** The P37 query was demoted and',
+        '    its values carried forward, so the scope diagnostic is empty because nothing was',
+        '    measured rather than because nothing was scoped. A split written down anyway is',
+        '    exactly the frozen list this derivation replaced.',
+      ]
+      : [
+        `  - **${scopedHere.length} because every P37 statement upstream gives them is qualified`,
+        '    `applies to part`** — or enough of them that the remainder is not a national list.',
+        '    Upstream is stating, on the statement itself, that this is not a claim about the',
+        '    whole country. The United States is the case that forces the rule: Carolinian and',
+        '    Chamorro apply to the Northern Marianas, Hawaiian to Hawaii, Samoan to American',
+        '    Samoa and Spanish to Puerto Rico, while English sits at deprecated rank — so an',
+        '    unfiltered query told a traveller the United States has five official languages and',
+        '    none of them is English. Publishing the unscoped remainder instead was measured and',
+        '    rejected: it leaves Azerbaijan with `Azerbaijani Sign Language` alone, trading one',
+        '    false sentence for another. Where the qualifier names a PART of the country',
+        '    (Belgium\'s language regions) or a VARIETY of the language (Standard Azerbaijani)',
+        '    rather than a territory the national claim excludes, a hand-verified value is',
+        '    carried instead and the whole field is not lost — see `CURATED_FACTS`.',
+        `    ${scopedHere.join(', ') || '(none)'}`,
+        `  - **${unstatedHere.length} because upstream states no official language at all** —`,
+        '    no truthy P37 statement, or none this ingest can publish.',
+        `    ${unstatedHere.join(', ') || '(none)'}`,
+      ]),
+  ];
 
   return [
     '# Country facts report',
@@ -2091,17 +2223,7 @@ export function buildReport({ countries, generatedAt }) {
     '- **Payment apps, connectivity, booking channels, tipping, tap water, visa rules.**',
     '  No structured source. Visa rules also depend on the traveller\'s passport, which',
     '  the app does not know.',
-    '- **Official languages for AF, AZ, BE, BQ, PW and US.** Measured 2026-08-27: every',
-    '  P37 statement these six carry, or enough of them that the remainder is not a',
-    '  national list, is qualified `applies to part` — upstream stating on the statement',
-    '  itself that it is not a claim about the whole country. The United States is the',
-    '  case that forces the rule: Carolinian and Chamorro apply to the Northern Marianas,',
-    '  Hawaiian to Hawaii, Samoan to American Samoa and Spanish to Puerto Rico, while',
-    '  English sits at deprecated rank — so an unfiltered query told a traveller the',
-    '  United States has five official languages and none of them is English. Publishing',
-    '  the unscoped remainder instead was measured and rejected: it leaves Azerbaijan',
-    '  with `Azerbaijani Sign Language` alone, trading one false sentence for another. So',
-    '  the whole field is withheld for all six and the gap note names it.',
+    ...languageGap,
     '- **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole',
     '  distinct P2853 value set across these countries is fourteen items, thirteen',
     '  standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single',
@@ -2520,7 +2642,18 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
     now
   );
   writeFileAtomic(factsPath, JSON.stringify(payload));
-  writeFileAtomic(reportPath, buildReport({ countries: built.countries, generatedAt: payload.generatedAt }));
+  // `scopedLanguages` is null, not `[]`, when P37 was demoted: the diagnostic
+  // is empty on such a night because nothing was measured, and the report must
+  // not read that as "nothing was scoped". See `languageGap` in `buildReport`.
+  const languagesDemoted = demoted.some((property) => property.fields.includes('officialLanguages'));
+  writeFileAtomic(
+    reportPath,
+    buildReport({
+      countries: built.countries,
+      generatedAt: payload.generatedAt,
+      scopedLanguages: languagesDemoted ? null : built.diagnostics.scopedLanguages,
+    })
+  );
 
   const total = Object.values(built.countries).reduce((sum, record) => sum + factCount(record), 0);
   console.log(

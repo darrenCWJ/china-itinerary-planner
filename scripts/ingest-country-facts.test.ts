@@ -1114,8 +1114,17 @@ describe("factCount", () => {
 // CURATED_FACTS
 // ---------------------------------------------------------------------------
 
-/** The measured upstream shape that causes each curated row's withhold. */
-const CURATED_UPSTREAM: Record<string, { currency?: [string, string][]; voltage?: string[] }> = {
+/**
+ * The measured upstream shape that causes each curated row's withhold.
+ *
+ * `languages` rows are `[item, label, scoped]`, the three columns the P37
+ * query selects, so the fixture drives the SAME `pickLanguages` path a real
+ * run takes rather than asserting the withhold by hand.
+ */
+const CURATED_UPSTREAM: Record<
+  string,
+  { currency?: [string, string][]; voltage?: string[]; languages?: [string, string, string][] }
+> = {
   NL: {
     currency: [
       ["EUR", "euro"],
@@ -1150,6 +1159,29 @@ const CURATED_UPSTREAM: Record<string, { currency?: [string, string][]; voltage?
       ["MOP", "Macanese pataca"],
     ],
   },
+  // Belgium's real P37 answer, measured 2026-08-27 by the shipping query: 36
+  // truthy rows over exactly three distinct items, every one qualified
+  // `applies to part` with a region or a language-facility commune INSIDE
+  // Belgium. Three rows are enough to reproduce the withhold; the repetition
+  // upstream carries is per-qualifier and `pickLanguages` deduplicates.
+  BE: {
+    languages: [
+      ["Q7411", "Dutch", "true"],
+      ["Q150", "French", "true"],
+      ["Q188", "German", "true"],
+    ],
+  },
+  // Azerbaijan's real P37 answer, measured the same day: the scoped statement
+  // is Azerbaijani itself (`applies to part: Standard Azerbaijani`, a variety
+  // rather than a territory), and the unscoped remainder is the sign language
+  // alone. This is the shape `pickLanguages`' doc-comment names as the reason
+  // the rule is whole-field rather than a filter.
+  AZ: {
+    languages: [
+      ["Q9292", "Azerbaijani", "true"],
+      ["Q55698568", "Azerbaijani Sign Language", "false"],
+    ],
+  },
 };
 
 describe("CURATED_FACTS", () => {
@@ -1163,6 +1195,12 @@ describe("CURATED_FACTS", () => {
         codes: [{ code }],
         currency: (upstream.currency ?? []).map(([c, name]) => ({ country: code, code: c, name })),
         voltage: (upstream.voltage ?? []).map((value) => ({ country: code, value })),
+        languages: (upstream.languages ?? []).map(([item, value, scoped]) => ({
+          country: code,
+          item: entity(item),
+          value,
+          scoped,
+        })),
         drivingSide: [{ country: code, value: "right-hand traffic" }],
       });
       const before = built.countries[code] as Record<string, unknown> | undefined;
@@ -1179,9 +1217,38 @@ describe("CURATED_FACTS", () => {
     }
   });
 
-  test("the shipped rows are exactly the five currencies and the one voltage the design names", () => {
-    expect(Object.keys(CURATED_FACTS).sort()).toEqual(["FR", "MO", "NL", "PL", "ZW"]);
+  test("the shipped rows are exactly the five currencies, the one voltage and the two languages", () => {
+    expect(Object.keys(CURATED_FACTS).sort()).toEqual(["AZ", "BE", "FR", "MO", "NL", "PL", "ZW"]);
     expect(CURATED_FACTS.FR.voltageV).toBe(230);
+    // The two rescued by hand from the territorial-scope rule, VALUE and all.
+    // Belgium's constitutional trio, and Azerbaijan's single state language
+    // WITHOUT the sign language the unscoped remainder would have left alone.
+    expect(CURATED_FACTS.BE.officialLanguages).toEqual(["Dutch", "French", "German"]);
+    expect(CURATED_FACTS.AZ.officialLanguages).toEqual(["Azerbaijani"]);
+  });
+
+  test("a curated language row rescues the field the scope rule withheld, end to end", () => {
+    // The claim the previous repair was abandoned on — that `CURATED_FACTS`
+    // could not reach a withheld field "since applyCurated marks a row stale
+    // when the field is present" — driven rather than argued. A withheld field
+    // is ABSENT, `applyCurated` keys on `!== undefined`, so the row fires. If
+    // the withhold ever stops firing this goes red as STALE instead, which is
+    // the whole point of the pair.
+    const built = buildFacts({
+      codes: [{ code: "BE" }],
+      drivingSide: [{ country: "BE", value: "right-hand traffic" }],
+      languages: [
+        { country: "BE", item: entity("Q7411"), value: "Dutch", scoped: "true" },
+        { country: "BE", item: entity("Q150"), value: "French", scoped: "true" },
+        { country: "BE", item: entity("Q188"), value: "German", scoped: "true" },
+      ],
+    });
+    expect(built.diagnostics.scopedLanguages).toContain("BE");
+    expect(built.countries.BE.officialLanguages).toBeUndefined();
+    applyCurated(built);
+    expect(built.countries.BE.officialLanguages).toEqual(["Dutch", "French", "German"]);
+    expect(built.diagnostics.curatedFired).toContain("BE.officialLanguages");
+    expect(built.diagnostics.curatedStale).toEqual([]);
   });
 
   test("an override upstream has since made redundant is reported STALE, not applied silently", () => {
@@ -1337,6 +1404,67 @@ describe("buildReport", () => {
     const second = buildReport({ countries, generatedAt: "2026-08-27T00:00:00.000Z" });
     expect(first).toBe(second);
     expect(first).not.toMatch(/changed (this run|tonight)/i);
+  });
+
+  test("the withheld-language list is derived from the artifact, not a frozen literal", () => {
+    // The defect: the bullet said "AF, AZ, BE, BQ, PW and US" — six — while the
+    // artifact beside it withheld NINE, because the three countries upstream
+    // states no language for at all were never in a sentence that claimed to
+    // explain the gap. A hand-written copy of what a rule did drifts the first
+    // time anything moves. Here the report is handed one country withheld for
+    // each reason and has to name both.
+    const report = buildReport({
+      countries: {
+        PE: { officialLanguages: ["Spanish"] },
+        US: { currencyCode: "USD" },
+        UY: { currencyCode: "UYU" },
+      },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: ["US"],
+    });
+    expect(report).toContain("**Official languages for 2 of the 3 countries.**");
+    expect(report).toMatch(/1 because every P37 statement upstream gives them is qualified/);
+    expect(report).toMatch(/1 because upstream states no official language at all/);
+    // And each country lands under the reason that actually applies to it. The
+    // scoped bullet is the one that names US; the unstated bullet names UY.
+    const scopedAt = report.indexOf("applies to part");
+    const unstatedAt = report.indexOf("no official language at all");
+    expect(report.slice(scopedAt, unstatedAt)).toMatch(/^\s{4}US$/m);
+    expect(report.slice(unstatedAt)).toMatch(/^\s{4}UY$/m);
+    // And PE is in none of the three lists, because it has its languages. The
+    // whole-set line is asserted verbatim rather than by absence, so a build
+    // that listed every country would fail here rather than pass by omission.
+    expect(report).toMatch(/^\s{2}US, UY$/m);
+  });
+
+  test("a demoted P37 query withholds the SPLIT rather than guessing at it", () => {
+    // `scopedLanguages: null` is "not measured this run", which is a different
+    // thing from "nothing was scoped". On a night the P37 query is demoted and
+    // its values carried forward, the artifact still withholds the same
+    // countries while the diagnostic is empty — so attributing all of them to
+    // "upstream states none" would be the frozen list's failure with extra
+    // steps. The countries are still named; only the reason is withheld.
+    const report = buildReport({
+      countries: { PE: { officialLanguages: ["Spanish"] }, US: { currencyCode: "USD" } },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: null,
+    });
+    expect(report).toContain("**Official languages for 1 of the 2 countries.**");
+    expect(report).toContain("Why each one is withheld is not stated this run");
+    expect(report).not.toMatch(/because upstream states no official language at all/);
+    expect(report).toMatch(/^\s{2}US$/m);
+  });
+
+  test("says nothing about withheld languages when nothing is withheld", () => {
+    // The arming case for the two above: the bullet is not boilerplate that
+    // renders regardless, so a build where the rule stopped firing does not
+    // print a paragraph explaining a gap that is not there.
+    const report = buildReport({
+      countries: { PE: { officialLanguages: ["Spanish"] } },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: [],
+    });
+    expect(report).not.toMatch(/Official languages for/);
   });
 });
 
@@ -2019,10 +2147,20 @@ function healthyFeed(): Feed {
   for (const [code, spec] of Object.entries(CURATED_UPSTREAM)) {
     addCountry(feed, code, {
       ...FILLER_SPEC,
-      currency: spec.currency,
+      currency: spec.currency ?? FILLER_SPEC.currency,
       voltage: spec.voltage ?? FILLER_SPEC.voltage,
       callingCode: `+${31 + Object.keys(CURATED_UPSTREAM).indexOf(code)}`,
     });
+    // BE and AZ carry a language shape rather than a currency one, so the
+    // filler's unscoped "English" has to go: leave it and their curated rows
+    // read as STALE and `assertFactsSane` refuses the whole run, which is the
+    // gate working — the fixture has to reproduce the withhold, not assert it.
+    if (spec.languages) {
+      dropRows(feed, "languages", [code]);
+      for (const [item, value, scoped] of spec.languages) {
+        (feed.languages as Row[]).push({ country: code, item: entity(item), value, scoped });
+      }
+    }
   }
   // Measured: BZ's P2884 is 550/220, so its voltage is withheld and — unlike
   // FR's — no curated row replaces it. A country with an honest gap.

@@ -79,26 +79,31 @@ const MEASURED_COVERAGE: Record<string, number> = {
   voltageV: 221,
   drivingSide: 245,
   emergency: 221,
-  // 237, not the 243 Task 25 measured. Six countries — AF, AZ, BE, BQ, PW and
-  // US — carry only P37 statements upstream itself marks `applies to part`,
-  // which is upstream saying they are not claims about the whole country, so
-  // the ingest withholds the whole field for them. The FLOOR in
-  // `MIN_FIELD_COVERAGE` deliberately did NOT move down with it; the comment
-  // there says why.
-  officialLanguages: 237,
+  // 239, not the 243 Task 25 measured. Six countries carry only P37 statements
+  // upstream itself marks `applies to part`, which is upstream saying they are
+  // not claims about the whole country, so the ingest withholds the whole
+  // field for them: AF, AZ, BE, BQ, PW, US. Two of the six are then RESCUED by
+  // a hand-verified `CURATED_FACTS` row, because their qualifier names a part
+  // of the country (Belgium's language regions) or a variety of the language
+  // (Standard Azerbaijani) rather than a territory the national claim
+  // excludes — so the net fall is four. The FLOOR in `MIN_FIELD_COVERAGE`
+  // deliberately did NOT move with either number; the comment there says why.
+  officialLanguages: 239,
   callingCode: 237,
   lat: 246,
 };
 
 /**
- * Measured: 70,014 bytes for 246 countries, 2,092 facts and 246 names.
+ * Measured: 70,098 bytes for 246 countries, 2,094 facts and 246 names.
  *
  * It was 70,443 for 2,098 facts (10,387 gzipped) before the territorial-scope
- * language rule withheld six countries' official languages. The artifact got
- * smaller, which is the direction an honest gap moves a budget.
+ * language rule withheld six countries' official languages, and 70,014 for
+ * 2,092 before two of those six got their languages back from a curated row.
+ * The artifact got smaller and then slightly larger again, which is what an
+ * honest gap and an honest rescue each do to a budget.
  *
  * The design's prototype said 50,265 and said to re-measure rather than carry
- * it forward; the real figure is 40% larger, mostly because 237 countries
+ * it forward; the real figure is 40% larger, mostly because 239 countries
  * carry their official languages and `currencyName` ships beside every code.
  * Adding the country name cost 4,927 bytes — 1,440 gzipped — which is the
  * price of every gap note and every packing line naming a country instead of
@@ -117,8 +122,8 @@ const MEASURED_COVERAGE: Record<string, number> = {
  * itself here.
  *
  * NOT ASSERTED, and stated so it is not assumed: the gzipped size. It is
- * measured (10,387 bytes) and recorded, and nothing here or anywhere else in
- * the repo checks it.
+ * measured (10,295 bytes at zlib's default level) and recorded, and nothing
+ * here or anywhere else in the repo checks it.
  */
 const MAX_ARTIFACT_BYTES = 80_000;
 
@@ -223,18 +228,29 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
     expect(countries.NO?.officialLanguages).toEqual(["Norwegian", "Sámi"]);
 
     // The rule that produced the US answer, stated as a set rather than as one
-    // country. NINE countries carry no language field: six because every P37
-    // statement upstream gives them is territorially scoped (AF, AZ, BE, BQ,
-    // PW, US) and three because upstream states no official language at all
-    // (GP, MQ, UY — the first two are French overseas departments whose item
-    // carries none, and Uruguay's Spanish is de facto and unstated). Pinned as
-    // one list so a future upstream edit that re-admits any of them has to be
-    // looked at rather than absorbed.
+    // country. SEVEN countries carry no language field: four because every P37
+    // statement upstream gives them is territorially scoped (AF, BQ, PW, US)
+    // and three because upstream states no official language at all (GP, MQ,
+    // UY — the first two are French overseas departments whose item carries
+    // none, and Uruguay's Spanish is de facto and unstated). Pinned as one list
+    // so a future upstream edit that re-admits any of them has to be looked at
+    // rather than absorbed.
     const withheld = Object.entries(countries)
       .filter(([, record]) => record.officialLanguages === undefined)
       .map(([code]) => code)
       .sort();
-    expect(withheld).toEqual(["AF", "AZ", "BE", "BQ", "GP", "MQ", "PW", "US", "UY"]);
+    expect(withheld).toEqual(["AF", "BQ", "GP", "MQ", "PW", "US", "UY"]);
+
+    // AZ and BE are NOT on that list, and the rule withheld them too — a
+    // hand-verified `CURATED_FACTS` row put each back, because their P518
+    // qualifier names a part of the country or a variety of the language
+    // rather than a territory the national claim excludes. Asserted by VALUE,
+    // because a row that fired with the wrong answer would be invisible to a
+    // list check. Belgium's constitutional trio, and Azerbaijan's single state
+    // language without the sign language the unscoped remainder would have
+    // left standing alone.
+    expect(countries.BE?.officialLanguages).toEqual(["Dutch", "French", "German"]);
+    expect(countries.AZ?.officialLanguages).toEqual(["Azerbaijani"]);
   });
 
   test("has the per-field coverage the shipping query measured", () => {
@@ -259,12 +275,34 @@ describe.skipIf(!hasAssets)("the committed data/country-facts.json", () => {
       RENDERED_FIELDS.some((field) => record[field as keyof CountryFacts] === undefined)
     );
     expect(withGaps.length).toBeGreaterThan(0);
-    // Measured against the committed artifact: 182 of 246 carry all seven. It
-    // was 187 before the territorial-scope rule; the five that moved are AF,
-    // AZ, BE, BQ and PW, each of which carried every other rendered field.
-    // (US was already one short.) Pinned as the complement, so a build where
-    // the gaps quietly disappeared fails here.
-    expect(records.length - withGaps.length).toBe(182);
+    // Measured against the committed artifact: 184 of 246 carry all seven.
+    // Pinned as the complement, so a build where the gaps quietly disappeared
+    // fails here.
+    const allSeven = records.length - withGaps.length;
+    expect(allSeven).toBe(184);
+    // What the territorial-scope rule costs this number, DERIVED rather than
+    // restated — the previous version of this comment named a moved set that
+    // included BQ (which was already four fields short, so it never moved) and
+    // excluded US (which did move, and is the country the whole rule exists
+    // for), and its arithmetic re-derived to 186 against a stated 187. Here the
+    // countries whose ONLY missing rendered field is their languages are read
+    // off the artifact, so the "before" figure is computed and cannot be wrong
+    // about who is in it.
+    const onlyLanguagesMissing = records
+      .filter(
+        ([, record]) =>
+          RENDERED_FIELDS.filter((field) => record[field as keyof CountryFacts] === undefined)
+            .length === 1 && record.officialLanguages === undefined
+      )
+      .map(([code]) => code)
+      .sort();
+    expect(onlyLanguagesMissing).toEqual(["AF", "GP", "MQ", "PW", "US", "UY"]);
+    // GP, MQ and UY have never had languages upstream, so they were short
+    // before the rule as well. AF, PW and US are what the rule actually moved,
+    // and 184 + 3 = 187 is the figure it moved them from.
+    const movedByTheRule = onlyLanguagesMissing.filter((code) => !["GP", "MQ", "UY"].includes(code));
+    expect(movedByTheRule).toEqual(["AF", "PW", "US"]);
+    expect(allSeven + movedByTheRule.length).toBe(187);
     // ABSENT, never empty. An empty array or an empty string would render as a
     // broken sentence where an absent field renders as nothing at all.
     for (const [code, record] of records) {
