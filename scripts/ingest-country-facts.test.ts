@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach as afterEachTop, describe, expect, test, vi as viTop } from "vitest";
 import {
   COUNTRY_CODES,
   CURATED_FACTS,
@@ -13,6 +13,7 @@ import {
   applyCurated,
   batchCodes,
   buildQuery,
+  fetchWithRetry,
   parseRetryAfter,
   assertFactsSane,
   buildFacts,
@@ -425,6 +426,53 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter("")).toBeNull();
     expect(parseRetryAfter("soon")).toBeNull();
     expect(parseRetryAfter("12.5")).toBeNull();
+  });
+});
+
+describe("fetchWithRetry", () => {
+  afterEachTop(() => viTop.unstubAllGlobals());
+
+  /** One canned Response-alike, enough for the three branches that matter. */
+  const respond = (status: number, body: string, retryAfter?: string) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name: string) => (name.toLowerCase() === "retry-after" ? (retryAfter ?? null) : null) },
+    text: async () => body,
+  });
+
+  test("returns the body on the first success, with no retry", async () => {
+    // The positive control. Without it, every not.toThrow below could be
+    // passing because nothing ever reaches the network at all.
+    const fetchSpy = viTop.fn().mockResolvedValue(respond(200, "code\nPE\n"));
+    viTop.stubGlobal("fetch", fetchSpy);
+    await expect(fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" }))
+      .resolves.toBe("code\nPE\n");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("gives up immediately when Retry-After asks for longer than the ceiling", async () => {
+    // Honouring the header is what keeps this a polite client; capping it is
+    // what stops a misconfigured or hostile `Retry-After: 86400` from holding
+    // a CI runner open for a day. The property is demoted and its previous
+    // values carried forward instead — one night's freshness, not a field.
+    const fetchSpy = viTop.fn().mockResolvedValue(respond(429, "slow down", "86400"));
+    viTop.stubGlobal("fetch", fetchSpy);
+    await expect(
+      fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" })
+    ).rejects.toThrow(/Retry-After asked for 86400s, over the 60s ceiling/);
+    // Once, not three times: the ceiling is a decision to stop, not a backoff.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("a 404 is an outage, never an empty result", async () => {
+    // `notFoundIsEmpty: false`, stated as behaviour. Reading a moved endpoint
+    // as "Wikidata knows nothing about 246 countries" is the Task 7 shape, and
+    // it is not worth retrying either — a moved endpoint stays moved.
+    const fetchSpy = viTop.fn().mockResolvedValue(respond(404, "not found"));
+    viTop.stubGlobal("fetch", fetchSpy);
+    await expect(
+      fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" })
+    ).rejects.toThrow(/that is an outage,\s+not an empty result/);
   });
 });
 
