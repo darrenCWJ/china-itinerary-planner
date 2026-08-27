@@ -1,8 +1,21 @@
 import { describe, expect, test } from "vitest";
 import { buildBriefing, type Briefing } from "./briefing";
 import { chinaLeaks, CHINA_TOKENS, peruMisses, PERU_TOKENS } from "./chinaLeakScan";
+import {
+  CN_BOOKING_COPY,
+  CN_DEPARTURE_AFTERNOON,
+  CN_DEPARTURE_EVENING,
+  CN_GENERAL_TIPS,
+  CN_HOP_NOTE,
+  CN_HOP_TITLE,
+  CN_KIDS_TIP,
+  CN_PACKING,
+  CN_WINTER_CLOTHING_NOTE,
+} from "./countryData/cn";
 import { getCountryProfile } from "./countryProfile";
 import type { TripInput } from "./itinerary";
+import { KIND_EMOJI } from "./meta";
+import { HOLIDAY_BANDS } from "./months";
 import { suggestRoute, type RoutePlace, type RouteSuggestion } from "./route";
 import { airportsForCountry } from "./server/airports";
 import { resolveDestinations } from "./server/catalog";
@@ -167,7 +180,60 @@ function assemble(country: string, ids: string[]): Assembled {
 const peru = assemble("PE", PERU_CITY_IDS);
 const china = assemble("CN", CHINA_CITY_IDS);
 
+/**
+ * Every China string this repo can actually emit, read from the modules that
+ * define them rather than retyped.
+ *
+ * This is what makes the token list falsifiable. The self-test below proves
+ * only that the scanner finds its OWN spelling; the China-plan arming proof
+ * exercises the twelve tokens that reach a scanned surface. That leaves
+ * `Chinese`, `🧧`, `🇨🇳` and `🚄` — which live in `lib/months.ts` and
+ * `lib/meta.ts`, not `cn.ts`, and are rendered on the month picker and the
+ * itinerary rows — armed by nothing. Corrupt `🧧` to `🧨` in place and every
+ * other assertion in this file stays green while the scanner is permanently
+ * blind to the real string.
+ *
+ * Reading the values means a typo on EITHER side reddens: a mangled token no
+ * longer matches production, and a reworded production string no longer
+ * matches its token. Both are things somebody should look at.
+ */
+const PRODUCTION_CHINA_COPY = [
+  ...CN_GENERAL_TIPS,
+  ...CN_PACKING.flatMap((group) => [group.title, ...group.items]),
+  ...CN_BOOKING_COPY,
+  CN_HOP_TITLE,
+  CN_HOP_NOTE,
+  CN_DEPARTURE_EVENING,
+  CN_DEPARTURE_AFTERNOON,
+  CN_KIDS_TIP,
+  CN_WINTER_CLOTHING_NOTE,
+  ...HOLIDAY_BANDS.flatMap((band) => [band.name, band.emoji, band.note]),
+  KIND_EMOJI.travel,
+]
+  .filter((line): line is string => typeof line === "string")
+  .join("\n");
+
 describe("T30 — the scan itself", () => {
+  test("every token is spelled the way production spells it", () => {
+    // Arming for the arming: a corpus that failed to assemble would make the
+    // filter below trivially empty and this test a decoration.
+    expect(PRODUCTION_CHINA_COPY.length).toBeGreaterThan(1000);
+    expect(PRODUCTION_CHINA_COPY).toContain("Alipay");
+
+    const unspoken = CHINA_TOKENS.filter(
+      (token) => !PRODUCTION_CHINA_COPY.toLowerCase().includes(token.toLowerCase())
+    );
+    expect(unspoken).toEqual([]);
+    expect(CHINA_TOKENS).toHaveLength(16);
+
+    // Named individually for the four the China-plan arming proof cannot
+    // reach, because they are emitted by modules no scanned surface renders.
+    expect(HOLIDAY_BANDS[0].name).toContain("Chinese");
+    expect(HOLIDAY_BANDS.map((b) => b.emoji)).toContain("🧧");
+    expect(HOLIDAY_BANDS.map((b) => b.emoji)).toContain("🇨🇳");
+    expect(KIND_EMOJI.travel).toBe("🚄");
+  });
+
   test("finds every token it claims to look for, in either casing", () => {
     // Without this, a typo in one entry of CHINA_TOKENS is indistinguishable
     // from a clean plan for the rest of this file's lifetime.
@@ -183,9 +249,25 @@ describe("T30 — the scan itself", () => {
   test("finds a CJK codepoint, and reports it rather than a boolean", () => {
     expect(chinaLeaks("启程")).toEqual(["启", "程"]);
     expect(chinaLeaks("同行 over a Japan trip")).toEqual(["同", "行"]);
-    // The /g regex is not shared across calls — a leaked lastIndex would make
+    // The global matcher is rebuilt per call — a leaked lastIndex would make
     // this second scan of the same string disagree with the first.
     expect(chinaLeaks("启程")).toEqual(chinaLeaks("启程"));
+  });
+
+  test("both ends of the CJK range are armed, not just the readable one", () => {
+    // The floor is self-evident — `一` IS U+4E00, so the tests above pin it.
+    // The ceiling is not: `鿿` (U+9FFF) renders as nothing meaningful, so a
+    // mojibake that lowered it would go unnoticed while blinding the scan to
+    // everything above the new bound. The highest codepoint any other
+    // assertion in this repo forces is `起` (U+8D77).
+    expect(chinaLeaks("一")).toEqual(["一"]); // U+4E00, the floor
+    expect(chinaLeaks("鿿")).toEqual(["鿿"]); // U+9FFF, the ceiling itself
+    // Characters between `起` and the ceiling — the band a lowered bound
+    // would silently drop, and full of exactly the words this repo writes.
+    expect(chinaLeaks("高德")).toEqual(["高德", "高", "德"]); // U+9AD8, U+5FB7
+    expect(chinaLeaks("长面馆")).toEqual(["长", "面", "馆"]); // U+957F, U+9762, U+9928
+    // And the range is a range, not an allowlist of the characters above.
+    expect(chinaLeaks("Cusco, Arequipa — 220 V")).toEqual([]);
   });
 
   test("says nothing about text that is genuinely clean", () => {
@@ -280,6 +362,27 @@ describe("T30 — the negative half", () => {
     expect(chinaLeaks(peru.data.plan.tips.join(" "))).toEqual([]);
     expect(chinaLeaks(peru.gapNote.join(" "))).toEqual([]);
     expect(chinaLeaks(JSON.stringify(peru.briefing))).toEqual([]);
+  });
+
+  /**
+   * The one scanned key where "clean" and "empty" are the same thing, said out
+   * loud so it is a known limit rather than an accident.
+   *
+   * `buildTripData` filters `foods` to destinations with dishes, and a GeoNames
+   * city carries none — so `peru.data.foods` is `[]` by construction and
+   * scanning it can never fail. That is the design's own "these make Peru
+   * *thin*, not *wrong*" non-goal, not a defect. The China side is asserted
+   * non-empty so the emptiness is a fact about Peru's data rather than about
+   * the field being dead everywhere.
+   */
+  test("the foods surface is empty for Peru by construction, not by accident", () => {
+    expect(peru.data.foods).toEqual([]);
+    // Live for a country that has dishes, so Peru's emptiness is a fact about
+    // Peru's data rather than about the field being dead everywhere. (China's
+    // dish names happen to carry no marker of their own — "Peking duck" is not
+    // in the token list — so this arms the field, not the scan.)
+    expect(china.data.foods.length).toBeGreaterThan(0);
+    expect(china.data.foods.flatMap((f) => f.dishes).length).toBeGreaterThan(0);
   });
 
   /**
