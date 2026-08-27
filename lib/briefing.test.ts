@@ -328,3 +328,72 @@ describe("buildBriefing — redaction", () => {
     expect(buildBriefing(payload(), PUBLIC_PLAIN).redacted).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T28 — the gap note the briefing carries
+// ---------------------------------------------------------------------------
+
+/** The same trip, in a different country. Everything else, including the
+ *  snapshotted `plan.tips`, is held fixed. */
+function inCountry(country: string): TripPayload {
+  const base = payload();
+  return { ...base, data: { ...base.data, input: { ...base.data.input, country } } };
+}
+
+describe("buildBriefing resolves the gap note from the trip's country", () => {
+  test("a Peru trip carries the note; the tips it disclaims are untouched", () => {
+    const b = buildBriefing(inCountry("PE"), PUBLIC_PLAIN);
+
+    expect(b.gapNote).toEqual([
+      "These notes come from open reference data. We don't have Peru-specific guidance on " +
+        "payments, connectivity, booking channels or public holidays yet — and we'd rather leave " +
+        "that blank than guess.",
+    ]);
+    // The note sits BESIDE the tips, never in them.
+    expect(b.logistics.tips).toEqual(["Set up Alipay before flying."]);
+  });
+
+  test("a sparse country names exactly the fields the artifact lacks for it", () => {
+    // Measured against the committed data/country-facts.json on 2026-08-27: SH
+    // has a driving side, emergency numbers and one official language, and no
+    // currency, plugs, voltage or calling code.
+    const b = buildBriefing(inCountry("SH"), PUBLIC_PLAIN);
+    expect(b.gapNote).toHaveLength(2);
+    expect(b.gapNote[1]).toBe(
+      "We also have no currency, plug types, mains voltage or dialling code for " +
+        "Saint Helena, Ascension and Tristan da Cunha."
+    );
+  });
+
+  test("China gets none, and neither does a legacy trip with no country stored", () => {
+    expect(buildBriefing(inCountry("CN"), PUBLIC_PLAIN).gapNote).toEqual([]);
+    // `payload()` predates the country field entirely — `tripCountry`'s "CN"
+    // backfill, which must not turn every legacy trip into a disclaimed one.
+    expect(buildBriefing(payload(), PUBLIC_PLAIN).gapNote).toEqual([]);
+    expect(buildBriefing(payload(), FULL).gapNote).toEqual([]);
+  });
+
+  test("it is derived per build, not read off the persisted trip", () => {
+    // Two briefings from the SAME stored plan, differing only in country. If
+    // the note were ever snapshotted onto `data.plan` these would agree — and
+    // a trip created today would keep saying "we don't have Peru guidance"
+    // long after we did. It is a claim about our current data, not the trip.
+    const peru = buildBriefing(inCountry("PE"), PUBLIC_PLAIN);
+    const helena = buildBriefing(inCountry("SH"), PUBLIC_PLAIN);
+    expect(peru.gapNote).not.toEqual(helena.gapNote);
+
+    // And nothing on the stored side ever grew a gap note to read from.
+    const stored = JSON.stringify(inCountry("PE").data);
+    expect(stored).not.toContain("gapNote");
+    expect(stored).not.toContain("open reference data");
+  });
+
+  test("the redaction sweep still holds with the note present", () => {
+    // The note names a country, never a member or a booking reference — but
+    // it is new content on the public document, so it goes through the same
+    // check rather than being assumed harmless.
+    const serialized = JSON.stringify(buildBriefing(inCountry("PE"), PUBLIC_PLAIN));
+    expect(serialized).toContain("open reference data");
+    expect(serialized).not.toContain("Ada");
+  });
+});

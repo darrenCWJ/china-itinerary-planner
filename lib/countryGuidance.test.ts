@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { NEUTRAL_PACKING, NEUTRAL_TIPS } from "./countryData/neutral";
 import { DESTINATIONS } from "./data";
+import { getCountryProfile } from "./countryProfile";
 import { buildItinerary, type ScheduledItem, type TripInput, type TripPlan } from "./itinerary";
 import { buildPackingList } from "./packing";
 import { geoNamesCityToDestination } from "./server/catalog";
@@ -460,5 +461,56 @@ describe.skipIf(!existsSync(PE_SHARD))("the Peru fixture is the committed shard'
       ["Lima", "PE", -12.04318, -77.02824],
       ["Cusco", "PE", -13.53188, -71.96701],
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T28 — the gap note stays OUT of the snapshot
+// ---------------------------------------------------------------------------
+
+/**
+ * The generated plan is frozen into the trip at creation and served back
+ * unchanged forever (`lib/server/planService.ts`). That is right for
+ * `plan.tips`: a traveller acted on the advice they were given, so rewriting it
+ * under them would be worse than leaving it stale.
+ *
+ * The gap note is the opposite kind of statement. It says what WE do not know
+ * today. Frozen into a trip it would still be claiming, a year after we ingest
+ * Peru's payment guidance, that we do not have any — the note would outlive the
+ * gap it describes and become the very kind of false claim this whole task
+ * exists to remove. So it is computed at render time on all three surfaces, and
+ * the generator must never learn to emit it.
+ */
+describe("the gap note is never snapshotted into a plan", () => {
+  const peru = buildItinerary(peruInput(), PERU_CITIES);
+
+  test("Peru's note exists, so the absences below are absences and not a typo", () => {
+    // Arming. Every assertion in this block is a `not.toContain`, and a block
+    // of those passes perfectly against a feature that was never built.
+    const note = getCountryProfile("PE").gapNote;
+    expect(note).toHaveLength(1);
+    expect(note[0]).toContain("open reference data");
+    expect(peru.tips.length).toBeGreaterThan(0);
+  });
+
+  test("the generated plan carries days and tips, and no third field", () => {
+    // A new key here is how a snapshot would arrive: `TripPlan` is persisted
+    // verbatim, so anything the generator adds is frozen with the trip.
+    expect(Object.keys(peru).sort()).toEqual(["days", "tips"]);
+  });
+
+  test("no tip is the gap note wearing a tip's clothes", () => {
+    const serialized = JSON.stringify(peru);
+    expect(serialized).not.toContain("open reference data");
+    expect(serialized).not.toContain("Peru-specific guidance");
+    expect(serialized).not.toContain("We also have no ");
+    expect(serialized).not.toContain("gapNote");
+    for (const tip of peru.tips) expect(tip).not.toContain("rather leave that blank than guess");
+  });
+
+  test("the packing list did not pick it up either", () => {
+    const packing = JSON.stringify(buildPackingList(peruInput(), PERU_CITIES));
+    expect(packing).not.toContain("open reference data");
+    expect(packing).not.toContain("gapNote");
   });
 });
