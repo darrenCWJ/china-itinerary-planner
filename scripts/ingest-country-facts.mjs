@@ -647,13 +647,30 @@ const isTrue = (value) => collapse(value).toLowerCase() === 'true';
  */
 export function pickLanguages(rows) {
   const all = rows ?? [];
-  if (all.some((row) => isTrue(row.scoped))) {
-    return { names: null, soleDropped: false, territoriallyScoped: true };
-  }
   const kept = all.filter((row) => !DROPPED_LANGUAGE_ITEMS.has(entityId(row.item)));
-  if (all.length > 0 && kept.length === 0) {
-    return { names: null, soleDropped: true, territoriallyScoped: false };
-  }
+  /**
+   * BOTH FLAGS ARE COMPUTED BEFORE EITHER IS RETURNED, and that is a fix
+   * rather than a style. The scope test used to run first and return early, so
+   * a country that was scoped AND had nothing but dropped ids reported only
+   * the scope — and `assertFactsSane` REFUSES THE WRITE on `soleDropped`,
+   * because a country whose whole language field rests on `DROPPED_LANGUAGE_ITEMS`
+   * means that list has outgrown the measurement it was made from. Under the
+   * early return that gate was unreachable for exactly the countries most
+   * likely to trip it, and the run would have passed quietly.
+   *
+   * The WITHHOLD precedence is unchanged: a scoped statement still withholds
+   * the whole field, and `territoriallyScoped` is still what the report reads.
+   * What changed is that the two diagnostics are now independent facts about
+   * the rows rather than one being a side effect of which branch ran first.
+   *
+   * Measured against the shipping query on 2026-08-27: zero countries are in
+   * both states, so this changes no record in the artifact. It changes what
+   * the gate can see the day one is.
+   */
+  const soleDropped = all.length > 0 && kept.length === 0;
+  const territoriallyScoped = all.some((row) => isTrue(row.scoped));
+  if (territoriallyScoped) return { names: null, soleDropped, territoriallyScoped: true };
+  if (soleDropped) return { names: null, soleDropped: true, territoriallyScoped: false };
   const names = [...new Set(kept.map((row) => collapse(row.value)).filter((name) => name !== ''))].sort();
   if (names.length === 0) return { names: null, soleDropped: false, territoriallyScoped: false };
   return {

@@ -169,6 +169,17 @@ describe("pickVoltage — landmine 1, industrial supply in a domestic field", ()
     expect(pickVoltage(voltageRows(...values))).toBe(expected);
   });
 
+  test("publishes the HIGHER figure, not the first one upstream happened to return", () => {
+    // The arming charge for the four measured pairs above. Every one of them
+    // lists its higher value first, so `Math.max(...distinct)` and
+    // `distinct[0]` are indistinguishable across the whole set — the rule
+    // would read as pinned while actually depending on upstream's row order,
+    // which is the one thing a SPARQL result set does not promise. Reversed,
+    // only the real rule still answers 230.
+    expect(pickVoltage(voltageRows("115", "230"))).toBe(230);
+    expect(pickVoltage(voltageRows("127", "220"))).toBe(220);
+  });
+
   test("publishes a single in-band value unchanged", () => {
     expect(pickVoltage(voltageRows("220"))).toBe(220);
   });
@@ -623,6 +634,20 @@ describe("pickEmergency — landmine 4, Q-items whose number lives in the label"
     expect(picked).toEqual([{ number: "191", role: null }]);
   });
 
+  test("a capitalised P366 label still finds its role, so the case fold is load-bearing", () => {
+    // The `isTrue` shape again, in a second picker. Every role fixture in this
+    // file and in `healthyFeed` is already lowercase, so deleting
+    // `.toLowerCase()` from the `EMERGENCY_ROLES` lookup left all of them
+    // green while silently degrading any capitalised upstream label to
+    // `role: null` — which pushes a country onto the single-number path or
+    // into a withhold. Upstream labels are free text; their case is not a
+    // guarantee this ingest may rely on.
+    expect(pickEmergency(emergencyRows(["110", "Police"], ["119", "Fire Department"]))).toEqual([
+      { number: "110", role: "police" },
+      { number: "119", role: "fire" },
+    ]);
+  });
+
   test("every role token the table can emit is on the gate's allowlist", () => {
     expect([...EMERGENCY_ROLE_SET].sort()).toEqual(
       ["ambulance", "coastguard", "emergency", "fire", "police", "rescue"].sort()
@@ -644,6 +669,15 @@ describe("pickDrivingSide", () => {
 
   test("withholds an unrecognised label rather than guessing", () => {
     expect(pickDrivingSide([{ country: "XX", value: "Q13196750" }])).toBeNull();
+  });
+
+  test("a capitalised label still reads, so the case fold is load-bearing", () => {
+    // Third instance of the `isTrue` shape. Both fixtures above are lowercase
+    // and the Q-id case returns null either way, so deleting `.toLowerCase()`
+    // here withheld the driving side of EVERY country whose upstream label is
+    // capitalised, with nothing going red.
+    expect(pickDrivingSide([{ country: "XX", value: "Right-hand traffic" }])).toBe("right");
+    expect(pickDrivingSide([{ country: "XX", value: " LEFT-HAND TRAFFIC " }])).toBe("left");
   });
 
   test("withholds a country that upstream says drives on both", () => {
@@ -826,6 +860,46 @@ describe("pickLanguages", () => {
     ).toEqual(["Spanish"]);
   });
 
+  test("an UPPERCASE scope cell still withholds, so the case fold is load-bearing", () => {
+    // The arming charge for the three `FALSE`/empty/absent cases above. Every
+    // one of them publishes whether or not `isTrue` folds case — "FALSE" is
+    // not "true" either way — so deleting `.toLowerCase()` from `isTrue` left
+    // the whole scope rule dead with all of them green, and the United States
+    // falsehood this file exists to stop would have shipped again. Only a cell
+    // that is `true` in some OTHER case can see that mutation. SPARQL JSON
+    // renders `xsd:boolean` lowercase today; a serialiser that ever emits
+    // `TRUE` must withhold, not publish.
+    expect(
+      pickLanguages([{ country: "US", item: entity("Q1321"), value: "Spanish", scoped: "TRUE" }]).names
+    ).toBeNull();
+    expect(
+      pickLanguages([{ country: "US", item: entity("Q1321"), value: "Spanish", scoped: " True " }])
+        .territoriallyScoped
+    ).toBe(true);
+  });
+
+  test("a country that is BOTH scoped and all-dropped reports both, not just the scope", () => {
+    // The scope test used to return early, so `soleDropped` was unreachable
+    // whenever both applied — and `assertFactsSane` refuses the write on
+    // `soleDropped`, because a country whose whole language field rests on
+    // `DROPPED_LANGUAGE_ITEMS` means that list has outgrown its measurement.
+    // The gate was therefore blind for exactly the countries most likely to
+    // trip it. The withhold is the same either way; what this pins is that the
+    // two diagnostics are independent facts rather than branch order.
+    const both = pickLanguages([
+      { country: "XX", item: entity("Q1339026"), value: "languages of Guinea", scoped: "true" },
+    ]);
+    expect(both.names).toBeNull();
+    expect(both.territoriallyScoped).toBe(true);
+    expect(both.soleDropped).toBe(true);
+    // And neither flag fires on the other's input, or "reports both" would be
+    // satisfied by a function that always reports both.
+    expect(pickLanguages([{ country: "XX", item: entity("Q1321"), value: "Spanish", scoped: "true" }]))
+      .toMatchObject({ soleDropped: false, territoriallyScoped: true });
+    expect(pickLanguages([{ country: "XX", item: entity("Q1339026"), value: "languages of Guinea" }]))
+      .toMatchObject({ soleDropped: true, territoriallyScoped: false });
+  });
+
   test("the dropped-item set is exactly the four measured non-languages", () => {
     // Measured 2026-08-27: 451 P37 rows, 243 countries, 215 distinct items,
     // and 42 distinct `P31` classes across them. Exactly four items are not a
@@ -985,9 +1059,23 @@ describe("buildFacts", () => {
   });
 
   test("does not uppercase or reshape a country code, so the gate can see a reshape", () => {
-    const built = buildFacts({ ...byProperty, codes: [{ code: "pe" }, { code: "PE" }] });
-    expect(Object.keys(built.countries)).toEqual(["PE"]);
-    expect(built.countries.pe).toBeUndefined();
+    // The lowercase code carries its OWN rows, which is what makes this a pin
+    // rather than a restatement. Fed only `[{code:"pe"},{code:"PE"}]` against
+    // rows that all say `country: "PE"`, the "pe" record ends up empty and is
+    // omitted by `factCount` — so a build that quietly uppercased every code
+    // would produce the identical answer and this test would pass through the
+    // mutation it names. With rows of its own, "pe" survives as a separate key
+    // under the real rule and merges into "PE" under the mutated one.
+    const built = buildFacts({
+      ...byProperty,
+      codes: [{ code: "pe" }, { code: "PE" }],
+      currency: [
+        { country: "PE", code: "PEN", name: "Peruvian sol" },
+        { country: "pe", code: "PEN", name: "Peruvian sol" },
+      ],
+    });
+    expect(Object.keys(built.countries).sort()).toEqual(["PE", "pe"]);
+    expect(built.countries.pe.currencyCode).toBe("PEN");
   });
 
   test("records which rule withheld which field", () => {
@@ -1457,6 +1545,13 @@ describe("assertFactsSane", () => {
     ["a bare entity id", "Q4917"],
     ["a sentinel", "unknown"],
     ["an entity URI", "http://www.wikidata.org/entity/Q4917"],
+    // The case fold in `SENTINEL_TEXT` and the URI pattern, armed. Every
+    // fixture above is lowercase, so dropping the `i` flag from either regex
+    // left this whole block green while letting "Unknown", "N/A" and
+    // "HTTP://…" through to the artifact. Upstream labels are free text.
+    ["a capitalised sentinel", "Unknown"],
+    ["an upper-case N/A", "N/A"],
+    ["an upper-case URI scheme", "HTTP://www.wikidata.org/entity/Q4917"],
   ])("rejects %s leaking into a human-readable field", (_name, value) => {
     const built = sampleBuilt();
     built.countries[ANY].currencyName = value;
@@ -1523,6 +1618,17 @@ describe("assertFactsSane", () => {
   test("rejects unsorted plug letters, which would rewrite the artifact every night", () => {
     const built = sampleBuilt();
     built.countries[ANY].plugs = ["C", "A"];
+    expect(() => assertFactsSane(built, null)).toThrow(/not sorted and unique/);
+  });
+
+  test("rejects a DUPLICATE plug letter, which the sort check alone cannot see", () => {
+    // The message says "not sorted and unique" and only the sorted half was
+    // pinned: `["C","A"]` is caught element-wise, so the length comparison
+    // that catches a duplicate could be deleted with nothing going red. A
+    // repeated letter renders as "uses type A/A/C", which is a broken sentence
+    // rather than a wrong fact — and it is still not something to ship.
+    const built = sampleBuilt();
+    built.countries[ANY].plugs = ["A", "A", "C"];
     expect(() => assertFactsSane(built, null)).toThrow(/not sorted and unique/);
   });
 
