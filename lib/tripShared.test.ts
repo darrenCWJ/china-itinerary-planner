@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   applyCurrencySettingsUpdate,
+  currencyPivot,
   initialCurrencySettings,
   tripCountry,
   tripCurrency,
@@ -77,11 +78,34 @@ describe("initialCurrencySettings", () => {
     expect(initialCurrencySettings("CN")).toEqual({ home: null, rates: {}, pivot: "CNY" });
   });
 
-  test("J-C1: stamps nothing for a country with no known currency", () => {
-    // "XX", not a real country — see the note on tripCurrency above. Stamping
-    // a guess would persist it as fact, which is worse than an absent pivot:
-    // the absent case already reads as the legacy CNY default.
-    expect(initialCurrencySettings("XX")).toEqual({ home: null, rates: {} });
+  test("J-C1: records an explicit null for a country with no known currency", () => {
+    // "XX", not a real country — see the note on tripCurrency above. Stamping a
+    // guess would persist it as fact, so the VALUE is still withheld.
+    //
+    // What changed is that the KEY is written. This used to return
+    // `{ home: null, rates: {} }`, and the comment justifying it said the
+    // absent case "already reads as the legacy CNY default" — which was the
+    // defect, not the defence. Absent meant "saved before this field existed",
+    // and that means CNY, so every new trip to Panama, Namibia, Lesotho and
+    // eight other unresearched codes was priced in Chinese yuan from the moment
+    // it was created. `null` is the fact this function actually knows.
+    expect(initialCurrencySettings("XX")).toEqual({ home: null, rates: {}, pivot: null });
+    // And the two states are now distinguishable, which is the whole point:
+    // this trip has no pivot, while a row with no key at all still means CNY.
+    expect(currencyPivot(initialCurrencySettings("XX"))).toBeNull();
+    expect(currencyPivot({ home: null, rates: {} })).toBe("CNY");
+  });
+
+  test("records a null for real unresearched countries too, not just for XX", () => {
+    // Eleven codes have no researched currency and three of them are ordinary
+    // travel destinations. A fixture country cannot show that; these can.
+    for (const code of ["PA", "NA", "LS"]) {
+      expect(initialCurrencySettings(code), code).toEqual({
+        home: null,
+        rates: {},
+        pivot: null,
+      });
+    }
   });
 
   test("stamps the artifact's currency for a country the ingest reached", () => {
@@ -133,6 +157,51 @@ describe("applyCurrencySettingsUpdate", () => {
 
     expect(result).toEqual({ home: "SGD", rates: { SGD: 5.3 } });
     expect("pivot" in result).toBe(false);
+  });
+
+  test("a recorded no-pivot survives a save that sets no home currency", () => {
+    // `null` is a stored fact, not a missing value. A save that only touches
+    // rates must not turn it into an absent key, which would silently make the
+    // trip legacy-CNY — the exact confusion the null exists to end.
+    const existing: CurrencySettings = { home: null, rates: {}, pivot: null };
+    const result = applyCurrencySettingsUpdate(existing, { home: null, rates: { USD: 1 } });
+
+    expect(result).toEqual({ home: null, rates: { USD: 1 }, pivot: null });
+    expect("pivot" in result).toBe(true);
+    expect(currencyPivot(result)).toBeNull();
+  });
+
+  test("setting a home currency stamps it as the pivot a no-pivot trip lacked", () => {
+    // A Panama trip: nobody has researched its currency, so it has no pivot to
+    // price rates against. The member declares a home currency, and that — not
+    // a guess about the country — becomes the unit the rates table is in.
+    const existing: CurrencySettings = { home: null, rates: {}, pivot: null };
+    const result = applyCurrencySettingsUpdate(existing, { home: "USD", rates: {} });
+
+    expect(result).toEqual({ home: "USD", rates: {}, pivot: "USD" });
+  });
+
+  test("a stamped pivot does not follow the home currency afterwards", () => {
+    // Recorded once, then fixed. A pivot that tracked `home` would silently
+    // reinterpret every stored rate the next time somebody changed it.
+    const stamped = applyCurrencySettingsUpdate(
+      { home: null, rates: {}, pivot: null },
+      { home: "USD", rates: {} }
+    );
+    const moved = applyCurrencySettingsUpdate(stamped, { home: "EUR", rates: { EUR: 0.9 } });
+
+    expect(moved).toEqual({ home: "EUR", rates: { EUR: 0.9 }, pivot: "USD" });
+  });
+
+  test("a legacy trip is not retro-stamped when its home currency is set", () => {
+    // The stamping rule keys on a stored `null`, never on an absent key. A
+    // legacy row's rates are already CNY-relative; writing the member's home
+    // currency over that would reprice the whole trip.
+    const existing: CurrencySettings = { home: null, rates: { SGD: 5.2 } };
+    const result = applyCurrencySettingsUpdate(existing, { home: "SGD", rates: { SGD: 5.2 } });
+
+    expect("pivot" in result).toBe(false);
+    expect(currencyPivot(result)).toBe("CNY");
   });
 });
 

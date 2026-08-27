@@ -89,6 +89,17 @@ describe("convertedTotals", () => {
     expect(convertedTotals(totals, { home: null, rates: {} })).toBeNull();
   });
 
+  test("null with a home currency but no pivot to total in", () => {
+    // `currencyPivot` answers null for a trip whose country has no researched
+    // currency. There is no unit for a grand total, so there is no grand
+    // total — and specifically NOT a fall back to the CNY default, which is
+    // what priced a Panama trip in Chinese yuan.
+    expect(convertedTotals(totals, { home: "USD", rates: { CNY: 0.14 } }, null)).toBeNull();
+    // Armed: the identical call with a pivot does produce one, so the null
+    // above is the pivot's doing and not a broken fixture.
+    expect(convertedTotals(totals, { home: "USD", rates: { CNY: 0.14 } }, "USD")).not.toBeNull();
+  });
+
   test("converts everything to CNY then to home", () => {
     const c = convertedTotals(totals, { home: "SGD", rates: { SGD: 5.2 } });
     // 100_000 + 10_000×5.2 = 152_000 fen; home = 152_000 / 5.2 ≈ 29_231 cents

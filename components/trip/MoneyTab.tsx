@@ -290,8 +290,18 @@ function CurrencySettingsEditor({
 }: {
   currencySettings: CurrencySettings;
   usedCurrencies: string[];
-  /** The currency the rates are expressed against — never needs a rate row against itself. */
-  pivot: string;
+  /**
+   * The currency the rates are expressed against — never needs a rate row
+   * against itself.
+   *
+   * `null` when this trip has no pivot: its country's currency is unresearched
+   * and no home currency has been set yet, so there is nothing to price
+   * against. The rate rows are withheld rather than labelled, because the label
+   * IS the unit — a row reading "1 USD = [___]" with the unit missing asks for
+   * a number that means nothing, and the version of this that shipped filled
+   * the blank with CNY.
+   */
+  pivot: string | null;
   onSave: (home: string | null, rates: Record<string, number>) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
@@ -357,7 +367,14 @@ function CurrencySettingsEditor({
           className="mt-1 block w-24 rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 py-1.5 font-mono text-sm uppercase text-[var(--ink-0)]"
           onChange={(e) => setHome(e.target.value.toUpperCase())} />
       </label>
-      {rateCurrencies.length > 0 && (
+      {pivot === null && (
+        <p className="mt-2 text-xs text-[var(--ink-2)]">
+          We don&apos;t have a currency on file for this trip&apos;s destination, so there is
+          nothing to price rates against yet. Set a home currency above and the rates below
+          will be in it.
+        </p>
+      )}
+      {pivot !== null && rateCurrencies.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {rateCurrencies.map((c) => (
             <label key={c} className="flex items-center gap-2 text-xs text-[var(--ink-2)]">

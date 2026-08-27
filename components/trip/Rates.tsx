@@ -23,7 +23,7 @@ type Props = {
    * extra currency, where copying the panel's number into the editor stored
    * a rate off by roughly the home/pivot cross-rate.
    */
-  pivot: string;
+  pivot: string | null;
   /**
    * Currencies actually present in the trip's expenses, beyond the headline
    * pair (J-C5) — a layover or cross-border spend the member still needs a
@@ -114,8 +114,9 @@ function RatesPanel({ tripCurrency, homeCurrency, pivot, extraCurrencies, isMemb
   useEffect(() => {
     // Still gated on a home currency being set — there's nothing personal to
     // price against otherwise (unchanged UX) — but the request itself is
-    // keyed by `pivot`, not `homeCurrency` (see the Props doc above).
-    if (!homeCurrency) return;
+    // keyed by `pivot`, not `homeCurrency` (see the Props doc above), so a
+    // trip with no pivot has no base to ask the provider for either.
+    if (!homeCurrency || pivot === null) return;
     let live = true;
     setState({ status: "loading" });
     fetch(`/api/rates?base=${encodeURIComponent(pivot)}`, { cache: "no-store" })
@@ -158,6 +159,22 @@ function RatesPanel({ tripCurrency, homeCurrency, pivot, extraCurrencies, isMemb
           ) : (
             "No home currency is set for this trip yet."
           )}
+        </p>
+        <Attribution />
+      </div>
+    );
+  }
+
+  if (pivot === null) {
+    // Unreachable while a home currency is set — saving one stamps the pivot
+    // (`applyCurrencySettingsUpdate`), so this and the branch above cannot both
+    // be false. Stated anyway rather than assumed, because the alternative is
+    // rendering "1 USD = 1.0 " with the unit missing, or the CNY this whole
+    // change exists to stop claiming.
+    return (
+      <div className="space-y-2 text-sm">
+        <p className="text-[var(--ink-2)]">
+          This trip has no currency to price rates against yet.
         </p>
         <Attribution />
       </div>

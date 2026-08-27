@@ -65,6 +65,41 @@ describe("totals row pivot label", () => {
     expect(screen.queryByText("Total CNY")).not.toBeInTheDocument();
   });
 
+  test("says nothing about CNY when the trip's country has no researched currency", () => {
+    // THE DEFECT, on the surface it was visible from. `initialCurrencySettings`
+    // stamped a pivot only when the country's currency was researched, so a
+    // brand-new trip to Panama, Namibia or Lesotho carried no pivot key at
+    // all — and `currencyPivot` read that as the legacy CNY default. The Money
+    // tab headed the converted total "Total CNY" and the rate editor below it
+    // asked for every rate in Chinese yuan.
+    //
+    // A recorded `null` is a trip with no pivot: no converted total, and no
+    // currency claimed anywhere on the tab.
+    renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "USD", amount: 12345 })],
+      currencySettings: { home: "USD", rates: {}, pivot: null },
+      tripCurrency: null,
+    });
+
+    expect(screen.queryByText("Total CNY")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Total /)).not.toBeInTheDocument();
+    // Armed by a positive: the tab did render, and it still shows what was
+    // actually spent. A blank tab would satisfy every line above.
+    expect(screen.getByText("USD")).toBeInTheDocument();
+  });
+
+  test("the same trip with a researched currency still totals — the arming case", () => {
+    // Identical inputs but for the pivot. Without this, "no Total row" would
+    // pass on a Money tab that had lost the feature outright.
+    renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "USD", amount: 12345 })],
+      currencySettings: { home: "USD", rates: {}, pivot: "USD" },
+      tripCurrency: "USD",
+    });
+
+    expect(screen.getByText("Total USD")).toBeInTheDocument();
+  });
+
   test("labels the totals row CNY when no pivot is stored — the legacy guarantee", () => {
     // Settings saved before pivots existed carry no `pivot` field at all.
     // A real CNY expense (not the empty-expenses default) makes the
@@ -118,6 +153,27 @@ describe("rates editor currency list (the fourth CNY hardcode)", () => {
     expect(screen.getByText("1 CNY =")).toBeInTheDocument();
     // JPY is the pivot itself — it never needs a rate against itself.
     expect(screen.queryByText("1 JPY =")).not.toBeInTheDocument();
+  });
+
+  test("asks for no rate at all when the trip has no currency to price against", () => {
+    // The other half of the CNY defect, one layer down. With no pivot stamped,
+    // this editor rendered "1 USD = [___] CNY" to a traveller in a country
+    // whose currency nobody has researched — a blank asking to be filled in
+    // Chinese yuan. There is no unit to name, so the rows are withheld and the
+    // reason is stated instead.
+    renderMoneyTab({
+      expenses: [expense({ id: "e-1", currency: "USD", amount: 12345 })],
+      currencySettings: { home: null, rates: {}, pivot: null },
+      tripCurrency: null,
+    });
+
+    fireEvent.click(screen.getByText(/set up converted totals/i));
+
+    expect(screen.queryByText("1 USD =")).not.toBeInTheDocument();
+    expect(screen.getByText(/nothing to price rates against/i)).toBeInTheDocument();
+    // Armed: the editor really did open, and the home-currency field — the way
+    // out of this state — is there.
+    expect(screen.getByText(/Home currency/)).toBeInTheDocument();
   });
 });
 
