@@ -45,20 +45,46 @@ async function renderAndResaveUntouched(expense: Expense): Promise<ExpenseDraft>
 describe("the currency picker is the trip's, not a hardcoded pair", () => {
   const noop = async () => null;
 
-  test("a new expense defaults to the first quick currency the caller supplies", () => {
+  test("a new expense SUBMITS the first quick currency the caller supplies", async () => {
     // It used to default to "CNY" from a module-level `["CNY", "SGD"]`, so an
     // expense on a trip to Peru was priced in Chinese yuan until the traveller
-    // noticed — on every entry. Asserted on the rendered select value, because
-    // the default IS what the form submits when nobody touches the control.
+    // noticed — on every entry.
+    //
+    // Asserted on the SUBMITTED DRAFT, because `select.value` cannot see that
+    // defect. The form sends the `currencyPick` state; React sets a `<select>`
+    // by marking a matching `<option>` selected, and when no option matches the
+    // state HTML auto-selects the first one instead. So a default of "CNY" —
+    // absent from `quickCurrencies` — still reads back as "PEN" from
+    // `select.value`, and every new expense would be stored in yuan under a
+    // green test. `Expense.currency` is persisted and drives every settlement
+    // figure, so the value that must be pinned is the one the form emits.
+    //
+    // The rendered value is still asserted, but as the PAIR: what the traveller
+    // sees and what the form sends have to be the same currency. Only the
+    // second half of that pair can fail when the default is wrong.
+    let submitted: ExpenseDraft | null = null;
     render(
       <ExpenseForm
         members={members}
         myName="Ada"
         submitLabel="Add expense"
         quickCurrencies={["PEN", "SGD"]}
-        onSubmit={noop}
+        onSubmit={async (draft) => {
+          submitted = draft;
+          return null;
+        }}
       />
     );
+
+    fireEvent.change(screen.getByPlaceholderText("Hotpot dinner"), {
+      target: { value: "Ceviche" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("128.50"), { target: { value: "40" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+
+    await waitFor(() => expect(submitted).not.toBeNull());
+    expect((submitted as unknown as ExpenseDraft).currency).toBe("PEN");
+
     const select = screen.getByLabelText("Currency") as HTMLSelectElement;
     expect(select.value).toBe("PEN");
     expect([...select.options].map((o) => o.value)).toEqual(["PEN", "SGD", "other"]);
