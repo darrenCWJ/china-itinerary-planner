@@ -24,9 +24,9 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "China Itinerary Planner",
+  title: "Itinerary Planner",
   description:
-    "Plan a trip to China in three steps — pick destinations, tune the details, get a day-by-day plan with a packing list.",
+    "Plan a trip in three steps — pick destinations, tune the details, get a day-by-day plan with a packing list.",
 };
 
 /**

@@ -171,20 +171,29 @@ afterEach(cleanup);
 const RAIL_GLYPH = "🚄";
 
 /**
- * ⚠ FINDING 2 — the wizard's static China branding. T31's scope, not T30's.
+ * FINDING 2 (T30), resolved by T31 — the wizard's static China branding.
  *
- * `components/PlanStep.tsx` renders three literals that are about China rather
- * than about the trip: the `启程` chop on the boarding-pass header, the headline
- * "Your China itinerary", and `一起走` in the share-a-trip card. A Peru
- * traveller sees all three today.
+ * `components/PlanStep.tsx` used to render three literals that were about
+ * China rather than about the trip: the `启程` chop on the boarding-pass
+ * header, the headline "Your China itinerary", and `一起走` in the
+ * share-a-trip card. A Peru traveller saw all three.
  *
- * The first two are T31's named targets. The third is not on T31's file:line
- * list and appears to be unowned. T31 is also self-contradictory where it is
- * specified — it prescribes `启程 → getCountry(...).mark`, which renders `同行`
- * for CN, while its own test story asserts `启程` still appears for CN — so
- * resolving it is that task's work and not this one's.
+ * **T31 fixed the first two**, wiring both through `getCountry(...)` — the
+ * same accessor `TripView.tsx` already used for its own hero. That resolves
+ * the self-contradiction this finding originally flagged: the design's own
+ * T31 test story claimed `启程` would still appear for CN after the fix, but
+ * `getCountry("CN").mark` is `同行`, not `启程` — they are two different
+ * chops that happened to occupy the same spot in two different components.
+ * `TripView.tsx`'s docblock is explicit that `同行` is the mark every
+ * mark-bearing country (CN included) is meant to show, so T31 took
+ * consistency with `TripView` over the stale test-story wording. CN's wizard
+ * chop changing from `启程` to `同行` is the one deliberate change to China's
+ * rendered output this task makes — see the arming test below.
+ *
+ * `一起走` in the share-a-trip card is still not on T31's file:line list and
+ * remains unowned. It is the one entry left below.
  */
-const T31_WIZARD_BRANDING = ["China", "启", "程", "一", "起", "走"];
+const UNOWNED_SHARE_CARD_CJK = ["一", "起", "走"];
 
 describe("T30 jsdom — the trip that gets rendered", () => {
   test("is a real Peru trip, or every scan below is vacuous", () => {
@@ -225,24 +234,24 @@ describe("T30 jsdom — the negative half", () => {
     expect(chinaLeaks(renderBriefing(peru))).toEqual([RAIL_GLYPH]);
   });
 
-  test("the wizard leaks the rail glyph and T31's branding, and nothing else", () => {
-    // `chinaLeaks` reports tokens in CHINA_TOKENS order first — "China" then
-    // "🚄" — and CJK codepoints after them, in the order they appear in the
-    // document: the chop, then the share card.
-    expect(chinaLeaks(renderWizard(peru))).toEqual([
-      "China",
-      RAIL_GLYPH,
-      "启",
-      "程",
-      "一",
-      "起",
-      "走",
-    ]);
+  test("the wizard leaks the rail glyph and the unowned share-card CJK, and nothing else", () => {
+    // Post-T31: neither "China" nor 启/程 reach the Peru wizard any longer —
+    // the chop renders nothing (Peru has no curated mark) and the headline
+    // now names Peru's own code. `chinaLeaks` reports tokens in CHINA_TOKENS
+    // order first — only "🚄" still matches — then CJK codepoints in the
+    // order they appear in the document: the share-a-trip card is the only
+    // source left.
+    expect(chinaLeaks(renderWizard(peru))).toEqual([RAIL_GLYPH, "一", "起", "走"]);
     // Spelled out above, and cross-checked against the constant here, so the
     // two cannot drift and the constant's docblock stays the explanation.
     expect(chinaLeaks(renderWizard(peru)).filter((l) => l !== RAIL_GLYPH)).toEqual(
-      T31_WIZARD_BRANDING
+      UNOWNED_SHARE_CARD_CJK
     );
+    // T31's arming proof, direction one: a country with no curated mark shows
+    // no chop at all — neither China's old hardcoded one nor any other.
+    expect(renderWizard(peru)).not.toContain("启程");
+    expect(renderWizard(peru)).not.toContain("同行");
+    expect(renderWizard(peru)).not.toContain("China");
   });
 
   test("everything the generators produced is clean — the leaks are render-only", () => {
@@ -326,8 +335,11 @@ describe("T30 jsdom — the arming proof", () => {
     for (const token of ["China", "Alipay", "WeChat", "RMB", "¥", "Pleco", "high-speed rail"]) {
       expect(leaks).toContain(token);
     }
-    // T31's own arming claim, from the other direction: China keeps its chop.
-    expect(renderWizard(china)).toContain("启程");
+    // T31's arming proof, direction two: CN still shows a chop, so the "no
+    // chop for Peru" assertion above cannot pass because the feature is
+    // simply broken. It is `同行`, not the old hardcoded `启程` — see the
+    // FINDING 2 update above for why that is the fix, not a regression.
+    expect(renderWizard(china)).toContain("同行");
   });
 
   test("the positive half is armed: a China page says none of Peru's facts", () => {
