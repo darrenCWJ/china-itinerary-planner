@@ -268,6 +268,33 @@ export default function PlanPage() {
    */
   const tripCountry = tripCountryFromPicks(selected, countryOfPick, country);
 
+  /**
+   * Re-derive the season whenever the TRIP's country moves under it.
+   *
+   * The season used to be re-derived only in `onCountryChange` and
+   * `onMonthPicked`, which covers the two ways a user *changes* the country or
+   * the month and misses every way the trip's country changes on its own.
+   * `tripCountry` is the FIRST pick's country, so removing the lead destination
+   * silently hands the trip to the next pick's country — or back to the
+   * picker's — while the season stays the one the departed country implied. A
+   * traveller who dropped Lima and kept Osaka was previewing Peru's June.
+   * Reordering and removing a catalog pick move it the same way; patching each
+   * removal path is what left this one uncovered in the first place.
+   *
+   * Written as a render-time adjustment against the previous value rather than
+   * an effect, because this is state synchronised to a derived value — React's
+   * documented shape for exactly that, and an effect here would render the
+   * stale season once before correcting it. `resolveTripSeason` discards its
+   * first argument whenever the month is valid, so this is idempotent and the
+   * chips stay live: with no month picked there is nothing to derive FROM, and
+   * the user's own choice stands untouched.
+   */
+  const [seasonCountry, setSeasonCountry] = useState(tripCountry);
+  if (seasonCountry !== tripCountry) {
+    setSeasonCountry(tripCountry);
+    if (month !== null) setSeason(resolveTripSeason(season, month, tripCountry));
+  }
+
   const tripInput = useMemo<TripInput>(
     () => ({
       destinationIds: selected,
@@ -375,28 +402,18 @@ export default function PlanPage() {
             onRemoveCatalog={removeCatalog}
             onReorder={setSelected}
             country={country}
-            onCountryChange={(next) => {
-              setCountry(next);
-              // Picking the month and then switching country is the same
-              // hemisphere bug in the other order: the month was read through
-              // the country that was open at the time. Re-derive, so the two
-              // orders of the same two clicks end on the same season.
-              //
-              // Derived through the TRIP's country, with `next` as the new
-              // browsing scope — not through `next` itself. A trip whose
-              // destinations are Peruvian keeps Peru's seasons when the picker
-              // moves on to Japan, which is the same rule `tripInput` above
-              // applies to everything else the country decides.
-              if (month !== null) {
-                setSeason(
-                  resolveTripSeason(
-                    season,
-                    month,
-                    tripCountryFromPicks(selected, countryOfPick, next)
-                  )
-                );
-              }
-            }}
+            // Picking the month and then switching country is the same
+            // hemisphere bug in the other order: the month was read through
+            // the country that was open at the time. This used to re-derive
+            // the season here; it no longer needs to, because the `tripCountry`
+            // adjustment above catches it and every other way the trip's
+            // country moves. The two are exactly equivalent on this path —
+            // `tripCountryFromPicks` ignores the browsing scope entirely once
+            // anything is picked, and falls back to it when nothing is — so
+            // this handler was only ever re-deriving a value the adjustment
+            // now derives, and keeping both would be two mechanisms answering
+            // one question.
+            onCountryChange={setCountry}
             onAddOffMap={addOffMap}
             offMap={offMap}
             /*
