@@ -171,8 +171,9 @@ const INGESTED_NAMES: Record<string, string> = {
  *
  * The second direction is the one that was missing. This list was hand-written
  * when no centroid data existed in the repo, the check that arrived later only
- * ever walked the list, and the list had 34 of the 58 negative-latitude
- * countries — so Ecuador, Gabon, Mauritius, the Falklands, the Comoros and 20
+ * ever walked the list, and the list had 33 of the 58 negative-latitude
+ * countries — 34 entries, of which KE is the straddler below rather than one of
+ * the 58 — so Ecuador, Gabon, Mauritius, the Falklands, the Comoros and 20
  * others were told a June trip was summer when it is winter. A one-directional
  * check cannot see a missing entry; that is why the reconciliation is
  * bidirectional and why this comment says derived rather than curated.
@@ -201,13 +202,29 @@ const INGESTED_NAMES: Record<string, string> = {
  *   give. Rounding them to "north" would be picking the wrong one of two wrong
  *   answers and hiding the choice in a magic number; the sign is at least the
  *   one the data states. Naming them here is the honest version of that.
+ *   ST (+0.32) is the same call on the other side of the line, and it is named
+ *   for the same reason: it is closer to the equator than Congo or Gabon, it is
+ *   NOT listed here, and that is a decision rather than an oversight. The
+ *   cross-check now scans both signs, so it is a country somebody looked at.
+ *
+ * THREE CODES ARE LISTED THAT THE ARTIFACT DOES NOT COVER: AQ, BV and HM. They
+ * are Antarctica, Bouvet Island and Heard & McDonald Islands — uninhabited, so
+ * the sovereign-state ingest has no record for them and every code above got
+ * its sign from a centroid these three have none of. Left off, `getCountry`
+ * fell through to its default and reported Antarctica's January as WINTER. That
+ * is not a close call the way a country at -0.5 is: AQ's every square metre is
+ * south of 60°S, BV sits at -54.4 and HM at -53.1, and the app draws all three
+ * on the world map. They are the sole entries of `OUTSIDE_THE_ARTIFACT` in the
+ * cross-check, which fails the day any of them gains a record — at which point
+ * the sign rule covers them and the exception is deleted.
  */
 const SOUTHERN = new Set([
-  "AO", "AR", "AS", "AU", "BI", "BO", "BR", "BW", "CC", "CD", "CG", "CK",
-  "CL", "CX", "EC", "FJ", "FK", "GA", "GS", "ID", "IO", "KE", "KM", "LS",
-  "MG", "MU", "MW", "MZ", "NA", "NC", "NF", "NR", "NU", "NZ", "PE", "PF",
-  "PG", "PN", "PY", "RE", "RW", "SB", "SC", "SH", "SZ", "TF", "TK", "TL",
-  "TO", "TV", "TZ", "UY", "VU", "WF", "WS", "YT", "ZA", "ZM", "ZW",
+  "AO", "AQ", "AR", "AS", "AU", "BI", "BO", "BR", "BV", "BW", "CC", "CD",
+  "CG", "CK", "CL", "CX", "EC", "FJ", "FK", "GA", "GS", "HM", "ID", "IO",
+  "KE", "KM", "LS", "MG", "MU", "MW", "MZ", "NA", "NC", "NF", "NR", "NU",
+  "NZ", "PE", "PF", "PG", "PN", "PY", "RE", "RW", "SB", "SC", "SH", "SZ",
+  "TF", "TK", "TL", "TO", "TV", "TZ", "UY", "VU", "WF", "WS", "YT", "ZA",
+  "ZM", "ZW",
 ]);
 
 /**
