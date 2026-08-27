@@ -77,11 +77,16 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
   /**
    * The headline's name comes off the PROFILE, not off `country` above.
    *
-   * `getCountry(code).name` falls back to the bare code — lib/countries.ts
-   * curates 24 of 249 — so the headline read "Your PE itinerary". The profile
-   * carries `getCountryName`'s answer, which is hand-tuned for those 24 and
-   * ingested from the CC0 artifact for the other 222, so Peru is "Peru" and
-   * China is still "China" rather than Wikidata's longer name.
+   * `getCountry(code).name` used to fall back to the bare code — lib/countries.ts
+   * curated 24 of 249 — so the headline read "Your PE itinerary". Both resolvers
+   * now answer "Peru": `INGESTED_NAMES` gives the leaf a checked-in copy of the
+   * artifact's names, so `getCountry` and `getCountryName` apply the same
+   * hand-tuned-first order and cannot call one country two things.
+   *
+   * The profile stays the source here anyway. It is where every other sentence
+   * on this surface gets its country name — the gap note, the packing lines,
+   * the money copy — and reading the headline off a second resolver would be a
+   * second thing to keep in step for no gain.
    *
    * `getCountry` is still the right source for `mark`: a chop is curated or it
    * does not exist, and there is no ingested equivalent to fall back to.

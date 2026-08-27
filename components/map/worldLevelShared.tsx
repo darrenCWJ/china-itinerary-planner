@@ -31,10 +31,21 @@ export interface Entry {
   name: string;
 }
 
-/** Curated names beat the topology's ("Türkiye", not "Turkey"). */
+/**
+ * This app's own name for a country beats the topology's ("Türkiye", not
+ * "Turkey").
+ *
+ * It used to win for the curated 24 and defer to Natural Earth for everyone
+ * else, because `getCountry` had nothing else to give. Since `INGESTED_NAMES`
+ * landed it answers all 246, so the topology's name is now the fallback for a
+ * feature this app has no record of at all — Antarctica and the three other
+ * codes the facts artifact never reached. Which means the map, the destination
+ * step and the plan all call a country the same thing, rather than the map
+ * calling it whatever its geometry file happened to say.
+ */
 export function countryLabel(code: string, topologyName: string): string {
-  const curated = getCountry(code).name;
-  return curated && curated !== code ? curated : topologyName;
+  const known = getCountry(code).name;
+  return known && known !== code ? known : topologyName;
 }
 
 /** Tint strength by state. Hue carries identity; opacity carries interaction. */
