@@ -1,4 +1,5 @@
 import { getCountryProfile, isCurrencyResearched } from "./countryProfile";
+import { tripCountry } from "./tripCountry";
 import type { TripInput, TripPlan } from "./itinerary";
 import type { PackingGroup } from "./packing";
 import type { CountryCode, Season } from "./types";
@@ -15,21 +16,19 @@ export interface TripData {
 }
 
 /**
- * The country a trip is in. The only way callers should read it: every trip
- * saved before the field existed is a China trip, so an absent country is an
- * explicit "CN" rather than an unknown — which is what removes the need for a
- * backfill. No caller should ever see `undefined` here.
+ * Re-exported, not defined here. It moved to lib/tripCountry.ts — a leaf that
+ * value-imports nothing — because this module reaches the 70 KB CC0 facts
+ * artifact through `getCountryProfile` above, and every caller that wanted only
+ * the trip's country was paying for that. lib/tripCountry.ts carries the
+ * `?? "CN"` backfill's reasoning, which is unchanged, and lib/tripShared.test.ts
+ * still pins the behaviour through this name.
  *
- * This `?? "CN"` is deliberately NOT one of the defaults the worldwide catalog
- * removed. Those were country *scopes* — "which places may we offer" — and a
- * wrong default there silently offered Chinese cities for a Japanese trip.
- * This one is a *persistence* backfill for a field that did not exist when
- * some rows were written, and deleting it would reclassify every legacy trip
- * as country-less rather than as Chinese. lib/tripShared.test.ts pins it.
+ * The re-export is deliberate rather than a migration left half-done: callers
+ * that already read a fact (lib/briefing.ts, lib/redactTrip.ts,
+ * components/TripView.tsx) keep getting both from one import, and the callers
+ * that must stay cheap import the leaf directly.
  */
-export function tripCountry(data: TripData): CountryCode {
-  return data.input.country ?? "CN";
-}
+export { tripCountry };
 
 /**
  * The trip's destination currency, or `null` when nothing is known about that

@@ -1,10 +1,33 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BriefingShare } from "@/components/trip/BriefingShare";
-import { BriefingView } from "@/components/trip/BriefingView";
-import { buildBriefing } from "@/lib/briefing";
 import { useShellTrip } from "./ShellTripContext";
+
+/**
+ * Loaded on demand, not with this module. `buildBriefing` reaches the 70 KB CC0
+ * facts artifact to resolve the trip country's gap note, and this component is
+ * mounted from AppShell on every route in the app — so a static import shipped
+ * those bytes to /login and to the unauthenticated /b/[code] briefing for a
+ * panel neither can open. See components/shell/ShareBriefing.tsx, and the root
+ * layout contract in lib/countryFacts.test.ts that now keeps it that way.
+ *
+ * `import()` inside `dynamic()`, with a literal path, is what lets the bundler
+ * match the chunk to this call site — the form Next's lazy-loading guide
+ * requires. Rendered only when `showBriefing` is true, so the fetch starts on
+ * the click and not before.
+ */
+const ShareBriefing = dynamic(
+  () => import("./ShareBriefing").then((mod) => mod.ShareBriefing),
+  {
+    loading: () => (
+      <p className="text-xs" style={{ color: "var(--ink-2)" }}>
+        Building the briefing…
+      </p>
+    ),
+  }
+);
 
 /**
  * Share (spec §2.1): the briefing is an output you generate, not a room you
@@ -141,14 +164,7 @@ export function ShareMenu() {
             </button>
             {showBriefing && (
               <div className="mt-2">
-                {/*
-                  The same options the old Briefing tab passed. Members see the
-                  unredacted briefing with bookings; the redacted variant is what
-                  /b/[code] serves to the public.
-                */}
-                <BriefingView
-                  briefing={buildBriefing(payload, { redacted: false, includeBookings: true })}
-                />
+                <ShareBriefing payload={payload} />
               </div>
             )}
           </section>
