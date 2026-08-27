@@ -50,6 +50,26 @@ export function MoneyTab({
   onDeleteSettlement,
   onSaveCurrency,
 }: Props) {
+  /**
+   * The one-tap currency options the expense form offers, most likely first.
+   *
+   * The trip's own currency, then the member's home one. Replaces a
+   * module-level `["CNY", "SGD"]` inside ExpenseForm, which priced a Peru trip
+   * in Chinese yuan by default and made a traveller correct the picker on
+   * every entry — the last China default of its kind, and the same defect
+   * commit c01c1e5 fixed one level up in the totals row.
+   *
+   * EMPTY is a legitimate answer, deliberately not backfilled: a trip to a
+   * country with no researched currency, by a member who has not set a home
+   * one, has no unit anybody has named. The form asks for three letters
+   * instead of guessing, which is what `currencyPivot` already does with the
+   * converted total.
+   */
+  const quickCurrencies = useMemo(
+    () => [...new Set([tripCurrency, currencySettings.home].filter((c): c is string => c !== null))],
+    [tripCurrency, currencySettings.home]
+  );
+
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -222,6 +242,7 @@ export function MoneyTab({
           members={members}
           myName={myName}
           submitLabel="Add expense"
+          quickCurrencies={quickCurrencies}
           onSubmit={onAddExpense}
           onCancel={() => setAdding(false)}
         />
@@ -240,6 +261,7 @@ export function MoneyTab({
                       myName={myName}
                       initial={e}
                       submitLabel="Save changes"
+                      quickCurrencies={quickCurrencies}
                       onSubmit={(d) => onUpdateExpense(e.id, d)}
                       onCancel={() => setEditingId(null)}
                     />
