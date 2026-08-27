@@ -139,9 +139,16 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
         </button>
       </div>
 
+      {/*
+        `profile.name` again, not `country.name`, and for the same reason the
+        headline uses it: the card names the trip that gets WRITTEN to the
+        database, so a fallback to the bare ISO code would persist "PE trip".
+        See `defaultTripName`.
+      */}
       <ShareTripCard
         input={input}
         destinationNames={destinations.map((d) => d.name)}
+        countryName={profile.name}
         month={month}
       />
 
@@ -246,17 +253,70 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
   );
 }
 
+/**
+ * What a trip nobody has named is called.
+ *
+ * There used to be two answers to this and both of them said China: the
+ * pre-filled field read `${destinationNames[0] ?? "China"} trip`, and a field
+ * the traveller *cleared* fell back to the literal `"China trip"`. The second
+ * one is the one that mattered — it is what `/api/trips` persists, so a
+ * traveller planning Peru who blanked the box got a row in the database called
+ * "China trip", shown on their dashboard, on the trip page, and to everyone
+ * they sent the share link to. Unlike a wrong sentence on a page, that one
+ * outlives the fix.
+ *
+ * One function for both, so they cannot disagree again, and one ladder:
+ *
+ *   1. **The first city.** The most specific true thing we know — "Lima trip".
+ *      It is what the field has always pre-filled and it stays the first
+ *      choice; a traveller reads their own itinerary, not their own passport.
+ *   2. **The country.** `CountryProfile.name`, so "Peru trip" — matching the
+ *      headline's "Your Peru itinerary" exactly, and resolved the same way.
+ *      This is the branch that fires when the catalog resolved no destination
+ *      (a `/api/destinations/resolve` miss lands the wizard on step 2 with an
+ *      empty list), which is precisely where "China trip" used to appear.
+ *   3. **Neither.** `"Untitled trip"` — country-free and never wrong. A blank
+ *      `profile.name` means the code is not a country at all, and the profile
+ *      is explicit that a caller must drop the name rather than print
+ *      something in its place. "undefined trip", " trip" and "" are all worse:
+ *      the last one fails `tripName: z.string().trim().min(1)` server-side and
+ *      turns a cosmetic gap into a failed trip creation.
+ *
+ * A country-free default for every case ("Untitled trip" always) was the other
+ * defensible option. It is rejected because it is *less* informative than what
+ * the wizard already knows and already says one heading above — the defect was
+ * never that the default named a place, it was that it named the wrong one.
+ *
+ * Trimmed before use so a field holding only spaces takes the fallback too:
+ * `"   ".trim() || fallback` is the whole reason the caller uses `||` and not
+ * `??`, and the same has to hold for the values feeding this.
+ */
+function defaultTripName(firstDestination: string | undefined, countryName: string): string {
+  const subject = firstDestination?.trim() || countryName.trim();
+  return subject ? `${subject} trip` : "Untitled trip";
+}
+
 function ShareTripCard({
   input,
   destinationNames,
+  countryName,
   month,
 }: {
   input: TripInput;
   destinationNames: string[];
+  /** `CountryProfile.name` — "Peru", "China", or `""`. See `defaultTripName`. */
+  countryName: string;
   month?: number | null;
 }) {
   const router = useRouter();
-  const [tripName, setTripName] = useState(`${destinationNames[0] ?? "China"} trip`);
+  /**
+   * Computed once and used twice — as the field's initial value and as what a
+   * cleared field falls back to on submit. Those two being separate literals
+   * is exactly how the China default survived: nobody clearing the box was
+   * looking at the same string the writer used.
+   */
+  const fallbackName = defaultTripName(destinationNames[0], countryName);
+  const [tripName, setTripName] = useState(fallbackName);
   const [startDate, setStartDate] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -271,7 +331,9 @@ function ShareTripCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tripName: tripName.trim() || "China trip",
+          // The written value. `||` and not `??`: a field cleared to "" or to
+          // whitespace has to take the fallback, and neither is nullish.
+          tripName: tripName.trim() || fallbackName,
           startDate: startDate || null,
           input,
           // Omitted rather than sent as null when unset: the schema makes it
