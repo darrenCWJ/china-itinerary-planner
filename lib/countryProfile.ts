@@ -66,6 +66,23 @@ import type { PackingGroup } from "./types";
 export { DEFAULT_COUNTRY } from "./countryBaseProfile";
 
 export interface CountryProfile extends CountryBaseProfile {
+  /**
+   * What to call this country to a traveller, or `""` when the code is not one.
+   *
+   * `getCountryName`'s answer, carried here so a renderer can have it without
+   * naming lib/countryFacts.ts: hand-tuned first (lib/countries.ts's 24, so
+   * "China" and not Wikidata's "People's Republic of China"), the CC0 artifact
+   * for the other 222, blank last. It lives on the profile rather than being
+   * looked up at the call site because `getCountryProfile` already resolves it
+   * for the gap note — and because the alternative for a client component is
+   * `getCountry(code).name`, which falls back to the bare code and so put "Your
+   * PE itinerary" on the wizard for 90% of the world.
+   *
+   * The blank is a real answer and must stay renderable as one: a caller that
+   * would otherwise print "Your  itinerary" should drop the name, not print a
+   * code in its place.
+   */
+  name: string;
   /** The whole packing document, not a set of deltas. */
   packing: PackingGroup[];
   /** Generation-time tips, snapshotted into the trip when it is created. */
@@ -148,6 +165,11 @@ function factsPacking(countryName: string, facts: CountryFacts): PackingGroup[] 
 function chinaProfile(): CountryProfile {
   return {
     ...getCountryBaseProfile("CN"),
+    // Resolved the same way as every other country's rather than written as a
+    // literal here, so the hand-tuned-beats-ingested precedence has one
+    // implementation. `getCountryName("CN")` is "China" because
+    // lib/countries.ts says so, not because this branch does.
+    name: getCountryName("CN"),
     packing: copyPacking(CN_PACKING),
     tips: [...CN_GENERAL_TIPS],
     currency: "CNY",
@@ -167,6 +189,7 @@ function chinaProfile(): CountryProfile {
 function neutralProfile(code: string, countryName: string): CountryProfile {
   return {
     ...getCountryBaseProfile(code),
+    name: countryName,
     packing: copyPacking(NEUTRAL_PACKING),
     tips: [...NEUTRAL_TIPS],
     currency: null,
@@ -177,6 +200,7 @@ function neutralProfile(code: string, countryName: string): CountryProfile {
 function factsProfile(code: string, countryName: string, facts: CountryFacts): CountryProfile {
   return {
     ...getCountryBaseProfile(code),
+    name: countryName,
     packing: factsPacking(countryName, facts),
     // Neutral first, facts after: the three neutral lines are about the trip
     // (passport, bank, offline maps) and hold everywhere, and the fact lines

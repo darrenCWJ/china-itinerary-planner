@@ -10,11 +10,12 @@ import {
   CN_HOP_TITLE,
   CN_KIDS_TIP,
   CN_PACKING,
+  CN_RAIL_KMH,
   CN_WINTER_CLOTHING_NOTE,
 } from "./countryData/cn";
 import { getCountryProfile } from "./countryProfile";
 import type { TripInput } from "./itinerary";
-import { KIND_EMOJI } from "./meta";
+import { KIND_EMOJI, travelEmoji } from "./meta";
 import { HOLIDAY_BANDS } from "./months";
 import { suggestRoute, type RoutePlace, type RouteSuggestion } from "./route";
 import { airportsForCountry } from "./server/airports";
@@ -193,6 +194,12 @@ const china = assemble("CN", CHINA_CITY_IDS);
  * other assertion in this file stays green while the scanner is permanently
  * blind to the real string.
  *
+ * `🚄` is read through `travelEmoji(CN_RAIL_KMH)` rather than as a constant,
+ * because since the country-aware fix it is not one. Feeding the function CN's
+ * own rail speed is what proves the token is still a string this repo can
+ * emit — a `travelEmoji` that had stopped returning it anywhere would make the
+ * entry unarmable, which is the failure this corpus exists to catch.
+ *
  * Reading the values means a typo on EITHER side reddens: a mangled token no
  * longer matches production, and a reworded production string no longer
  * matches its token. Both are things somebody should look at.
@@ -208,7 +215,7 @@ const PRODUCTION_CHINA_COPY = [
   CN_KIDS_TIP,
   CN_WINTER_CLOTHING_NOTE,
   ...HOLIDAY_BANDS.flatMap((band) => [band.name, band.emoji, band.note]),
-  KIND_EMOJI.travel,
+  travelEmoji(CN_RAIL_KMH),
 ]
   .filter((line): line is string => typeof line === "string")
   .join("\n");
@@ -231,7 +238,18 @@ describe("T30 — the scan itself", () => {
     expect(HOLIDAY_BANDS[0].name).toContain("Chinese");
     expect(HOLIDAY_BANDS.map((b) => b.emoji)).toContain("🧧");
     expect(HOLIDAY_BANDS.map((b) => b.emoji)).toContain("🇨🇳");
-    expect(KIND_EMOJI.travel).toBe("🚄");
+    // 🚄 is no longer a constant: it is what `travelEmoji` returns for a
+    // country that HAS a researched rail speed, and CN's is 230 km/h. Pinning
+    // the call rather than a field is what keeps the token armed — a
+    // `travelEmoji` that returned the neutral glyph unconditionally would make
+    // this token unproducible and the whole entry decorative.
+    expect(travelEmoji(CN_RAIL_KMH)).toBe("🚄");
+    // And the other direction, which is the actual fix: withheld exactly where
+    // `railKmh` is withheld.
+    expect(travelEmoji(null)).not.toBe("🚄");
+    // The record can no longer answer for a hop at all, so no renderer can
+    // reach the rail glyph without naming a country.
+    expect(KIND_EMOJI.travel).toBeUndefined();
   });
 
   test("finds every token it claims to look for, in either casing", () => {

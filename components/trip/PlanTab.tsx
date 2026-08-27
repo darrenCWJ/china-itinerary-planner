@@ -6,6 +6,7 @@ import { GapNote } from "@/components/plan/GapNote";
 import { getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import type { TripPlan } from "@/lib/itinerary";
+import { travelEmoji } from "@/lib/meta";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
 import type { Ticket, TripPayload } from "@/lib/tripShared";
@@ -80,7 +81,17 @@ export function PlanTab({
    * coverage rather than about the trip, so it must shrink as the data
    * improves. Empty for China and for any code that is not a country.
    */
-  const gapNote = getCountryProfile(country).gapNote;
+  const profile = getCountryProfile(country);
+  const gapNote = profile.gapNote;
+  /**
+   * The hop glyph, from the same profile the gap note comes off.
+   *
+   * `🚄` was a constant in lib/meta.ts until it was noticed drawing a Chinese
+   * high-speed train over "Travel to Cusco". It is a claim about a rail
+   * network, so it is `railKmh`'s to make — the same field that decides
+   * whether lib/route.ts will score a leg as rail at all.
+   */
+  const hopEmoji = travelEmoji(profile.transport.railKmh);
   const [view, setView] = useState<View>("list");
   const [newDayDest, setNewDayDest] = useState("");
   const [addingDay, setAddingDay] = useState(false);
@@ -199,6 +210,7 @@ export function PlanTab({
                 isMember={isMember}
                 onToggle={onToggle}
                 onOp={onPlanOp}
+                travelEmoji={hopEmoji}
               />
             );
           })}

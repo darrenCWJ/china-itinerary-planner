@@ -26,7 +26,11 @@
  *   document, its booking copy and its hop title: `China`, `Alipay`, `WeChat`,
  *   `VPN`, `RMB`, `¥`, `12306`, `Trip.com`, `Amap`, `Pleco`, `高德`,
  *   `high-speed rail`.
- * - **`lib/meta.ts`** — `🚄`, which is `KIND_EMOJI.travel`.
+ * - **`lib/meta.ts`** — `🚄`, which is `RAIL_TRAVEL_EMOJI`, the glyph
+ *   `travelEmoji` returns for a country whose profile carries a `railKmh`. It
+ *   used to be the unconditional `KIND_EMOJI.travel` and reached this list
+ *   because a Peru plan rendered it; it stays on the list now that it cannot,
+ *   because a China plan still can and the token has to keep being armed.
  * - **`lib/months.ts`** — `Chinese` (`HOLIDAY_BANDS[0].name`), `🧧`
  *   (its emoji) and `🇨🇳` (National Day Golden Week's).
  *

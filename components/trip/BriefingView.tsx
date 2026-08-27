@@ -5,9 +5,16 @@ import { BarChart } from "@/components/briefing/charts/BarChart";
 import { ColumnChart } from "@/components/briefing/charts/ColumnChart";
 import { GapNote } from "@/components/plan/GapNote";
 import type { Briefing, BriefingDay } from "@/lib/briefing";
-import { KIND_EMOJI, SLOT_META, ticketKindMeta } from "@/lib/meta";
+import { kindEmoji, SLOT_META, ticketKindMeta } from "@/lib/meta";
 
-function DayPanel({ day }: { day: BriefingDay }) {
+/**
+ * `travelEmoji` is threaded in rather than looked up. This component is the
+ * unauthenticated briefing's renderer, and the one country module that could
+ * answer "does this country have rail" also carries the 70 KB facts artifact —
+ * so `buildBriefing` resolves the glyph server-side and this file stays free of
+ * every country import. See `Briefing.travelEmoji`.
+ */
+function DayPanel({ day, travelEmoji }: { day: BriefingDay; travelEmoji: string }) {
   return (
     <article className="rounded-2xl border border-[var(--line-1)] bg-[var(--paper)] p-5">
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--line-1)] pb-3">
@@ -30,7 +37,7 @@ function DayPanel({ day }: { day: BriefingDay }) {
               </span>
               <span>
                 <span className="font-medium text-[var(--ink-0)]">
-                  {KIND_EMOJI[item.kind] ? `${KIND_EMOJI[item.kind]} ` : ""}
+                  {kindEmoji(item.kind, travelEmoji) ? `${kindEmoji(item.kind, travelEmoji)} ` : ""}
                   {item.title}
                 </span>
                 {item.note && <span className="block text-xs text-[var(--ink-2)]">{item.note}</span>}
@@ -117,7 +124,7 @@ export function BriefingView({ briefing }: { briefing: Briefing }) {
                 key={d.day}
                 className={d.day === selected ? "lg:block" : "lg:hidden print:block"}
               >
-                <DayPanel day={d} />
+                <DayPanel day={d} travelEmoji={briefing.travelEmoji} />
               </div>
             ))}
           </div>

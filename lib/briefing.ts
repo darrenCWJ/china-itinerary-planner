@@ -2,7 +2,7 @@ import { getCountryProfile } from "./countryProfile";
 import { DESTINATIONS } from "./data";
 import type { ItemKind } from "./itinerary";
 import { dayDate, sortTickets } from "./tickets";
-import { interestMeta } from "./meta";
+import { interestMeta, travelEmoji } from "./meta";
 import { tripCountry, type Ticket, type TicketKind, type TripPayload } from "./tripShared";
 import type { Interest, TimeSlot } from "./types";
 
@@ -92,6 +92,26 @@ export interface Briefing {
    * every bearer-link holder. See `lib/countryFacts.test.ts`.
    */
   gapNote: string[];
+  /**
+   * The glyph drawn on a `kind: "travel"` row — resolved here, from this
+   * trip's country, exactly like `gapNote` above and for the same reason.
+   *
+   * `🚄` used to be a constant in lib/meta.ts, so the briefing drew a Chinese
+   * high-speed train over a Peruvian hop — and this is the surface it mattered
+   * most on, because /b/[code] needs no login. The glyph is a claim about a
+   * rail network, so it has to come from the country's `railKmh`; see
+   * `travelEmoji`.
+   *
+   * Carried as a resolved string rather than as a country code or a rail speed
+   * because `BriefingView` must not resolve it: it is a `"use client"`
+   * component rendered by the unauthenticated page, and reaching a country
+   * profile from there would ship the 70 KB facts artifact to every bearer-link
+   * holder. `lib/countryFacts.test.ts` fails the build if it ever does. That is
+   * the same split `gapNote` documents, and `Briefing` is a display view model
+   * throughout — `BriefingBooking` is likewise "a ticket flattened for
+   * display" — so a display-ready glyph is in keeping rather than an intrusion.
+   */
+  travelEmoji: string;
   /** Members and progress — null on a redacted (public) briefing. */
   crew: { members: string[]; checkedCount: number } | null;
   redacted: boolean;
@@ -180,6 +200,10 @@ function toBooking(t: Ticket, showSecrets: boolean): BriefingBooking {
 
 export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Briefing {
   const { data } = payload;
+  // One profile for both country-derived fields below. Two calls would be two
+  // chances for the gap note and the hop glyph to disagree about which country
+  // this trip is in, and `getCountryProfile` is not memoised by design.
+  const profile = getCountryProfile(tripCountry(data));
   const cities = citiesOf(payload);
   const days = daysOf(payload);
   const dayCount = days.length;
@@ -206,7 +230,8 @@ export function buildBriefing(payload: TripPayload, opts: BriefingOptions): Brie
         toBooking(t, !opts.redacted || opts.includeBookings)
       ),
     },
-    gapNote: getCountryProfile(tripCountry(data)).gapNote,
+    gapNote: profile.gapNote,
+    travelEmoji: travelEmoji(profile.transport.railKmh),
     crew: opts.redacted
       ? null
       : { members: payload.members.map((m) => m.name), checkedCount: payload.checks.length },

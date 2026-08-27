@@ -8,7 +8,7 @@ import { getCountry } from "@/lib/countries";
 import { DEFAULT_COUNTRY, getCountryProfile } from "@/lib/countryProfile";
 import { DESTINATIONS } from "@/lib/data";
 import { buildItinerary, type ScheduledItem, type TripInput } from "@/lib/itinerary";
-import { KIND_EMOJI, SEASONS, SLOT_META } from "@/lib/meta";
+import { kindEmoji, SEASONS, SLOT_META, travelEmoji } from "@/lib/meta";
 import { buildPackingList } from "@/lib/packing";
 import type { Destination } from "@/lib/types";
 
@@ -50,10 +50,20 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
    * `buildPackingList` use, so the note can never disagree with the tips it
    * disclaims.
    */
-  const gapNote = useMemo(
-    () => getCountryProfile(input.country ?? DEFAULT_COUNTRY).gapNote,
+  const profile = useMemo(
+    () => getCountryProfile(input.country ?? DEFAULT_COUNTRY),
     [input.country]
   );
+  const gapNote = profile.gapNote;
+  /**
+   * The hop glyph, off the same profile.
+   *
+   * `KIND_EMOJI.travel` used to be `🚄` for every country, so a Peruvian hop
+   * titled "Travel to Cusco" was drawn with a Chinese high-speed train. The
+   * glyph is a claim about a rail network and `railKmh` is where this repo
+   * makes or withholds that claim — see `travelEmoji`.
+   */
+  const hopEmoji = travelEmoji(profile.transport.railKmh);
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
 
   const seasonMeta = SEASONS.find((s) => s.id === input.season);
@@ -64,6 +74,22 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
    * one, so a country without a mark gets no chop rather than China's 启程.
    */
   const country = getCountry(input.country ?? DEFAULT_COUNTRY);
+  /**
+   * The headline's name comes off the PROFILE, not off `country` above.
+   *
+   * `getCountry(code).name` falls back to the bare code — lib/countries.ts
+   * curates 24 of 249 — so the headline read "Your PE itinerary". The profile
+   * carries `getCountryName`'s answer, which is hand-tuned for those 24 and
+   * ingested from the CC0 artifact for the other 222, so Peru is "Peru" and
+   * China is still "China" rather than Wikidata's longer name.
+   *
+   * `getCountry` is still the right source for `mark`: a chop is curated or it
+   * does not exist, and there is no ingested equivalent to fall back to.
+   *
+   * Blank means the code is not a country at all, and the name is dropped
+   * rather than replaced — "Your itinerary" says less, but nothing false.
+   */
+  const headline = profile.name ? `Your ${profile.name} itinerary` : "Your itinerary";
 
   const toggleChecked = (item: string) =>
     setChecked((prev) => {
@@ -82,7 +108,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
           </span>
         )}
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--line-1)]">Boarding pass</p>
-        <h2 className="mt-2 font-display text-3xl font-bold">Your {country.name} itinerary</h2>
+        <h2 className="mt-2 font-display text-3xl font-bold">{headline}</h2>
         <p className="mt-3 font-mono text-sm tracking-wider text-[var(--line-1)]">
           {destinations.map((d) => d.name.toUpperCase()).join(" → ")}
         </p>
@@ -139,7 +165,7 @@ export function PlanStep({ input, extraDestinations, month }: PlanStepProps) {
               </div>
               <ul className="space-y-3 px-5 py-4">
                 {day.items.map((item, idx) => (
-                  <PlanItem key={`${day.day}-${idx}`} item={item} />
+                  <PlanItem key={`${day.day}-${idx}`} item={item} travelEmoji={hopEmoji} />
                 ))}
               </ul>
             </article>
@@ -331,10 +357,10 @@ function ShareTripCard({
   );
 }
 
-function PlanItem({ item }: { item: ScheduledItem }) {
+function PlanItem({ item, travelEmoji }: { item: ScheduledItem; travelEmoji: string }) {
   const slot = SLOT_META[item.slot];
   const isFiller = item.kind === "free";
-  const transitEmoji = KIND_EMOJI[item.kind];
+  const transitEmoji = kindEmoji(item.kind, travelEmoji);
   return (
     <li className="flex gap-3">
       <span
