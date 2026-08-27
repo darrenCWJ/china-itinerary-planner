@@ -29,6 +29,29 @@ import { PrefsProvider } from "@/components/shell/PrefsProvider";
  * made in, which is a second mechanism and the more fragile one.
  */
 
+/**
+ * This file's budget, raised from vitest's 5,000ms default, and why.
+ *
+ * Every case drives the whole wizard: mount `PlanPage`, step into it, move the
+ * picker, add a place, build the plan. That is the code under test rather than
+ * scaffolding around it, and it cannot be shared — each case mutates the tree
+ * it drives, so each needs its own mount. Verified, not assumed: the five pass
+ * individually and in three shuffled orders.
+ *
+ * The expensive half that nothing asserts on has already left the enforced
+ * budget for `beforeEach` (see `toDestinations`). Measured in one run, so both
+ * halves met the same load, that took the worst case from 5,157ms — a timeout
+ * — to a 2,369ms body. What remains is irreducible: idle bodies are 150-530ms,
+ * and the whole problem is that a loaded CI box is not an idle box. Under 18
+ * spinners on 20 cores these bodies ran 893-2,369ms, and under a heavier
+ * concurrent load two still crossed 5,000ms with `Test timed out in 5000ms`.
+ *
+ * 15s is ~6x the measured heavy-load worst case and still nowhere near a hang.
+ * `hookTimeout` matches it because the hook now carries the mount, and leaving
+ * the two halves on different budgets would only move the cliff.
+ */
+vi.setConfig({ testTimeout: 15_000, hookTimeout: 15_000 });
+
 /** `PlanStep` mounts `ShareTripCard`, which calls `useRouter`. */
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -178,7 +201,7 @@ const LIMA_RESOLVED = {
   ],
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
@@ -208,11 +231,22 @@ beforeEach(() => {
       });
     })
   );
+
+  await toDestinations();
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  /**
+   * jsdom builds one environment per test FILE, so `localStorage` outlives
+   * every case in it. `PlanPage` reads `cip-visited-v1` on mount and writes it
+   * back whenever `visited` changes (app/plan/page.tsx) — a live channel from
+   * one case's mount to the next one's. Nothing below toggles a visited city,
+   * so today it only ever carries `[]`; cleared regardless, so the isolation
+   * these cases depend on is enforced rather than true by accident.
+   */
+  localStorage.clear();
 });
 
 /**
@@ -233,7 +267,26 @@ async function settle(): Promise<void> {
   }
 }
 
-/** Mount and advance past the details step, where the wizard opens. */
+/**
+ * Mount and advance past the details step, where the wizard opens.
+ *
+ * Driven from `beforeEach` rather than from the cases, because `testTimeout`
+ * is a wall-clock budget spent on the test function alone and `hookTimeout` is
+ * a separate one for the hooks — two budgets, not one (vitest defaults them to
+ * 5s and 10s; this file sets both, see `vi.setConfig` above). Every case opens
+ * the same way, and this is the expensive half of it: measured per
+ * test, the `render` plus its first `settle`, and the "Next →" transition that
+ * mounts `MapExplorer` and the map behind it, came to 828ms, 269ms, 285ms,
+ * 214ms and 206ms — 24-56% of each case's total, and not a millisecond of it
+ * is what any of them assert on. The file had already been seen finishing a
+ * case in 5,277ms against the 5,000ms limit.
+ *
+ * The same move commit 84cd61e made for `lib/server/authBoot.test.ts`: setup
+ * the assertion does not turn on has no business in the assertion's budget.
+ * `beforeEach` and deliberately not `beforeAll` — every case mutates the tree
+ * it drives, so each still gets its own mount and its own `cleanup`. Nothing
+ * is shared between them; only the bill moved.
+ */
 async function toDestinations(): Promise<void> {
   render(
     <PrefsProvider>
@@ -275,7 +328,6 @@ describe("the trip is built for the country its destinations are in", () => {
     // Arming. Pick Peru, add a Peruvian place, touch the picker no further:
     // this is the path that always worked, and it establishes that the drive
     // really reaches step 2 with a plan on it.
-    await toDestinations();
     await pickCountry("PE");
     await typeOwnPlace("Ollantaytambo");
     expect(await buildPlan()).toBe("Your Peru itinerary");
@@ -287,7 +339,6 @@ describe("the trip is built for the country its destinations are in", () => {
     // wizard handed `buildItinerary` the picker's value, so the plan came out
     // headed "Your Japan itinerary" and every tip, packing line, currency and
     // glyph on it was Japan's — for a trip to Ollantaytambo.
-    await toDestinations();
     await pickCountry("PE");
     await typeOwnPlace("Ollantaytambo");
     await pickCountry("JP");
@@ -300,7 +351,6 @@ describe("the trip is built for the country its destinations are in", () => {
     // this is the pick kind that needs the wizard to have recorded the scope
     // the pick was made in — `extras` is keyed by qid alone and survives the
     // switch, so nothing later in the session can recover it.
-    await toDestinations();
     await pickCountry("PE");
     fireEvent.click(screen.getByRole("button", { name: /Lima/ }));
     await settle();
@@ -312,14 +362,12 @@ describe("the trip is built for the country its destinations are in", () => {
     // The other direction, and the reason the fix is not "ignore the picker":
     // with no destination to speak for the trip, the open country is the only
     // answer there is.
-    await toDestinations();
     await pickCountry("JP");
     await typeOwnPlace("Nikko");
     expect(await buildPlan()).toBe("Your Japan itinerary");
   });
 
   test("China is unchanged — the default country, never touched", async () => {
-    await toDestinations();
     await typeOwnPlace("Pingyao");
     expect(await buildPlan()).toBe("Your China itinerary");
   });
