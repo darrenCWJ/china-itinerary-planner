@@ -1,6 +1,35 @@
 # Refreshes the worldwide city catalog from GeoNames' cities500 dump, and the
 # per-country facts artifact from Wikidata.
 #
+# THREE JOBS, and the split is load-bearing rather than tidiness. `cities`
+# (GeoNames ingest + Wikidata enrichment) and `facts` (Wikidata country facts)
+# run in PARALLEL on separate runners; `commit` waits for both, verifies, and
+# makes the single commit.
+#
+# They were one job until 2026-08-28, and that is what broke: `enrich-cities
+# .mjs` spends ~30 UNBROKEN MINUTES on WDQS, and `ingest-country-facts.mjs`
+# started the instant it finished, on the same runner and so the same IP, with
+# the rate budget already spent. WDQS answered 429 `Retry-After: 120` in 0.13s.
+# Twice in one day: once costing only `drivingSide` (a property demotes and
+# carries forward), once costing the ENTIRE run, because that 429 landed on the
+# `codes` (P297) query — the one query whose failure is fatal, since without it
+# there is no country universe to build against. Wikidata was healthy both
+# times; a probe answered in 0.47s minutes later. The second workload was
+# simply paying for the first's budget.
+#
+# Separate runners mean separate IPs and separate budgets. PARALLEL rather than
+# chained deliberately: chaining `facts` behind `cities` would preserve the
+# exact temporal adjacency that caused this, just on a different runner, and
+# would buy nothing — `facts` is ~90s against `cities`' ~30 minutes, so the
+# wall-clock difference either way is noise. Politeness is not reduced by the
+# parallelism: each script still issues its requests SERIALLY at ~1/s, and WDQS
+# rate-limits per client IP, so two runners are two ordinary clients rather than
+# one impolite one. The aggregate added here is ~40 requests over ~90s.
+#
+# `scripts/ingest-country-facts.mjs` ALSO now waits up to 300s when WDQS asks
+# (`MAX_RETRY_AFTER_MS`), which is the belt to this braces: the split stops the
+# budget being spent, the ceiling stops a routine pause being fatal.
+#
 # Commits only when the catalog actually changed. `scripts/ingest-cities.mjs`
 # preserves the previous `generatedAt` on every artifact whose payload is
 # unchanged — each of the 246 shards via `shardPayload`, and public/cities/
@@ -18,14 +47,14 @@
 # run. ingest-country-facts.mjs's `assertFactsSane` carries 34 throw sites and
 # sits above `mkdirSync`, same shape as the other two scripts.
 #
-# ...and it is why this job runs the test suite ITSELF, in "Verify the
+# ...and it is why `commit` runs the test suite ITSELF, in "Verify the
 # artifacts" below, before it is allowed to commit. GitHub does not create
 # workflow runs from pushes authenticated with the default GITHUB_TOKEN
 # (recursion prevention; only workflow_dispatch and repository_dispatch are
 # exempt), and actions/checkout persists exactly that token for the `git push`
-# at the end — so **ci.yml never runs on this job's commit**, while Vercel's
-# git integration deploys it regardless. Without the verify step, the very
-# scenario cited below to justify `git status --porcelain` — a country
+# at the end — so **ci.yml never runs on this workflow's commit**, while
+# Vercel's git integration deploys it regardless. Without the verify step, the
+# very scenario cited below to justify `git status --porcelain` — a country
 # GeoNames newly covers, which `assertSane` accepts anywhere in 244..248 —
 # would sail past the gate, land on main against the exact
 # `toHaveLength(246)` in lib/cityShard.test.ts, deploy to production, and
@@ -33,10 +62,14 @@
 # refresh can legitimately move: the 750-per-country cap, and the five named
 # destinations asserted by geonameid.
 #
-# So: if the artifacts would fail the repo's own tests, this job goes red and
-# commits nothing. A human sees a failed scheduled run in the Actions tab and
-# decides whether a 247th country is real — which is the right place for that
-# call to be made, rather than in a production incident.
+# So: if the artifacts would fail the repo's own tests, this workflow goes red
+# and commits nothing. A human sees a failed scheduled run in the Actions tab
+# and decides whether a 247th country is real — which is the right place for
+# that call to be made, rather than in a production incident. The gate is
+# strict across the split: `commit` needs BOTH ingests, so a failed `facts`
+# still withholds the `cities` work. That is deliberate — the two artifacts are
+# verified together by one `npm test`, and committing half of a verified pair
+# is not something this file is willing to do silently.
 #
 # GeoNames is CC BY 4.0 — attribution required. The credit lives in
 # components/plan/GeoNamesCredit.tsx, not here. Wikidata (country facts) is
@@ -59,21 +92,24 @@ on:
     - cron: "53 8 * * *"
   workflow_dispatch:
 
-# Least privilege: the job writes data files and nothing else.
+# Least privilege, and now genuinely least: the two ingest jobs only read the
+# repo. Only `commit` is granted write, so a bug in an ingest job cannot push.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  # SHARED with refresh-airports.yml, deliberately. Both jobs commit to main,
-  # and this one holds the repo's longest checkout->push window, so an
+  # SHARED with refresh-airports.yml, deliberately. Both workflows commit to
+  # main, and this one holds the repo's longest checkout->push window, so an
   # overlapping refresh-airports push would make our `git push` a
   # non-fast-forward. A group name unique per workflow would not serialise
-  # them; the same name does.
+  # them; the same name does. Workflow-level, so it still covers all three jobs
+  # as one unit after the split.
   group: refresh-data
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  cities:
+    name: Ingest and enrich cities
     runs-on: ubuntu-latest
     # The default is 360. Nothing bounds the worst case below it: a degraded
     # Wikidata day is ~42 SPARQL batches x 3 attempts x 90s SPARQL_TIMEOUT_MS
@@ -88,19 +124,15 @@ jobs:
         with:
           # 24 for stable TypeScript type stripping: ingest-cities.mjs imports
           # lib/*.ts leaves directly rather than keeping a copy that could
-          # drift. enrich-cities.mjs and ingest-country-facts.mjs are
-          # node:fs|path|url only and don't need it for that reason, but run
-          # under the same setup-node step.
+          # drift. enrich-cities.mjs is node:fs|path|url only and doesn't need
+          # it for that reason, but runs under the same setup-node step.
           node-version: 24
-          cache: npm
-
-      # All three ingest scripts still run on Node built-ins alone — this
-      # install is for vitest, so "Verify the artifacts" below can run. It is
-      # first so a broken lockfile fails in seconds instead of after an hour
-      # of ingest.
-      # legacy-peer-deps: .npmrc sets it and `npm ci` honours it, kept explicit
-      # for the reason ci.yml gives.
-      - run: npm ci --legacy-peer-deps
+      # No `npm ci` here any more, and no `cache: npm`: both ingest scripts run
+      # on Node built-ins alone, so this job needs no node_modules and now
+      # starts ingesting immediately. That does drop the old fail-fast on a
+      # broken lockfile — accepted, because ci.yml runs `npm ci` on every push
+      # to every branch, so a lockfile that cannot install is already red
+      # before it can reach a nightly run. `commit` still installs, for vitest.
 
       - name: Ingest cities
         run: node scripts/ingest-cities.mjs
@@ -108,20 +140,121 @@ jobs:
       # A single failed SPARQL batch costs nothing: those ids are left out of
       # this run's scope, so they keep the enrichment they already had. What
       # DOES abort the run is `assertEnrichmentSane` — a run that would erase
-      # more than half the previous coverage. That failure skips the commit
-      # step below, which is the intent: a bad Wikidata day costs one skipped
-      # refresh, not the catalog's whole descriptive layer. Reads
+      # more than half the previous coverage. That failure fails this job and
+      # so skips `commit`, which is the intent: a bad Wikidata day costs one
+      # skipped refresh, not the catalog's whole descriptive layer. Reads
       # data/cities-enrich-targets.json, which the step above just wrote.
       - name: Enrich the top cities per country
         run: node scripts/enrich-cities.mjs
 
-      # A third, independent source (Wikidata), run here so its output is
-      # covered by "Verify the artifacts" below rather than sailing past it.
-      # Introduces no new outage coupling: enrich-cities.mjs above already
-      # depends on the same Wikidata SPARQL endpoint. `assertFactsSane` runs
-      # before any write, same as the two ingests above — see the header.
+      # `if-no-files-found: error` because an empty artifact here would be the
+      # worst outcome available: `commit` would overlay nothing, see a clean
+      # tree, report "nothing to commit" and go GREEN on a run that produced
+      # no data. Loud beats plausible.
+      #
+      # These paths span public/ and data/, so the artifact's root is the
+      # workspace root and `download-artifact` restores them in place with
+      # `path: .`. The `facts` artifact below does NOT have that property —
+      # see the note there.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: city-artifacts
+          path: |
+            public/cities
+            data/cities-index.json
+            data/cities-enrich-targets.json
+            data/cities-report.md
+          if-no-files-found: error
+          retention-days: 1
+
+  facts:
+    name: Ingest country facts
+    runs-on: ubuntu-latest
+    # A healthy run is ~90s. With MAX_RETRY_AFTER_MS at 300s and two retries a
+    # single query can now park 10 minutes, so a pathological day could run
+    # long; 30 minutes is the fast red for it.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # node:fs|path|url only, but pinned to the same 24 the other jobs use
+          # rather than inheriting whatever the runner image ships.
+          node-version: 24
+
+      # A third, independent source (Wikidata), still covered by "Verify the
+      # artifacts" in `commit` rather than sailing past it. `assertFactsSane`
+      # runs before any write, same as the two ingests above — see the header.
       - name: Ingest country facts
         run: node scripts/ingest-country-facts.mjs
+
+      # BOTH paths are under data/, so the artifact's root is data/ — NOT the
+      # workspace root the way city-artifacts' is. That is why `commit`
+      # downloads this one with `path: data`. Get it wrong and the files land
+      # at the repo root, the real ones are never overlaid, the change test
+      # sees the untouched checkout and the run goes GREEN having committed
+      # nothing — so `commit` asserts the placement rather than trusting it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: facts-artifacts
+          path: |
+            data/country-facts.json
+            data/country-facts-report.md
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    name: Verify and commit
+    needs: [cities, facts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The only job that writes. Everything above runs read-only.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # This install is for vitest, so "Verify the artifacts" below can run.
+      # legacy-peer-deps: .npmrc sets it and `npm ci` honours it, kept explicit
+      # for the reason ci.yml gives.
+      - run: npm ci --legacy-peer-deps
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: city-artifacts
+          path: .
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: facts-artifacts
+          # data/, not `.` — see the upload note in the `facts` job.
+          path: data
+
+      - name: Check the ingest artifacts landed where the commit step looks
+        run: |
+          # Guards the one mistake that would be SILENT: an artifact whose root
+          # was computed differently than assumed lands beside the tree instead
+          # of on it, leaving the checked-out files in place. Every later step
+          # then behaves perfectly on stale data. A stray at the repo root is
+          # the exact fingerprint of that, so look for it directly.
+          for stray in country-facts.json country-facts-report.md cities-index.json cities-enrich-targets.json cities-report.md; do
+            if [ -e "$stray" ]; then
+              echo "::error::$stray landed at the repo root — the artifact root moved; fix the download path"
+              exit 1
+            fi
+          done
+          for f in public/cities/index.json data/cities-index.json data/cities-enrich-targets.json \
+                   data/cities-report.md data/country-facts.json data/country-facts-report.md; do
+            [ -s "$f" ] || { echo "::error::missing or empty after download: $f"; exit 1; }
+          done
+          echo "Artifacts in place:"
+          git status --porcelain -- public/cities data/ | head -20
 
       # The whole suite, not a hand-picked subset: lib/cityShard.test.ts,
       # lib/server/cityIndex.test.ts and lib/countryFacts.test.ts are the
