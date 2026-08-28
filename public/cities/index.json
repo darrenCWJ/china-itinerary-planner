@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-25T09:23:00.949Z",
+ "generatedAt": "2026-08-28T16:07:26.102Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -14,8 +14,8 @@
   },
   {
    "code": "AF",
-   "count": 319,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "count": 320,
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "AG",
@@ -229,8 +229,8 @@
   },
   {
    "code": "CN",
-   "count": 413,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "count": 409,
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "CO",
@@ -270,12 +270,12 @@
   {
    "code": "CZ",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "DE",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "DJ",
@@ -525,7 +525,7 @@
   {
    "code": "IR",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "IS",
@@ -679,8 +679,8 @@
   },
   {
    "code": "MD",
-   "count": 94,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "count": 101,
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "ME",
@@ -930,7 +930,7 @@
   {
    "code": "RO",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "RS",
@@ -1110,7 +1110,7 @@
   {
    "code": "TR",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-28T16:07:26.102Z"
   },
   {
    "code": "TT",
