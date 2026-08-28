@@ -1923,8 +1923,26 @@ const RETRY_DELAYS_MS = [2_000, 8_000];
  * workflow's runner open for a day. Past this, the run fails, nothing is
  * written, the previous artifact stands and the job goes red — which is the
  * correct outcome for "Wikidata has asked us to come back much later".
+ *
+ * RAISED 60s -> 300s on 2026-08-28, because 60s was defending against the
+ * wrong number. WDQS asked for **120s** twice in one day, and both times this
+ * ceiling threw the work away rather than wait two minutes:
+ *   - run 33169438833 lost `drivingSide` (survivable — one property demotes)
+ *   - run 33185808379 lost the whole run, because the 429 landed on the
+ *     `codes` (P297) query, the one query whose failure is fatal
+ * Neither was Wikidata being unhealthy: it answered in 0.47s minutes later.
+ * `enrich-cities.mjs` had just spent 30 UNBROKEN MINUTES on SPARQL in the step
+ * immediately before, so the runner's own rate budget was spent — the two
+ * heavy Wikidata workloads share one job, and the second pays for the first.
+ *
+ * 300s keeps the defence this constant exists for (86400 is still refused, and
+ * its test still proves it) while accepting the pause a real WDQS asks for.
+ * The cost is bounded and worth naming: a query may now park up to
+ * 2 x 300s = 10 minutes before failing, against ~16s before. That is inside
+ * the workflow's own `timeout-minutes: 60`, which stays the real backstop —
+ * the header there already accepts that a degraded day is a fast red.
  */
-const MAX_RETRY_AFTER_MS = 60_000;
+const MAX_RETRY_AFTER_MS = 300_000;
 
 /**
  * One second between requests, serially, never concurrently.

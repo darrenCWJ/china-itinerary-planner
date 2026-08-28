@@ -475,9 +475,48 @@ describe("fetchWithRetry", () => {
     viTop.stubGlobal("fetch", fetchSpy);
     await expect(
       fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" })
-    ).rejects.toThrow(/Retry-After asked for 86400s, over the 60s ceiling/);
+    ).rejects.toThrow(/Retry-After asked for 86400s, over the 300s ceiling/);
     // Once, not three times: the ceiling is a decision to stop, not a backoff.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("the ceiling sits at 300s exactly: 301s still gives up", async () => {
+    // Pins WHERE the ceiling is, not merely that one exists. Without this, the
+    // constant could drift to any value >= 86401 and the test above would
+    // still pass, since it only proves a hostile number is refused.
+    const fetchSpy = viTop.fn().mockResolvedValue(respond(429, "slow down", "301"));
+    viTop.stubGlobal("fetch", fetchSpy);
+    await expect(
+      fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" })
+    ).rejects.toThrow(/Retry-After asked for 301s, over the 300s ceiling/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("the 120s WDQS actually asks for now PARKS and retries, instead of losing the run", async () => {
+    // THE REGRESSION. Twice on 2026-08-28 WDQS answered 429 with
+    // `Retry-After: 120`, and the old 60s ceiling threw the work away rather
+    // than wait two minutes — once costing `drivingSide`, once costing the
+    // entire run, because that 429 landed on the fatal `codes` query.
+    // Fake timers so the park is asserted rather than actually slept through.
+    viTop.useFakeTimers();
+    try {
+      const fetchSpy = viTop
+        .fn()
+        .mockResolvedValueOnce(respond(429, "slow down", "120"))
+        .mockResolvedValueOnce(respond(200, "code\nNL\n"));
+      viTop.stubGlobal("fetch", fetchSpy);
+      const pending = fetchWithRetry("https://example.invalid/sparql", {
+        body: "query=x",
+        accept: "text/csv",
+      });
+      // Nothing has retried yet — the run is parked, which is the point.
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      await viTop.advanceTimersByTimeAsync(120_000);
+      await expect(pending).resolves.toBe("code\nNL\n");
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      viTop.useRealTimers();
+    }
   });
 
   test("a 404 is an outage, never an empty result", async () => {
