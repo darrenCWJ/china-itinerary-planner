@@ -955,8 +955,41 @@ export function buildFacts(byProperty) {
  * noticed.
  */
 export const CURATED_FACTS = {
-  /** P297 sits on Q29999 "Kingdom of the Netherlands", so P38 yields EUR/USD/AWG/XCG. */
-  NL: { currencyCode: 'EUR', currencyName: 'euro' },
+  /**
+   * Two upstream shapes, and the second one arrived a day after the first was
+   * written.
+   *
+   * `currencyCode`/`currencyName`: P297 sits on Q29999 "Kingdom of the
+   * Netherlands", so P38 yields EUR/USD/AWG/XCG.
+   *
+   * `name`/`emergency`/`lat`: at **2026-08-28T09:46:29Z** Q55 "Netherlands"
+   * GAINED `P297 = "NL"` alongside Q29999, both at NormalRank. Every query in
+   * this file anchors on `?c wdt:P297 ?country`, so `wdt:` now matches BOTH
+   * items and each single-valued picker sees two answers and withholds — two
+   * labels, two roleless emergency numbers, two P625 points. Measured the same
+   * day with the shipping pipeline, NL only and BE as an unaffected control:
+   * `factCount` 9 -> 7, over `COUNTRY_FIELD_LOSS_GRACE`, which aborted the
+   * whole nightly refresh — the city catalog with it, since they share one
+   * job. And it could not self-heal: a failed run writes nothing, so
+   * `previous` keeps NL at 9 forever and every later run loses the same two.
+   *
+   * These are RESTORATIONS, not editorial calls: each value is the one the
+   * committed artifact already carried and `lib/countries.ts` is reconciled
+   * against, so this row returns the record to what shipped rather than
+   * changing what a traveller reads. 112 is the number to dial in the European
+   * Netherlands, which is the country this app plans trips to; the 911 upstream
+   * now also offers belongs to the Caribbean constituents.
+   *
+   * If Wikidata resolves the split, these three go STALE and the run goes red
+   * asking for them back out — the same anti-rot pairing the ZW row relies on.
+   */
+  NL: {
+    currencyCode: 'EUR',
+    currencyName: 'euro',
+    name: 'Kingdom of the Netherlands',
+    emergency: [{ number: '112', role: null }],
+    lat: 52.366666666667,
+  },
   /**
    * P38 yields EUR/XPF (the CFP franc of the Pacific collectivities), and
    * P2884 yields 400/230 — 400 V being industrial three-phase supply.
