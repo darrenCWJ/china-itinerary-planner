@@ -11,9 +11,17 @@ name: Refresh airports
 
 on:
   schedule:
-    # 04:10 UTC — after OurAirports' nightly rebuild, off the top of the hour
-    # where GitHub's scheduler is most congested.
-    - cron: "10 4 * * *"
+    # 08:23 UTC — after OurAirports' nightly rebuild, off the top of the hour
+    # where GitHub's scheduler is most congested, and deliberately OUT of the
+    # 04:00-05:00 UTC band where most "nightly" crons cluster. That band is
+    # where this job's delay went 40 minutes -> 11 hours -> a wholly unserved
+    # window across 2026-08-23..28. The quieter-hour part is a heuristic, not
+    # something measured; what IS measured is that 04:10 stopped being served.
+    # It also puts the run in the maintainer's afternoon (16:23 SGT), which
+    # matters more than it looks: both refresh jobs are designed to fail closed
+    # and let a HUMAN adjudicate from the Actions tab, and a run that lands
+    # while they are awake is a run whose failure gets seen.
+    - cron: "23 8 * * *"
   workflow_dispatch:
 
 # Least privilege: the job writes one data file and nothing else.
@@ -33,9 +41,9 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
