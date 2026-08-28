@@ -173,7 +173,39 @@ const MAX_EXTRACT_FALLBACK_RATIO = 0.2;
 const MIN_EXTRACT_SAMPLE = 50;
 
 const SUMMARY_POLITENESS_DELAY_MS = 250;
-/** Wikidata's optimiser copes with this many VALUES per query; more times out. */
+/**
+ * Wikidata's optimiser copes with this many VALUES per query; more times out.
+ *
+ * DO NOT SHRINK THIS TO FIX A "BATCH-POSITION TRUNCATION". There isn't one.
+ * Measured 2026-08-29, and written here because the code is where the next
+ * person will come looking to fix it.
+ *
+ * The thing that makes it look real: enrichment yield bucketed by `i % 150`
+ * is 0.837 for positions 0-119 and 0.749 for 120-149, with a cliff shape
+ * (0.841 / 0.729 / 0.676 over the last three tens) — and the effect is
+ * SPECIFIC to this constant. Tail-vs-head delta by modulus: 150 gives -0.135,
+ * while non-aligned controls give ~0 (100 -0.022, 200 -0.018, 149 +0.020).
+ * That correlation convinced two earlier analyses, and then me.
+ *
+ * The mechanism was then tested directly, three ways, all negative:
+ *   1. Batches 3, 11 and 25 sent as ONE 150-id query and as THREE 50-id
+ *      queries through `buildEnrichmentQuery` returned IDENTICAL results —
+ *      same answered ids, same img/desc count, same row count (141/139/148,
+ *      138/105/140, 131/97/137). The big query loses nothing.
+ *   2. For those 450 ids the committed artifact equals what Wikidata offers,
+ *      exactly: 139/139, 105/105, 97/97.
+ *   3. Sampling the tail positions themselves (130-149): Wikidata has
+ *      img/desc for 77 of 100, the artifact holds 77. Missing: zero.
+ *
+ * `LIMIT` could not have been the mechanism either — see SPARQL_ROWS_PER_ID
+ * below: a 150-id batch carries LIMIT 7500 and real batches return ~140 rows.
+ *
+ * So the unenriched targets are cities with no image and no English
+ * description upstream; enrichment is complete with respect to what Wikidata
+ * has, and the positional pattern is compositional (how country blocks tile
+ * into 150-id windows). A correlation with a plausible mechanism is not a
+ * measurement of that mechanism.
+ */
 const IDS_PER_SPARQL_BATCH = 150;
 /**
  * The explicit ceiling on the query's result set. With DISTINCT, one entity
