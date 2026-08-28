@@ -39,7 +39,8 @@ is labelled `UNMEASURED` and must not be used to size, gate, or budget.
 §1.3 describes non-China countries as rendering "a flat list of buttons with no
 geometry," framed as the deficiency Phase 4 removes. Today
 `CountryPlaceList` ([CountryMap.tsx:114](../../../components/map/CountryMap.tsx))
-serves **249 codes**, **246 of them populated** from the Phase 3 shards, as real
+serves **249 codes**, **up to 245 of them populated** from the Phase 3 shards
+(246 have a shard, but CN routes to the map instead), as real
 `<button aria-pressed>` chips at `min-h-[var(--tap-min)]` — keyboard-reachable,
 screen-reader-listable, with honest copy.
 
@@ -79,15 +80,19 @@ construction.
 
 ### 2.3 The 13 "undrawable" countries were never undrawable
 
-`SEARCH_ONLY` lists 13 codes with real cities and no drawable feature: XK (77
+`SEARCH_ONLY` (`lib/isoTopology.ts:50-70`) lists **15** codes with no drawable
+50m feature. **13 of them have real cities** and are Phase 4's targets: XK (77
 cities), YT (66), RE (28), GP (25), MQ (23), GF (20), TV (12), BQ (10), GI (7),
-CC, CX, SJ, TK. This is a **50m resolution artefact**, not missing data. At 10m,
+CC, CX, SJ, TK. The other two — **BV and UM** — have no city shard and are
+therefore out of scope by the §2.2 emit rule, alongside AQ and HM. Do not write
+"the 13" as though it were the whole list. This is a **50m resolution artefact**,
+not missing data. At 10m,
 `admin_0_map_units` has a dedicated feature for all 13, and every one has ≥1
 admin-1 unit.
 
 Two repo comments are simply wrong and should be corrected in the same commit:
 
-- `lib/isoTopology.ts:65` — "Tokelau has no 50m feature." Tokelau **is** drawn at
+- `lib/isoTopology.ts:67` — "Tokelau has no 50m feature." Tokelau **is** drawn at
   50m, as two unkeyed polygons (2.9 km² and 2.2 km²) inside the New Zealand
   feature, at (−172.487, −8.564) and (−171.196, −9.344).
 - The claim that Cocos and Guadeloupe have no admin-1 feature. GP is `FRA-4603` /
@@ -264,7 +269,8 @@ select a place** — this is the invariant, and §12.2 makes it testable.
 
 ### 5.4 Projection manifest
 
-Committed `country-projections.json`. The figures below were measured on the 50m
+`country-projections.json`, **to be committed — no such file exists in the repo
+today.** The figures below were measured on the 50m
 admin-0 source: 235 entries, **20,939 B minified / 7,438 B gzipped**, mean
 89.1 B/entry. Under D6 the rendered geometry is the merged 10m province set, so
 **the manifest is regenerated against that and re-verified** — the rule, the
@@ -355,10 +361,21 @@ unambiguous as spans approach 180°.
 roadmap's `:66` to **`:70-76`**) widens to a region identifier resolved through a
 per-country provider.
 
-Blast radius, measured: two prop consumers (`MapExplorer.tsx:566`,
-`RouteMap.tsx:171` which hard-codes `null`), plus `lib/months.ts:132`'s
-`Record<ChinaRegion, …>`, `lib/provinces.ts:11,61-66`, and the `isChinaRegion`
-narrowing at `mapTypes.ts:45-47` that `PlacePopup.tsx:39,65` depends on.
+Blast radius, measured — **the first draft of this list was incomplete; these
+three were found by a one-line grep and are load-bearing**:
+
+- Two prop consumers: `MapExplorer.tsx:566`, and `RouteMap.tsx:171` which
+  hard-codes `null`.
+- `MapExplorer.tsx:153` — the `useState<ChinaRegion | null>` that **owns** the
+  state being widened.
+- `lib/months.ts:132`'s `Record<ChinaRegion, …>`, and **`lib/months.ts:233`
+  `regionMonthClimate(region: ChinaRegion, …)`**, which `PlacePopup.tsx:39` calls
+  directly with the narrowed region — widening flows straight through it.
+- `lib/provinces.ts:11,61-66`, and **`lib/provinces.ts:85`'s
+  `REGION_META: Record<ChinaRegion, …>`**, iterated at `CountryMap.tsx:327`. A
+  per-country provider must never index it with a non-China identifier.
+- The `isChinaRegion` narrowing at `mapTypes.ts:45-47` that `PlacePopup.tsx:39,65`
+  depends on.
 
 ### 6.2 Degenerate bounds
 
@@ -631,8 +648,17 @@ headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-rev
 
   `:path+`, not `:path*` (the star form matches bare `/provinces`, which is not a
   file), and not the existing single-segment inline regex, which `/provinces/CN.json`
-  would fall through. `lib/cacheHeaders.test.ts` needs four edits, including the
-  **disjointness test extended in both directions**.
+  would fall through. **A fourth rule is needed for `public/climate/`**, on the same terms —
+  without one the shards ship with Next's default `public, max-age=0` and the
+  largest (97,941 B) is refetched on every map page:
+
+```ts
+source: "/climate/:path+",
+headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+```
+
+  `lib/cacheHeaders.test.ts` needs edits for **both** new directories, including
+  the **disjointness test extended in both directions**.
 - **Type stripping.** `build-provinces.mjs` may import `lib/countries.ts` (a leaf,
   already imported by `build-world-topology.mjs`) but **must not** import
   `lib/isoTopology.ts` or any `lib` module importing a sibling `.ts` — an
@@ -757,10 +783,15 @@ new legend swatch, no contrast re-audit.** `unknown` already exists as the
 absence marker with an audited colour (`#8a939f`, darkened from a 1.61:1
 failure).
 
-Four contract requirements, all already pinned for `chinaClimate`: total (never
-throws, `hasOwnProperty` not truthiness), fresh objects per call, exactly 12 rows
-or `null`, and **integers** — `PlacePopup.tsx:106` interpolates
-`{climate.lo}°–{climate.hi}°C` unformatted, so a float renders `8.437°`.
+Four contract requirements. **Only two are pinned by existing tests; the other
+two must be written fresh in `climateModel.test.ts`, not ported:**
+
+| Requirement | Status |
+|---|---|
+| Total — never throws for any string, `hasOwnProperty` not truthiness | **pinned**, `countryProfile.test.ts:43-49` |
+| Exactly 12 rows or `null` | **pinned**, `countryProfile.test.ts:38`, `:100` |
+| Fresh objects per call | *implemented* at `countryBaseProfile.ts:192`, but the mutation test at `countryProfile.test.ts:52-63` covers only `crowdByMonth` and `tips` — **write it** |
+| **Integers** — `PlacePopup.tsx:106` interpolates `{climate.lo}°–{climate.hi}°C` unformatted, so a float renders `8.437°` | **nothing asserts this anywhere.** `months.test.ts:86-88` pins ordering and range only — **write it** |
 
 ```
 penalty = heat(hi) + cold(hi, lo) + mugginess(td) + rain(precip) + cloud(clt)
@@ -838,27 +869,40 @@ anchors) and ~2 °C below WMO station normals, so part of the 72.9% is measuring
 **Success test: China's rendered output is byte-identical before and after Phase
 4.** Any change to a China pin colour or popup line is a regression.
 
-Resolution order at `regionFit` (`mapTypes.ts:54-57`), the one function deciding
-every pin and province colour: curated `bestSeasons` → curated `REGION_MONTHS` →
-derived worldwide → `unknown`.
+Resolution order — note it spans **two** functions, not one: `fitForPlace`
+(`mapTypes.ts:59-66`) applies the curated `bestSeasons` step, and `regionFit`
+(`:54-57`) does China-or-`NEUTRAL_FIT`. Full order: curated `bestSeasons` →
+curated `REGION_MONTHS` → derived worldwide → `unknown`. The derived branch lands
+in `regionFit`; do not add it to `fitForPlace` or curated China loses precedence.
 
-### 9.6 The highest-regression-risk edit in the phase
+### 9.6 The hardcoded northern-hemisphere season stamp
 
 `lib/server/catalog.ts:367` and `:400` stamp **every** catalog-derived and
 GeoNames-derived `Destination` worldwide with
-`bestSeasons: ["spring","autumn"], seasonNotes: {}`. That literal reaches
-`RouteMap.tsx:77` and **`itinerary.ts:92` scoring**, so a Sydney or Reykjavík stop
-currently renders `great` in March and October from a hardcoded northern-hemisphere
-guess — the exact fabrication this phase exists to remove, and one the new artifact
-does **not** remove unless those two literals go with it.
+`bestSeasons: ["spring","autumn"], seasonNotes: {}` — a northern-hemisphere guess
+applied to Sydney and Reykjavík alike. It is the exact fabrication this phase
+exists to remove, and the climate artifact does **not** remove it unless these two
+literals go with it.
 
-It also produces a live inconsistency today: `MapExplorer`'s catalog `MapPlace`s
-carry no `bestSeasons`, so the same city is `unknown` on the picker map and
-`great` on the route map.
+**Its blast radius is one surface, and it is not the one the first draft of this
+spec claimed.** Verified against the code:
 
-**Removing it re-ranks every generated plan worldwide.** China's 16 curated
-destinations are unaffected; China's *catalog* cities are not. This edit gets its
-own PR-internal checkpoint.
+| Candidate consumer | Reality |
+|---|---|
+| `components/DestinationStep.tsx:473-474` | **The real one.** The wizard's "Best 🌸🍂" chip and its title render straight off `bestSeasons` |
+| `components/trip/RouteMap.tsx:77` | **Does not reach it.** RouteMap builds its lookup from the bundled curated `DESTINATIONS` only (`:8`, `:56`) and `continue`s on any id not in it — consistent with §5.1, which says the trip map is blank for worldwide trips |
+| `lib/itinerary.ts:92` | **Does not reach it.** That line reads `Activity.bestSeasons`; catalog activities come from attractions or `GENERIC_ACTIVITIES` (`catalog.ts:275-294`, `:346`) and carry none |
+| `lib/itinerary.ts:300` | Reads `d.seasonNotes[input.season]`, stamped `{}`, so it yields nothing |
+
+**So removing the stamp does not re-rank generated plans.** It changes what the
+destination card claims, which is a copy-and-honesty fix rather than a scoring
+change — smaller and safer than first assessed, but still worth doing precisely
+because a card confidently recommending spring in Sydney is the fabrication §2.1
+of the roadmap warns about.
+
+**It rides with PR7** (climate in the UI), because that is the PR that has a real
+season signal to replace it with. Removing it earlier would leave the card with
+nothing to say.
 
 ### 9.7 Honesty surface
 
@@ -928,8 +972,22 @@ row at line 221 and discards it at emit, lines 400–411:
 ```js
 a1:  admin1Codes.get(`${country}.${row.admin1Code}`) ?? null,
 a1c: row.admin1Code === '' ? null : `${country}.${row.admin1Code}`,
-elev: row.elevation ?? null,
+elev: row.elevation,   // see the column note below
 ```
+
+**This is more than one change, and the elevation column must be chosen
+explicitly.** `COL` (`ingest-cities.mjs:162-172`) has no elevation entry and
+`parseGeoNamesRows` never reads one, so `row.elevation` does not exist yet —
+both must change. GeoNames offers two columns and they are not equivalent:
+
+- **column 15 `elevation`** — surveyed, and **frequently blank**
+- **column 16 `dem`** — modelled, and **populated nearly everywhere**
+
+§9.4's fix 4 (the −3.62 °C-above-2,000 m correction) needs dense coverage, so
+a mostly-null field would not deliver it. **Take `elevation` when present and
+fall back to `dem`; null only when both are blank** — null rather than 0,
+because sea level is a real elevation and 0 would put a Himalayan town at the
+coast.
 
 Forced follow-ons: `lib/cityShard.ts:42` (`CityShardRow` gains two fields; the
 docblock's "seven-field record" becomes nine), `:128-137` (row mapping plus a
@@ -1063,8 +1121,17 @@ Needs a build run to settle — none blocks starting:
 
 Needs a human decision:
 
-11. **The nine-dash line asymmetry** (§7.3) — the one item most worth overruling.
-12. **Siachen and the Spratlys excluded from every outline** (§7.2). Excluding is
+11. **What L2 renders for the 12 countries no projection can fit** (§5.4: KI,
+    FM, SH, MH, PW, MP, PF, TO, WF, MV, TF, GS). All 12 have city shards — KI 37
+    cities, TO 47, PF 45, FM 61 — so all 12 get a province file and can be
+    opened. They get no manifest entry, and "they need point markers, as
+    `smallCountries` already does" is an **L1** pattern with no stated L2
+    meaning. Three readings, materially different: list-only with no map, an
+    unfixed outline that renders as a sliver, or a composed point-marker view.
+    This also decides whether the manifest's build-time gate expects 246 entries
+    or 246 − 12. **Decide before PR4.**
+12. **The nine-dash line asymmetry** (§7.3) — the one item most worth overruling.
+13. **Siachen and the Spratlys excluded from every outline** (§7.2). Excluding is
     the only non-editorial option ISO leaves, but it is still a choice.
-13. Whether `SEARCH_ONLY_REASONS` narrows to "no 50m feature" (this design's
+14. Whether `SEARCH_ONLY_REASONS` narrows to "no 50m feature" (this design's
     assumption) or is retired outright once 10m lands.
