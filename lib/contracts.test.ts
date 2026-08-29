@@ -819,6 +819,11 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
       why: "One day of the plan tab, repeated per day. PlanTab is itself covered by TripView's credit; a credit under every day card would be chrome, not disclosure.",
     },
     {
+      path: "components/trip/RouteMap.tsx",
+      mountedIn: ["components/trip/PlanTab.tsx"],
+      why: "The plan tab's Route view. It became a candidate when PR4 gave it `/api/destinations/resolve`, which is what finally puts GeoNames cities on the trip map — and it is mounted only by PlanTab, covered by TripView through it.",
+    },
+    {
       path: "components/plan/DayBuilder.tsx",
       mountedIn: ["components/trip/PlanTab.tsx"],
       why: "The plan tab's add-to-day panel, mounted nowhere else. Covered by TripView through PlanTab.",
