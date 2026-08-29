@@ -311,6 +311,8 @@ interface ScorableRow {
   country: string;
   admin1Code: string;
   population: number;
+  /** Metres. Surveyed where GeoNames has it, modelled from `dem` otherwise. */
+  elevation: number | null;
   timezone: string;
 }
 
@@ -323,6 +325,7 @@ function scorable(over: Partial<ScorableRow> & Pick<ScorableRow, "id">): Scorabl
     country: "XX",
     admin1Code: "01",
     population: 1_000,
+    elevation: 100,
     timezone: "UTC",
     ...over,
   };
@@ -610,7 +613,8 @@ describe("dropCatalogDuplicates", () => {
 import { ENRICH_PER_COUNTRY, buildCities } from "./ingest-cities.mjs";
 
 /**
- * Mirrors spec §2.2's seven-field shard record. `buildCities` returns a bare
+ * Mirrors spec §2.2's shard record, nine fields since Phase 4. `buildCities`
+ * returns a bare
  * `Map` from a `.mjs` module with no type info, so a callback consuming a
  * shard row needs this annotation to avoid TS7006 implicit-any — the same
  * pattern `ScorableRow` already establishes above for `topPerCountry`.
@@ -621,7 +625,11 @@ interface ShardRow {
   lat: number;
   lon: number;
   a1: string | null;
+  /** The GeoNames admin-1 code `a1` was resolved from, `"<CC>.<CODE>"`. */
+  a1c: string | null;
   p: number;
+  /** Metres. Surveyed where GeoNames has it, modelled otherwise. */
+  elev: number | null;
   tz: string;
 }
 
@@ -630,9 +638,9 @@ const ADMIN1 = parseAdmin1Codes(
 );
 
 describe("buildCities", () => {
-  test("emits the seven-field record with the admin-1 code resolved to a name", () => {
+  test("emits the nine-field record with the admin-1 code resolved to a name", () => {
     const { shards } = buildCities(
-      [scorable({ id: "G2657928", name: "Zermatt", country: "CH", admin1Code: "VS", lat: 46.01998, lon: 7.74863, population: 6_629, timezone: "Europe/Zurich" })],
+      [scorable({ id: "G2657928", name: "Zermatt", country: "CH", admin1Code: "VS", lat: 46.01998, lon: 7.74863, population: 6_629, elevation: 1_608, timezone: "Europe/Zurich" })],
       ADMIN1,
       []
     );
@@ -643,7 +651,9 @@ describe("buildCities", () => {
         lat: 46.01998,
         lon: 7.74863,
         a1: "Valais",
+        a1c: "CH.VS",
         p: 6_629,
+        elev: 1_608,
         tz: "Europe/Zurich",
       },
     ]);
@@ -739,6 +749,54 @@ describe("buildCities", () => {
   });
 });
 
+describe("buildCities — the nine-field record", () => {
+  const rows = [
+    scorable({ id: "G1", name: "Cusco", country: "PE", admin1Code: "08", population: 100_168, elevation: 3_399 }),
+    scorable({ id: "G2", name: "Lima", country: "PE", admin1Code: "08", population: 8_472_935, elevation: 154 }),
+  ];
+
+  test("keeps the admin-1 code alongside the resolved name", () => {
+    const { shards } = buildCities(rows, ADMIN1, []);
+    const lima = shards.get("PE")!.find((r: ShardRow) => r.n === "Lima")!;
+    // The name is what the user reads; the code is what joins to a polygon.
+    // Both, because the name join to Natural Earth admin-1 measured 63.4%
+    // with 35 countries at zero, and the code matches gn_a1_code on 83%.
+    expect(lima.a1).toBe("Cusco");
+    expect(lima.a1c).toBe("PE.08");
+  });
+
+  test("carries elevation through to the shard", () => {
+    const { shards } = buildCities(rows, ADMIN1, []);
+    const cusco = shards.get("PE")!.find((r: ShardRow) => r.n === "Cusco")!;
+    expect(cusco.elev).toBe(3_399);
+    expect(shards.get("PE")!.find((r: ShardRow) => r.n === "Lima")!.elev).toBe(154);
+  });
+
+  test("carries a null elevation rather than inventing a sea-level one", () => {
+    const { shards } = buildCities([scorable({ id: "G1", country: "PE", elevation: null })], ADMIN1, []);
+    expect(shards.get("PE")![0].elev).toBeNull();
+  });
+
+  test("nulls the code when GeoNames gives the row no admin-1", () => {
+    const { shards } = buildCities([scorable({ id: "G1", country: "PE", admin1Code: "" })], ADMIN1, []);
+    const [city] = shards.get("PE")!;
+    // Not "PE." — a dangling prefix would look like a real key and would
+    // match nothing, which is worse than an honest null.
+    expect(city.a1c).toBeNull();
+    expect(city.a1).toBeNull();
+  });
+
+  test("does not resolve an admin-1 code named like an Object member", () => {
+    // `admin1Codes` is a Map for this reason; the code is a data-file value
+    // and a plain object would answer "constructor" with a function.
+    const { shards } = buildCities(
+      [scorable({ id: "G1", country: "PE", admin1Code: "constructor" })], ADMIN1, []
+    );
+    expect(shards.get("PE")![0].a1).toBeNull();
+    expect(shards.get("PE")![0].a1c).toBe("PE.constructor");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // assertSane
 // ---------------------------------------------------------------------------
@@ -765,13 +823,19 @@ interface ShardRow {
 /**
  * A shard row that passes every per-record check, so a test can break one.
  *
+ * `ShardRow` is declared twice in this file and TypeScript merges the two, so
+ * the two new Phase 4 fields are declared once, above, and are in scope here.
+ *
  * `a1` defaults to a resolved name rather than null: the real admin-1
  * resolution rate is 99.26%, and a fixture that left every row unresolved
  * would fail Finding A's floor by default, in every test in this file that
  * doesn't care about admin-1 at all.
  */
 function shardRow(over: Partial<ShardRow> & Pick<ShardRow, "id">): ShardRow {
-  return { n: `City ${over.id}`, lat: 10, lon: 20, a1: "Region", p: 1_000, tz: "UTC", ...over };
+  return {
+    n: `City ${over.id}`, lat: 10, lon: 20, a1: "Region", a1c: "XX.01",
+    p: 1_000, elev: 100, tz: "UTC", ...over,
+  };
 }
 
 /** Synthetic two-letter codes, AA, AB, AC … — a deterministic filler alphabet. */

@@ -254,7 +254,7 @@ describe("cityLevel", () => {
   test("maps population onto the three levels the map already draws", () => {
     // MapCity.level is a closed union that drives marker radius and labelling
     // in CountryMap.tsx:227-233. GeoNames has no equivalent field, and
-    // population is the only signal in the seven-field record that carries the
+    // population is the only signal in the nine-field record that carries the
     // same meaning — how prominent a marker should be.
     expect(cityLevel(7_737_002)).toBe("municipality");
     expect(cityLevel(1_000_000)).toBe("municipality");

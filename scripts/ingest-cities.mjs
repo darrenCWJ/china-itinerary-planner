@@ -421,7 +421,14 @@ export function buildCities(rows, admin1Codes, catalogCities, perCountry = CITIE
         // user as a province, and "22" is not a province of Japan. A Map
         // lookup, so a code spelled "constructor" cannot resolve to a function.
         a1: admin1Codes.get(`${country}.${row.admin1Code}`) ?? null,
+        // The code the name was resolved FROM. Kept because the name join to
+        // Natural Earth admin-1 was measured at 63.4% with 35 countries at
+        // zero, while this code matches `gn_a1_code` on 83% of features and
+        // is the only way to verify a geometric assignment. A row with no
+        // admin-1 gets null, never the dangling prefix `"PE."`.
+        a1c: row.admin1Code === '' ? null : `${country}.${row.admin1Code}`,
         p: row.population,
+        elev: row.elevation ?? null,
         tz: row.timezone,
       }))
     );
