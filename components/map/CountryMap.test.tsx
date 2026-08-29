@@ -290,3 +290,58 @@ describe("CountryPlaceList — a country with a full shard", () => {
     expect(screen.queryByText(/more/)).not.toBeInTheDocument();
   });
 });
+
+
+describe("reachability — the Phase 4 acceptance criterion", () => {
+  /**
+   * Spec 12.2. This is the criterion the whole phase is gated on: a country
+   * level that renders geometry must not become the ONLY way to select a
+   * place. The repo already rejected per-marker tab stops once — see
+   * worldLevelShared.tsx's "indefensible for 235" — and this test is what
+   * makes that decision survive a later PR that adds an outline.
+   */
+  function peruvianShard() {
+    return Array.from({ length: 200 }, (_, i) =>
+      place({
+        id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog",
+        province: i < 120 ? "Lima" : "Cuzco",
+      })
+    );
+  }
+
+  test("every place in an open country is reachable by keyboard", () => {
+    renderMap({ country: "PE", topology: null, places: peruvianShard() });
+
+    for (const button of screen.getAllByRole("button", { name: /^Show all/ })) {
+      fireEvent.click(button);
+    }
+
+    const reachable = screen
+      .getAllByRole("button")
+      .filter((el) => el.getAttribute("tabindex") !== "-1");
+    expect(reachable.filter((el) => /^City \d+$/.test(el.textContent ?? ""))).toHaveLength(200);
+  });
+
+  test("every place is reachable by filtering, without expanding anything", () => {
+    renderMap({ country: "PE", topology: null, places: peruvianShard() });
+
+    // City 199 is past every per-group cap and is not rendered initially.
+    expect(screen.queryByRole("button", { name: "City 199" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "City 199" } });
+    expect(screen.getByRole("button", { name: "City 199" })).toBeInTheDocument();
+  });
+
+  test("no interactive control opts out of the minimum tap target", () => {
+    renderMap({
+      country: "PE", topology: null,
+      places: [place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" })],
+    });
+
+    // jsdom computes no layout, so this asserts the class contract rather
+    // than a measured box — which is what the codebase can actually check,
+    // and it still catches a control shipped without the token.
+    for (const el of [...screen.getAllByRole("button"), screen.getByRole("searchbox")]) {
+      expect(el.className).toContain("min-h-[var(--tap-min)]");
+    }
+  });
+});
