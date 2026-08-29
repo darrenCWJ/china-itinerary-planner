@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
+import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
 import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
 import { DEFAULT_PREFS, PREFS_COOKIE, serializePrefsCookie, type UserPrefs } from "@/lib/prefs";
@@ -374,12 +375,12 @@ const CN_CATALOG = [
  * One country's admin-1 file, in the envelope `parseProvinceTopology` accepts.
  *
  * Built per code rather than written out twice, because the only thing any
- * assertion here turns on is WHICH code was asked for: the geometry is never
- * drawn in this task — Task 6's `CountryLevel` is what draws it — and a
- * hand-written PE and DE pair would be two more fixtures to keep in step with
- * the parser for no extra coverage. The envelope's `country` is the requested
- * code, so `parseProvinceTopology`'s URL-versus-envelope check passes; a test
- * that needs it to fail can stub a mismatch of its own.
+ * assertion here turns on is WHICH code was asked for: `CountryLevel` draws
+ * the same one square whichever country it is handed, and a hand-written PE
+ * and DE pair would be two more fixtures to keep in step with the parser for
+ * no extra coverage. The envelope's `country` is the requested code, so
+ * `parseProvinceTopology`'s URL-versus-envelope check passes; a test that
+ * needs it to fail can stub a mismatch of its own.
  */
 function provinceFixture(code: string) {
   return {
@@ -388,12 +389,16 @@ function provinceFixture(code: string) {
     idKey: "adm1_code",
     topology: {
       type: "Topology",
+      // Clockwise in (lon, lat). d3-geo reads rings spherically, so the
+      // anticlockwise version of this square is the globe MINUS the square:
+      // `geoBounds` answers +/-180 and the fallback fit collapses. It did not
+      // matter while nothing drew this fixture; `CountryLevel` draws it now.
       arcs: [
         [
           [0, 0],
-          [1, 0],
-          [1, 1],
           [0, 1],
+          [1, 1],
+          [1, 0],
           [0, 0],
         ],
       ],
@@ -425,6 +430,28 @@ function provinceFixture(code: string) {
 const PROVINCE_FILE = /^\/provinces\/([A-Z]{2})\.json$/;
 
 /**
+ * The §5.4 manifest, framing the one square every province fixture draws.
+ *
+ * Real entries rather than an empty object, so the country level takes its
+ * committed frame here exactly as it does in production. A country the
+ * manifest has no entry for is still drawn — it falls back to a fit over its
+ * own units — and `CountryLevel.test.tsx` is where that fallback is pinned.
+ */
+const PROJECTION_FIXTURE = Object.fromEntries(
+  ["PE", "DE", "JP", "GA"].map((code) => [
+    code,
+    {
+      rotate: 0,
+      bounds: [
+        [0, 0],
+        [1, 1],
+      ],
+      scale: 34_377.468,
+    },
+  ])
+);
+
+/**
  * The shared answer table, as a named function rather than an inline lambda.
  *
  * A test that only wants to change ONE route delegates the rest to this, and a
@@ -436,6 +463,13 @@ const PROVINCE_FILE = /^\/provinces\/([A-Z]{2})\.json$/;
  */
 function defaultFetch(url: string) {
   const href = String(url);
+  // Answered ahead of the chain below rather than inside it, so the shape of
+  // that chain — one country's assets, in the order the effect asks for them —
+  // stays readable. The manifest is not one country's asset: it is the same
+  // file for all 246.
+  if (href === PROJECTION_PATH) {
+    return Promise.resolve({ ok: true, status: 200, json: async () => PROJECTION_FIXTURE });
+  }
   const province = PROVINCE_FILE.exec(href);
   const body = province
     ? provinceFixture(province[1])
@@ -616,9 +650,13 @@ describe("MapExplorer", () => {
     await settle();
     fireEvent.click(screen.getByRole("button", { name: /Japan/ }));
 
-    // Japan has no detail level, so the same shell shows the fallback.
+    // Japan's own admin-1 file draws in the same shell China's does, with the
+    // place list beneath it — and with no cities in this harness, the list says
+    // so rather than repeating the "no map yet" line it carried for 245
+    // countries before PR4.
     await settle();
-    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Map of Japan" })).toBeInTheDocument();
+    expect(screen.getByText(/No places in Japan yet/)).toBeInTheDocument();
     // And the world level is gone: the two levels never render at once.
     // Either renderer's group is named "… — pick a country", so this covers
     // both the flat map and the globe regardless of which one was active.
@@ -641,7 +679,7 @@ describe("MapExplorer", () => {
     render(<Harness country="JP" />);
 
     await settle();
-    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Map of Japan" })).toBeInTheDocument();
     expect(requested(CHINA_TOPOLOGY_PATH)).toBe(false);
     // The city catalog is still asked about — every country has one now — but
     // it is asked about for Japan, not for China.
@@ -790,8 +828,8 @@ describe("MapExplorer", () => {
   });
 
   test("draws Peruvian cities in the country level's place list", async () => {
-    // Peru has no detail level, so the same shell shows CountryPlaceList —
-    // which, before this task, was always empty outside China.
+    // The list beside Peru's map, which is the accessibility spine (§5.2)
+    // and which was empty outside China before this phase.
     render(<Harness country="PE" />);
 
     await settle();
@@ -815,7 +853,7 @@ describe("MapExplorer", () => {
     expect(screen.queryByRole("heading", { name: "GA" })).not.toBeInTheDocument();
     // And the country's name reaches the copy beside the heading, not just the
     // heading — this sentence read "No map for GA yet".
-    expect(screen.getByText(/No map for Gabon yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No places in Gabon yet/)).toBeInTheDocument();
   });
 
   test("the world level's way back names the country too", async () => {
@@ -928,7 +966,7 @@ describe("MapExplorer", () => {
   });
 
   test("never lets an aborted country's answer land on the country that replaced it", async () => {
-    // Three of the four legs swallow their own rejection, so an abort resolves
+    // Five of the six legs swallow their own rejection, so an abort resolves
     // the combined promise instead of rejecting it. Without a check on the
     // signal before the write, Peru's effect lands Peru's answer — cities
     // emptied, "unavailable" set — on top of Germany's freshly cleared state,
@@ -1052,12 +1090,71 @@ describe("MapExplorer", () => {
     expect(onToggleSelect).toHaveBeenCalledWith("zhangjiajie");
   });
 
+  test("hands the file it fetched to the level that draws it", async () => {
+    // The state was written and read by nobody for one commit, which is a
+    // shape no other test here can see: every assertion above passes just as
+    // well against a component that fetches Peru's geometry and drops it.
+    render(<Harness country="PE" />);
+    await settle();
+
+    expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
+    // The unit the fixture ships, drawn and marked selectable.
+    expect(document.querySelector('[data-unit="PE+00"]')).not.toBeNull();
+  });
+
+  test("frames the map with the manifest it fetched, not with a fit", async () => {
+    // Fetched in the SAME `Promise.all` as the geometry, not in an effect of
+    // its own: the level falls back to a fit when it has no entry, so a
+    // manifest landing one render later would frame every country twice — and
+    // for the nine trimmed countries the first of those two frames shows the
+    // island the trim exists to leave out.
+    //
+    // The entry here deliberately frames a box 10° away from the country, so
+    // geometry drawn through it lands outside the viewBox. Nothing else can
+    // tell an entry that reached the projection from one that was fetched and
+    // dropped: a lookup that missed — the wrong case, the wrong key — falls
+    // back to a fit, which draws this same square filling the frame.
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const href = String(url);
+        urls.push(href);
+        return href === PROJECTION_PATH
+          ? Promise.resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                PE: {
+                  rotate: 0,
+                  bounds: [
+                    [10, 10],
+                    [11, 11],
+                  ],
+                  scale: 34_377.468,
+                },
+              }),
+            })
+          : defaultFetch(href);
+      })
+    );
+
+    render(<Harness country="PE" />);
+    await settle();
+
+    expect(urls).toContain(PROJECTION_PATH);
+    const d = document.querySelector('[data-unit="PE+00"]')?.getAttribute("d") ?? "";
+    const coordinates = (d.match(/-?[\d.]+/g) ?? []).map(Number);
+    expect(coordinates.length).toBeGreaterThan(0);
+    expect(Math.min(...coordinates)).toBeLessThan(0);
+  });
+
   test("keeps working for a country whose shard 404s", async () => {
     render(<Harness country="JP" />);
 
     await settle();
-    // The fallback names the country and points at search, exactly as before.
-    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
+    // The level names the country and points at search, exactly as before.
+    expect(screen.getByText(/No places in Japan yet/)).toBeInTheDocument();
     // A country with no shard is a country with no cities to offer, not an
     // outage: the catalog answered, so nothing is broken.
     expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
@@ -1069,11 +1166,12 @@ describe("MapExplorer", () => {
  *
  * `/china-provinces.json` was the only topology any country could open, so 245
  * of them opened none — the registry says every country has a file, and this is
- * the fetch that goes and gets it. Nothing draws the result yet: Task 6's
- * `CountryLevel` is the reader, and what these cases pin is the half that can
- * regress without it — which URL is asked for, how often, what happens to the
- * one already in flight, and that a country whose file never arrives still
- * reaches every one of its cities.
+ * the fetch that goes and gets it. What these cases pin is the loading half —
+ * which URL is asked for, how often, what happens to the one already in flight,
+ * and that a country whose file never arrives still reaches every one of its
+ * cities. How the result is drawn is `CountryLevel.test.tsx`'s; that the result
+ * reaches a renderer at all is pinned here, because nothing else would notice
+ * a component holding geometry it never passes on.
  */
 describe("the open country's province file", () => {
   test("fetches the opened country's province file, not China's", async () => {
@@ -1194,6 +1292,9 @@ describe("the open country's province file", () => {
     // would be 68 KB for a map that never draws it — and would be the first
     // step towards drawing China from geometry that is not byte-identical.
     expect(urls).not.toContain("/provinces/CN.json");
+    // Nor the manifest: `ChinaLevel` fits itself to the curated provinces, and
+    // §5.4 frames the merged 10m outlines China does not draw.
+    expect(urls).not.toContain(PROJECTION_PATH);
     expect(
       screen.getByRole("group", { name: "Map of China segmented by region" })
     ).toBeInTheDocument();

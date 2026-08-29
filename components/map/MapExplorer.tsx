@@ -7,6 +7,11 @@ import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { hasDetailLevel } from "@/lib/countryDetail";
+import {
+  PROJECTION_PATH,
+  parseProjectionManifest,
+  type ProjectionEntry,
+} from "@/lib/countryProjection";
 import { DESTINATIONS } from "@/lib/data";
 import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
@@ -172,6 +177,21 @@ export function MapExplorer({
    * which is the accessibility spine and is never gated on a map (§5.2).
    */
   const [provinces, setProvinces] = useState<ProvinceFile | null>(null);
+  /**
+   * The open country's §5.4 framing, or null when the manifest has none for it.
+   *
+   * Fetched in the same `Promise.all` as the geometry rather than once on
+   * mount, so the two land in the same render. Split across two effects, the
+   * level would draw its fallback fit first and re-frame when the manifest
+   * arrived — a visible jump, and for the nine trimmed countries a frame that
+   * briefly shows the island the trim exists to leave out.
+   *
+   * The whole 20 KB manifest is re-fetched per country rather than cached in a
+   * ref: `next.config.ts` serves it immutable, so the second request is a
+   * memory-cache hit, and a cache here would need a test-only reset hook —
+   * `lib/provinceTopology.ts` and `lib/cityShard.ts` both make the same call.
+   */
+  const [projection, setProjection] = useState<ProjectionEntry | null>(null);
   const [cities, setCities] = useState<MapCity[]>([]);
   const [citiesUnavailable, setCitiesUnavailable] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -217,8 +237,8 @@ export function MapExplorer({
   /**
    * Everything the open country's map needs: its admin-1 geometry — China's
    * curated asset, or the build's per-country file for everyone else — the
-   * Wikidata catalog's cities for that country, and the GeoNames shard plus
-   * its enrichment.
+   * frame that geometry is drawn in, the Wikidata catalog's cities for that
+   * country, and the GeoNames shard plus its enrichment.
    *
    * Keyed on `countryCode`, which it was not before. The old array was
    * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
@@ -251,6 +271,7 @@ export function MapExplorer({
     setCities([]);
     setCitiesUnavailable(false);
     setProvinces(null);
+    setProjection(null);
     // `hover` holds a `MapPlace` derived from the `cities` array just emptied,
     // so leaving it would keep a popup open over a place that no longer exists.
     setHover(null);
@@ -279,6 +300,21 @@ export function MapExplorer({
       hasDetail && !hasCurated
         ? fetchProvinceTopology(countryCode, controller.signal).catch(() => null)
         : Promise.resolve(null),
+      // The frame the geometry above is drawn in (§5.4). Swallows its own
+      // rejection for the same reason the leg above it does, and degrades
+      // further than that one: a country with no entry still gets a map, fitted
+      // to its own units, because the manifest and the code deploy
+      // independently and a country whose entry has not been built yet must not
+      // lose its map over it.
+      hasDetail && !hasCurated
+        ? fetch(PROJECTION_PATH, { signal: controller.signal })
+            .then((r) => {
+              if (!r.ok) throw new Error(`projections ${r.status}`);
+              return r.json() as Promise<unknown>;
+            })
+            .then(parseProjectionManifest)
+            .catch(() => null)
+        : Promise.resolve(null),
       fetch(`/api/map/cities?country=${encodeURIComponent(countryCode)}`, {
         signal: controller.signal,
       })
@@ -294,8 +330,8 @@ export function MapExplorer({
         () => ({}) as CityEnrichmentIndex
       ),
     ])
-      .then(([topo, provinceFile, catalogRes, shardRes, enrichment]) => {
-        // Four of the five legs swallow their own rejection, so an abort
+      .then(([topo, provinceFile, manifest, catalogRes, shardRes, enrichment]) => {
+        // Five of the six legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -306,6 +342,7 @@ export function MapExplorer({
         if (controller.signal.aborted) return;
         setTopology(topo);
         setProvinces(provinceFile);
+        setProjection(manifest?.get(countryCode) ?? null);
         // A GeoNames row for a place a curated card already covers is a second
         // marker for the same place. `dropCatalogDuplicates` in the ingest only
         // removes rows that duplicate a data/catalog.json QID city, and
@@ -323,8 +360,8 @@ export function MapExplorer({
         // join them — 1,067 catalog markers rather than the 1,086 a plain
         // concatenation draws. The 391 are Chinese cities the QID catalog never
         // covered, and that coverage is the point of the phase.
-        // The country list's per-province cap does not apply: China has a
-        // detail level, so it renders ChinaLevel, not CountryPlaceList.
+        // The place list's per-province cap does not apply: China renders
+        // ChinaLevel and its curated markers, not CountryLevel and its list.
         setCities([...catalogRes.cities, ...shardCities]);
         // Unavailable only when BOTH sources failed. A country the Wikidata
         // catalog has never covered is the normal case for 245 of them, and
@@ -613,6 +650,8 @@ export function MapExplorer({
         <CountryMap
           country={country}
           topology={topology}
+          provinces={provinces}
+          projection={projection}
           places={places}
           selected={selected}
           month={month}
