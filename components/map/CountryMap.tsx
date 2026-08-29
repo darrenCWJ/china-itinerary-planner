@@ -30,24 +30,46 @@ import {
 /**
  * Country level of the two-level picker (spec §6). China renders the
  * province/region/city map it always has; every other country renders the
- * list fallback in the same shell, because a detail level needs curated region
- * data and China is the only country that has any.
+ * list fallback in the same shell.
+ *
+ * That split is now about the RENDERER, not about the data. `lib/countryDetail.ts`
+ * says all 246 countries have admin-1 geometry to draw, and the generic level
+ * that draws it is Task 6 of this plan; until it exists, this dispatcher asks
+ * the narrower question — does this country have the curated asset — so a
+ * registry that answers "yes" for Peru cannot route Peru into `ChinaLevel`.
  *
  * This is the former `ChinaMap` with a `country` prop in front of it. The China
  * branch is a verbatim move — the world level is an addition *in front of* that
  * flow, not a change to it.
  */
 
-/** The one country with a populated detail level. */
-export const DETAILED_COUNTRY = "CN";
+/**
+ * The one country with a CURATED level — `public/china-provinces.json`, the
+ * hand-built asset that carries China's regions, and the only country whose
+ * geometry ships bundled rather than under `public/provinces/`.
+ *
+ * No longer the one country with a detail level: since PR4 every country has
+ * one, and `lib/countryDetail.ts` answers that question from the index. What
+ * stays China-only is this asset and the region grouping on top of it, which
+ * is L3's problem and Plan 4's.
+ */
+export const CURATED_COUNTRY = "CN";
 
 /**
- * Whether a country has a drawable detail map. The caller needs this too — it
- * is what decides whether the China topology is worth fetching — so it lives
- * here rather than being re-derived from a string comparison at each site.
+ * Whether a country renders through `ChinaLevel` and its curated asset.
+ *
+ * Deliberately NOT `hasDetailLevel`, which now answers "did the build write
+ * this country a province file" and is true for all 246. The two questions
+ * were the same string comparison until PR4 and are not the same question:
+ * this one decides which RENDERER a country gets, and answering it from the
+ * registry would draw Peru's markers over China's provinces.
+ *
+ * The caller needs it too — it is what decides whether the curated asset is
+ * worth fetching — so it lives here rather than being re-derived from a string
+ * comparison at each site.
  */
-export function hasDetailLevel(country: string): boolean {
-  return (typeof country === "string" ? country.trim().toUpperCase() : "") === DETAILED_COUNTRY;
+export function hasCuratedTopology(country: string): boolean {
+  return (typeof country === "string" ? country.trim().toUpperCase() : "") === CURATED_COUNTRY;
 }
 
 interface ProvinceProps {
@@ -82,7 +104,7 @@ export interface CountryMapProps extends LevelProps {
 }
 
 export function CountryMap({ country, topology, ...level }: CountryMapProps) {
-  if (hasDetailLevel(country)) {
+  if (hasCuratedTopology(country)) {
     // The caller owns the topology fetch and its loading state, so a level
     // waiting on the asset draws nothing rather than flashing a fallback that
     // claims the country has no map.

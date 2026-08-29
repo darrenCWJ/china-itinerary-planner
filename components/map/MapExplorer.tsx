@@ -13,7 +13,7 @@ import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import type { ChinaRegion } from "@/lib/types";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { useReducedMotion } from "@/lib/useReducedMotion";
-import { CountryMap, DETAILED_COUNTRY, hasDetailLevel } from "./CountryMap";
+import { CountryMap, CURATED_COUNTRY, hasCuratedTopology } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
 import { FIT_COLORS, FIT_LABELS, type MapPlace } from "./mapTypes";
@@ -184,7 +184,7 @@ export function MapExplorer({
 
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
-  const hasDetail = hasDetailLevel(country);
+  const hasCurated = hasCuratedTopology(country);
 
   /**
    * Everything the open country's map needs: China's province topology when
@@ -192,7 +192,7 @@ export function MapExplorer({
    * GeoNames shard plus its enrichment.
    *
    * Keyed on `countryCode`, which it was not before. The old array was
-   * `[retryKey, hasDetail]` — a boolean — so CN→JP→CN refired it but JP→DE did
+   * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
    * not. That was harmless while /api/map/cities took no country; the moment it
    * does, a foreign-to-foreign switch would leave the previous country's cities
    * on the map.
@@ -206,7 +206,7 @@ export function MapExplorer({
    * switch and the new data landing, the previous country's cities are wrong
    * answers, not stale ones, and its "unavailable" notice is a claim about a
    * country the user has already left. `topology` is the one exception and
-   * needs no clear: it is read only under `hasDetailLevel(country)`, both here
+   * needs no clear: it is read only under `hasCuratedTopology(country)`, both here
    * and inside `CountryMap`, so China's geometry can never be drawn under
    * anywhere else.
    */
@@ -221,7 +221,7 @@ export function MapExplorer({
     Promise.all([
       // The province topology describes China and nothing else, so a country
       // with no detail level has nothing to draw it into.
-      hasDetail
+      hasCurated
         ? fetch("/china-provinces.json", { signal: controller.signal }).then((r) => {
             if (!r.ok) throw new Error(`topology ${r.status}`);
             return r.json() as Promise<Topology>;
@@ -282,7 +282,7 @@ export function MapExplorer({
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [retryKey, hasDetail, countryCode]);
+  }, [retryKey, hasCurated, countryCode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -351,7 +351,7 @@ export function MapExplorer({
         // month-fit rather than the neutral one that guard exists to give.
         // Outside China the admin-1 name IS the region label.
         region:
-          countryCode === DETAILED_COUNTRY
+          countryCode === CURATED_COUNTRY
             ? (regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central")
             : (c.province ?? ""),
         lat: c.lat,
@@ -496,7 +496,7 @@ export function MapExplorer({
   }
 
   // Only the detail level waits on an asset; the fallback has nothing to load.
-  if (hasDetail && !topology) {
+  if (hasCurated && !topology) {
     return (
       <div className="mt-5 animate-pulse rounded-xl border border-[var(--line-1)] bg-[var(--surf-1)] p-6">
         <div className="h-[420px] rounded-lg bg-[var(--line-1)]/40" />
@@ -509,7 +509,7 @@ export function MapExplorer({
     <div className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          {!hasDetail ? (
+          {!hasCurated ? (
             <h3 className="font-display text-lg font-bold">{countryLabel}</h3>
           ) : zoomRegion ? (
             <>
@@ -533,7 +533,7 @@ export function MapExplorer({
         </div>
         {/* The legend reads the marker colours, so it appears only where there
             are markers to read. */}
-        {hasDetail && (
+        {hasCurated && (
           <div className="flex flex-wrap items-center gap-2" aria-label="Map legend">
             {(Object.keys(FIT_COLORS) as (keyof typeof FIT_COLORS)[]).map((fit) => (
               <span key={fit} className="flex items-center gap-1 text-[11px] text-[var(--ink-2)]">
@@ -585,7 +585,7 @@ export function MapExplorer({
         )}
       </div>
 
-      {hasDetail && (
+      {hasCurated && (
         <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
           {zoomRegion
             ? "Click any marker to add it to your trip"
