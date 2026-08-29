@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-27T15:11:36.602Z",
+ "generatedAt": "2026-08-29T13:52:22.020Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -2930,7 +2930,7 @@
    "country": "TR",
    "lat": 38.860131,
    "lon": 40.594489,
-   "size": "small"
+   "size": "medium"
   },
   {
    "iata": "BGI",
@@ -18780,7 +18780,7 @@
    "country": "TR",
    "lat": 39.111107,
    "lon": 30.130405,
-   "size": "small"
+   "size": "medium"
   },
   {
    "iata": "KZS",
@@ -22705,7 +22705,7 @@
   {
    "iata": "MQT",
    "icao": "KSAW",
-   "name": "Marquette/Sawyer International Airport",
+   "name": "Marquette Sawyer Regional Airport",
    "municipality": "Gwinn",
    "country": "US",
    "lat": 46.351498,
@@ -23480,7 +23480,7 @@
    "country": "TR",
    "lat": 40.829399,
    "lon": 35.521999,
-   "size": "small"
+   "size": "medium"
   },
   {
    "iata": "MZI",
@@ -29910,7 +29910,7 @@
    "country": "TR",
    "lat": 41.179766,
    "lon": 40.848802,
-   "size": "large"
+   "size": "medium"
   },
   {
    "iata": "SAB",
