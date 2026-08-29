@@ -13,8 +13,20 @@
 
 import { topology } from 'topojson-server';
 import { presimplify, simplify } from 'topojson-simplify';
-import { quantize } from 'topojson-client';
+import { feature, quantize } from 'topojson-client';
 import { geoContains } from 'd3-geo';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 /**
  * Quantisation, per country over its own bbox. Not a guess: world-countries
@@ -389,4 +401,271 @@ export function reEnvelopeCurated(curated) {
       },
     },
   };
+}
+
+const OUT_DIR = join(process.cwd(), 'public', 'provinces');
+const SHARD_DIR = join(process.cwd(), 'public', 'cities');
+const CURATED_PATH = join(process.cwd(), 'public', 'china-provinces.json');
+const REPORT_PATH = join(process.cwd(), 'data', 'provinces-report.md');
+const RETRY_DELAYS_MS = [2000, 8000];
+const USER_AGENT = 'china-itinerary-planner/build-provinces (+https://github.com/darrenCWJ/china-itinerary-planner)';
+
+/**
+ * Write via a PID-suffixed temp file, removing the destination first.
+ *
+ * `rmSync` before `renameSync` because renaming onto an existing path is not
+ * reliably atomic on Windows, which is this project's dev platform. The PID
+ * suffix is ingest-airports.mjs's: a bare `.tmp` collides if two builds ever
+ * overlap.
+ */
+function writeFileAtomic(path, contents) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = `${path}.tmp-${process.pid}`;
+  try {
+    writeFileSync(temp, contents);
+    rmSync(path, { force: true });
+    renameSync(temp, path);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
+async function fetchJson(url) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'user-agent': USER_AGENT },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      if (attempt >= RETRY_DELAYS_MS.length) {
+        throw new Error(
+          `could not fetch ${url}: ${error.message}. The committed province files stand — ` +
+          `do not hand-write one.`
+        );
+      }
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+/**
+ * The committed measurement record, in the shape build-globe-topology.mjs
+ * establishes: provenance, a `## Coverage` block of bolded counts, one
+ * paragraph for the single consequence a reader would otherwise get wrong, and
+ * a `## Size` block.
+ *
+ * Every figure comes from the run that is writing the files, and the timestamp
+ * from the same `now` the envelopes carry — a second `new Date()` here would
+ * make the report claim a build that never happened.
+ */
+function buildReport(stats) {
+  const units = stats.detail.reduce((n, d) => n + d.units, 0);
+  const selectable = stats.entries.reduce((n, e) => n + e.count, 0);
+  const single = stats.entries.filter((e) => e.count === 1).length;
+  const placed = stats.detail.reduce((n, d) => n + d.placed, 0);
+  const unplaced = stats.entries.reduce((n, e) => n + e.unplaced, 0);
+  const raw = stats.sizes.reduce((n, s) => n + s.raw, 0);
+  const gzip = stats.sizes.reduce((n, s) => n + s.gzip, 0);
+  const largest = [...stats.sizes].sort((a, b) => b.gzip - a.gzip)[0];
+  const carried = stats.detail.filter((d) => d.folded > 0).map((d) => `${d.code}:${d.folded}`);
+  return [
+    '# Province topologies',
+    '',
+    `- Source: ${SOURCE_URL}`,
+    `- Licence: ${SOURCE_LICENSE}`,
+    `- Generated: ${stats.now}`,
+    '',
+    '## Coverage',
+    '',
+    `- Country files: **${stats.sizes.length}**`,
+    `- Admin-1 units shipped: **${units}**`,
+    `- Selectable units: **${selectable}**`,
+    `- Units carried for geometry only: **${units - selectable}**`,
+    `- Countries with exactly one selectable unit: **${single}**`,
+    `- Cities placed in a unit: **${placed}**`,
+    `- Cities no rule places: **${unplaced}**`,
+    `- Admin-1 features no ISO rule and no override reaches: **${stats.orphans.length}**`,
+    '',
+    "A country's outline is `merge()` over the very features its picker lists,",
+    'so a handful of files hold more units than they offer as choices. The',
+    'units below are carried for their geometry alone — they shape the outline',
+    'and are never clickable — because ISO 3166-1 governs territorial EXTENT',
+    'while ISO 3166-2 governs SUBDIVISION identity. Northern Cyprus, Akrotiri',
+    "and Dhekelia are part of CY's shape and none of them is a CY district;",
+    "Somaliland is part of SO's and Guantánamo part of CU's; Taiwan, Hong Kong",
+    "and Macau are part of CN's and hold files of their own, and CN's fourth is",
+    'the nine-dash line, which is a cartographic claim rather than any kind of',
+    'subdivision. Anything that counts geometries is therefore not counting',
+    'provinces — it must filter on `sel`.',
+    '',
+    '```',
+    carried.join(' '),
+    '```',
+    '',
+    '## Size',
+    '',
+    `- Raw: ${raw} B (${Math.round(raw / 1024)} KB)`,
+    `- Gzip: ${gzip} B (${Math.round(gzip / 1024)} KB)`,
+    `- Largest: ${largest.code}, ${largest.gzip} B gzip / ${largest.raw} B raw`,
+    `- Gzip budget: ${GZIP_BUDGET} B per file; raw tripwire ${RAW_TRIPWIRE} B`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * The §7.2 rows that name a territory the ADMIN-1 layer does not carry.
+ *
+ * `NJM` is the only one. Natural Earth v5.1.2's admin_1_states_provinces has
+ * 4,596 features and not one of them is Jan Mayen: Norway's sole
+ * extra-continental admin-1 unit there is Svalbard (NOR-901, `gu_a3` NSV),
+ * which §7.1 already routes to SJ without help. Jan Mayen exists only one
+ * layer up, as a map UNIT — and that unit resolves to NO, which is exactly the
+ * fold the row is written to prevent.
+ *
+ * So the row stays: ISO 3166 SJ is "Svalbard AND Jan Mayen" (D9), and a
+ * refresh that promotes the island to admin-1 must fold it into SJ rather than
+ * hand Norway a 20th county. But the staleness gate below cannot demand a
+ * match that has never existed, and asserting one aborts every build.
+ */
+const OVERRIDES_ABSENT_FROM_ADMIN1 = new Set(['NJM']);
+
+/** How many province files this run has put on disk, for the failure message. */
+let written = 0;
+
+async function main() {
+  // Cheap failures first: the curated China asset and the city shards are both
+  // committed, and neither costs a 40 MB download to check.
+  if (!existsSync(CURATED_PATH)) {
+    throw new Error(`${CURATED_PATH} is missing — CN's file is a re-envelope of it (D7)`);
+  }
+  const shardCodes = new Set(
+    readdirSync(SHARD_DIR).filter((n) => /^[A-Z]{2}\.json$/.test(n)).map((n) => n.slice(0, 2))
+  );
+  if (shardCodes.size === 0) throw new Error('no city shards found — the emit rule has nothing to follow');
+
+  console.log(`Downloading ${SOURCE_URL}`);
+  console.log(`Downloading ${MAP_UNITS_URL}`);
+  const [admin1, mapUnits] = await Promise.all([fetchJson(SOURCE_URL), fetchJson(MAP_UNITS_URL)]);
+  console.log(`  ${admin1.features.length} admin-1 features, ${mapUnits.features.length} map units`);
+  const index = buildAlpha2Index(mapUnits);
+  const { byCountry, orphans } = groupByCountry(admin1, index);
+
+  // ZERO, not seven. The 7 unattributable features are what `attributeFeature`
+  // returns null for IN ISOLATION; `groupByCountry` runs the §7.2 overrides
+  // first, and those overrides exist precisely to place all seven. A gate of 7
+  // here aborts the first real build before it writes anything.
+  //
+  // And an identity check, not a count: a refresh that retires one known
+  // territory and adds one new disputed one keeps the count unchanged, and the
+  // new territory would vanish from its country's outline with no signal.
+  if (orphans.length > 0) {
+    throw new Error(
+      `${orphans.length} admin-1 feature(s) no ISO rule and no §7.2 override reaches: ` +
+      orphans.map((o) => `${o.adm1_code} (${o.name})`).join(', ') +
+      ` — Natural Earth has added a territory the policy does not cover, which is a ` +
+      `decision for a human, not a default`
+    );
+  }
+  // The overrides must still be doing something. If NE renames a gu_a3, the
+  // override silently stops matching, the feature falls through to an ISO rule
+  // that happens to answer, and Northern Cyprus becomes a clickable province.
+  const seenGuA3 = new Set(admin1.features.map((f) => f.properties.gu_a3));
+  const staleOverrides = [...Object.keys(FOLD_INTO), ...EXCLUDED]
+    .filter((gu) => !OVERRIDES_ABSENT_FROM_ADMIN1.has(gu) && !seenGuA3.has(gu));
+  if (staleOverrides.length > 0) {
+    throw new Error(
+      `§7.2 override(s) match nothing in the source: ${staleOverrides.join(', ')} — ` +
+      `the territory they name has been renamed or removed upstream`
+    );
+  }
+
+  const emitted = new Set([...byCountry.keys()].filter((c) => shardCodes.has(c)));
+  assertCoverage(emitted, shardCodes);
+  console.log(`  ${emitted.size} countries to emit`);
+
+  const now = new Date().toISOString();
+  const curated = JSON.parse(readFileSync(CURATED_PATH, 'utf8'));
+  const sizes = [];
+  const entries = [];
+  /** Report-only. Never written to index.json. */
+  const detail = [];
+  const payloads = new Map();
+
+  for (const code of [...emitted].sort()) {
+    const features = byCountry.get(code);
+    const shard = JSON.parse(readFileSync(join(SHARD_DIR, `${code}.json`), 'utf8'));
+    const topo = code === CURATED_COUNTRY
+      ? reEnvelopeCurated(curated)
+      : buildCountryTopology({ type: 'FeatureCollection', features }, TOLERANCE_OVERRIDE[code] ?? 0);
+    // Assign against the geometry this file SHIPS, not the geometry it was
+    // built from. For CN those differ: the file carries the curated topology
+    // while `features` is the discarded Natural Earth slice, so assigning
+    // against `features` names ids that appear nowhere in CN.json and all 409
+    // Chinese cities resolve to nothing — with every gate still green.
+    // The curated geometries carry no `gn_a1_code`, so China is containment
+    // only and `a1c` cannot back it up; that is a real and accepted limit.
+    const assignable = code === CURATED_COUNTRY
+      ? feature(topo, topo.objects.provinces).features
+      : features;
+    const { cityProvince, unplaced } = assignCities(assignable, shard.cities.map((c) => ({
+      id: c.id, lat: c.lat, lon: c.lon, a1c: c.a1c ?? null,
+    })));
+    // The join must close. This is the gate that would have caught the above.
+    const geometries = topo.objects.provinces.geometries;
+    const shipped = new Set(geometries.map((g) => String(g.id)));
+    const dangling = Object.values(cityProvince).filter((id) => !shipped.has(String(id)));
+    if (dangling.length > 0) {
+      throw new Error(
+        `${code}: ${dangling.length} cityProvince entries name a feature the file does not ship ` +
+        `(e.g. ${dangling[0]}) — the assignment ran against different geometry than the payload`
+      );
+    }
+    const path = join(OUT_DIR, `${code}.json`);
+    const previous = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+    const payload = provincePayload(code, topo, cityProvince, previous, now);
+    const json = `${JSON.stringify(payload)}\n`;
+    sizes.push({ code, raw: Buffer.byteLength(json), gzip: gzipSync(json).length });
+    // Counted on the geometries the file SHIPS, for the same reason the city
+    // assignment is: for CN, `features` is the discarded Natural Earth slice,
+    // so counting it would make the index describe a file that was never built.
+    const selectable = geometries.filter((g) => g.properties.sel === 1).length;
+    entries.push({ code, count: selectable, idKey: payload.idKey, unplaced: unplaced.length });
+    detail.push({
+      code,
+      units: geometries.length,
+      folded: geometries.length - selectable,
+      placed: Object.keys(cityProvince).length,
+    });
+    payloads.set(code, json);
+  }
+
+  assertBudget(sizes);
+
+  // Every gate has passed. Only now does anything reach disk — but 246 writes
+  // are not one transaction, so a throw partway leaves a mixed-generation
+  // artifact. `written` is what lets the failure handler say so rather than
+  // claim nothing happened.
+  for (const [code, json] of payloads) {
+    writeFileAtomic(join(OUT_DIR, `${code}.json`), json);
+    written += 1;
+  }
+  writeFileAtomic(join(OUT_DIR, 'index.json'), `${JSON.stringify({ generatedAt: now, countries: entries })}\n`);
+  writeFileAtomic(REPORT_PATH, buildReport({ sizes, entries, detail, orphans, now }));
+  console.log(`Wrote ${payloads.size} province files to ${OUT_DIR}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`\nProvince build failed: ${error.message}`);
+    // Conditional, because the unconditional version is a lie exactly when it
+    // matters: a throw on file 200 leaves 199 new files beside 47 old ones.
+    console.error(written === 0
+      ? 'Nothing was written — the previous artifacts are untouched.'
+      : `${written} files were already written — the artifact is now MIXED. Re-run to ` +
+        `completion before committing, or "git checkout -- public/provinces".`);
+    process.exit(1);
+  });
 }
