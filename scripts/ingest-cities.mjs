@@ -168,8 +168,18 @@ const COL = {
   country: 8,
   admin1: 10,
   population: 14,
+  elevation: 15,
+  dem: 16,
   timezone: 17,
 };
+
+/** A GeoNames integer column, or null when blank or unparseable. */
+function integerOrNull(raw) {
+  const text = (raw ?? '').trim();
+  if (text === '') return null;
+  const value = Number(text);
+  return Number.isInteger(value) ? value : null;
+}
 
 /**
  * Every usable row of cities500.txt, as the record the rest of the build uses.
@@ -220,6 +230,11 @@ export function parseGeoNamesRows(text) {
       country,
       admin1Code: f[COL.admin1].trim(),
       population,
+      // GeoNames leaves column 15 blank for most rows and carries a modelled
+      // value in `dem`; the climate bias correction needs *an* elevation far
+      // more than it needs a surveyed one. Null rather than 0 — sea level is
+      // a real elevation, and 0 would put a Himalayan town at the coast.
+      elevation: integerOrNull(f[COL.elevation]) ?? integerOrNull(f[COL.dem]),
       timezone: f[COL.timezone].trim(),
     });
   }
