@@ -316,6 +316,38 @@ export function bestTrim(trajectory) {
 const DP = 4;
 const round = (x) => Number(x.toFixed(DP));
 
+/**
+ * One entry, with `scale` fitted to the ROUNDED rotate and bounds.
+ *
+ * Not to the unrounded union, which is what this did first and what made
+ * §5.4's central claim false. `bounds` ships to 4 dp and the renderer has
+ * nothing else, so a scale measured against full doubles describes a fit the
+ * app can never perform: `lib/countryProjection.test.ts` rebuilt all 246 and
+ * 200 of them disagreed, by 4.6e-6 at the median and by **5.7% for the
+ * Vatican**, whose entire bbox is 0.0013 degrees wide — one rounding step is
+ * 8% of it.
+ *
+ * Computing it here is what makes "scale is redundant by construction"
+ * literally true, and it is the committed number the app actually renders at.
+ */
+function entryOf(lambda, union, viewBox, hiddenAreaPct) {
+  const rotate = round(lambda);
+  const bounds = [
+    [round(union.x0), round(union.y0)],
+    [round(union.x1), round(union.y1)],
+  ];
+  const scale = round(
+    scaleOf(
+      { x0: bounds[0][0], y0: bounds[0][1], x1: bounds[1][0], y1: bounds[1][1] },
+      rotate,
+      viewBox,
+    )
+  );
+  return hiddenAreaPct === undefined
+    ? { rotate, bounds, scale }
+    : { rotate, bounds, scale, hiddenAreaPct };
+}
+
 /** Square kilometres per steradian, for the report's hidden-area figures. */
 const KM2_PER_STERADIAN = 510_072_000 / (4 * Math.PI);
 
@@ -335,11 +367,7 @@ export function measureCountry(polygons, viewBox = VIEW_BOX) {
   const base = unionOf(boxes, polygons.map((_, i) => i));
   const baseScale = scaleOf(base, lambda, viewBox);
   const untrimmed = {
-    entry: {
-      rotate: round(lambda),
-      bounds: [[round(base.x0), round(base.y0)], [round(base.x1), round(base.y1)]],
-      scale: round(baseScale),
-    },
+    entry: entryOf(lambda, base, viewBox),
     baseScale,
     trim: null,
     hiddenKm2: [],
@@ -352,17 +380,14 @@ export function measureCountry(polygons, viewBox = VIEW_BOX) {
   if (trim === null) return untrimmed;
 
   return {
-    entry: {
-      rotate: round(lambda),
-      bounds: [
-        [round(trim.union.x0), round(trim.union.y0)],
-        [round(trim.union.x1), round(trim.union.y1)],
-      ],
-      scale: round(trim.scale),
+    entry: entryOf(
+      lambda,
+      trim.union,
+      viewBox,
       // A percent, and to 3 dp: FR's trim hides 0.001% of France, and a 2 dp
       // field would round the only number that explains the entry to zero.
-      hiddenAreaPct: Number((trim.hidden * 100).toFixed(3)),
-    },
+      Number((trim.hidden * 100).toFixed(3))
+    ),
     baseScale,
     trim,
     hiddenKm2: trim.dropped.map((i) => Number((areas[i] * KM2_PER_STERADIAN).toFixed(1))),

@@ -3,7 +3,7 @@
 - Source: the committed `public/provinces/<CC>.json` outlines, merged with `topojson-client`
 - Licence: as the province files — see [provinces-report.md](provinces-report.md)
 - Viewport: 860 x 620, read from `lib/mapView.ts`
-- Generated: 2026-08-29T19:14:25.970Z
+- Generated: 2026-08-29T19:26:52.162Z
 
 ## Coverage
 
@@ -54,6 +54,6 @@ C: the country must draw at least 1.5x bigger for the loss to be worth it.
 
 ## Size
 
-- Raw: 20843 B
-- Gzip: 6884 B
-- Mean: 84.7 B/entry
+- Raw: 20854 B
+- Gzip: 6902 B
+- Mean: 84.8 B/entry
