@@ -47,7 +47,11 @@ export interface CityShardRow {
   lon: number;
   /** Admin-1 name, already resolved from GeoNames' code. Null when it has none. */
   a1: string | null;
+  /** The GeoNames admin-1 code the name came from, `"<CC>.<CODE>"`. */
+  a1c: string | null;
   p: number;
+  /** Metres. Surveyed where GeoNames has it, modelled from `dem` otherwise. */
+  elev: number | null;
   tz: string;
 }
 
@@ -91,6 +95,13 @@ function degrees(value: unknown, limit: number): number | null {
  * quietly missing cities, and nothing downstream can tell that from a country
  * that genuinely has few.
  */
+/**
+ * `"PE.15"`. Validated rather than trusted, because this value becomes a Map
+ * key and then a polygon join: `"constructor"` must not resolve to a function,
+ * and the dangling `"PE."` must not look like a key that could match.
+ */
+const ADMIN1_CODE = /^[A-Z]{2}\.[A-Za-z0-9]+$/;
+
 export function parseCityShard(raw: unknown, expectedCountry?: string): CityShard {
   const root = asRecord(raw);
   if (!root) fail("root is not an object");
@@ -133,7 +144,9 @@ export function parseCityShard(raw: unknown, expectedCountry?: string): CityShar
       lat,
       lon,
       a1: typeof city.a1 === "string" && city.a1 !== "" ? city.a1 : null,
+      a1c: typeof city.a1c === "string" && ADMIN1_CODE.test(city.a1c) ? city.a1c : null,
       p: city.p,
+      elev: typeof city.elev === "number" && Number.isFinite(city.elev) ? city.elev : null,
       tz: typeof city.tz === "string" ? city.tz : "",
     };
   });

@@ -27,7 +27,9 @@ const row = (over: Partial<CityShardRow> & Pick<CityShardRow, "id">): CityShardR
   lat: -13.52264,
   lon: -71.96734,
   a1: "Cuzco Department",
+  a1c: "PE.08",
   p: 428_450,
+  elev: 3_399,
   tz: "America/Lima",
   ...over,
 });
@@ -76,7 +78,9 @@ describe("parseCityShard", () => {
           lat: -13.52264,
           lon: -71.96734,
           a1: "Cuzco Department",
+          a1c: "PE.08",
           p: 428_450,
+          elev: 3_399,
           tz: "America/Lima",
         },
       ],
@@ -458,5 +462,67 @@ describe.skipIf(!hasAssets)("the committed city shards", () => {
       }
     }
     expect(offenders.slice(0, 10)).toEqual([]);
+  });
+});
+
+describe("parseCityShard — the two Phase 4 fields", () => {
+  // Signature is `parseCityShard(raw, expectedCountry?)` — the payload first,
+  // the country as an optional cross-check. Not `(country, raw)`.
+  function shardWith(city: Record<string, unknown>) {
+    return parseCityShard(
+      {
+        country: "PE",
+        generatedAt: "2026-08-29T00:00:00.000Z",
+        source: "GeoNames cities500 (CC BY 4.0)",
+        cities: [
+          {
+            id: "G3936456", n: "Lima", lat: -12.04, lon: -77.03,
+            a1: "Lima", a1c: "PE.15", p: 8472935, elev: 154,
+            tz: "America/Lima", ...city,
+          },
+        ],
+      },
+      "PE"
+    );
+  }
+
+  test("keeps a well-formed admin-1 code", () => {
+    expect(shardWith({}).cities[0].a1c).toBe("PE.15");
+    expect(shardWith({ a1c: "GB.ENG" }).cities[0].a1c).toBe("GB.ENG");
+  });
+
+  test("rejects an admin-1 code that is not <CC>.<CODE>", () => {
+    // This value reaches a Map key and a polygon join. "constructor" resolving
+    // to a function is the failure the shape guard exists to stop.
+    expect(shardWith({ a1c: "constructor" }).cities[0].a1c).toBeNull();
+    expect(shardWith({ a1c: "PE." }).cities[0].a1c).toBeNull();
+    expect(shardWith({ a1c: "pe.15" }).cities[0].a1c).toBeNull();
+    expect(shardWith({ a1c: 15 }).cities[0].a1c).toBeNull();
+    expect(shardWith({ a1c: null }).cities[0].a1c).toBeNull();
+  });
+
+  test("keeps a finite elevation and nulls anything else", () => {
+    expect(shardWith({ elev: 3830 }).cities[0].elev).toBe(3830);
+    // Below sea level is real — the Dead Sea shore is about -430 m — so the
+    // guard is finiteness, not positivity.
+    expect(shardWith({ elev: -8 }).cities[0].elev).toBe(-8);
+    expect(shardWith({ elev: null }).cities[0].elev).toBeNull();
+    expect(shardWith({ elev: "154" }).cities[0].elev).toBeNull();
+    expect(shardWith({ elev: Number.NaN }).cities[0].elev).toBeNull();
+  });
+
+  test("reads an older shard that has neither field", () => {
+    // The committed artifact and the code deploy independently: Vercel ships
+    // a build before the nightly refresh regenerates the shards. A shard
+    // without these fields must parse, not throw.
+    const reparsed = parseCityShard(
+      {
+        country: "PE", generatedAt: "", source: "",
+        cities: [{ id: "G1", n: "Lima", lat: 0, lon: 0, a1: null, p: 1, tz: "" }],
+      },
+      "PE"
+    );
+    expect(reparsed.cities[0].a1c).toBeNull();
+    expect(reparsed.cities[0].elev).toBeNull();
   });
 });
