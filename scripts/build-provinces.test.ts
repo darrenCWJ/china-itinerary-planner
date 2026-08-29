@@ -309,3 +309,92 @@ describe("assertCoverage", () => {
     expect(() => assertCoverage(new Set(["PE"]), new Set(["PE"]))).not.toThrow();
   });
 });
+
+import { assignCities } from "./build-provinces.mjs";
+
+/**
+ * `assignCities` fills `cityProvince` through a computed key, so TypeScript
+ * infers the empty object literal it starts as and reports TS2339 on any named
+ * lookup. Narrowed to the documented contract — `Record<string, string>` — the
+ * same way `provinceGeometries` and `countryFeatures` above narrow the other
+ * two `.mjs` returns, so `npx tsc --noEmit` stays clean.
+ */
+function placed(cityProvince: unknown): Record<string, string> {
+  return cityProvince as Record<string, string>;
+}
+
+describe("assignCities", () => {
+  /**
+   * Two unit squares side by side, as GeoJSON features — wound CLOCKWISE.
+   *
+   * d3-geo is spherical, and a ring's winding is what says which side is the
+   * inside: clockwise is the exterior of a polygon smaller than a hemisphere,
+   * anticlockwise is the exterior of one larger than a hemisphere. A
+   * counterclockwise unit square is therefore not a square at all — it is the
+   * whole planet minus a square, and `geoContains` answers true for every
+   * point on Earth. That is the opposite of RFC 7946's right-hand rule, so the
+   * winding here is load-bearing rather than cosmetic.
+   *
+   * Clockwise is also what the real source ships: the first five rings of
+   * ne_10m_admin_1_states_provinces.geojson v5.1.2 all have negative signed
+   * planar area, because the file is an ogr2ogr conversion of a shapefile and
+   * keeps the shapefile convention. `assignCities` is fed those rings
+   * unchanged — `groupByCountry` passes `source.geometry` straight through —
+   * so the fixture matches the data.
+   *
+   * The "neither containment nor a1c can place" test below is the regression
+   * guard: under the wrong winding a point at 40N 40E lands in AAA-1.
+   */
+  const features = [
+    { type: "Feature", id: "AAA-1", properties: { gn_a1_code: "AA.01" },
+      geometry: { type: "Polygon", coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] } },
+    { type: "Feature", id: "AAA-2", properties: { gn_a1_code: "AA.02" },
+      geometry: { type: "Polygon", coordinates: [[[1, 0], [1, 1], [2, 1], [2, 0], [1, 0]]] } },
+  ];
+
+  test("places a city in the polygon that contains it", () => {
+    const { cityProvince } = assignCities(features, [
+      { id: "G1", lat: 0.5, lon: 0.5, a1c: null },
+      { id: "G2", lat: 0.5, lon: 1.5, a1c: null },
+    ]);
+    expect(cityProvince).toEqual({ G1: "AAA-1", G2: "AAA-2" });
+  });
+
+  test("falls back to a1c for a city inside no polygon at all", () => {
+    // 2,301 real cities (3.92%) fall outside every polygon — offshore, or in
+    // the gap between a coastline and a 10m generalisation of it. This is the
+    // reason §11 makes a1c mandatory rather than merely useful.
+    const { cityProvince, unplaced } = assignCities(features, [
+      { id: "G9", lat: 40, lon: 40, a1c: "AA.02" },
+    ]);
+    expect(cityProvince).toEqual({ G9: "AAA-2" });
+    expect(unplaced).toEqual([]);
+  });
+
+  test("reports a city that neither containment nor a1c can place", () => {
+    const { cityProvince, unplaced } = assignCities(features, [
+      { id: "G9", lat: 40, lon: 40, a1c: null },
+    ]);
+    expect(cityProvince).toEqual({});
+    expect(unplaced).toEqual(["G9"]);
+  });
+
+  test("does not resolve an a1c that matches no feature", () => {
+    const { cityProvince, unplaced } = assignCities(features, [
+      { id: "G9", lat: 40, lon: 40, a1c: "AA.99" },
+    ]);
+    expect(cityProvince).toEqual({});
+    expect(unplaced).toEqual(["G9"]);
+  });
+
+  test("prefers containment over a1c when the two disagree", () => {
+    // Cross-validated on 37,438 cities: the code join agrees with containment
+    // 96.11% of the time, and the residual is a hierarchy mismatch no key can
+    // fix — GeoNames holds NUTS-1-style regions where NE holds NUTS-2/3.
+    // Geometry is the thing being drawn, so geometry wins.
+    const { cityProvince } = assignCities(features, [
+      { id: "G1", lat: 0.5, lon: 0.5, a1c: "AA.02" },
+    ]);
+    expect(placed(cityProvince).G1).toBe("AAA-1");
+  });
+});
