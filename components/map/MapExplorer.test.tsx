@@ -370,44 +370,112 @@ const CN_CATALOG = [
   },
 ];
 
+/**
+ * One country's admin-1 file, in the envelope `parseProvinceTopology` accepts.
+ *
+ * Built per code rather than written out twice, because the only thing any
+ * assertion here turns on is WHICH code was asked for: the geometry is never
+ * drawn in this task — Task 6's `CountryLevel` is what draws it — and a
+ * hand-written PE and DE pair would be two more fixtures to keep in step with
+ * the parser for no extra coverage. The envelope's `country` is the requested
+ * code, so `parseProvinceTopology`'s URL-versus-envelope check passes; a test
+ * that needs it to fail can stub a mismatch of its own.
+ */
+function provinceFixture(code: string) {
+  return {
+    country: code,
+    generatedAt: "2026-08-30T00:00:00.000Z",
+    idKey: "adm1_code",
+    topology: {
+      type: "Topology",
+      arcs: [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+          [0, 0],
+        ],
+      ],
+      objects: {
+        provinces: {
+          type: "GeometryCollection",
+          geometries: [
+            {
+              type: "Polygon",
+              id: `${code}+00`,
+              arcs: [[0]],
+              properties: {
+                name: `${code} unit`,
+                name_en: `${code} unit`,
+                iso_3166_2: `${code}-1`,
+                gn_a1_code: `${code}.01`,
+                sel: 1,
+              },
+            },
+          ],
+        },
+      },
+    },
+    cityProvince: {},
+  };
+}
+
+/** `/provinces/PE.json` and nothing else — not the index, not a traversal. */
+const PROVINCE_FILE = /^\/provinces\/([A-Z]{2})\.json$/;
+
+/**
+ * The shared answer table, as a named function rather than an inline lambda.
+ *
+ * A test that only wants to change ONE route delegates the rest to this, and a
+ * plain function is what makes that possible: `fetchMock` is typed
+ * `ReturnType<typeof vi.fn>`, which TypeScript does not consider callable, so
+ * `fetchMock(href)` from inside an override is a compile error rather than a
+ * delegation. Calls routed here are not recorded on `fetchMock`, so an
+ * override that needs `requested()` builds its own answers instead.
+ */
+function defaultFetch(url: string) {
+  const href = String(url);
+  const province = PROVINCE_FILE.exec(href);
+  const body = province
+    ? provinceFixture(province[1])
+    : href === CHINA_TOPOLOGY_PATH
+      ? CHINA_FIXTURE
+      // China is the only country whose catalog leg answers with anything,
+      // which is exactly why it is the only country whose merge can be
+      // observed. Every other country keeps the empty answer it had.
+      : href === "/api/map/cities?country=CN"
+        ? { available: true, cities: CN_CATALOG }
+        : href.startsWith("/api/map/cities")
+          ? { available: true, cities: [] }
+          : href.startsWith("/api/map/airports")
+            ? { airports: [] }
+            : href === "/cities/PE.json"
+              ? PE_SHARD
+              : href === "/cities/enrich/PE.json"
+                ? PE_ENRICHMENT
+                : href === "/cities/DE.json"
+                  ? DE_SHARD
+                  : href === "/cities/CN.json"
+                    ? CN_SHARD
+                    // Every other country's shard and enrichment file —
+                    // Japan's and China's enrichment included — 404s. That is
+                    // the honest answer for the four codes with no shard at
+                    // all, and the map has to keep working through it.
+                    : href.startsWith("/cities/")
+                      ? null
+                      : WORLD_FIXTURE;
+  return Promise.resolve({
+    ok: body !== null,
+    status: body === null ? 404 : 200,
+    json: async () => body ?? {},
+  });
+}
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  fetchMock = vi.fn((url: string) => {
-    const href = String(url);
-    const body =
-      href === CHINA_TOPOLOGY_PATH
-        ? CHINA_FIXTURE
-        // China is the only country whose catalog leg answers with anything,
-        // which is exactly why it is the only country whose merge can be
-        // observed. Every other country keeps the empty answer it had.
-        : href === "/api/map/cities?country=CN"
-          ? { available: true, cities: CN_CATALOG }
-          : href.startsWith("/api/map/cities")
-            ? { available: true, cities: [] }
-            : href.startsWith("/api/map/airports")
-              ? { airports: [] }
-              : href === "/cities/PE.json"
-                ? PE_SHARD
-                : href === "/cities/enrich/PE.json"
-                  ? PE_ENRICHMENT
-                  : href === "/cities/DE.json"
-                    ? DE_SHARD
-                    : href === "/cities/CN.json"
-                      ? CN_SHARD
-                      // Every other country's shard and enrichment file —
-                      // Japan's and China's enrichment included — 404s. That is
-                      // the honest answer for the four codes with no shard at
-                      // all, and the map has to keep working through it.
-                      : href.startsWith("/cities/")
-                        ? null
-                        : WORLD_FIXTURE;
-    return Promise.resolve({
-      ok: body !== null,
-      status: body === null ? 404 : 200,
-      json: async () => body ?? {},
-    });
-  });
+  fetchMock = vi.fn(defaultFetch);
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -993,6 +1061,143 @@ describe("MapExplorer", () => {
     // A country with no shard is a country with no cities to offer, not an
     // outage: the catalog answered, so nothing is broken.
     expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The open country's own admin-1 geometry (spec §5.1).
+ *
+ * `/china-provinces.json` was the only topology any country could open, so 245
+ * of them opened none — the registry says every country has a file, and this is
+ * the fetch that goes and gets it. Nothing draws the result yet: Task 6's
+ * `CountryLevel` is the reader, and what these cases pin is the half that can
+ * regress without it — which URL is asked for, how often, what happens to the
+ * one already in flight, and that a country whose file never arrives still
+ * reaches every one of its cities.
+ */
+describe("the open country's province file", () => {
+  test("fetches the opened country's province file, not China's", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain("/provinces/PE.json");
+    // Both negatives matter and they are different assets: the curated
+    // topology is China's hand-built one, and `/provinces/CN.json` is the
+    // build's re-envelope of it. Peru has no use for either.
+    expect(urls).not.toContain(CHINA_TOPOLOGY_PATH);
+    expect(urls).not.toContain("/provinces/CN.json");
+  });
+
+  test("asks for no file for a country the build wrote none for", async () => {
+    // AQ, BV, HM and XD have no admin-1 geometry at all. `hasDetailLevel` is
+    // what keeps a guaranteed 404 off the wire, and it is the only thing that
+    // does — `provincePath("AQ")` is a perfectly well-formed URL.
+    render(<Harness country="AQ" />);
+    await settle();
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.startsWith("/provinces/"))).toBe(false);
+    // Armed: the country was genuinely opened, so the absence above is a
+    // decision rather than a component that never mounted.
+    expect(urls).toContain("/api/map/cities?country=AQ");
+  });
+
+  test("does not refetch when the country has not changed", async () => {
+    // The largest file in the artifact is Canada's at 139 KB gzipped, and one
+    // is fetched on every map open — so an effect that refires on an unrelated
+    // re-render is not a wasted microtask, it is a wasted download.
+    const { rerender } = render(<Harness country="PE" />);
+    await settle();
+    rerender(<Harness country="PE" />);
+    await settle();
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.filter((u) => u === "/provinces/PE.json")).toHaveLength(1);
+  });
+
+  test("aborts an in-flight fetch when the user opens another country", async () => {
+    // The effect's existing AbortController has to reach the new leg too. It
+    // is observed through the signal the fetch was handed rather than through
+    // the DOM, because the failure this guards is a *silent* one: Peru's
+    // geometry landing under Germany looks like a map, not like an error.
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: { signal?: AbortSignal }) => {
+        const href = String(url);
+        if (href.startsWith("/provinces/")) {
+          if (init?.signal) signals.push(init.signal);
+          return pendingUntilAbort(init);
+        }
+        if (href.startsWith("/api/map/cities")) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ available: true, cities: [] }),
+          });
+        }
+        if (href.startsWith("/api/map/airports")) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ airports: [] }) });
+        }
+        return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+      })
+    );
+
+    const { rerender } = render(<Harness country="PE" />);
+    await settle();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    rerender(<Harness country="DE" />);
+    await settle();
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+    // The replacement is live, not aborted with it — a cleanup that tore down
+    // the new controller would pass the line above and break the map.
+    expect(signals[1].aborted).toBe(false);
+  });
+
+  test("renders the list alone when the province fetch fails", async () => {
+    // §5.2: the map is the enhancement, the list is the spine. A 500 on the
+    // geometry must not reach `loadError`, which replaces the whole pane with
+    // a retry button and takes every city with it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const href = String(url);
+        return href.startsWith("/provinces/")
+          ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+          : defaultFetch(href);
+      })
+    );
+
+    render(<Harness country="PE" />);
+    await settle();
+
+    expect(screen.getByRole("button", { name: /Lima/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    // Nor is a missing map an outage of the city catalog, which answered.
+    expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
+  });
+
+  test("China still fetches the curated asset and renders identically", async () => {
+    render(<Harness country="CN" />);
+    await settle();
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain(CHINA_TOPOLOGY_PATH);
+    // §9.5: China's geometry comes from the curated asset and only from it.
+    // `/provinces/CN.json` re-envelopes the same shapes, so fetching it too
+    // would be 68 KB for a map that never draws it — and would be the first
+    // step towards drawing China from geometry that is not byte-identical.
+    expect(urls).not.toContain("/provinces/CN.json");
+    expect(
+      screen.getByRole("group", { name: "Map of China segmented by region" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Zoom into North China/ })).toBeInTheDocument();
   });
 });
 

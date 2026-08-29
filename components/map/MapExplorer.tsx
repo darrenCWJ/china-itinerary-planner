@@ -6,6 +6,7 @@ import type { Topology } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
+import { hasDetailLevel } from "@/lib/countryDetail";
 import { DESTINATIONS } from "@/lib/data";
 import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/cityShard";
 import { curatedPlaceNames } from "@/lib/curatedNames";
 import { foldPlaceName } from "@/lib/foldPlaceName";
+import { fetchProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { regionForProvinceText } from "@/lib/provinces";
 
 /**
@@ -122,7 +124,7 @@ export type MapLevel = "world" | "country";
 interface Props {
   selected: string[];
   visited: string[];
-  /** ISO alpha-2 being planned. Only China has a detail level today. */
+  /** ISO alpha-2 being planned. Every country has geometry to fetch now. */
   country: string;
   level: MapLevel;
   onCountryChange: (code: string) => void;
@@ -152,6 +154,24 @@ export function MapExplorer({
   const [month, setMonth] = useState(DEFAULT_MONTH);
   const [zoomRegion, setZoomRegion] = useState<ChinaRegion | null>(null);
   const [topology, setTopology] = useState<Topology | null>(null);
+  /**
+   * The open country's own admin-1 geometry, or null when it has none yet.
+   *
+   * **Nothing renders it yet**, deliberately, and for the reason
+   * `lib/provinceTopology.ts` and `lib/countryDetail.ts` each gave one commit
+   * earlier: PR4's country level is the reader, and it lands next. What arrives
+   * first is the half that can go wrong on its own — which file is asked for,
+   * how often, what happens to the one already in flight, and what the pane
+   * does when it never comes. None of that is a rendering question, and all of
+   * it is covered by `MapExplorer.test.tsx`'s "the open country's province
+   * file".
+   *
+   * Null and not `undefined`: there is no pending state to distinguish here,
+   * because nothing in this component waits on it. A country whose geometry has
+   * not landed renders exactly as a country whose geometry failed — the list,
+   * which is the accessibility spine and is never gated on a map (§5.2).
+   */
+  const [provinces, setProvinces] = useState<ProvinceFile | null>(null);
   const [cities, setCities] = useState<MapCity[]>([]);
   const [citiesUnavailable, setCitiesUnavailable] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -185,11 +205,20 @@ export function MapExplorer({
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
   const hasCurated = hasCuratedTopology(country);
+  /**
+   * Two different questions, and the pair is why they have different names.
+   * `hasCurated` is "does China's hand-built asset describe this country",
+   * which decides the RENDERER; `hasDetail` is "did the build write this
+   * country an admin-1 file", which decides whether there is anything to
+   * fetch. The first is true once; the second is true 246 times.
+   */
+  const hasDetail = hasDetailLevel(country);
 
   /**
-   * Everything the open country's map needs: China's province topology when
-   * there is one, the Wikidata catalog's cities for that country, and the
-   * GeoNames shard plus its enrichment.
+   * Everything the open country's map needs: its admin-1 geometry — China's
+   * curated asset, or the build's per-country file for everyone else — the
+   * Wikidata catalog's cities for that country, and the GeoNames shard plus
+   * its enrichment.
    *
    * Keyed on `countryCode`, which it was not before. The old array was
    * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
@@ -209,23 +238,46 @@ export function MapExplorer({
    * needs no clear: it is read only under `hasCuratedTopology(country)`, both here
    * and inside `CountryMap`, so China's geometry can never be drawn under
    * anywhere else.
+   *
+   * `provinces` is NOT that exception and is cleared with the rest. It carries
+   * no country guard of its own — every country has one of these files — so
+   * Peru's departments left in place across a switch would draw as Germany's
+   * states, which is not a stale answer but a wrong one, and one that looks
+   * exactly like a working map.
    */
   useEffect(() => {
     const controller = new AbortController();
     setLoadError(false);
     setCities([]);
     setCitiesUnavailable(false);
+    setProvinces(null);
     // `hover` holds a `MapPlace` derived from the `cities` array just emptied,
     // so leaving it would keep a popup open over a place that no longer exists.
     setHover(null);
     Promise.all([
-      // The province topology describes China and nothing else, so a country
-      // with no detail level has nothing to draw it into.
+      // The curated asset carries China's regions and China's nine-dash line,
+      // and §9.5 requires China's rendered output to be unchanged by PR4 — so
+      // China keeps fetching it, and keeps failing loudly when it 404s. Every
+      // other country is served by the leg below; nobody fetches both.
       hasCurated
         ? fetch("/china-provinces.json", { signal: controller.signal }).then((r) => {
             if (!r.ok) throw new Error(`topology ${r.status}`);
             return r.json() as Promise<Topology>;
           })
+        : Promise.resolve(null),
+      // The other 245. Gated on the registry rather than tried-and-caught,
+      // because `provincePath` is well-formed for AQ, BV, HM and XD too and
+      // the build wrote no file for any of them: without this, every map open
+      // in one of those four spends a request on a guaranteed 404.
+      //
+      // Swallows its own rejection, which the curated leg above does not. That
+      // is the §5.2 split, not an inconsistency: a country whose geometry is
+      // missing still lists every one of its cities, so routing that failure
+      // to `loadError` would replace a working list with a retry button. The
+      // curated leg has no such fallback — `ChinaLevel` IS China's list — so
+      // there the failure is the whole pane's.
+      hasDetail && !hasCurated
+        ? fetchProvinceTopology(countryCode, controller.signal).catch(() => null)
         : Promise.resolve(null),
       fetch(`/api/map/cities?country=${encodeURIComponent(countryCode)}`, {
         signal: controller.signal,
@@ -242,8 +294,8 @@ export function MapExplorer({
         () => ({}) as CityEnrichmentIndex
       ),
     ])
-      .then(([topo, catalogRes, shardRes, enrichment]) => {
-        // Three of the four legs swallow their own rejection, so an abort
+      .then(([topo, provinceFile, catalogRes, shardRes, enrichment]) => {
+        // Four of the five legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -253,6 +305,7 @@ export function MapExplorer({
         // flight.
         if (controller.signal.aborted) return;
         setTopology(topo);
+        setProvinces(provinceFile);
         // A GeoNames row for a place a curated card already covers is a second
         // marker for the same place. `dropCatalogDuplicates` in the ingest only
         // removes rows that duplicate a data/catalog.json QID city, and
@@ -282,7 +335,7 @@ export function MapExplorer({
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [retryKey, hasCurated, countryCode]);
+  }, [retryKey, hasCurated, hasDetail, countryCode]);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -1,10 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { describe, expect, it, test } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
 import {
   PROVINCE_INDEX_PATH,
   PROVINCE_OBJECT,
+  fetchProvinceTopology,
   parseProvinceTopology,
   provincePath,
   type ProvinceIndex,
@@ -243,6 +244,70 @@ describe("parseProvinceTopology", () => {
 
   test("names the file in every message, so a browser error says which asset", () => {
     expect(() => parseProvinceTopology(undefined)).toThrow(/^province file:/);
+  });
+});
+
+describe("fetchProvinceTopology", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("asks for the country's own file and parses the answer", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => file() }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const parsed = await fetchProvinceTopology("pe");
+    expect(parsed.units.map((u) => u.id)).toEqual(["PER-1", "PER-2"]);
+    // Normalised on the way to the URL, and `undefined` rather than an empty
+    // init object when no signal was given — the shape `fetchCityShard` uses.
+    expect(fetchMock).toHaveBeenCalledWith("/provinces/PE.json", undefined);
+  });
+
+  test("rejects on a status rather than parsing the error page", async () => {
+    // json() rejects the way a real 404 does — the body is an error page, not
+    // JSON. That is what makes the `!response.ok` guard load-bearing rather
+    // than decorative: without it this surfaces as a SyntaxError about a `<`,
+    // which says nothing about which asset was missing.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => {
+          throw new SyntaxError("Unexpected token '<'");
+        },
+      }))
+    );
+    await expect(fetchProvinceTopology("PE")).rejects.toThrow(
+      /province file \/provinces\/PE\.json: 404/
+    );
+  });
+
+  test("passes the requested country through to the parser", async () => {
+    // What makes the envelope check reach production rather than only the
+    // fixtures: a cache entry or CDN rewrite serving Peru's departments under
+    // Japan's path would otherwise draw a plausible wrong map in silence.
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => file() })));
+    await expect(fetchProvinceTopology("JP")).rejects.toThrow(
+      /is PE's file, but JP was requested/
+    );
+  });
+
+  test("forwards an abort signal, so a caller can cancel a country switch", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => file() }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await fetchProvinceTopology("PE", controller.signal);
+    expect(fetchMock).toHaveBeenCalledWith("/provinces/PE.json", { signal: controller.signal });
+  });
+
+  test("refuses a country code that is not one, before it reaches a URL", async () => {
+    // `provincePath` throws synchronously inside an async function, so this
+    // surfaces as a rejection. The point is that no fetch happens at all: a
+    // country of "../china-provinces" would resolve out of /provinces/.
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchProvinceTopology("../china-provinces")).rejects.toThrow(/provincePath/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
