@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
-import { getCountry } from "@/lib/countries";
+import type { ProjectionEntry } from "@/lib/countryProjection";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
-import { filterPlaces, groupPlacesByAdmin1 } from "@/lib/placeGrouping";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
+import type { ProvinceFile } from "@/lib/provinceTopology";
 import type { ChinaRegion } from "@/lib/types";
+import { CountryLevel } from "./CountryLevel";
+import { CountryPlaceList } from "./CountryPlaceList";
 import {
   buildFitProjection,
   createHoverReporter,
@@ -28,19 +30,21 @@ import {
 } from "./mapTypes";
 
 /**
- * Country level of the two-level picker (spec §6). China renders the
- * province/region/city map it always has; every other country renders the
- * list fallback in the same shell.
+ * Country level of the two-level picker (spec §6), and now only the dispatcher
+ * for it: China renders the province/region/city map it always has, every
+ * other country renders `CountryLevel` over its own admin-1 file, and a
+ * country whose geometry has not arrived renders the list alone.
  *
- * That split is now about the RENDERER, not about the data. `lib/countryDetail.ts`
- * says all 246 countries have admin-1 geometry to draw, and the generic level
- * that draws it is Task 6 of this plan; until it exists, this dispatcher asks
- * the narrower question — does this country have the curated asset — so a
- * registry that answers "yes" for Peru cannot route Peru into `ChinaLevel`.
+ * That split is about the RENDERER, not about the data. `lib/countryDetail.ts`
+ * says all 246 countries have admin-1 geometry to draw; what stays China-only
+ * is the curated asset and the region grouping on top of it, so the question
+ * asked here is the narrow one — does this country have that asset — and a
+ * registry answering "yes, Peru has a detail level" cannot route Peru into
+ * `ChinaLevel`.
  *
- * This is the former `ChinaMap` with a `country` prop in front of it. The China
- * branch is a verbatim move — the world level is an addition *in front of* that
- * flow, not a change to it.
+ * The China branch is still the former `ChinaMap`, untouched: §9.5 requires
+ * China's rendered output to be byte-identical across this phase, and nothing
+ * below reaches it.
  */
 
 /**
@@ -99,17 +103,52 @@ interface LevelProps {
 export interface CountryMapProps extends LevelProps {
   /** ISO alpha-2 of the country being planned. */
   country: string;
-  /** China's province topology. Nothing else uses it. */
+  /** China's curated province topology. Nothing else uses it. */
   topology: Topology | null;
+  /**
+   * Every other country's admin-1 file, or null while it is in flight or after
+   * it failed — the two are the same thing here, and deliberately: §5.2 makes
+   * the map an enhancement, so both render the list on its own rather than a
+   * spinner or an error.
+   *
+   * Required rather than optional even though it is nullable. A caller that
+   * simply forgot it would otherwise get the list-only fallback in silence,
+   * which is exactly the bug this PR exists to fix and is invisible on screen.
+   */
+  provinces: ProvinceFile | null;
+  /** Its §5.4 manifest entry, or null to fall back to a fit over the units. */
+  projection: ProjectionEntry | null;
 }
 
-export function CountryMap({ country, topology, ...level }: CountryMapProps) {
+export function CountryMap({
+  country,
+  topology,
+  provinces,
+  projection,
+  ...level
+}: CountryMapProps) {
   if (hasCuratedTopology(country)) {
     // The caller owns the topology fetch and its loading state, so a level
     // waiting on the asset draws nothing rather than flashing a fallback that
     // claims the country has no map.
     return topology ? <ChinaLevel topology={topology} {...level} /> : null;
   }
+  if (provinces) {
+    return (
+      <CountryLevel
+        country={country}
+        provinces={provinces}
+        projection={projection}
+        places={level.places}
+        selected={level.selected}
+        month={level.month}
+        routeIds={level.routeIds}
+        onTogglePlace={level.onTogglePlace}
+        onHoverPlace={level.onHoverPlace}
+      />
+    );
+  }
+  // No geometry: the list is the whole level, and reaches every place in it.
   return (
     <CountryPlaceList
       country={country}
@@ -117,124 +156,6 @@ export function CountryMap({ country, topology, ...level }: CountryMapProps) {
       selected={level.selected}
       onTogglePlace={level.onTogglePlace}
     />
-  );
-}
-
-/** Chips shown per province before the group offers to expand. */
-const PLACES_PER_GROUP = 12;
-
-/**
- * The fallback level: no geometry, so the places themselves are the map.
- *
- * This panel used to defer to the destination step's own search rather than
- * grow a second input, on the grounds that two boxes could disagree. It has
- * one now, and they do different jobs: that search reaches the whole catalog
- * and adds places; this filter narrows the shard already on screen and never
- * fetches. Spec 5.2 makes the list the accessibility spine of the country
- * level, and a spine that renders 60 of 750 rows is not one — for 150 of 246
- * countries the old cap hid most of the shard.
- */
-
-function CountryPlaceList({
-  country,
-  places,
-  selected,
-  onTogglePlace,
-}: {
-  country: string;
-  places: MapPlace[];
-  selected: string[];
-  onTogglePlace: (place: MapPlace) => void;
-}) {
-  const { name, code } = getCountry(country);
-  // `getCountry` is total and never throws, and since `INGESTED_NAMES` landed
-  // in lib/countries.ts it names all 246 countries rather than the curated 24 —
-  // so this reads "Peru", not "PE". The `||` chain is the guard for the case
-  // that is left: a code that is not a country at all, where both are "".
-  const label = name || code || "this country";
-  const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-
-  const matched = useMemo(() => filterPlaces(places, query), [places, query]);
-  const groups = useMemo(() => groupPlacesByAdmin1(matched), [matched]);
-  // A filter is a deliberate narrowing, so it expands everything it matched —
-  // asking a user to expand a group they just searched into is a second step
-  // for a decision they already made.
-  const filtering = query.trim() !== "";
-
-  return (
-    <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--surf-1)]/50 p-5">
-      <h4 className="font-display text-base font-bold">{label}</h4>
-      <p className="mt-1 text-sm text-[var(--ink-2)]">
-        {places.length > 0
-          ? `Tap a place to add it, or filter to find one by name.`
-          : `No map for ${label} yet — search above to add places, and they'll show up in your plan the same way.`}
-      </p>
-
-      {places.length > 0 && (
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label={`Filter places in ${label}`}
-          placeholder={`Filter ${places.length} places`}
-          className="mt-3 min-h-[var(--tap-min)] w-full rounded-full border border-[var(--line-1)] bg-[var(--paper)] px-4 text-sm text-[var(--ink-1)] placeholder:text-[var(--ink-2)]"
-        />
-      )}
-
-      {groups.map((group) => {
-        const open = filtering || expanded.has(group.key);
-        const shown = open ? group.places : group.places.slice(0, PLACES_PER_GROUP);
-        const hidden = group.places.length - shown.length;
-        const groupLabel = group.label ?? `Elsewhere in ${label}`;
-        return (
-          <section key={group.key} aria-label={groupLabel} role="group" className="mt-4">
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-2)]">
-              {groupLabel}
-            </h5>
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {shown.map((place) => {
-                const isSelected = selected.includes(place.id);
-                return (
-                  <li key={place.id}>
-                    <button
-                      type="button"
-                      onClick={() => onTogglePlace(place)}
-                      aria-pressed={isSelected}
-                      className={`min-h-[var(--tap-min)] rounded-full border px-3.5 text-sm transition-colors ${
-                        isSelected
-                          ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-[var(--paper)]"
-                          : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
-                      }`}
-                    >
-                      {place.name}
-                      {place.localName && (
-                        <span className="ml-1.5 font-kai opacity-80">{place.localName}</span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {hidden > 0 && (
-              <button
-                type="button"
-                onClick={() => setExpanded((prev) => new Set(prev).add(group.key))}
-                className="mt-2 min-h-[var(--tap-min)] text-xs font-semibold text-[var(--accent-ink)] underline"
-              >
-                {`Show all ${group.places.length} in ${groupLabel}`}
-              </button>
-            )}
-          </section>
-        );
-      })}
-
-      {places.length > 0 && groups.length === 0 && (
-        <p className="mt-3 text-sm text-[var(--ink-2)]">
-          {`No places in ${label} match "${query.trim()}".`}
-        </p>
-      )}
-    </div>
   );
 }
 

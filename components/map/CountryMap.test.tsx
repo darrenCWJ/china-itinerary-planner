@@ -98,6 +98,11 @@ function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
   const props = {
     country: "CN",
     topology: CHINA_FIXTURE,
+    // The dispatcher's other two branches, both off by default: these cases
+    // are about China's renderer and about the list a country with no geometry
+    // gets. `CountryLevel.test.tsx` covers the branch between them.
+    provinces: null,
+    projection: null,
     places: [SHANGHAI, BEIJING],
     selected: [] as string[],
     month: 10,

@@ -162,6 +162,13 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
       <CountryMap
         country={country}
         topology={topology}
+        // Null on both, so this surface renders exactly what it rendered
+        // before: China's curated map, and the stop list for everywhere else.
+        // Fetching the trip country's own geometry here is the next task in
+        // this plan — §5.1 flags this as a guest-reachable surface, and giving
+        // it a map is a change to how it loads, not to how it draws.
+        provinces={null}
+        projection={null}
         places={places}
         // Every stop is on the plan, so all of them read as selected and the
         // route line runs through them in day order.
