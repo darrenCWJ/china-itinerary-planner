@@ -40,3 +40,61 @@ export function buildCountryTopology(featureCollection, tolerance) {
   t = simplify(t, tolerance);
   return quantize(t, QUANTISATION);
 }
+
+/** A country code as this project uses it everywhere: two uppercase letters. */
+const ALPHA2 = /^[A-Z]{2}$/;
+
+/**
+ * A3 -> alpha-2, from `admin_0_map_units`.
+ *
+ * Read `ISO_A2_EH`, not `ISO_A2`. 67 of the layer's 298 rows carry something
+ * that is not a country code in `ISO_A2` — "-99" for the 13 disputed units,
+ * and "FR-971"-style department numbers for the French overseas units. Keying
+ * on `ISO_A2` resolves GLP to "FR-971" and quietly loses Guadeloupe,
+ * Martinique, French Guiana, Réunion and Mayotte, which are five of the 13
+ * countries this phase exists to reach. `ISO_A2_EH` is clean for all of them.
+ *
+ * Maps rather than object literals, because these keys come from a data file
+ * and "constructor" on a plain object resolves to a function.
+ */
+export function buildAlpha2Index(mapUnits) {
+  const byGuA3 = new Map();
+  const byAdm0A3 = new Map();
+  for (const feature of mapUnits.features) {
+    const p = feature.properties;
+    const code = ALPHA2.test(String(p.ISO_A2))
+      ? p.ISO_A2
+      : (ALPHA2.test(String(p.ISO_A2_EH)) ? p.ISO_A2_EH : null);
+    if (code === null) continue;
+    if (p.GU_A3) byGuA3.set(p.GU_A3, code);
+    // First wins: FRA's own unit (FXX -> FR) is what ADM0_A3 "FRA" should mean,
+    // not whichever overseas department happens to be iterated last.
+    if (p.ADM0_A3 && !byAdm0A3.has(p.ADM0_A3)) byAdm0A3.set(p.ADM0_A3, code);
+  }
+  return { byGuA3, byAdm0A3 };
+}
+
+/**
+ * The country an admin-1 feature belongs to, or null.
+ *
+ * Spec §7.1, most specific first. `iso_a2` is deliberately NOT first: that
+ * order folds YT RE GP MQ GF into FR, TK into NZ, SJ into NO and BQ into NL,
+ * and drops CC and CX entirely — precisely the set Phase 4 exists to reach.
+ *
+ * Seven real features return null, and all seven are rows of §7.2's override
+ * table. Task 3 decides what happens to them; this function only reports that
+ * no ISO rule reaches them.
+ */
+export function attributeFeature(properties, index) {
+  // The three Caribbean-Netherlands units carry gu_a3 = NLD, so every general
+  // rule sends them to NL. ISO 3166 gives them BQ.
+  if (/^NL-BQ[0-9]$/.test(String(properties.iso_3166_2))) return 'BQ';
+  const viaGu = index.byGuA3.get(properties.gu_a3);
+  if (viaGu !== undefined) return viaGu;
+  const prefix = /^([A-Z]{2})-/.exec(String(properties.iso_3166_2 ?? ''));
+  if (prefix !== null) return prefix[1];
+  if (ALPHA2.test(String(properties.iso_a2 ?? ''))) return properties.iso_a2;
+  const viaAdm0 = index.byAdm0A3.get(properties.adm0_a3);
+  if (viaAdm0 !== undefined) return viaAdm0;
+  return null;
+}
