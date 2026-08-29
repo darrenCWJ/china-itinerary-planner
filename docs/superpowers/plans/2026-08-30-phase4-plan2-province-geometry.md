@@ -197,7 +197,7 @@ Create `scripts/build-provinces.mjs`:
 
 import { topology } from 'topojson-server';
 import { presimplify, simplify } from 'topojson-simplify';
-import { quantize } from 'topojson-client';
+import { feature, quantize } from 'topojson-client';
 
 /**
  * Quantisation, per country over its own bbox. Not a guess: world-countries
@@ -1376,6 +1376,9 @@ async function fetchJson(url) {
 Then `main()`, in gate order — sibling asset, fetch, attribute, group, coverage, build, budget, and only then write:
 
 ```js
+/** How many province files this run has put on disk, for the failure message. */
+let written = 0;
+
 async function main() {
   // Cheap failures first: the curated China asset and the city shards are both
   // committed, and neither costs a 40 MB download to check.
@@ -1391,13 +1394,31 @@ async function main() {
   const index = buildAlpha2Index(mapUnits);
   const { byCountry, orphans } = groupByCountry(admin1, index);
 
-  // The seven §7.2 rows are expected; anything else is upstream drift and must
-  // be looked at rather than read past.
-  const EXPECTED_ORPHANS = 7;
-  if (orphans.length !== EXPECTED_ORPHANS) {
+  // ZERO, not seven. The 7 unattributable features are what `attributeFeature`
+  // returns null for IN ISOLATION; `groupByCountry` runs the §7.2 overrides
+  // first, and those overrides exist precisely to place all seven. A gate of 7
+  // here aborts the first real build before it writes anything.
+  //
+  // And an identity check, not a count: a refresh that retires one known
+  // territory and adds one new disputed one keeps the count unchanged, and the
+  // new territory would vanish from its country's outline with no signal.
+  if (orphans.length > 0) {
     throw new Error(
-      `${orphans.length} unattributable admin-1 features, expected ${EXPECTED_ORPHANS} — ` +
-      orphans.map((o) => `${o.adm1_code} (${o.name})`).join(', ')
+      `${orphans.length} admin-1 feature(s) no ISO rule and no §7.2 override reaches: ` +
+      orphans.map((o) => `${o.adm1_code} (${o.name})`).join(', ') +
+      ` — Natural Earth has added a territory the policy does not cover, which is a ` +
+      `decision for a human, not a default`
+    );
+  }
+  // The overrides must still be doing something. If NE renames a gu_a3, the
+  // override silently stops matching, the feature falls through to an ISO rule
+  // that happens to answer, and Northern Cyprus becomes a clickable province.
+  const seenGuA3 = new Set(admin1.features.map((f) => f.properties.gu_a3));
+  const staleOverrides = [...Object.keys(FOLD_INTO), ...EXCLUDED].filter((gu) => !seenGuA3.has(gu));
+  if (staleOverrides.length > 0) {
+    throw new Error(
+      `§7.2 override(s) match nothing in the source: ${staleOverrides.join(', ')} — ` +
+      `the territory they name has been renamed or removed upstream`
     );
   }
 
@@ -1416,9 +1437,28 @@ async function main() {
     const topo = code === CURATED_COUNTRY
       ? reEnvelopeCurated(curated)
       : buildCountryTopology({ type: 'FeatureCollection', features }, TOLERANCE_OVERRIDE[code] ?? 0);
-    const { cityProvince, unplaced } = assignCities(features, shard.cities.map((c) => ({
+    // Assign against the geometry this file SHIPS, not the geometry it was
+    // built from. For CN those differ: the file carries the curated topology
+    // while `features` is the discarded Natural Earth slice, so assigning
+    // against `features` names ids that appear nowhere in CN.json and all 409
+    // Chinese cities resolve to nothing — with every gate still green.
+    // The curated geometries carry no `gn_a1_code`, so China is containment
+    // only and `a1c` cannot back it up; that is a real and accepted limit.
+    const assignable = code === CURATED_COUNTRY
+      ? feature(topo, topo.objects.provinces).features
+      : features;
+    const { cityProvince, unplaced } = assignCities(assignable, shard.cities.map((c) => ({
       id: c.id, lat: c.lat, lon: c.lon, a1c: c.a1c ?? null,
     })));
+    // The join must close. This is the gate that would have caught the above.
+    const shipped = new Set(topo.objects.provinces.geometries.map((g) => String(g.id)));
+    const dangling = Object.values(cityProvince).filter((id) => !shipped.has(String(id)));
+    if (dangling.length > 0) {
+      throw new Error(
+        `${code}: ${dangling.length} cityProvince entries name a feature the file does not ship ` +
+        `(e.g. ${dangling[0]}) — the assignment ran against different geometry than the payload`
+      );
+    }
     const path = join(OUT_DIR, `${code}.json`);
     const previous = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
     const payload = provincePayload(code, topo, cityProvince, previous, now);
@@ -1431,8 +1471,14 @@ async function main() {
 
   assertBudget(sizes);
 
-  // Every gate has passed. Only now does anything reach disk.
-  for (const [code, json] of payloads) writeFileAtomic(join(OUT_DIR, `${code}.json`), json);
+  // Every gate has passed. Only now does anything reach disk — but 246 writes
+  // are not one transaction, so a throw partway leaves a mixed-generation
+  // artifact. `written` is what lets the failure handler say so rather than
+  // claim nothing happened.
+  for (const [code, json] of payloads) {
+    writeFileAtomic(join(OUT_DIR, `${code}.json`), json);
+    written += 1;
+  }
   writeFileAtomic(join(OUT_DIR, 'index.json'), `${JSON.stringify({ generatedAt: now, countries: entries })}\n`);
   writeFileAtomic(REPORT_PATH, buildReport({ sizes, entries, orphans, now }));
   console.log(`Wrote ${payloads.size} province files to ${OUT_DIR}`);
@@ -1441,7 +1487,12 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(`\nProvince build failed: ${error.message}`);
-    console.error('Nothing was written — the previous artifacts are untouched.');
+    // Conditional, because the unconditional version is a lie exactly when it
+    // matters: a throw on file 200 leaves 199 new files beside 47 old ones.
+    console.error(written === 0
+      ? 'Nothing was written — the previous artifacts are untouched.'
+      : `${written} files were already written — the artifact is now MIXED. Re-run to ` +
+        `completion before committing, or "git checkout -- public/provinces".`);
     process.exit(1);
   });
 }
