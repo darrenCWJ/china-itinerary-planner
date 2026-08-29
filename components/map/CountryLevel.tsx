@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { geoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
+import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
 import { CountryPlaceList } from "./CountryPlaceList";
@@ -49,10 +50,12 @@ import { FIT_COLORS, fitForPlace, type MapPlace } from "./mapTypes";
  *
  * **The list beside the map is not decoration.** §5.2 makes it the source of
  * truth for the accessibility tree and §12.2 gates the phase on it: the map
- * must never become the only way to select a place. Until PR4's roving
- * tabindex gives the markers a keyboard model of their own, they are a mouse
- * and touch affordance and the list is the whole of the keyboard one — which
- * is why the marker layer is `aria-hidden` rather than 750 tab stops.
+ * must never become the only way to select a place. The markers now carry a
+ * keyboard model of their own (§5.3.1) and are in the accessibility tree
+ * because of it, so each place is two controls — a marker and a list chip.
+ * That is deliberate and it is not duplication for its own sake: the marker
+ * layer costs ONE tab stop however many places it draws, and the list is what
+ * reaches a place the §5.4 trim left outside the viewport.
  */
 
 /** What this level reads off a unit's TopoJSON geometry. */
@@ -90,7 +93,49 @@ const UNIT_STROKE = 0.7;
 const OUTLINE_STROKE = 1.2;
 const MARKER_STROKE = 1.2;
 const SELECTION_RING = 3.5;
+/**
+ * Outside the selection ring rather than on top of it.
+ *
+ * The two states land on the same marker constantly — a keyboard user selects
+ * by focusing and then pressing Enter — and at the same radius the solid
+ * `--seal` ring simply paints over the dashed one, which is a focus indicator
+ * that vanishes exactly when it is being used. Concentric keeps both readable.
+ */
+const FOCUS_RING = SELECTION_RING + 2.5;
 const ROUTE_STROKE = 2;
+
+/** `--tap-min`, in CSS pixels — `app/globals.css`, and WCAG 2.2 AA 2.5.8. */
+export const TAP_MIN_PX = 44;
+
+/**
+ * The widest the map is ever laid out, in CSS pixels: `/plan`'s `max-w-6xl`
+ * (72rem) less its `px-4` gutters, from `app/plan/page.tsx`.
+ *
+ * The SVG is `w-full` over a fixed 860-unit viewBox, so one viewBox unit is
+ * `renderedWidth / MAP_VIEW_W` CSS pixels and a radius in viewBox units means
+ * a different number of pixels on every viewport. The WIDEST rendering is the
+ * worst case and therefore the only one worth sizing against: every narrower
+ * one stretches the same viewBox over fewer pixels and gets a larger target.
+ */
+export const MAP_MAX_RENDER_W = 1120;
+
+/**
+ * `--tap-min` as a marker radius, in viewBox units (§5.3.2).
+ *
+ * Derived rather than written down, because the two numbers it comes from are
+ * both real and both liable to move: 44 is the token, 1120 is the layout.
+ * `WorldMap`'s docblock converts the same way when it calls its 9-unit hit
+ * circle "~22px at desktop" — and reaches the opposite conclusion for the
+ * world level, where a compliant circle would swallow San Marino's neighbours
+ * outright. At country level the same collision is possible between two
+ * cities, so this is a ceiling and `nonOverlappingRadii` is what enforces it.
+ *
+ * Unscaled for the reason the marker constants above are: `k` is 1 at country
+ * level. PR5's province zoom divides this one too — a magnified map draws the
+ * same radius over `k` times as many CSS pixels, so `TAP_MIN_R / k` is what
+ * keeps the target 44px rather than 44k.
+ */
+export const TAP_MIN_R = (TAP_MIN_PX / 2) * (MAP_VIEW_W / MAP_MAX_RENDER_W);
 
 /** A place big enough to be worth a name on a country-wide map. */
 const LABELLED_PREFECTURE_POPULATION = 3_000_000;
@@ -122,6 +167,131 @@ interface UnitShape {
   /** §7.2: false for geometry that shapes the outline without being a choice. */
   selectable: boolean;
   label: string | null;
+}
+
+/** Everything spread onto one marker's `<g>`. */
+interface MarkerInteractionProps {
+  ref: (node: SVGGElement | null) => void;
+  role: "button";
+  tabIndex: number;
+  "aria-pressed": boolean;
+  "aria-label": string;
+  className: string;
+  onKeyDown: (event: React.KeyboardEvent) => void;
+  onFocus: () => void;
+  onBlur: () => void;
+}
+
+/**
+ * Roving tabindex over the marker layer (§5.3.1), ported from
+ * `useCountrySelection` in `worldLevelShared.tsx`.
+ *
+ * The PATTERN, not the hook. That one picks exactly one country out of a
+ * name-sorted list and tints it from an accent ramp; this one toggles any
+ * number of places in and out of a plan and colours them by month fit, so
+ * there is no shared implementation to extract without inventing a third
+ * abstraction over two. What is shared is the part that matters and the part
+ * that was argued for once: **the marker layer is ONE tab stop**, `tabStop`
+ * names which marker carries it, arrows move a caret between markers without
+ * leaving the group, and Enter/Space acts on the marker the caret is on.
+ *
+ * `ChinaLevel` gives `tabIndex={0}` to every curated marker and `-1` to every
+ * catalog one, which `worldLevelShared` calls "fine for thirty of them and
+ * indefensible for 235". A country shard draws up to 750, and the ones that
+ * would have been skipped entirely under that rule are the catalog cities —
+ * i.e. all of them, outside China.
+ *
+ * There is no `mounted` set and none is needed: Mercator clips nothing, so
+ * every place in `places` has a node, including the ones the §5.4 trim leaves
+ * outside the viewport. The caret can land on one, and the list reaches it.
+ */
+function useMarkerSelection(
+  places: MapPlace[],
+  selected: string[],
+  onTogglePlace: (place: MapPlace) => void
+): {
+  markerProps: (place: MapPlace, index: number) => MarkerInteractionProps;
+  focusedId: string | null;
+} {
+  const nodeRefs = useRef(new Map<string, SVGGElement>());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  /**
+   * Which marker Tab lands on: wherever the caret was left, else a place
+   * already in the plan, else the first place drawn.
+   *
+   * The second term is what a user who has never touched the map gets — they
+   * added Cusco through the list, so tabbing into the map puts them on Cusco
+   * rather than on whichever city the shard happens to list first. The first
+   * term is dropped rather than trusted when the shard it pointed into has
+   * been replaced by another country's, which is a prop change here and not an
+   * unmount: a stale id would leave `tabIndex 0` on nothing at all.
+   */
+  const active = activeId !== null && places.some((p) => p.id === activeId) ? activeId : null;
+  const tabStop =
+    active ?? places.find((p) => selected.includes(p.id))?.id ?? places[0]?.id ?? null;
+
+  const focusEntry = (index: number) => {
+    if (places.length === 0) return;
+    const wrapped = ((index % places.length) + places.length) % places.length;
+    const next = places[wrapped];
+    setActiveId(next.id);
+    nodeRefs.current.get(next.id)?.focus();
+  };
+
+  const stepFor = (key: string): number => {
+    if (key === "ArrowRight" || key === "ArrowDown") return 1;
+    if (key === "ArrowLeft" || key === "ArrowUp") return -1;
+    return 0;
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent, place: MapPlace, index: number) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onTogglePlace(place);
+      return;
+    }
+    const step = stepFor(event.key);
+    if (step !== 0) {
+      event.preventDefault();
+      focusEntry(index + step);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusEntry(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusEntry(places.length - 1);
+    }
+  };
+
+  return {
+    focusedId,
+    markerProps: (place: MapPlace, index: number): MarkerInteractionProps => {
+      const isSelected = selected.includes(place.id);
+      return {
+        ref: (node: SVGGElement | null) => {
+          if (node) nodeRefs.current.set(place.id, node);
+          else nodeRefs.current.delete(place.id);
+        },
+        role: "button",
+        tabIndex: place.id === tabStop ? 0 : -1,
+        "aria-pressed": isSelected,
+        "aria-label": `${place.name}${isSelected ? " (selected)" : ""}`,
+        className: "cursor-pointer",
+        onKeyDown: (event: React.KeyboardEvent) => handleKeyDown(event, place, index),
+        onFocus: () => {
+          setActiveId(place.id);
+          setFocusedId(place.id);
+        },
+        onBlur: () => setFocusedId((current) => (current === place.id ? null : current)),
+      };
+    },
+  };
 }
 
 export interface CountryLevelProps {
@@ -208,6 +378,42 @@ export function CountryLevel({
     [routeIds, places, project]
   );
 
+  /**
+   * Marker positions and their transparent targets (§5.3.2).
+   *
+   * `nonOverlappingRadii` caps each target at half the distance to its nearest
+   * neighbour, for the reason `lib/dragLayer.ts` gives about San Marino and
+   * Vatican City: two overlapping transparent circles let paint order decide
+   * which place a tap adds, silently and wrongly. Cities crowd far harder than
+   * micro-states — a country shard puts a dozen inside one metro area — so the
+   * cap bites often, and it is only acceptable because the list below reaches
+   * every one of them at the full `--tap-min`. That is the equivalent control
+   * WCAG 2.2 AA 2.5.8 allows, and §5.2 already required it to exist.
+   *
+   * The floor is the marker's own dot: a target INSIDE the visible circle
+   * would make the dot's edge the target's edge, which is the failure the
+   * hit-area-first ordering exists to prevent. Where two dots are closer than
+   * their own radii they already overlapped before this existed.
+   *
+   * `nonOverlappingRadii` is O(n²) and the largest shard is ~750 places, so
+   * this is ~560k distance checks. It runs once per country — the memo it sits
+   * in is keyed on the same inputs as the topology decode above it, which
+   * costs more — and never on a hover or a selection.
+   */
+  const marks = useMemo(() => {
+    const points = places.map((place) => {
+      const [x, y] = project(place.lon, place.lat);
+      return { x, y };
+    });
+    const capped = nonOverlappingRadii(points, TAP_MIN_R);
+    return points.map((point, index) => {
+      const r = radiusFor(places[index]);
+      return { ...point, r, hitR: Math.max(r, capped[index]) };
+    });
+  }, [places, project]);
+
+  const { markerProps, focusedId } = useMarkerSelection(places, selected, onTogglePlace);
+
   const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
   return (
@@ -274,30 +480,50 @@ export function CountryLevel({
           )}
 
           {/*
-            Markers. Out of the accessibility tree until PR4 gives them the
-            roving tabindex of §5.3.1: the list below announces and reaches
-            every one of these places already, and a second copy of 750 cities
-            in the tree — with no keyboard model behind it — is worse for a
-            screen reader than none.
+            Markers, each one a button on a roving tabindex (§5.3.1) rather
+            than the `aria-hidden` backdrop they were, or the tab stop per
+            curated marker `ChinaLevel` gives them. Every place is announced
+            twice — here and in the list — and that is the right trade now
+            that both are operable: the list is the spine, and this layer adds
+            exactly one stop to the tab order however many cities it draws.
           */}
-          <g data-markers="" aria-hidden>
-            {places.map((place) => {
-              const [x, y] = project(place.lon, place.lat);
+          <g data-markers="">
+            {places.map((place, index) => {
+              const { x, y, r, hitR } = marks[index];
               const isSelected = selected.includes(place.id);
-              const r = radiusFor(place);
               const stopIndex = routeIds.indexOf(place.id);
               return (
                 <g
                   key={place.id}
                   data-place={place.id}
-                  className="cursor-pointer"
+                  {...markerProps(place, index)}
                   onClick={() => onTogglePlace(place)}
                   onMouseEnter={(e) => reportHover(place, e)}
                   onMouseMove={(e) => reportHover(place, e)}
                   onMouseLeave={() => reportHover(null)}
                 >
+                  {/* Hit area first, so the visible dot is never the target's
+                      edge — the ordering `WorldMap` establishes. */}
+                  <circle data-hit="" cx={x} cy={y} r={hitR} fill="transparent" />
+                  {place.id === focusedId && (
+                    // Dashed, so keyboard focus stays distinguishable from
+                    // selection when they land on the same place — the same
+                    // distinction `worldLevelShared`'s `strokeFor` draws.
+                    <circle
+                      data-focus-ring=""
+                      cx={x}
+                      cy={y}
+                      r={r + FOCUS_RING}
+                      fill="none"
+                      stroke="var(--ink-0)"
+                      strokeWidth={1.2}
+                      strokeDasharray="3 2"
+                      className="pointer-events-none"
+                    />
+                  )}
                   {isSelected && (
                     <circle
+                      data-selection-ring=""
                       cx={x}
                       cy={y}
                       r={r + SELECTION_RING}
@@ -308,6 +534,7 @@ export function CountryLevel({
                     />
                   )}
                   <circle
+                    data-dot=""
                     cx={x}
                     cy={y}
                     r={r}
