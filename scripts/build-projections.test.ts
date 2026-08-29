@@ -2,7 +2,12 @@ import { geoArea } from "d3-geo";
 import { describe, expect, test } from "vitest";
 import { MAP_VIEW_H, MAP_VIEW_W } from "@/lib/mapView";
 import {
+  EXPECTED_COUNTRIES,
+  assertManifest,
+  bestTrim,
   boxOf,
+  measureCountry,
+  polygonsOf,
   rotationFor,
   scaleOf,
   separation,
@@ -130,5 +135,161 @@ describe("trimTrajectory", () => {
       12,
     );
     expect(last.hidden).toBeLessThan(1);
+  });
+});
+
+describe("polygonsOf", () => {
+  test("unwraps a MultiPolygon into its polygons", () => {
+    const polygons = polygonsOf({ type: "MultiPolygon", coordinates: [sq(0, 0), sq(5, 5)] });
+    expect(polygons).toHaveLength(2);
+    expect(polygons[1]).toEqual(sq(5, 5));
+  });
+
+  test("wraps a lone Polygon rather than reading its rings as polygons", () => {
+    // The trap: a Polygon's `coordinates` are RINGS. Passing them through
+    // makes a country with one landmass and one lake look like two polygons,
+    // and the lake becomes a trim candidate with its own centroid.
+    const withHole = [sq(0, 0, 10)[0], sq(4, 4)[0]];
+    expect(polygonsOf({ type: "Polygon", coordinates: withHole })).toEqual([withHole]);
+  });
+});
+
+describe("bestTrim — the three gates §5.4 states but never applies", () => {
+  type Step = {
+    dropped: number[];
+    hidden: number;
+    gain: number;
+    sep: number;
+    scale: number;
+    union: { x0: number; x1: number; y0: number; y1: number };
+  };
+
+  /** One trajectory step, with every gate passing unless a test says otherwise. */
+  const step = (over: Partial<Step> = {}): Step => ({
+    dropped: [1],
+    hidden: 0.001,
+    gain: 2,
+    sep: 1,
+    scale: 1000,
+    union: { x0: 0, x1: 1, y0: 0, y1: 1 },
+    ...over,
+  });
+
+  test("takes the best point on the whole trajectory, not the first that passes", () => {
+    // NL's three Caribbean polygons each gain ~1.1x alone and 11.5x together,
+    // so a caller that stopped at the first passing step loses the answer.
+    const best = bestTrim([
+      step({ gain: 1.6 }),
+      step({ gain: 11.5, dropped: [1, 2, 3] }),
+      step({ gain: 2 }),
+    ]);
+    expect(best?.gain).toBe(11.5);
+    expect(best?.dropped).toEqual([1, 2, 3]);
+  });
+
+  test("refuses a trim that hides more than 1% of the country — Gate A", () => {
+    expect(bestTrim([step({ hidden: 0.0101 })])).toBeNull();
+    expect(bestTrim([step({ hidden: 0.01 })])).not.toBeNull();
+  });
+
+  test("refuses a polygon sitting close to the anchor — Gate B", () => {
+    // Tasmania and Stewart Island are the two cases §5.4 says the gate is for.
+    expect(bestTrim([step({ sep: 0.49 })])).toBeNull();
+    expect(bestTrim([step({ sep: 0.5 })])).not.toBeNull();
+  });
+
+  test("refuses a trim that is not worth 1.5x — Gate C", () => {
+    expect(bestTrim([step({ gain: 1.49 })])).toBeNull();
+    expect(bestTrim([step({ gain: 1.5 })])).not.toBeNull();
+  });
+
+  test("is null for an empty trajectory, so a one-polygon country needs no case", () => {
+    expect(bestTrim([])).toBeNull();
+  });
+});
+
+describe("measureCountry", () => {
+  test("omits hiddenAreaPct entirely when nothing is trimmed", () => {
+    const { entry, trim } = measureCountry([sq(0, 0, 10)], BOX);
+    expect(trim).toBeNull();
+    expect(entry).not.toHaveProperty("hiddenAreaPct");
+    expect(entry.rotate).toBe(0);
+    expect(entry.bounds).toEqual([[0, 0], [10, 10]]);
+    expect(entry.scale).toBeCloseTo(scaleOf({ x0: 0, x1: 10, y0: 0, y1: 10 }, 0, BOX), 3);
+  });
+
+  test("carries hiddenAreaPct as a PERCENT when a trim is applied", () => {
+    // Gate A is 1% of the area; the field is 100x that, so a reader who
+    // compares the field against 0.01 rejects every country that passed.
+    const { entry, trim } = measureCountry(
+      [sq(0, 0, 10), sq(80, 0, 0.3), sq(0, 70, 0.3)],
+      BOX,
+    );
+    expect(trim).not.toBeNull();
+    expect(entry.bounds).toEqual([[0, 0], [10, 10]]);
+    expect(entry.hiddenAreaPct).toBeGreaterThan(0);
+    expect(entry.hiddenAreaPct).toBeLessThan(1);
+    expect(entry.scale).toBeGreaterThan(
+      measureCountry([sq(0, 0, 10), sq(80, 0, 0.3)], BOX).baseScale,
+    );
+  });
+
+  test("keeps an outlier that costs more than 1% of the area", () => {
+    // Gate A is a ceiling, not a preference. A 2-degree island 80 degrees off
+    // a 10-degree country is 3.9% of it, and the country is carried untrimmed
+    // rather than trimmed anyway — even though the trim would gain 8x.
+    const { entry, trim } = measureCountry([sq(0, 0, 10), sq(80, 0, 2)], BOX);
+    expect(trim).toBeNull();
+    expect(entry).not.toHaveProperty("hiddenAreaPct");
+    expect(entry.bounds).toEqual([[0, 0], [82, 10]]);
+  });
+
+  test("reports bounds in the ROTATED frame, so an antimeridian span stays narrow", () => {
+    const { entry } = measureCountry([sq(178, -18), sq(-179, -18)], BOX);
+    expect(entry.rotate).toBeLessThan(0);
+    expect(entry.bounds[1][0] - entry.bounds[0][0]).toBeLessThan(10);
+  });
+
+  test("rounds every number, because 246 unrounded entries are not 20 KB", () => {
+    const { entry } = measureCountry([sq(0.123456, 0.123456, 10)], BOX);
+    expect(entry.bounds[0][0]).toBe(0.1235);
+    for (const n of [entry.rotate, entry.scale, ...entry.bounds.flat()]) {
+      expect((String(n).split(".")[1] ?? "").length).toBeLessThanOrEqual(4);
+    }
+  });
+});
+
+describe("assertManifest", () => {
+  const full = () =>
+    Object.fromEntries(
+      Array.from({ length: EXPECTED_COUNTRIES }, (_, i) => [
+        `X${i}`,
+        { rotate: 0, bounds: [[0, 0], [1, 1]], scale: 100 },
+      ]),
+    );
+
+  test("accepts a manifest with one entry per committed province file", () => {
+    expect(() => assertManifest(full())).not.toThrow();
+  });
+
+  test("aborts on a short manifest, naming the count it actually got", () => {
+    const short = full();
+    delete short.X0;
+    expect(() => assertManifest(short)).toThrow(/245/);
+  });
+
+  test("aborts on a scale that is not finite and positive, naming the country", () => {
+    const infinite = full();
+    infinite.X7 = { ...infinite.X7, scale: Infinity };
+    expect(() => assertManifest(infinite)).toThrow(/X7/);
+    const zero = full();
+    zero.X9 = { ...zero.X9, scale: 0 };
+    expect(() => assertManifest(zero)).toThrow(/X9/);
+  });
+
+  test("aborts on inverted bounds, which fitExtent would accept in silence", () => {
+    const inverted = full();
+    inverted.X3 = { ...inverted.X3, bounds: [[1, 1], [0, 0]] };
+    expect(() => assertManifest(inverted)).toThrow(/X3/);
   });
 });

@@ -28,7 +28,14 @@ import nextConfig from "@/next.config";
 
 const CITIES_SOURCE = "/cities/:path+";
 const TOPOLOGY_SOURCE =
-  "/:asset(world-countries\\.json|world-globe\\.json|china-provinces\\.json)";
+  "/:asset(world-countries\\.json|world-globe\\.json|china-provinces\\.json|country-projections\\.json)";
+
+/**
+ * The projection manifest joins the topology rule rather than taking one of its
+ * own, because unlike /cities/, /provinces/ and /climate/ it IS a single path
+ * segment — which is the only thing those three needed separate rules for.
+ */
+const PROJECTION_PATH = "/country-projections.json";
 
 /** Every /cities/ URL the app actually requests. */
 const SHARD_PATHS = ["/cities/PE.json", "/cities/index.json", "/cities/enrich/PE.json"];
@@ -169,6 +176,9 @@ describe("next.config.ts headers — the topology rule, and the four staying dis
     expect(matches(rule!.source, "/world-globe.json")).toBe(true);
     expect(matches(rule!.source, "/world-countries.json")).toBe(true);
     expect(matches(rule!.source, "/china-provinces.json")).toBe(true);
+    // Without this alternative the 20 KB manifest falls through to Next's
+    // `public, max-age=0` for public/ files and is refetched on every map open.
+    expect(matches(rule!.source, PROJECTION_PATH)).toBe(true);
   });
 
   test("exactly one rule claims each URL — later rules win on the same key", async () => {
@@ -183,6 +193,7 @@ describe("next.config.ts headers — the topology rule, and the four staying dis
       ...PROVINCE_PATHS,
       ...CLIMATE_PATHS,
       "/world-globe.json",
+      PROJECTION_PATH,
     ]) {
       const claiming = rules.filter((r) => matches(r.source, pathname));
       expect(claiming.map((r) => r.source), pathname).toHaveLength(1);
