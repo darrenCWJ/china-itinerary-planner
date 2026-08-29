@@ -331,3 +331,26 @@ export function provincePayload(country, topology, cityProvince, previous, now) 
     ...body,
   };
 }
+
+/**
+ * China's file, from the committed curated topology rather than Natural Earth.
+ *
+ * Measured side by side: the curated asset is 58,650 B raw / 20,183 gz for 35
+ * features and 5,823 vertices; the NE 10m slice is 296,569 / 89,818 for 32.
+ * Forced to vertex parity the NE slice is STILL 10.5% larger raw. It also
+ * names provinces in English, keys on iso_3166_2 rather than adcode, and
+ * carries no nine-dash line at all — it treats the Spratlys as their own
+ * country and the Paracels as a Chinese province.
+ *
+ * A rename, not a rebuild: the arcs and transform are carried by reference.
+ * Re-running the pipeline over an already-quantised topology would throw
+ * `already quantized`, and re-quantising hand-tuned geometry would only
+ * degrade it.
+ */
+export function reEnvelopeCurated(curated) {
+  const key = Object.keys(curated.objects)[0];
+  return {
+    ...curated,
+    objects: { provinces: curated.objects[key] },
+  };
+}

@@ -487,3 +487,60 @@ describe("assertBudget", () => {
     expect(TOLERANCE_OVERRIDE).toEqual({ CA: 1e-4, RU: 1e-4 });
   });
 });
+
+import { reEnvelopeCurated } from "./build-provinces.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+/** Only what these tests read off a curated geometry. */
+type CuratedGeometry = { properties: { adcode: number | string }; arcs: unknown };
+
+describe("reEnvelopeCurated — China (D7)", () => {
+  const curated = JSON.parse(
+    readFileSync(join(process.cwd(), "public/china-provinces.json"), "utf8")
+  );
+
+  test("renames the object key to `provinces` so every country parses alike", () => {
+    // CountryMap.tsx:196 already does Object.keys(topology.objects)[0] and
+    // never mentions the curated key, so this is a tidy rather than a fix —
+    // but a uniform key is what lets the loader stop guessing.
+    const t = reEnvelopeCurated(curated);
+    expect(Object.keys(t.objects)).toEqual(["provinces"]);
+  });
+
+  test("keeps all 35 curated features, including the nine-dash line", () => {
+    // §7.3 records this as a deliberate exception: CN carries a cartographic
+    // claim the other 245 files do not. Removing it would change what China's
+    // map has rendered since 2026-08-10.
+    const t = reEnvelopeCurated(curated);
+    const geometries: CuratedGeometry[] = t.objects.provinces.geometries;
+    expect(geometries).toHaveLength(35);
+    expect(geometries.some((g) => String(g.properties.adcode) === "100000_JD")).toBe(true);
+  });
+
+  test("Shaanxi and Shanxi resolve to different polygons", () => {
+    // THE China regression test. foldPlaceName strips NFD combining marks, so
+    // Shǎnxī (CN-SN, adcode 610000) and Shānxī (CN-SX, 140000) both fold to
+    // "shanxi". Any name-based match collapses them and one province silently
+    // draws the other's outline — in the country the app is named after.
+    const t = reEnvelopeCurated(curated);
+    const geometries: CuratedGeometry[] = t.objects.provinces.geometries;
+    const byAdcode = new Map<string, CuratedGeometry>(
+      geometries.map((g) => [String(g.properties.adcode), g])
+    );
+    const shanxi = byAdcode.get("140000");
+    const shaanxi = byAdcode.get("610000");
+    expect(shanxi).toBeDefined();
+    expect(shaanxi).toBeDefined();
+    expect(shanxi!.arcs).not.toEqual(shaanxi!.arcs);
+  });
+
+  test("does not re-quantise — the curated arcs are carried verbatim", () => {
+    // Re-running the pipeline over an already-quantised topology would either
+    // throw `already quantized` or degrade geometry that was hand-tuned to
+    // 58,650 B. The re-envelope is a rename, not a rebuild.
+    const t = reEnvelopeCurated(curated);
+    expect(t.arcs).toBe(curated.arcs);
+    expect(t.transform).toEqual(curated.transform);
+  });
+});
