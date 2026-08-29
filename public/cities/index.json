@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-28T16:07:26.102Z",
+ "generatedAt": "2026-08-29T14:01:07.876Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -299,8 +299,8 @@
   },
   {
    "code": "DZ",
-   "count": 351,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "count": 353,
+   "generatedAt": "2026-08-29T14:01:07.876Z"
   },
   {
    "code": "EC",
@@ -1135,7 +1135,7 @@
   {
    "code": "UA",
    "count": 750,
-   "generatedAt": "2026-08-25T09:23:00.949Z"
+   "generatedAt": "2026-08-29T14:01:07.876Z"
   },
   {
    "code": "UG",
