@@ -214,3 +214,98 @@ describe("resolveTerritory — spec §7.2 line by line", () => {
     expect(Object.keys(FOLD_INTO).sort()).toEqual(["CYN", "ESB", "NJM", "SOL", "USG", "WSB"]);
   });
 });
+
+import { assertCoverage, groupByCountry } from "./build-provinces.mjs";
+
+/**
+ * `groupByCountry`'s `byCountry` is a bare `new Map()` in a `.mjs`, so it
+ * infers as `Map<any, any>` — and a callback handed to a method on `any` gets
+ * no contextual type, which trips TS7006 under `strict`. Narrowed here to the
+ * shape `projectProperties` actually emits, the same way `provinceGeometries`
+ * above narrows the pipeline's return, so `npx tsc --noEmit` stays clean.
+ */
+type ProvinceFeature = {
+  id: string;
+  properties: {
+    name: string | null;
+    name_en: string | null;
+    iso_3166_2: string | null;
+    gn_a1_code: string | null;
+    sel: 0 | 1;
+  };
+};
+
+function countryFeatures(byCountry: unknown, code: string): ProvinceFeature[] {
+  return (byCountry as Map<string, ProvinceFeature[]>).get(code)!;
+}
+
+describe("groupByCountry", () => {
+  const index = buildAlpha2Index(mapUnits([
+    { GU_A3: "PER", ADM0_A3: "PER", ISO_A2: "PE", ISO_A2_EH: "PE" },
+    { GU_A3: "CYP", ADM0_A3: "CYP", ISO_A2: "CY", ISO_A2_EH: "CY" },
+  ]));
+  const admin1 = (rows: Array<Record<string, unknown>>) => ({
+    type: "FeatureCollection",
+    features: rows.map((properties) => ({ type: "Feature", properties, geometry: null })),
+  });
+
+  test("sorts features by adm1_code so a rebuild is byte-stable", () => {
+    // Without this the file's feature order follows the source's, which is not
+    // guaranteed stable across a Natural Earth refresh — and an unstable order
+    // makes the churn-free write comparison useless.
+    const { byCountry } = groupByCountry(admin1([
+      { adm1_code: "PER-9", gu_a3: "PER", iso_3166_2: "PE-LIM", name: "Z" },
+      { adm1_code: "PER-1", gu_a3: "PER", iso_3166_2: "PE-CUS", name: "A" },
+    ]), index);
+    expect(countryFeatures(byCountry, "PE").map((f) => f.id)).toEqual(["PER-1", "PER-9"]);
+  });
+
+  test("carries only the five properties the app reads", () => {
+    // The source has 121 properties per feature. Carrying them all costs far
+    // more than the geometry does.
+    const { byCountry } = groupByCountry(admin1([
+      { adm1_code: "PER-1", gu_a3: "PER", iso_3166_2: "PE-CUS", gn_a1_code: "PE.08",
+        name: "Cusco", name_en: "Cusco", name_alt: "Cuzco", wikidataid: "Q1", type_en: "Region" },
+    ]), index);
+    expect(Object.keys(countryFeatures(byCountry, "PE")[0].properties).sort())
+      .toEqual(["gn_a1_code", "iso_3166_2", "name", "name_en", "sel"]);
+  });
+
+  test("a folded territory joins the outline but is marked non-selectable", () => {
+    const { byCountry } = groupByCountry(admin1([
+      { adm1_code: "CYP-1", gu_a3: "CYP", iso_3166_2: "CY-01", name: "Nicosia" },
+      { adm1_code: "CYN+00?", gu_a3: "CYN", iso_3166_2: "-99-X04~", name: "Northern Cyprus" },
+    ]), index);
+    const cy = countryFeatures(byCountry, "CY");
+    expect(cy).toHaveLength(2);
+    expect(cy.map((f) => f.properties.sel).sort()).toEqual([0, 1]);
+  });
+
+  test("reports an unattributable feature rather than dropping it silently", () => {
+    const { byCountry, orphans } = groupByCountry(admin1([
+      { adm1_code: "ZZZ+00?", gu_a3: "ZZZ", iso_3166_2: "-99-X99~", iso_a2: "-99", adm0_a3: "ZZZ", name: "Nowhere" },
+    ]), index);
+    expect(byCountry.size).toBe(0);
+    expect(orphans.map((o) => o.adm1_code)).toEqual(["ZZZ+00?"]);
+  });
+});
+
+describe("assertCoverage", () => {
+  test("names every country it cannot reach, not just a count", () => {
+    // build-globe-topology.test.ts:41-46 pins the same property for the globe.
+    // A count tells an operator a gate failed; the names tell them what broke.
+    expect(() => assertCoverage(new Set(["PE", "CN"]), new Set(["PE", "CN", "MT", "SG"])))
+      .toThrow(/cannot reach 2 countries[\s\S]*MT, SG/);
+  });
+
+  test("is one-way — an extra emitted country is not an error", () => {
+    // The province set can legitimately exceed the city set: AQ, BV, HM and XD
+    // have admin-1 geometry and no city shard. The emit rule excludes them, but
+    // the gate must not be what enforces that.
+    expect(() => assertCoverage(new Set(["PE", "CN", "AQ"]), new Set(["PE", "CN"]))).not.toThrow();
+  });
+
+  test("passes when the two sets agree", () => {
+    expect(() => assertCoverage(new Set(["PE"]), new Set(["PE"]))).not.toThrow();
+  });
+});
