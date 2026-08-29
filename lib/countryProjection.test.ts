@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { geoMercator } from "d3-geo";
 import { describe, expect, it, test } from "vitest";
@@ -214,11 +214,59 @@ const rawManifest: Record<string, unknown> = hasAsset
   : {};
 const committed = hasAsset ? parseProjectionManifest(rawManifest) : null;
 
+/**
+ * The province directory, read as a directory listing rather than through
+ * `lib/countryDetail.ts`'s index.
+ *
+ * The manifest is built by walking these files, so checking it against the
+ * index would compare two artifacts of the same walk and pass even if the walk
+ * itself missed a country. The listing is the only input to that build that is
+ * not itself generated.
+ */
+const PROVINCES_DIR = join(process.cwd(), "public", "provinces");
+const hasProvinces = existsSync(PROVINCES_DIR);
+const shipped = hasProvinces
+  ? readdirSync(PROVINCES_DIR)
+      .filter((name) => name.endsWith(".json") && name !== "index.json")
+      .map((name) => name.slice(0, -".json".length))
+      .sort()
+  : [];
+
 describe.skipIf(!hasAsset)("the committed manifest", () => {
+  it("names exactly 246 countries", () => {
+    // A literal, and never `toBeGreaterThan`: 246 is the whole point of the
+    // phase, and a floor would go green on a build that wrote three entries
+    // and one that wrote 900. The number is the province-file population — see
+    // data/provinces-report.md — and it moves only when the territory policy
+    // does, which is a decision, not a drift.
+    expect(Object.keys(rawManifest)).toHaveLength(246);
+  });
+
   it("parses every entry it ships", () => {
     // The parser drops what it cannot use, so a size that disagrees with the
     // file is the only way a dropped country ever announces itself.
     expect(committed!.size).toBe(Object.keys(rawManifest).length);
+  });
+
+  it.skipIf(!hasProvinces)("has an entry for every province file, and no orphans", () => {
+    // Both directions, because the two failures are different bugs and only
+    // one of them is visible on screen.
+    //
+    // A province file with no entry is the silent one: `projectionFor` hands
+    // that country the whole-world fallback, so it renders a legible map of
+    // the planet with a speck on it — §5.5's collapse, arrived at from the
+    // other end — and nothing throws.
+    //
+    // An entry with no province file is the reverse: a country the build has
+    // stopped shipping geometry for, still carrying a fit for geometry that no
+    // longer exists. Harmless today and wrong the moment someone reads the
+    // manifest as the list of countries with maps.
+    const codes = [...committed!.keys()].sort();
+    const unframed = shipped.filter((code) => !committed!.has(code));
+    const orphans = codes.filter((code) => !shipped.includes(code));
+    expect(unframed, `province files with no projection: ${unframed.join(", ")}`).toEqual([]);
+    expect(orphans, `projections with no province file: ${orphans.join(", ")}`).toEqual([]);
+    expect(codes).toEqual(shipped);
   });
 
   it("rebuilds the committed scale from the committed bounds, for every country", () => {
@@ -275,5 +323,62 @@ describe.skipIf(!hasAsset)("the committed manifest", () => {
     }
     expect(escaped, `countries drawn outside the viewport: ${escaped.join(", ")}`).toEqual([]);
     expect(slack, `countries not fitted tight to the viewport: ${slack.join(", ")}`).toEqual([]);
+  });
+
+  it("rotates exactly the five countries that cross the antimeridian", () => {
+    // §5.4's rule 1: everyone else takes `rotate: 0`, and the five that do not
+    // are named rather than counted, because which five is the assertion. A
+    // sixth would mean the largest-gap arc found a crossing that is not there,
+    // and the country it found it for would be framed 178 degrees from itself
+    // at a perfectly plausible scale — the failure `projectionFor`'s
+    // un-rotation test pins from the renderer's side, caught here at the
+    // artifact's.
+    //
+    // Values from data/projections-report.md, to 4 dp as the manifest carries
+    // them. `toBeCloseTo` would let a rebuild round differently and still pass,
+    // and a manifest whose numbers are approximately right is one nobody can
+    // diff.
+    const rotated = Object.fromEntries(
+      [...committed!].filter(([, entry]) => entry.rotate !== 0).map(([code, e]) => [code, e.rotate])
+    );
+    expect(rotated).toEqual({
+      FJ: -178.1874,
+      KI: 171.1295,
+      NZ: -174.8857,
+      RU: -105.3083,
+      US: 130.1797,
+    });
+  });
+
+  it("carries hiddenAreaPct on exactly nine countries, none over Gate A's 1%", () => {
+    // Gate A caps the hidden land at 1% of the country, and the nine that
+    // passed it are the whole accepted set — every other multi-polygon country
+    // is drawn entire. Named, not counted, for the reason the spec gives when
+    // it says both gates are load-bearing: the failure this guards against is
+    // not "too many trims", it is a rule change that quietly swaps one country
+    // for another and hides an island somebody lives on.
+    //
+    // The list is this plan's own measurement, and it is deliberately NOT the
+    // spec's five. NL and NZ are absent because Bonaire and Tokelau became
+    // BQ.json and TK.json — there is no longer a Dutch or a New Zealand polygon
+    // for a projection to hide, so the trim was retired by the territory policy
+    // rather than by the rule.
+    const trimmed = [...committed!]
+      .filter(([, entry]) => entry.hiddenAreaPct !== undefined)
+      .map(([code]) => code)
+      .sort();
+    expect(trimmed).toEqual(["AI", "CR", "FJ", "FR", "GQ", "MU", "PN", "TF", "ZA"]);
+
+    const overBudget = [...committed!]
+      .filter(([, entry]) => (entry.hiddenAreaPct ?? 0) > 1)
+      .map(([code, entry]) => `${code} ${entry.hiddenAreaPct}%`);
+    expect(overBudget, `countries over Gate A's 1%: ${overBudget.join(", ")}`).toEqual([]);
+
+    // A percent, not a fraction. Read as a fraction, FJ's 0.890 is 89% of the
+    // country and every one of the nine reads as a catastrophe; read the other
+    // way round, a real 1.5% trim would sail through the gate above. The
+    // largest is FJ, and it is well clear of 0.01.
+    const largest = Math.max(...[...committed!].map(([, e]) => e.hiddenAreaPct ?? 0));
+    expect(largest).toBeCloseTo(0.89, 6);
   });
 });
