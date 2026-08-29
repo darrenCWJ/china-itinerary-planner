@@ -153,3 +153,64 @@ describe("attributeFeature", () => {
     expect(odd).toMatch(/^[A-Z]{2}$/);
   });
 });
+
+import { EXCLUDED, FOLD_INTO, resolveTerritory } from "./build-provinces.mjs";
+
+describe("resolveTerritory — spec §7.2 line by line", () => {
+  const index = buildAlpha2Index(mapUnits([
+    { GU_A3: "CYP", ADM0_A3: "CYP", ISO_A2: "CY", ISO_A2_EH: "CY" },
+    { GU_A3: "SOM", ADM0_A3: "SOM", ISO_A2: "SO", ISO_A2_EH: "SO" },
+    { GU_A3: "CUB", ADM0_A3: "CUB", ISO_A2: "CU", ISO_A2_EH: "CU" },
+    { GU_A3: "UKR", ADM0_A3: "UKR", ISO_A2: "UA", ISO_A2_EH: "UA" },
+    { GU_A3: "NOR", ADM0_A3: "NOR", ISO_A2: "NO", ISO_A2_EH: "NO" },
+  ]));
+  const props = (over: Record<string, string>) => ({
+    adm1_code: "X", gu_a3: "", iso_3166_2: "-99-X00~", iso_a2: "-99", adm0_a3: "", ...over,
+  });
+
+  test("Northern Cyprus, Akrotiri and Dhekelia shape Cyprus without being clickable", () => {
+    // ISO 3166-1 governs territorial extent; 3166-2 governs subdivision
+    // identity. So Cyprus's outline includes the north while its selectable
+    // subdivisions do not.
+    for (const gu of ["CYN", "WSB", "ESB"]) {
+      expect(resolveTerritory(props({ gu_a3: gu }), index)).toEqual({ country: "CY", selectable: false });
+    }
+  });
+
+  test("Somaliland shapes Somalia; Guantánamo shapes Cuba", () => {
+    expect(resolveTerritory(props({ gu_a3: "SOL" }), index)).toEqual({ country: "SO", selectable: false });
+    expect(resolveTerritory(props({ gu_a3: "USG" }), index)).toEqual({ country: "CU", selectable: false });
+  });
+
+  test("Siachen and the Spratlys are excluded from every file", () => {
+    // ISO gives neither any guidance, and excluding is the only non-editorial
+    // option available.
+    for (const gu of ["KAS", "PGA"]) {
+      expect(resolveTerritory(props({ gu_a3: gu }), index)).toEqual({ country: null, selectable: false });
+    }
+    expect([...EXCLUDED].sort()).toEqual(["KAS", "PGA"]);
+  });
+
+  test("Jan Mayen folds into SJ, because ISO 3166 SJ is Svalbard AND Jan Mayen", () => {
+    expect(resolveTerritory(props({ gu_a3: "NJM" }), index)).toEqual({ country: "SJ", selectable: false });
+  });
+
+  test("Crimea and Sevastopol stay selectable under Ukraine", () => {
+    // Natural Earth's iso_a2 says RU; iso_3166_2 says UA. ISO decides, and the
+    // §7.1 order already reaches that answer without an override — this test
+    // exists so a future reordering cannot silently change it.
+    expect(resolveTerritory(props({ gu_a3: "UKR", iso_3166_2: "UA-43", iso_a2: "RU" }), index))
+      .toEqual({ country: "UA", selectable: true });
+    expect(resolveTerritory(props({ gu_a3: "UKR", iso_3166_2: "UA-40", iso_a2: "RU" }), index))
+      .toEqual({ country: "UA", selectable: true });
+  });
+
+  test("an ordinary feature is selectable under its own country", () => {
+    expect(resolveTerritory(props({ gu_a3: "CYP", iso_3166_2: "CY-01" }), index))
+      .toEqual({ country: "CY", selectable: true });
+  });
+
+  test("the fold table names exactly the six territories §7.2 lists", () => {
+    expect(Object.keys(FOLD_INTO).sort()).toEqual(["CYN", "ESB", "NJM", "SOL", "USG", "WSB"]);
+  });
+});

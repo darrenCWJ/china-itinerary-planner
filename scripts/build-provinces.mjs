@@ -98,3 +98,42 @@ export function attributeFeature(properties, index) {
   if (viaAdm0 !== undefined) return viaAdm0;
   return null;
 }
+
+/**
+ * Territories whose geometry shapes another country's outline but which are
+ * not themselves selectable subdivisions (spec §7.2).
+ *
+ * ISO 3166-1 governs territorial EXTENT; ISO 3166-2 governs SUBDIVISION
+ * identity. Cyprus's shape therefore includes the north while its clickable
+ * subdivisions follow 3166-2, and that asymmetry is the intended reading of
+ * "ISO 3166 as the single rule" rather than an inconsistency.
+ *
+ * Named overrides, not key precedence: nothing here should be decided by which
+ * property happens to be read first.
+ */
+export const FOLD_INTO = Object.freeze({
+  CYN: 'CY',  // Northern Cyprus — ISO 3166-1 treats the island as CY
+  WSB: 'CY',  // Akrotiri — ISO 3166 gives it no code
+  ESB: 'CY',  // Dhekelia — as above
+  SOL: 'SO',  // Somaliland — ISO 3166-1 has no SO-split
+  USG: 'CU',  // Guantánamo — within Cuba's ISO territory
+  NJM: 'SJ',  // Jan Mayen — ISO 3166 SJ is "Svalbard and Jan Mayen" (D9)
+});
+
+/**
+ * Geometry that lands in no file at all.
+ *
+ * ISO offers no guidance on either, and excluding them is the only option that
+ * does not require this project to take an editorial position on a territorial
+ * dispute. Recorded rather than silently dropped.
+ */
+export const EXCLUDED = new Set(['KAS', 'PGA']);
+
+/** Which country's file a feature belongs in, and whether it can be clicked. */
+export function resolveTerritory(properties, index) {
+  const gu = properties.gu_a3;
+  if (EXCLUDED.has(gu)) return { country: null, selectable: false };
+  const folded = Object.prototype.hasOwnProperty.call(FOLD_INTO, gu) ? FOLD_INTO[gu] : undefined;
+  if (folded !== undefined) return { country: folded, selectable: false };
+  return { country: attributeFeature(properties, index), selectable: true };
+}
