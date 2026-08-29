@@ -61,8 +61,38 @@ describe("buildCountryTopology", () => {
     // Spec §8.2: the damage from over-simplifying is a cliff, not a slope — a
     // unit keeps its name, its id and its place in the file and draws nothing.
     // Only CA and RU take a non-zero tolerance, and neither loses a unit.
-    const t = buildCountryTopology(twoSquares(), 1e-4);
-    expect(provinceGeometries(t)).toHaveLength(2);
+    //
+    // The fixture has to BRACKET the tolerance or this test cannot fail for
+    // any value of it: [0.5, 0.00005] sits almost on the bottom edge, so its
+    // Visvalingam weight (~2.5e-5) is under 1e-4 while every corner's (0.5) is
+    // far above. At tol 0 it survives; at 1e-4 it goes and the squares remain.
+    const withSliver = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature", id: "AAA-1", properties: { name: "Left" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[0, 0], [0.5, 0.00005], [1, 0], [1, 1], [0, 1], [0, 0]]],
+          },
+        },
+        {
+          type: "Feature", id: "AAA-2", properties: { name: "Right" },
+          geometry: { type: "Polygon", coordinates: [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]] },
+        },
+      ],
+    };
+    const vertices = (t: ReturnType<typeof buildCountryTopology>) =>
+      t.arcs.reduce((n: number, arc: unknown[]) => n + arc.length, 0);
+
+    const kept = buildCountryTopology(withSliver, 0);
+    const simplified = buildCountryTopology(withSliver, 1e-4);
+
+    // Both units survive — that is the cliff §8.2 warns about not happening here.
+    expect(provinceGeometries(simplified)).toHaveLength(2);
+    // And the tolerance did something, which the previous version of this test
+    // never checked: it could not fail for any tolerance at all.
+    expect(vertices(simplified)).toBeLessThan(vertices(kept));
   });
 });
 
@@ -143,14 +173,24 @@ describe("attributeFeature", () => {
     )).toBeNull();
   });
 
-  test("never returns a value that is not a two-letter code", () => {
-    // The guard that would have caught the ISO_A2 defect. Everything
-    // downstream uses this as a filename.
-    const odd = attributeFeature(
-      { adm1_code: "X", gu_a3: "GLP", iso_3166_2: "-99-X01~", iso_a2: "FR-971", adm0_a3: "FRA" },
+  test("rejects an iso_a2 that is not a country code rather than passing it on", () => {
+    // The guard that catches the ISO_A2 defect, and it has to REACH the iso_a2
+    // branch to test it: gu_a3 must not resolve and iso_3166_2 must not carry
+    // a prefix, or an earlier rule answers first and the guard is never run.
+    // Everything downstream uses this value as a filename.
+    expect(attributeFeature(
+      { adm1_code: "X", gu_a3: "ZZZ", iso_3166_2: "-99-X01~", iso_a2: "FR-971", adm0_a3: "ZZZ" },
       index
-    );
-    expect(odd).toMatch(/^[A-Z]{2}$/);
+    )).toBeNull();
+  });
+
+  test("prefers the gu_a3 answer over a malformed iso_a2 on the same feature", () => {
+    // Rule precedence, kept separate from the guard above: this one is
+    // answered by step 1 and never reaches iso_a2 at all.
+    expect(attributeFeature(
+      { adm1_code: "FRA-4603", gu_a3: "GLP", iso_3166_2: "-99-X01~", iso_a2: "FR-971", adm0_a3: "FRA" },
+      index
+    )).toBe("GP");
   });
 });
 
@@ -533,6 +573,28 @@ describe("reEnvelopeCurated — China (D7)", () => {
     expect(shanxi).toBeDefined();
     expect(shaanxi).toBeDefined();
     expect(shanxi!.arcs).not.toEqual(shaanxi!.arcs);
+  });
+
+  test("stamps an id, because cityProvince joins on it in all 246 files", () => {
+    // The curated asset has no geometry id at all — its join key is
+    // properties.adcode. Without an id, China's city assignments name Natural
+    // Earth ids that appear nowhere in the file China actually ships, all 409
+    // resolve to nothing, and every gate stays green.
+    const geometries = provinceGeometries(reEnvelopeCurated(curated));
+    expect(geometries.every((g) => typeof g.id === "string" && g.id !== "")).toBe(true);
+    expect(geometries.map((g) => g.id)).toContain("110000");
+  });
+
+  test("marks Taiwan, Hong Kong, Macau and the nine-dash line non-selectable", () => {
+    // §7.2: the three carry their own ISO 3166-1 codes and get their own
+    // files, so inside CN.json they are geometry rather than clickable
+    // provinces. §7.3: the nine-dash line is not a subdivision of anything.
+    const geometries = provinceGeometries(reEnvelopeCurated(curated)) as Array<{
+      id?: string; properties: { adcode: string | number; sel: number };
+    }>;
+    const bySel = (v: number) => geometries.filter((g) => g.properties.sel === v).map((g) => String(g.properties.adcode));
+    expect(bySel(0).sort()).toEqual(["100000_JD", "710000", "810000", "820000"]);
+    expect(bySel(1)).toHaveLength(31);
   });
 
   test("does not re-quantise — the curated arcs are carried verbatim", () => {

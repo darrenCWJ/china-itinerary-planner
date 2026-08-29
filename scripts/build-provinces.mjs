@@ -306,6 +306,16 @@ const SOURCE_LICENSE = 'Natural Earth (public domain), via nvkelso/natural-earth
 const CURATED_COUNTRY = 'CN';
 
 /**
+ * Curated CN geometries that are not selectable provinces of China.
+ *
+ * The first three carry their own ISO 3166-1 alpha-2 codes and therefore their
+ * own province files; §7.2 makes them non-selectable *within* CN.json rather
+ * than absent from it, because China's outline is drawn from these geometries.
+ * `100000_JD` is the nine-dash line, which is not a subdivision of anything.
+ */
+const CN_NON_SELECTABLE = new Set(['710000', '810000', '820000', '100000_JD']);
+
+/**
  * A province file, with its timestamp preserved when nothing changed.
  *
  * Compared on `topology` and `cityProvince` alone — never the envelope. A
@@ -349,8 +359,34 @@ export function provincePayload(country, topology, cityProvince, previous, now) 
  */
 export function reEnvelopeCurated(curated) {
   const key = Object.keys(curated.objects)[0];
+  const source = curated.objects[key];
   return {
     ...curated,
-    objects: { provinces: curated.objects[key] },
+    objects: {
+      provinces: {
+        ...source,
+        geometries: source.geometries.map((geometry) => {
+          const adcode = String(geometry.properties.adcode);
+          return {
+            ...geometry,
+            // Every province file joins `cityProvince` on `id`. The curated
+            // asset has none — its join key is `properties.adcode` — so one is
+            // stamped here. Without it China's city assignments name Natural
+            // Earth ids that appear nowhere in the file China actually ships,
+            // and all 409 of them resolve to nothing: an empty map in the one
+            // country the app is named after, with every gate still green.
+            id: adcode,
+            properties: {
+              ...geometry.properties,
+              // Taiwan, Hong Kong and Macau hold their own ISO 3166-1 codes and
+              // get their own files; inside CN.json they are geometry, not
+              // clickable provinces (§7.2). `100000_JD` is the nine-dash line,
+              // which is not a province at all (§7.3).
+              sel: CN_NON_SELECTABLE.has(adcode) ? 0 : 1,
+            },
+          };
+        }),
+      },
+    },
   };
 }
