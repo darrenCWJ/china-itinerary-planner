@@ -39,7 +39,7 @@ export function cityEnrichmentPath(country: string): string {
   return `/cities/enrich/${normaliseCountry(country, "cityEnrichmentPath")}.json`;
 }
 
-/** The seven-field record `scripts/ingest-cities.mjs` emits. */
+/** The nine-field record `scripts/ingest-cities.mjs` emits. */
 export interface CityShardRow {
   id: string;
   n: string;
@@ -179,7 +179,7 @@ const PREFECTURE_POPULATION = 200_000;
  * The union is China's administrative vocabulary and it stays, because it is
  * what `CountryMap.tsx`'s `radiusFor` and `labelFor` already switch on — the
  * levels are marker prominence, not governance. Population is the only field
- * in the seven-field record that carries that meaning, and the thresholds are
+ * in the nine-field record that carries that meaning, and the thresholds are
  * chosen so a GeoNames city draws at the same size as a Chinese one of the
  * same weight.
  */
