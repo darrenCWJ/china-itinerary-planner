@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Topology } from "topojson-specification";
-import { CountryMap, hasDetailLevel } from "./CountryMap";
+import { hasDetailLevel } from "@/lib/countryDetail";
+import { CountryMap, hasCuratedTopology } from "./CountryMap";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -112,12 +113,24 @@ function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
 
 afterEach(cleanup);
 
-describe("hasDetailLevel", () => {
+describe("hasCuratedTopology", () => {
   test("is China only, however the code is cased or padded", () => {
-    expect(hasDetailLevel("CN")).toBe(true);
-    expect(hasDetailLevel(" cn ")).toBe(true);
-    expect(hasDetailLevel("JP")).toBe(false);
-    expect(hasDetailLevel("")).toBe(false);
+    expect(hasCuratedTopology("CN")).toBe(true);
+    expect(hasCuratedTopology(" cn ")).toBe(true);
+    expect(hasCuratedTopology("JP")).toBe(false);
+    expect(hasCuratedTopology("")).toBe(false);
+  });
+
+  test("is a narrower question than whether the country has a detail level", () => {
+    // The predicate this dispatcher used to ask was both questions at once,
+    // and PR4 pulled them apart: the registry now says Japan has admin-1
+    // geometry, while only China has the curated asset `ChinaLevel` draws.
+    // Swapping this call site for the registry's answer — the obvious-looking
+    // edit — would route Japan into China's renderer, so it is pinned here
+    // rather than left to the two assertions further down that would catch it
+    // by accident.
+    expect(hasDetailLevel("JP")).toBe(true);
+    expect(hasCuratedTopology("JP")).toBe(false);
   });
 });
 
@@ -194,7 +207,7 @@ describe("CountryMap — China", () => {
   });
 });
 
-describe("CountryMap — countries with no detail level", () => {
+describe("CountryMap — countries with no curated topology", () => {
   test("names the country and points at search instead of drawing a map", () => {
     renderMap({ country: "JP", topology: null, places: [] });
 

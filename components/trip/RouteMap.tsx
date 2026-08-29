@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Topology } from "topojson-specification";
-import { CountryMap, hasDetailLevel } from "@/components/map/CountryMap";
+import { CountryMap, hasCuratedTopology } from "@/components/map/CountryMap";
 import type { MapPlace } from "@/components/map/mapTypes";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { DESTINATIONS } from "@/lib/data";
@@ -118,12 +118,12 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
     [startDate, season, country]
   );
 
-  const hasDetail = hasDetailLevel(country);
+  const hasCurated = hasCuratedTopology(country);
   const [topology, setTopology] = useState<Topology | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!hasDetail) return;
+    if (!hasCurated) return;
     const controller = new AbortController();
     fetch("/china-provinces.json", { signal: controller.signal })
       .then((r) => {
@@ -135,7 +135,7 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [hasDetail]);
+  }, [hasCurated]);
 
   if (places.length === 0) {
     return (
@@ -146,7 +146,7 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
     );
   }
 
-  if (hasDetail && topology === null) {
+  if (hasCurated && topology === null) {
     return (
       <p
         role="status"
