@@ -18,8 +18,8 @@ import { isCountryCode } from "./countries";
  *
  * Fetched per country like a city shard, not read server-side: `public/` is
  * not readable from a Vercel lambda, so an `fs` read of one of these works
- * locally and 500s in production. There is deliberately no fetcher here yet —
- * PR4 is the first caller, and it lands with the map that draws these.
+ * locally and 500s in production. `fetchProvinceTopology` at the foot of this
+ * file is that fetch, and `MapExplorer` is its first caller.
  */
 
 /** Root-relative so the fetch resolves the same from every route. */
@@ -235,4 +235,37 @@ export function parseProvinceTopology(raw: unknown, expectedCountry?: string): P
     units,
     cityProvince,
   };
+}
+
+/**
+ * Fetches and validates one country's province file.
+ *
+ * Shaped exactly like `fetchCityShard`, and for its reasons. No module-level
+ * cache: `next.config.ts` gives `/provinces/:path+` a day of `max-age` plus a
+ * week of `stale-while-revalidate`, so the browser's own cache serves the
+ * second caller, and a cache here would need a test-only reset hook and would
+ * leak between tests. The country is passed through to `parseProvinceTopology`
+ * so the URL and the envelope are checked against each other on every real
+ * fetch rather than only in fixtures.
+ *
+ * Rejects rather than degrading, on both a bad status and a bad body. Which of
+ * those is survivable is the CALLER's judgement and not this module's: at the
+ * country level a missing map costs an enhancement and the place list still
+ * reaches every city, while a surface that had nothing else to draw would want
+ * to know. A fetcher that swallowed its own failure would take that choice
+ * away from both of them.
+ *
+ * Signed out, `proxy.ts` redirects to /login and `fetch` follows it, so
+ * `res.ok` is true and `res.json()` rejects on the login page's `<`. That
+ * rejection is the correct outcome and callers already treat any rejection as
+ * "no geometry".
+ */
+export async function fetchProvinceTopology(
+  country: string,
+  signal?: AbortSignal
+): Promise<ProvinceFile> {
+  const path = provincePath(country);
+  const response = await fetch(path, signal ? { signal } : undefined);
+  if (!response.ok) throw new Error(`province file ${path}: ${response.status}`);
+  return parseProvinceTopology(await response.json(), country);
 }
