@@ -228,22 +228,55 @@ describe("CountryMap — countries with no detail level", () => {
 });
 
 describe("CountryPlaceList — a country with a full shard", () => {
-  test("caps the chip list and says how many more there are", () => {
-    // Before the worldwide catalog this list held at most a handful of curated
-    // places and, outside China, always zero. A Peruvian shard hands it 750,
-    // and nothing here bounded the render.
-    const many = Array.from({ length: 200 }, (_, i) =>
-      place({ id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog" })
+  /** 200 catalog cities across two provinces, the shape a real shard has. */
+  function peruvianShard() {
+    return Array.from({ length: 200 }, (_, i) =>
+      place({
+        id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog",
+        province: i < 120 ? "Lima" : "Cuzco",
+      })
     );
-    renderMap({ country: "PE", topology: null, places: many });
+  }
 
-    expect(screen.getAllByRole("button")).toHaveLength(60);
-    // The head of the list, not an arbitrary 60 of it: `places` arrives in
-    // population order, so the cap has to keep the largest cities.
+  test("groups a full shard by province and reaches every city", () => {
+    // Before this, the list rendered places.slice(0, 60) — which for 150 of
+    // 246 countries hid most of the shard, 690 of Peru's 750 among them.
+    renderMap({ country: "PE", topology: null, places: peruvianShard() });
+
+    expect(screen.getByRole("group", { name: "Lima" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Cuzco" })).toBeInTheDocument();
+
+    // Every city is reachable — collapsed groups expand, they do not truncate.
+    for (const button of screen.getAllByRole("button", { name: /^Show all/ })) {
+      fireEvent.click(button);
+    }
     expect(screen.getByRole("button", { name: "City 0" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "City 59" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "City 60" })).not.toBeInTheDocument();
-    expect(screen.getByText(/140 more/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "City 199" })).toBeInTheDocument();
+    expect(screen.queryByText(/more in Peru/)).not.toBeInTheDocument();
+  });
+
+  test("filtering narrows to matching cities across every group", () => {
+    const places = [
+      place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" }),
+      place({ id: "G2", name: "Cusco", kind: "catalog", province: "Cuzco" }),
+    ];
+    renderMap({ country: "PE", topology: null, places });
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "cus" } });
+
+    expect(screen.getByRole("button", { name: "Cusco" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Lima" })).not.toBeInTheDocument();
+  });
+
+  test("says so when a filter matches nothing, rather than rendering blank", () => {
+    renderMap({
+      country: "PE", topology: null,
+      places: [place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" })],
+    });
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "zzz" } });
+
+    expect(screen.getByText(/No places in Peru match/)).toBeInTheDocument();
   });
 
   test("says nothing about a remainder when everything fits", () => {

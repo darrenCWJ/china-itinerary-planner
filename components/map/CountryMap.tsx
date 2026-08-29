@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import { getCountry } from "@/lib/countries";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
+import { filterPlaces, groupPlacesByAdmin1 } from "@/lib/placeGrouping";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
 import type { ChinaRegion } from "@/lib/types";
 import {
@@ -39,13 +40,6 @@ import {
 
 /** The one country with a populated detail level. */
 export const DETAILED_COUNTRY = "CN";
-
-/**
- * Chips the country-level fallback renders before it stops and defers to
- * search. A worldwide shard holds up to 750 cities and this list has no
- * virtualisation, no scroll cap and no filter.
- */
-const MAX_LIST_PLACES = 60;
 
 /**
  * Whether a country has a drawable detail map. The caller needs this too — it
@@ -104,13 +98,21 @@ export function CountryMap({ country, topology, ...level }: CountryMapProps) {
   );
 }
 
+/** Chips shown per province before the group offers to expand. */
+const PLACES_PER_GROUP = 12;
+
 /**
  * The fallback level: no geometry, so the places themselves are the map.
  *
- * Search — the input the destination step keeps above this pane, scoped to the
- * same country — is the guaranteed path to every place (spec §6), so this panel
- * says so rather than growing a second search box that could disagree with it.
+ * This panel used to defer to the destination step's own search rather than
+ * grow a second input, on the grounds that two boxes could disagree. It has
+ * one now, and they do different jobs: that search reaches the whole catalog
+ * and adds places; this filter narrows the shard already on screen and never
+ * fetches. Spec 5.2 makes the list the accessibility spine of the country
+ * level, and a spine that renders 60 of 750 rows is not one — for 150 of 246
+ * countries the old cap hid most of the shard.
  */
+
 function CountryPlaceList({
   country,
   places,
@@ -128,50 +130,86 @@ function CountryPlaceList({
   // so this reads "Peru", not "PE". The `||` chain is the guard for the case
   // that is left: a code that is not a country at all, where both are "".
   const label = name || code || "this country";
-  // A country's shard holds up to 750 cities and this list is a flat row of
-  // chips with no virtualisation — which was fine when it held a handful of
-  // curated places and, outside China, always zero. `places` arrives in
-  // population order, so the cap keeps the largest and search reaches the rest.
-  const shown = places.slice(0, MAX_LIST_PLACES);
-  const remainder = places.length - shown.length;
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const matched = useMemo(() => filterPlaces(places, query), [places, query]);
+  const groups = useMemo(() => groupPlacesByAdmin1(matched), [matched]);
+  // A filter is a deliberate narrowing, so it expands everything it matched —
+  // asking a user to expand a group they just searched into is a second step
+  // for a decision they already made.
+  const filtering = query.trim() !== "";
 
   return (
     <div className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--surf-1)]/50 p-5">
       <h4 className="font-display text-base font-bold">{label}</h4>
       <p className="mt-1 text-sm text-[var(--ink-2)]">
         {places.length > 0
-          ? `Tap a place to add it, or search above for anywhere else in ${label}.`
+          ? `Tap a place to add it, or filter to find one by name.`
           : `No map for ${label} yet — search above to add places, and they'll show up in your plan the same way.`}
       </p>
-      {shown.length > 0 && (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {shown.map((place) => {
-            const isSelected = selected.includes(place.id);
-            return (
-              <li key={place.id}>
-                <button
-                  type="button"
-                  onClick={() => onTogglePlace(place)}
-                  aria-pressed={isSelected}
-                  className={`min-h-[var(--tap-min)] rounded-full border px-3.5 text-sm transition-colors ${
-                    isSelected
-                      ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-[var(--paper)]"
-                      : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
-                  }`}
-                >
-                  {place.name}
-                  {place.localName && (
-                    <span className="ml-1.5 font-kai opacity-80">{place.localName}</span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+
+      {places.length > 0 && (
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={`Filter places in ${label}`}
+          placeholder={`Filter ${places.length} places`}
+          className="mt-3 min-h-[var(--tap-min)] w-full rounded-full border border-[var(--line-1)] bg-[var(--paper)] px-4 text-sm text-[var(--ink-1)] placeholder:text-[var(--ink-2)]"
+        />
       )}
-      {remainder > 0 && (
-        <p className="mt-2 text-xs text-[var(--ink-2)]">
-          {remainder} more in {label} — search above to find them by name.
+
+      {groups.map((group) => {
+        const open = filtering || expanded.has(group.key);
+        const shown = open ? group.places : group.places.slice(0, PLACES_PER_GROUP);
+        const hidden = group.places.length - shown.length;
+        const groupLabel = group.label ?? `Elsewhere in ${label}`;
+        return (
+          <section key={group.key} aria-label={groupLabel} role="group" className="mt-4">
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-2)]">
+              {groupLabel}
+            </h5>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {shown.map((place) => {
+                const isSelected = selected.includes(place.id);
+                return (
+                  <li key={place.id}>
+                    <button
+                      type="button"
+                      onClick={() => onTogglePlace(place)}
+                      aria-pressed={isSelected}
+                      className={`min-h-[var(--tap-min)] rounded-full border px-3.5 text-sm transition-colors ${
+                        isSelected
+                          ? "border-[var(--accent-ink)] bg-[var(--accent-ink)] text-[var(--paper)]"
+                          : "border-[var(--line-1)] bg-[var(--paper)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+                      }`}
+                    >
+                      {place.name}
+                      {place.localName && (
+                        <span className="ml-1.5 font-kai opacity-80">{place.localName}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {hidden > 0 && (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => new Set(prev).add(group.key))}
+                className="mt-2 min-h-[var(--tap-min)] text-xs font-semibold text-[var(--accent-ink)] underline"
+              >
+                {`Show all ${group.places.length} in ${groupLabel}`}
+              </button>
+            )}
+          </section>
+        );
+      })}
+
+      {places.length > 0 && groups.length === 0 && (
+        <p className="mt-3 text-sm text-[var(--ink-2)]">
+          {`No places in ${label} match "${query.trim()}".`}
         </p>
       )}
     </div>
