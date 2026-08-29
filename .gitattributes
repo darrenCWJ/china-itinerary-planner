@@ -29,3 +29,10 @@ data/*.json text eol=lf
 # directory, and until it does the line is inert.
 public/provinces/*.json text eol=lf
 public/climate/*.json   text eol=lf
+
+# And the projection manifest, which is one line of JSON plus a trailing LF.
+# `data/projections-report.md` publishes its exact byte and gzip sizes, and
+# `scripts/build-projections.mjs` measures them on the bytes it writes. Left
+# unpinned, a fresh Windows clone takes a CRLF copy that is one byte longer
+# than the report says it is, and the record stops describing the artifact.
+public/country-projections.json text eol=lf

@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
    * script is deliberately re-run and the result committed, and the globe asset
    * is fetched on every picker open.
    *
+   * `country-projections.json` joins them for the same reason and with the same
+   * lifecycle: `scripts/build-projections.mjs` is run by hand and its 20 KB
+   * output committed, and PR4 reads it on every map open. It belongs in THIS
+   * rule rather than a subtree rule of its own because it really is a single
+   * path segment — the thing `/provinces/` and `/cities/` each needed their own
+   * rule for is that they are not.
+   *
    * A day, then a week of stale-while-revalidate, so a rebuild reaches users
    * within a day without any picker open paying for a revalidation.
    *
@@ -31,7 +38,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:asset(world-countries\\.json|world-globe\\.json|china-provinces\\.json)",
+        source:
+          "/:asset(world-countries\\.json|world-globe\\.json|china-provinces\\.json|country-projections\\.json)",
         headers: [
           {
             key: "Cache-Control",

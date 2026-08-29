@@ -2,12 +2,17 @@
  * The §5.4 projection rule: how each of the 246 countries is fitted into the
  * map viewport, and which of its outlying polygons may be left out of frame.
  *
- * This module is the rule alone — pure functions over a country's already
- * merged outline. The I/O that walks `public/provinces/` and writes
- * `public/country-projections.json` lands in Task 2.
+ * Builds public/country-projections.json and data/projections-report.md from
+ * the committed province files, whose units `merge()` into each country's
+ * outline (spec §4.1) — so one artifact feeds both the fit and the drawing.
  *
- * Modelled on build-provinces.mjs: the pure functions are exported for tests
- * and the I/O is not.
+ * Run by hand and the output committed:
+ *
+ *     node scripts/build-projections.mjs
+ *
+ * Modelled on build-provinces.mjs: every gate fires before any write, the pure
+ * functions are exported for tests and the I/O is not, and an entry-point
+ * guard keeps an import from rewriting the manifest.
  *
  * Two things about this file are load-bearing and neither is obvious:
  *
@@ -22,6 +27,11 @@
  */
 
 import { geoArea, geoBounds, geoCentroid, geoMercator } from 'd3-geo';
+import { merge } from 'topojson-client';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { MAP_VIEW_H, MAP_VIEW_W } from '../lib/mapView.ts';
 
 /**
@@ -228,4 +238,376 @@ export function trimTrajectory(polygons, lambda, anchor, viewBox = VIEW_BOX) {
   }
 
   return trajectory;
+}
+/* -------------------------------------------------------------------------
+ * The entry: applying the rule to one country
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One country's manifest entry.
+ *
+ * `bounds` is in the ROTATED frame — the frame `rotate` puts the country in —
+ * so a renderer that applies `rotate` and then fits `bounds` reproduces
+ * `scale` exactly. `scale` is therefore redundant by construction, which is
+ * the point: §5.4's build-time test recomputes it, and a manifest edited by
+ * hand fails that test rather than quietly mis-fitting a country.
+ *
+ * `hiddenAreaPct` is a PERCENT, not a fraction, and is present only on the
+ * countries a trim was actually applied to.
+ *
+ * @typedef {object} ProjectionEntry
+ * @property {number} rotate
+ * @property {number[][]} bounds
+ * @property {number} scale
+ * @property {number} [hiddenAreaPct]
+ */
+
+/**
+ * The polygons of a merged outline, whichever shape `merge()` returned.
+ *
+ * `merge()` gives a MultiPolygon today, but a Polygon's `coordinates` are
+ * RINGS, not polygons — passing them straight through would make a country
+ * with one landmass and one lake look like two polygons, and hand the lake its
+ * own centroid, its own area and a place in the trim trajectory.
+ */
+export function polygonsOf(merged) {
+  return merged.type === 'MultiPolygon' ? merged.coordinates : [merged.coordinates];
+}
+
+/** Gate A: how much of a country may go out of frame. §5.4, as a fraction. */
+export const MAX_HIDDEN_AREA = 0.01;
+
+/** Gate B: how far a hidden polygon must sit from the anchor. See `separation`. */
+export const MIN_SEPARATION = 0.5;
+
+/** Gate C: how much bigger the country must draw before a trim is worth it. */
+export const MIN_GAIN = 1.5;
+
+/**
+ * The best point on a trim trajectory that clears all three gates, or null.
+ *
+ * Best-over-the-whole-trajectory rather than first-passing, because a per-step
+ * gate loses the answer: NL's three Caribbean polygons each gain about 1.1x
+ * alone and 11.5x together, so every prefix but the last fails Gate C on its
+ * way to a trim that passes it comfortably.
+ *
+ * @param {ReturnType<typeof trimTrajectory>} trajectory
+ * @returns {ReturnType<typeof trimTrajectory>[number] | null}
+ */
+export function bestTrim(trajectory) {
+  let best = null;
+  for (const step of trajectory) {
+    if (step.hidden > MAX_HIDDEN_AREA) continue;
+    if (step.sep < MIN_SEPARATION) continue;
+    if (step.gain < MIN_GAIN) continue;
+    if (best === null || step.gain > best.gain) best = step;
+  }
+  return best;
+}
+
+/**
+ * Coordinates and scales are stored to 4 dp.
+ *
+ * Not cosmetic: a country's bounds carry no meaning below about 11 m, and a
+ * full double costs ~17 characters a number against ~8. Across 246 entries
+ * that is the difference between a ~20 KB manifest and a ~50 KB one, for a
+ * file every visitor downloads.
+ */
+const DP = 4;
+const round = (x) => Number(x.toFixed(DP));
+
+/** Square kilometres per steradian, for the report's hidden-area figures. */
+const KM2_PER_STERADIAN = 510_072_000 / (4 * Math.PI);
+
+/**
+ * One country's entry, plus the measurements the report needs.
+ *
+ * The anchor is the largest polygon by area — the landmass the country
+ * unmistakably IS. `trimTrajectory` never offers it as a candidate, because
+ * dropping it maximises scale trivially and ZA-without-South-Africa is Prince
+ * Edward Island at a 146x "gain".
+ *
+ * @returns {{ entry: ProjectionEntry, baseScale: number, trim: (ReturnType<typeof trimTrajectory>[number] | null), hiddenKm2: number[] }}
+ */
+export function measureCountry(polygons, viewBox = VIEW_BOX) {
+  const lambda = rotationFor(polygons);
+  const boxes = polygons.map((polygon) => boxOf(polygon, lambda));
+  const base = unionOf(boxes, polygons.map((_, i) => i));
+  const baseScale = scaleOf(base, lambda, viewBox);
+  const untrimmed = {
+    entry: {
+      rotate: round(lambda),
+      bounds: [[round(base.x0), round(base.y0)], [round(base.x1), round(base.y1)]],
+      scale: round(baseScale),
+    },
+    baseScale,
+    trim: null,
+    hiddenKm2: [],
+  };
+  if (polygons.length < 2) return untrimmed;
+
+  const areas = polygons.map((polygon) => geoArea({ type: 'Polygon', coordinates: polygon }));
+  const anchor = areas.indexOf(Math.max(...areas));
+  const trim = bestTrim(trimTrajectory(polygons, lambda, anchor, viewBox));
+  if (trim === null) return untrimmed;
+
+  return {
+    entry: {
+      rotate: round(lambda),
+      bounds: [
+        [round(trim.union.x0), round(trim.union.y0)],
+        [round(trim.union.x1), round(trim.union.y1)],
+      ],
+      scale: round(trim.scale),
+      // A percent, and to 3 dp: FR's trim hides 0.001% of France, and a 2 dp
+      // field would round the only number that explains the entry to zero.
+      hiddenAreaPct: Number((trim.hidden * 100).toFixed(3)),
+    },
+    baseScale,
+    trim,
+    hiddenKm2: trim.dropped.map((i) => Number((areas[i] * KM2_PER_STERADIAN).toFixed(1))),
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * The gate
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One entry per committed province file, and the count is not a floor.
+ *
+ * A build that silently emitted 240 would ship a manifest whose six missing
+ * countries fall back to a whole-world fit and look merely bad rather than
+ * broken. If `build-provinces.mjs` ever emits a different number this must be
+ * updated deliberately, by a human who has looked at why.
+ */
+export const EXPECTED_COUNTRIES = 246;
+
+/**
+ * Aborts the build unless every entry could actually be rendered.
+ *
+ * `scale` finite and positive is the load-bearing check — a NaN reaches
+ * `fitExtent` from any non-finite bound and produces a blank map with no
+ * error. Bounds ordering is checked too, because an inverted box does NOT
+ * produce a NaN: it fits, silently, to a mirrored country.
+ *
+ * @param {Record<string, ProjectionEntry>} manifest
+ */
+export function assertManifest(manifest) {
+  const codes = Object.keys(manifest).sort();
+  if (codes.length !== EXPECTED_COUNTRIES) {
+    throw new Error(
+      `manifest has ${codes.length} entries, expected ${EXPECTED_COUNTRIES} — every country ` +
+      `with a province file must have one, and the count is a match rather than a floor`
+    );
+  }
+  const badScale = codes.filter((code) => {
+    const scale = manifest[code].scale;
+    return !Number.isFinite(scale) || scale <= 0;
+  });
+  if (badScale.length > 0) {
+    throw new Error(
+      `${badScale.length} entries with a scale that is not finite and positive: ` +
+      badScale.map((code) => `${code} ${manifest[code].scale}`).join(', ')
+    );
+  }
+  const badBounds = codes.filter((code) => {
+    const [[x0, y0], [x1, y1]] = manifest[code].bounds;
+    return ![x0, y0, x1, y1].every(Number.isFinite) || x1 < x0 || y1 < y0;
+  });
+  if (badBounds.length > 0) {
+    throw new Error(
+      `${badBounds.length} entries with non-finite or inverted bounds: ${badBounds.join(', ')} — ` +
+      `fitExtent accepts an inverted box in silence and mirrors the country`
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * I/O
+ * ---------------------------------------------------------------------- */
+
+const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PROVINCE_DIR = join(ROOT_DIR, 'public', 'provinces');
+const MANIFEST_PATH = join(ROOT_DIR, 'public', 'country-projections.json');
+const REPORT_PATH = join(ROOT_DIR, 'data', 'projections-report.md');
+
+/** A province file, as build-provinces.mjs names them. */
+const PROVINCE_FILE = /^([A-Z]{2})\.json$/;
+
+/**
+ * Write via a PID-suffixed temp file, removing the destination first.
+ *
+ * Lifted from build-provinces.mjs unchanged: `rmSync` before `renameSync`
+ * because renaming onto an existing path is not reliably atomic on Windows,
+ * which is this project's dev platform, and the PID suffix because a bare
+ * `.tmp` collides if two builds ever overlap.
+ */
+function writeFileAtomic(path, contents) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = `${path}.tmp-${process.pid}`;
+  try {
+    writeFileSync(temp, contents);
+    rmSync(path, { force: true });
+    renameSync(temp, path);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
+/**
+ * The committed measurement record, in build-provinces.mjs's shape:
+ * provenance, a `## Coverage` block of bolded counts, one paragraph for the
+ * single consequence a reader would otherwise get wrong, and a `## Size` block.
+ *
+ * Every figure comes from the run that is writing the manifest, and the
+ * timestamp from the same `now` — a second `new Date()` here would make the
+ * report claim a build that never happened.
+ */
+function buildReport(stats) {
+  const rows = [...stats.trimmed].sort((a, b) => b.gain - a.gain);
+  const worst = rows.length === 0
+    ? 'none'
+    : `${Math.max(...rows.map((r) => r.hiddenAreaPct)).toFixed(3)}%`;
+  return [
+    '# Country projections',
+    '',
+    '- Source: the committed `public/provinces/<CC>.json` outlines, merged with `topojson-client`',
+    '- Licence: as the province files — see [provinces-report.md](provinces-report.md)',
+    `- Viewport: ${MAP_VIEW_W} x ${MAP_VIEW_H}, read from \`lib/mapView.ts\``,
+    `- Generated: ${stats.now}`,
+    '',
+    '## Coverage',
+    '',
+    `- Entries: **${stats.count}**`,
+    `- Countries drawn from more than one polygon: **${stats.multi}**`,
+    `- Countries rotated off the antimeridian: **${stats.rotated.length}**`,
+    `- Countries whose fit leaves a polygon out of frame: **${rows.length}**`,
+    `- Multi-polygon countries the gates refused to trim: **${stats.multi - rows.length}**`,
+    `- Largest hidden area: **${worst}**`,
+    '',
+    'The nine trims below are far fewer, and far smaller, than the spec',
+    "predicted — and the reason is not cartographic. The spec's headline case",
+    'was the Netherlands at 11.51x, hiding Bonaire, Saba and Sint Eustatius;',
+    'those three are now `BQ.json`, a country of their own, so there is no',
+    'longer a Dutch polygon for a projection to hide. New Zealand went the same',
+    'way when Tokelau became `TK.json`. A cartographic workaround was retired',
+    'by a data-model decision, and anyone comparing this table against the',
+    "spec's should read the difference as the territory policy working rather",
+    'than as the rule disagreeing.',
+    '',
+    '## Rotations',
+    '',
+    'Rule 1: everyone else takes `rotate: 0`. These cross the antimeridian,',
+    'where an unrotated fit reads a 3-degree-wide country as a 357-degree one',
+    'and collapses.',
+    '',
+    '```',
+    stats.rotated.map((r) => `${r.code} ${r.rotate}`).join('  '),
+    '```',
+    '',
+    '## Trims accepted',
+    '',
+    'Gate A: at most 1% of the country hidden. Gate B: separation at least 0.5,',
+    "as centroid distance in degrees over the anchor's own bbox diagonal. Gate",
+    'C: the country must draw at least 1.5x bigger for the loss to be worth it.',
+    '',
+    '| code | hides | % area | km2 hidden | scale before | scale after | gain | sep |',
+    '|---|---|---|---|---|---|---|---|',
+    ...rows.map((r) =>
+      `| ${r.code} | ${r.hides} | ${r.hiddenAreaPct.toFixed(3)}% | ${r.km2.join(' / ')} | ` +
+      `${r.baseScale.toFixed(2)} | ${r.scale.toFixed(2)} | ${r.gain.toFixed(2)}x | ${r.sep.toFixed(2)} |`
+    ),
+    '',
+    '## Size',
+    '',
+    `- Raw: ${stats.raw} B`,
+    `- Gzip: ${stats.gzip} B`,
+    `- Mean: ${(stats.raw / stats.count).toFixed(1)} B/entry`,
+    '',
+  ].join('\n');
+}
+
+/** How many artifacts this run has put on disk, for the failure message. */
+let written = 0;
+
+function main() {
+  const files = readdirSync(PROVINCE_DIR).filter((name) => PROVINCE_FILE.test(name)).sort();
+  if (files.length === 0) {
+    throw new Error(`no province files in ${PROVINCE_DIR} — run build-provinces.mjs first`);
+  }
+
+  /** @type {Record<string, ProjectionEntry>} */
+  const manifest = {};
+  const trimmed = [];
+  const rotated = [];
+  let multi = 0;
+
+  for (const name of files) {
+    const code = PROVINCE_FILE.exec(name)[1];
+    const { topology } = JSON.parse(readFileSync(join(PROVINCE_DIR, name), 'utf8'));
+    // `merge()` over the very features the picker lists — spec §4.1. It is
+    // what makes one fetch feed both the outline and the selectable units.
+    const polygons = polygonsOf(merge(topology, topology.objects.provinces.geometries));
+    if (polygons.length === 0) throw new Error(`${code}: merge() produced no polygons`);
+    if (polygons.length > 1) multi += 1;
+
+    const { entry, baseScale, trim, hiddenKm2 } = measureCountry(polygons);
+    manifest[code] = entry;
+    if (entry.rotate !== 0) rotated.push({ code, rotate: entry.rotate });
+    if (trim !== null) {
+      trimmed.push({
+        code,
+        hides: trim.dropped.length,
+        hiddenAreaPct: entry.hiddenAreaPct,
+        km2: hiddenKm2,
+        baseScale,
+        scale: trim.scale,
+        gain: trim.gain,
+        sep: trim.sep,
+      });
+    }
+  }
+
+  // Every gate fires before anything reaches disk.
+  assertManifest(manifest);
+
+  const json = `${JSON.stringify(manifest)}\n`;
+  const raw = Buffer.byteLength(json);
+  const gzip = gzipSync(json).length;
+  const now = new Date().toISOString();
+  const count = Object.keys(manifest).length;
+
+  writeFileAtomic(MANIFEST_PATH, json);
+  written += 1;
+  writeFileAtomic(REPORT_PATH, buildReport({ count, multi, rotated, trimmed, raw, gzip, now }));
+  written += 1;
+
+  console.log(
+    `entries: ${count}  raw ${raw} B  gzip ${gzip} B  mean ${(raw / count).toFixed(1)} B/entry`
+  );
+  console.log(`rotate != 0 (${rotated.length}): ${rotated.map((r) => r.code).join(' ')}`);
+  console.log(`hiddenAreaPct (${trimmed.length}): ${trimmed.map((r) => r.code).join(' ')}`);
+  for (const r of [...trimmed].sort((a, b) => b.gain - a.gain)) {
+    console.log(
+      `  ${r.code}  hides ${r.hides} (${r.hiddenAreaPct.toFixed(3)}%, km2 ${r.km2.join('/')})  ` +
+      `${r.baseScale.toFixed(2)} -> ${r.scale.toFixed(2)}  gain ${r.gain.toFixed(2)}x  sep ${r.sep.toFixed(2)}`
+    );
+  }
+  console.log(`Wrote ${MANIFEST_PATH}`);
+  console.log(`Wrote ${REPORT_PATH}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`\nProjection build failed: ${error.message}`);
+    console.error(written === 0
+      ? 'Nothing was written — the committed manifest and report are untouched.'
+      : `${written} artifact(s) reached disk and now disagree with each other. Re-run to ` +
+        `completion before committing, or "git checkout -- public/country-projections.json ` +
+        `data/projections-report.md".`);
+    process.exit(1);
+  }
 }
