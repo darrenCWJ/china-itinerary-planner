@@ -4,8 +4,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
   /**
    * Scope: this block describes the FIRST rule below only — the committed
-   * topology assets. The `/cities/` rule that follows it has its own docblock
-   * and its own, deliberately shorter, window.
+   * topology assets. Every rule after it carries its own docblock and its own
+   * window; this note deliberately does not enumerate them, because a list
+   * maintained by hand here is wrong the moment a rule is added below.
    *
    * The committed topology assets, which Next otherwise serves with
    * `Cache-Control: public, max-age=0` — it cannot know that a given file under
@@ -74,6 +75,58 @@ const nextConfig: NextConfig = {
           {
             key: "Cache-Control",
             value: "public, max-age=21600, stale-while-revalidate=86400",
+          },
+        ],
+      },
+      {
+        /**
+         * The 246 province files and their index (spec §4.1).
+         *
+         * Its own rule for exactly the reason /cities/ needs one: the topology
+         * rule above matches a SINGLE path segment, so `/provinces/CA.json`
+         * has two and would fall through to Next's `public, max-age=0` for
+         * public/ files. The largest file in the artifact is CA, measured at
+         * 139,477 B gzipped, and PR4 fetches one of these on every map open.
+         *
+         * The topology assets' day-long window rather than the cities' six
+         * hours, because these have the topology assets' lifecycle: the build
+         * is invoked by hand and its output committed, where the city shards
+         * are rewritten whenever the daily workflow finds movement upstream.
+         *
+         * `:path+` (one-or-more) rather than `:path*` (zero-or-more) for the
+         * same reason as above: the star form also matches the bare
+         * `/provinces` and `/provinces/`, which are not files.
+         *
+         * BEFORE ANY SCHEMA-BREAKING REBUILD OF THESE FILES, ship a cache bust
+         * first — a hashed filename or a query string. These URLs carry no
+         * content hash, so a client can hold yesterday's bytes while newly
+         * deployed code expects a new shape. A pure data refresh is fine:
+         * `parseProvinceTopology` throws loudly rather than degrading.
+         */
+        source: "/provinces/:path+",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      },
+      {
+        /**
+         * The per-country climate files. public/climate/ does not exist yet —
+         * Plan 5 builds it — and the rule lands ahead of it deliberately: a
+         * header rule for a path Next serves nothing at is inert, so it costs
+         * nothing today, and the alternative is remembering to add it later,
+         * after the first uncached fetch has already shipped.
+         *
+         * Same window and same `:path+` reasoning as the province rule above;
+         * these are the same kind of by-hand-rebuilt committed artifact.
+         */
+        source: "/climate/:path+",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
           },
         ],
       },
