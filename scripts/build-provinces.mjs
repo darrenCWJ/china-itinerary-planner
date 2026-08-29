@@ -14,6 +14,7 @@
 import { topology } from 'topojson-server';
 import { presimplify, simplify } from 'topojson-simplify';
 import { quantize } from 'topojson-client';
+import { geoContains } from 'd3-geo';
 
 /**
  * Quantisation, per country over its own bbox. Not a guess: world-countries
@@ -204,4 +205,42 @@ export function assertCoverage(emitted, reference) {
       `${missing.join(', ')} — every country the picker can open must have geometry`
     );
   }
+}
+
+/**
+ * Which admin-1 unit each city sits in (spec §6.5, D8).
+ *
+ * Containment is primary and the GeoNames code is the fallback, not the other
+ * way round. The NAME join is not used at all: it reaches 63.38% of pairs and
+ * scores literally zero in 35 countries, including Great Britain, Ireland,
+ * Kenya, Puerto Rico, Sri Lanka and Nepal. Containment reaches 96.08% with
+ * 0.00% ambiguous, and of the 20,124 cities whose pair fails the name join,
+ * 19,229 (95.55%) land in a polygon anyway — containment does not care that
+ * GeoNames says "England" and Natural Earth says "Shropshire".
+ *
+ * The 2,301 cities (3.92%) inside no polygon are why `a1c` is mandatory rather
+ * than merely useful.
+ */
+export function assignCities(features, cities) {
+  const byGnCode = new Map();
+  for (const f of features) {
+    const code = f.properties.gn_a1_code;
+    // First wins, and only the first: gn_a1_code is not unique across NE's
+    // admin-1 set, and a later feature overwriting an earlier one would make
+    // the fallback depend on iteration order.
+    if (code && !byGnCode.has(code)) byGnCode.set(code, f.id);
+  }
+  const cityProvince = {};
+  const unplaced = [];
+  for (const city of cities) {
+    const point = [city.lon, city.lat];
+    let hit = null;
+    for (const f of features) {
+      if (geoContains(f, point)) { hit = f.id; break; }
+    }
+    if (hit === null && city.a1c) hit = byGnCode.get(city.a1c) ?? null;
+    if (hit === null) unplaced.push(city.id);
+    else cityProvince[city.id] = hit;
+  }
+  return { cityProvince, unplaced };
 }
