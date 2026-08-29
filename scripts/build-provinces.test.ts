@@ -445,3 +445,45 @@ describe("provincePayload", () => {
     expect(provincePayload("PE", topo, {}, null, now).idKey).toBe("adm1_code");
   });
 });
+
+import { assertBudget, GZIP_BUDGET, RAW_TRIPWIRE, TOLERANCE_OVERRIDE } from "./build-provinces.mjs";
+
+describe("assertBudget", () => {
+  test("the budget is gzip, not raw — it measures what crosses the wire", () => {
+    expect(GZIP_BUDGET).toBe(150_000);
+    expect(RAW_TRIPWIRE).toBe(700_000);
+  });
+
+  test("names every country over the gzip budget", () => {
+    expect(() => assertBudget([
+      { code: "PE", raw: 1000, gzip: 400 },
+      { code: "RU", raw: 500_000, gzip: 193_912 },
+      { code: "CA", raw: 400_000, gzip: 193_318 },
+    ])).toThrow(/CA 193318[\s\S]*RU 193912/);
+  });
+
+  test("names every country over the raw tripwire even when its gzip fits", () => {
+    // A file that gzips well can still be pathological to parse. Measured, RU
+    // at tol 0 is 707,485 B raw — the tripwire exists because that is the
+    // shape a runaway build takes.
+    expect(() => assertBudget([{ code: "RU", raw: 707_485, gzip: 100_000 }]))
+      .toThrow(/raw tripwire[\s\S]*RU 707485/);
+  });
+
+  test("passes the measured shipping configuration", () => {
+    // Largest two after the override: CA 135,244 gz / 416,697 raw and
+    // RU 123,667 gz / 411,356 raw. Both clear both limits.
+    expect(() => assertBudget([
+      { code: "CA", raw: 416_697, gzip: 135_244 },
+      { code: "RU", raw: 411_356, gzip: 123_667 },
+      { code: "US", raw: 363_154, gzip: 96_518 },
+    ])).not.toThrow();
+  });
+
+  test("the override table is exactly the two countries that need it", () => {
+    // Measured at tol 0: RU 193,912 gz and CA 193,318 gz are the only two of
+    // 246 over the cap. Every other country ships quantise-only, because 1e-5
+    // erases the Vatican and 1e-4 erases 30 units including 13 Maldivian atolls.
+    expect(TOLERANCE_OVERRIDE).toEqual({ CA: 1e-4, RU: 1e-4 });
+  });
+});

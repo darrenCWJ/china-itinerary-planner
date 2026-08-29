@@ -208,6 +208,56 @@ export function assertCoverage(emitted, reference) {
 }
 
 /**
+ * The province budget measures gzip, not raw.
+ *
+ * lib/cityShard.test.ts:371's 150,000 is a RAW measurement of a city shard.
+ * The same UX intent applied to geometry measures what crosses the wire,
+ * because these files compress roughly 3:1 and a raw cap would reject files
+ * that cost a user nothing.
+ */
+export const GZIP_BUDGET = 150_000;
+
+/**
+ * A raw ceiling as well, so a runaway build fails loudly rather than
+ * committing something pathological to parse. Measured, the worst tol-0 file
+ * (RU, 707,485 B) is just over it, which is the shape this is written for.
+ */
+export const RAW_TRIPWIRE = 700_000;
+
+/**
+ * The only two countries that need simplification, and the whole table.
+ *
+ * Measured at tol 0 across all 246: RU 193,912 B gzip and CA 193,318 B gzip
+ * are the sole breaches. Everything else ships quantise-only, because §8.2
+ * disqualifies a global tolerance in both directions — 1e-5 erases the Vatican
+ * (and VA's entire admin-1 representation is that one polygon) and 1e-4 erases
+ * 30 units including 13 Maldivian atolls and both Bermudian cities.
+ *
+ * CA is the hardest slice in the dataset despite having only 13 features: its
+ * vertices are almost all Arctic coastline, which is exactly what Visvalingam
+ * defends longest.
+ */
+export const TOLERANCE_OVERRIDE = Object.freeze({ CA: 1e-4, RU: 1e-4 });
+
+/** Aborts the build when any file breaches either limit, naming all of them. */
+export function assertBudget(sizes) {
+  const overGzip = sizes.filter((s) => s.gzip > GZIP_BUDGET).sort((a, b) => a.code.localeCompare(b.code));
+  if (overGzip.length > 0) {
+    throw new Error(
+      `${overGzip.length} province file(s) over the ${GZIP_BUDGET} B gzip budget: ` +
+      overGzip.map((s) => `${s.code} ${s.gzip}`).join(', ')
+    );
+  }
+  const overRaw = sizes.filter((s) => s.raw > RAW_TRIPWIRE).sort((a, b) => a.code.localeCompare(b.code));
+  if (overRaw.length > 0) {
+    throw new Error(
+      `${overRaw.length} province file(s) over the ${RAW_TRIPWIRE} B raw tripwire: ` +
+      overRaw.map((s) => `${s.code} ${s.raw}`).join(', ')
+    );
+  }
+}
+
+/**
  * Which admin-1 unit each city sits in (spec §6.5, D8).
  *
  * Containment is primary and the GeoNames code is the fallback, not the other
