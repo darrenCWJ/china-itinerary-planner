@@ -244,3 +244,40 @@ export function assignCities(features, cities) {
   }
   return { cityProvince, unplaced };
 }
+
+const SOURCE_URL =
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces.geojson';
+const MAP_UNITS_URL =
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_map_units.geojson';
+/** Natural Earth is public domain; the vector repo redistributes it unchanged. */
+const SOURCE_LICENSE = 'Natural Earth (public domain), via nvkelso/natural-earth-vector v5.1.2';
+
+/** The one country whose file is a re-envelope of a curated asset (§6.3, D7). */
+const CURATED_COUNTRY = 'CN';
+
+/**
+ * A province file, with its timestamp preserved when nothing changed.
+ *
+ * Compared on `topology` and `cityProvince` alone — never the envelope. A
+ * comparison that included `generatedAt` could never match, and the guard
+ * would be dead code that looks alive.
+ *
+ * `idKey` rather than an assumption: China's file is a re-envelope of the
+ * committed curated topology, whose join key is `adcode` (GB/T 2260) while
+ * every other country's is `adm1_code`. The loader reads this field.
+ */
+export function provincePayload(country, topology, cityProvince, previous, now) {
+  const body = { topology, cityProvince };
+  const unchanged =
+    previous !== null &&
+    JSON.stringify({ topology: previous.topology, cityProvince: previous.cityProvince }) ===
+      JSON.stringify(body);
+  return {
+    country,
+    generatedAt: unchanged ? previous.generatedAt : now,
+    source: SOURCE_URL,
+    license: SOURCE_LICENSE,
+    idKey: country === CURATED_COUNTRY ? 'adcode' : 'adm1_code',
+    ...body,
+  };
+}
