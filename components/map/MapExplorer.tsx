@@ -270,8 +270,8 @@ export function MapExplorer({
         // join them — 1,067 catalog markers rather than the 1,086 a plain
         // concatenation draws. The 391 are Chinese cities the QID catalog never
         // covered, and that coverage is the point of the phase.
-        // `MAX_LIST_PLACES` does not apply: China has a detail level, so it
-        // renders ChinaLevel rather than CountryPlaceList.
+        // The country list's per-province cap does not apply: China has a
+        // detail level, so it renders ChinaLevel, not CountryPlaceList.
         setCities([...catalogRes.cities, ...shardCities]);
         // Unavailable only when BOTH sources failed. A country the Wikidata
         // catalog has never covered is the normal case for 245 of them, and
