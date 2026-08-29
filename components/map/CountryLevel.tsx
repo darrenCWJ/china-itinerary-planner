@@ -20,6 +20,7 @@ import {
   type HoverPos,
 } from "./mapShared";
 import { FIT_COLORS, fitForPlace, type MapPlace } from "./mapTypes";
+import { SelectedPlaceCard } from "./SelectedPlaceCard";
 
 /**
  * The country level every country that is not China renders (spec §5).
@@ -31,7 +32,7 @@ import { FIT_COLORS, fitForPlace, type MapPlace } from "./mapTypes";
  * byte-identical across this phase, and the cheapest way to guarantee that is
  * for this work to never touch the code path that draws it.
  *
- * Three things here are load-bearing.
+ * Four things here are load-bearing.
  *
  * **The outline is `merge()` over the very units the picker lists**, not a
  * second asset (§4.1). One fetch feeds both, and the seams between units
@@ -56,6 +57,16 @@ import { FIT_COLORS, fitForPlace, type MapPlace } from "./mapTypes";
  * That is deliberate and it is not duplication for its own sake: the marker
  * layer costs ONE tab stop however many places it draws, and the list is what
  * reaches a place the §5.4 trim left outside the viewport.
+ *
+ * **Activating a marker opens a card, and the modality it was activated with
+ * decides where focus goes.** `SelectedPlaceCard` (§5.3.3) is the surface
+ * `PlacePopup` cannot be — the popup is a `pointer-events-none` tooltip
+ * positioned from mouse events alone, so on a touch screen it never opens and
+ * on any screen nothing inside it can be operated. Hover keeps going to the
+ * popup, untouched; tap and Enter open the card. The `viaKeyboard` flag
+ * threaded through `useMarkerSelection` exists for exactly one reason: focus
+ * follows a keyboard activation into the card and comes back on dismiss, and
+ * does not move for a pointer one.
  */
 
 /** What this level reads off a unit's TopoJSON geometry. */
@@ -175,6 +186,13 @@ interface MarkerInteractionProps {
   role: "button";
   tabIndex: number;
   "aria-pressed": boolean;
+  /**
+   * Activating a marker opens §5.3.3's card and, from the keyboard, moves focus
+   * into it. Announced rather than sprung: a caret that leaves the marker layer
+   * without warning is indistinguishable from focus being lost, which is the
+   * thing a roving tabindex exists to prevent.
+   */
+  "aria-haspopup": "dialog";
   "aria-label": string;
   className: string;
   onKeyDown: (event: React.KeyboardEvent) => void;
@@ -208,10 +226,22 @@ interface MarkerInteractionProps {
 function useMarkerSelection(
   places: MapPlace[],
   selected: string[],
-  onTogglePlace: (place: MapPlace) => void
+  /**
+   * Activation, with the modality that caused it.
+   *
+   * Not `onTogglePlace` any more, because §5.3.3's card has to know: a keyboard
+   * activation moves focus into the card, and a pointer one must not. The
+   * distinction cannot be recovered downstream — by the time the card mounts,
+   * both look like a state change — and it is not `event.detail === 0` either,
+   * which is a heuristic about how a click was synthesised rather than a fact
+   * about which handler ran.
+   */
+  onActivate: (place: MapPlace, viaKeyboard: boolean) => void
 ): {
   markerProps: (place: MapPlace, index: number) => MarkerInteractionProps;
   focusedId: string | null;
+  /** Put focus back on one marker — what a dismissed card returns it to. */
+  refocus: (id: string) => void;
 } {
   const nodeRefs = useRef(new Map<string, SVGGElement>());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -249,7 +279,7 @@ function useMarkerSelection(
   const handleKeyDown = (event: React.KeyboardEvent, place: MapPlace, index: number) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      onTogglePlace(place);
+      onActivate(place, true);
       return;
     }
     const step = stepFor(event.key);
@@ -271,6 +301,7 @@ function useMarkerSelection(
 
   return {
     focusedId,
+    refocus: (id: string) => nodeRefs.current.get(id)?.focus(),
     markerProps: (place: MapPlace, index: number): MarkerInteractionProps => {
       const isSelected = selected.includes(place.id);
       return {
@@ -281,6 +312,7 @@ function useMarkerSelection(
         role: "button",
         tabIndex: place.id === tabStop ? 0 : -1,
         "aria-pressed": isSelected,
+        "aria-haspopup": "dialog",
         "aria-label": `${place.name}${isSelected ? " (selected)" : ""}`,
         className: "cursor-pointer",
         onKeyDown: (event: React.KeyboardEvent) => handleKeyDown(event, place, index),
@@ -412,7 +444,33 @@ export function CountryLevel({
     });
   }, [places, project]);
 
-  const { markerProps, focusedId } = useMarkerSelection(places, selected, onTogglePlace);
+  /**
+   * The place whose card is open, and whether the keyboard opened it (§5.3.3).
+   *
+   * The id rather than the place, and re-resolved against `places` below for
+   * the same reason `useMarkerSelection` re-resolves its caret: opening another
+   * country replaces this prop rather than unmounting the level, and a card
+   * holding a `MapPlace` from the shard that just went away would keep
+   * rendering a city the map no longer draws.
+   */
+  const [card, setCard] = useState<{ id: string; viaKeyboard: boolean } | null>(null);
+
+  /**
+   * Activating a marker does BOTH: it toggles the place, exactly as a tap
+   * always has, and it opens the card on it. The card reports the selection
+   * rather than gating it — making the tap open a card the user then has to
+   * confirm in would turn one interaction into two for every place added with
+   * a mouse, which is most of them.
+   */
+  const activate = (place: MapPlace, viaKeyboard: boolean) => {
+    onTogglePlace(place);
+    setCard({ id: place.id, viaKeyboard });
+  };
+
+  const { markerProps, focusedId, refocus } = useMarkerSelection(places, selected, activate);
+
+  const cardIndex = card === null ? -1 : places.findIndex((p) => p.id === card.id);
+  const cardPlace = cardIndex >= 0 ? places[cardIndex] : null;
 
   const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
@@ -497,7 +555,7 @@ export function CountryLevel({
                   key={place.id}
                   data-place={place.id}
                   {...markerProps(place, index)}
-                  onClick={() => onTogglePlace(place)}
+                  onClick={() => activate(place, false)}
                   onMouseEnter={(e) => reportHover(place, e)}
                   onMouseMove={(e) => reportHover(place, e)}
                   onMouseLeave={() => reportHover(null)}
@@ -577,6 +635,36 @@ export function CountryLevel({
             })}
           </g>
         </svg>
+
+        {/*
+          §5.3.3's card, inside the positioned container so it can anchor to the
+          marker it belongs to. `PlacePopup` is a sibling of this whole level in
+          `MapExplorer` and is unaffected: hover still reports through
+          `onHoverPlace` and still draws the tooltip at the cursor. This is the
+          surface tap and Enter open, which hover-positioned markup could never
+          be.
+        */}
+        {cardPlace && card && (
+          <SelectedPlaceCard
+            // Keyed on the place so moving to another marker remounts rather
+            // than mutates: `takeFocus` is read on mount, and a card that
+            // merely re-rendered into a new place would keep the focus state of
+            // the interaction that opened the previous one.
+            key={cardPlace.id}
+            place={cardPlace}
+            month={month}
+            selected={selected.includes(cardPlace.id)}
+            anchor={{ x: marks[cardIndex].x, y: marks[cardIndex].y }}
+            takeFocus={card.viaKeyboard}
+            onToggle={() => onTogglePlace(cardPlace)}
+            onDismiss={(heldFocus) => {
+              setCard(null);
+              // Only when the card actually had focus. Dismissing by clicking
+              // somewhere else is not a request to be sent back to the map.
+              if (heldFocus) refocus(cardPlace.id);
+            }}
+          />
+        )}
       </div>
 
       <div className="mt-4">

@@ -109,6 +109,33 @@ export const FIT_FILL_OPACITY: Record<MonthFit, number> = {
   unknown: 0.1,
 };
 
+/**
+ * Where a surface says a place is: `"<origin> · <level>"`.
+ *
+ * Lifted out of `PlacePopup` unchanged when §5.3.3's card became a second
+ * surface making the same claim. The rules below are subtle enough that two
+ * copies would have drifted on the first one either of them changed, and the
+ * cases they cover are real rather than defensive:
+ *
+ * "<region> China" is a claim about China, and `place.region` is only one of
+ * China's seven when the place is Chinese — `MapExplorer` puts the admin-1 name
+ * there for every other country, and 439 of the 58,742 committed shard rows
+ * carry no admin-1 at all. Unguarded, a Peruvian city with a null province
+ * rendered a bare " China". The fallback stays for the case it was written for:
+ * every curated Chinese destination has `province: null` and one of the seven
+ * regions.
+ *
+ * Joined rather than concatenated so the "· <level>" suffix cannot be left
+ * hanging off an origin that resolved to nothing.
+ */
+export function originLineFor(place: MapPlace): string {
+  const origin =
+    place.province ?? (isChinaRegion(place.region) ? `${place.region} China` : place.region);
+  return [origin, place.level === "curated" ? "" : place.level]
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
 export function formatPopulation(population: number | null): string | null {
   if (!population) return null;
   if (population >= 1_000_000) return `${(population / 1_000_000).toFixed(1)}M people`;
