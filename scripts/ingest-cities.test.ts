@@ -1187,6 +1187,36 @@ describe("assertSane", () => {
   });
 });
 
+describe("assertSane — the a1c gate", () => {
+  test("throws when the admin-1 code has gone all-null", () => {
+    const shards = saneShards();
+    for (const row of flattenCities(shards)) row.a1c = null;
+    // The existing admin1Resolved gate counts `a1`, which these rows still
+    // carry, so it stays green here — which is exactly how this field could
+    // vanish unnoticed from an artifact that auto-deploys.
+    expect(() => assertSane(shards, null)).toThrow(/a1c/i);
+  });
+
+  test("throws when the field is dropped from the record entirely", () => {
+    // The failure this gate exists for is `buildCities` losing the field, and
+    // then every row reads `undefined` rather than null. A check written as
+    // `row.a1c !== null` would count all of them as present and sail through.
+    const shards = saneShards();
+    for (const row of flattenCities(shards)) delete (row as Partial<ShardRow>).a1c;
+    expect(() => assertSane(shards, null)).toThrow(/a1c/i);
+  });
+
+  test("does not throw when a realistic minority lack a code", () => {
+    // Measured: 0.75% of committed rows have no admin-1 at all, and 19
+    // countries genuinely have no subdivision to record. The floor sits well
+    // under that because it is a collapse detector, not a quality bar.
+    const shards = saneShards();
+    const rows = flattenCities(shards);
+    for (let i = 0; i < Math.floor(rows.length * 0.1); i++) rows[i].a1c = null;
+    expect(() => assertSane(shards, null)).not.toThrow();
+  });
+});
+
 describe("assertAdmin1Sane", () => {
   test("accepts the real file's shape", () => {
     expect(() => assertAdmin1Sane(saneAdmin1())).not.toThrow();

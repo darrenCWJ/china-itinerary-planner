@@ -489,6 +489,12 @@ const MIN_ADMIN1_NAMES = 3_000;
  */
 const MIN_ADMIN1_RESOLVED_SHARE = 0.9;
 /**
+ * Measured 2026-08-29: 99.25% of rows carry an admin-1 code. The floor sits
+ * far below that because 19 countries genuinely have no subdivision to
+ * record — it is a collapse detector, not a quality bar.
+ */
+const MIN_ADMIN1_CODED_SHARE = 0.8;
+/**
  * Measured 2026-08-25: 4,722/59,073 rows (7.99%) GLOBALLY have population 0.
  * This MUST stay a global share, never a per-country one: real per-country
  * rates legitimately reach 84% (Mongolia, 279/332), 81% (Yemen), 77%
@@ -556,6 +562,11 @@ export function assertSane(shards, previous) {
 
   let total = 0;
   let admin1Resolved = 0;
+  // Counted separately from `a1`, not folded into it: the name and the code
+  // come from the same lookup but are emitted by different expressions, and a
+  // gate on the name alone would stay green while the code went all-null —
+  // silently removing the field the province join depends on.
+  let admin1Coded = 0;
   let zeroPopulation = 0;
   for (const [country, cities] of shards) {
     if (!/^[A-Z]{2}$/.test(country)) {
@@ -604,6 +615,10 @@ export function assertSane(shards, previous) {
       }
       previousPopulation = city.p;
       if (city.a1 !== null) admin1Resolved++;
+      // `typeof === 'string'`, not `!== null`: the failure this gate is for is
+      // `buildCities` dropping the field, and then every row reads `undefined`
+      // — which `!== null` counts as present.
+      if (typeof city.a1c === 'string') admin1Coded++;
       if (city.p === 0) zeroPopulation++;
     }
     total += cities.length;
@@ -632,6 +647,15 @@ export function assertSane(shards, previous) {
         `only ${(admin1Share * 100).toFixed(1)}% of cities resolved a non-null admin-1 name, ` +
         `expected at least ${MIN_ADMIN1_RESOLVED_SHARE * 100}% — admin1CodesASCII.txt may have ` +
         `reshaped its key column, which a Map of the right SIZE cannot reveal`
+      );
+    }
+    const codedShare = admin1Coded / total;
+    if (codedShare < MIN_ADMIN1_CODED_SHARE) {
+      throw new Error(
+        `a1c coverage collapsed: ${admin1Coded}/${total} rows ` +
+        `(${(codedShare * 100).toFixed(1)}%) carry an admin-1 code, expected at least ` +
+        `${MIN_ADMIN1_CODED_SHARE * 100}% — this is the field the province join reads, and ` +
+        `the admin-1 NAME gate above cannot see it go`
       );
     }
     const zeroPopulationShare = zeroPopulation / total;
