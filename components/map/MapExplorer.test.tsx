@@ -596,6 +596,28 @@ async function settle(): Promise<void> {
   }
 }
 
+/**
+ * A place's chip in the list, told apart from its marker on the map.
+ *
+ * Since §5.3.1 gave the markers a roving tabindex every place a drawn country
+ * level renders is TWO controls — a `<g role="button">` on the map and a real
+ * `<button>` in the list — so a bare `getByRole("button", { name })` is
+ * ambiguous for any country whose geometry loaded. The list is the
+ * accessibility spine (§5.2) and it is the one these assertions are about, so
+ * they name it rather than taking whichever the query happened to return.
+ *
+ * The count is checked rather than `find`-ed past: a level that stopped
+ * rendering the list would otherwise still satisfy every caller through the
+ * marker, which is the exact regression §12.2 exists to catch.
+ */
+function chip(name: string | RegExp): HTMLElement {
+  const matches = screen
+    .getAllByRole("button", { name })
+    .filter((el): el is HTMLElement => el.tagName === "BUTTON");
+  expect(matches, `expected one list chip named ${name}`).toHaveLength(1);
+  return matches[0];
+}
+
 function Harness({
   country = "CN",
   level = "country",
@@ -833,8 +855,8 @@ describe("MapExplorer", () => {
     render(<Harness country="PE" />);
 
     await settle();
-    expect(screen.getByRole("button", { name: /Lima/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+    expect(chip(/Lima/)).toBeInTheDocument();
+    expect(chip(/Cusco/)).toBeInTheDocument();
   });
 
   test("names the open country instead of printing its ISO code", async () => {
@@ -881,7 +903,7 @@ describe("MapExplorer", () => {
     render(<Harness country="PE" onAddCatalog={onAddCatalog} />);
 
     await settle();
-    fireEvent.click(screen.getByRole("button", { name: /Cusco/ }));
+    fireEvent.click(chip(/Cusco/));
 
     expect(onAddCatalog).toHaveBeenCalledTimes(1);
     expect(onAddCatalog.mock.calls[0][0]).toEqual({
@@ -897,7 +919,7 @@ describe("MapExplorer", () => {
     // Lima has no entry in the enrichment fixture, so its blurb stays null:
     // the merge is keyed by id rather than applied to whatever the file held.
     // Its admin-1 and population are its own too, not Cusco's.
-    fireEvent.click(screen.getByRole("button", { name: /Lima/ }));
+    fireEvent.click(chip(/Lima/));
     expect(onAddCatalog.mock.calls[1][0]).toEqual({
       qid: "G3936456",
       name: "Lima",
@@ -917,20 +939,22 @@ describe("MapExplorer", () => {
     // empty map passes "Cusco is gone" even if the shard leg died outright.
     const { rerender } = render(<Harness country="PE" />);
     await settle();
-    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+    expect(chip(/Cusco/)).toBeInTheDocument();
 
     rerender(<Harness country="DE" />);
     await settle();
 
     expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain("/cities/DE.json");
-    expect(screen.getByRole("button", { name: /Berlin/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Cusco/ })).not.toBeInTheDocument();
+    expect(chip(/Berlin/)).toBeInTheDocument();
+    // Neither control, not merely neither chip: a marker left over from the
+    // country the user just closed is exactly the bug this guards.
+    expect(screen.queryAllByRole("button", { name: /Cusco/ })).toHaveLength(0);
   });
 
   test("drops the previous country's cities on the switch, not when the new ones land", async () => {
     const { rerender } = render(<Harness country="PE" />);
     await settle();
-    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+    expect(chip(/Cusco/)).toBeInTheDocument();
 
     // Germany's legs never answer, so everything on screen from here is what
     // the switch itself did — the only way to observe the window between a
@@ -940,8 +964,8 @@ describe("MapExplorer", () => {
     rerender(<Harness country="DE" />);
     await settle();
 
-    expect(screen.queryByRole("button", { name: /Cusco/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Lima/ })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /Cusco/ })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /Lima/ })).toHaveLength(0);
     expect(screen.getByText(/No map for Germany yet/)).toBeInTheDocument();
   });
 

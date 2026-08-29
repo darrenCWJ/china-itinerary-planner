@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { parseProvinceTopology } from "@/lib/provinceTopology";
-import { CountryLevel } from "./CountryLevel";
+import { CountryLevel, MAP_MAX_RENDER_W, TAP_MIN_PX, TAP_MIN_R } from "./CountryLevel";
+import { MAP_VIEW_W } from "./mapShared";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -181,9 +182,29 @@ function rings(d: string | null): number {
 }
 
 function markerX(container: HTMLElement, id: string): number {
-  const circle = container.querySelector(`[data-place="${id}"] circle`);
-  if (!circle) throw new Error(`no marker for ${id}`);
-  return Number(circle.getAttribute("cx"));
+  return Number(circleFor(container, id, "data-dot").getAttribute("cx"));
+}
+
+/** One of a marker's circles, told apart by the attribute that names its job. */
+function circleFor(container: HTMLElement, id: string, attr: string): Element {
+  const circle = container.querySelector(`[data-place="${id}"] circle[${attr}]`);
+  if (!circle) throw new Error(`no ${attr} circle for ${id}`);
+  return circle;
+}
+
+/** The transparent target's radius, in viewBox units. */
+function hitR(container: HTMLElement, id: string): number {
+  return Number(circleFor(container, id, "data-hit").getAttribute("r"));
+}
+
+/** The visible dot's radius — §5.3.2 says this one does not change. */
+function dotR(container: HTMLElement, id: string): number {
+  return Number(circleFor(container, id, "data-dot").getAttribute("r"));
+}
+
+/** Every marker group, in the order they are drawn. */
+function markers(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>("[data-markers] [data-place]")];
 }
 
 describe("CountryLevel", () => {
@@ -257,19 +278,15 @@ describe("CountryLevel", () => {
     expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox")).toBeInTheDocument();
     for (const name of ["Lima", "Cusco", "Puerto Lejano"]) {
-      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+      // Two controls per place since §5.3.1 gave the markers a keyboard model
+      // of their own: a `<g role="button">` on the map and a real `<button>`
+      // in the list. The list one is the spine, and it is the one this test is
+      // about — a map that swallowed it would leave a single control on an
+      // SVG node, which is exactly what §5.2 forbids.
+      const controls = screen.getAllByRole("button", { name });
+      expect(controls).toHaveLength(2);
+      expect(controls.filter((el) => el.tagName === "BUTTON")).toHaveLength(1);
     }
-  });
-
-  test("keeps the markers out of the accessibility tree, so each place is one control", () => {
-    // The list is the spine (§5.2) and the markers are a backdrop until PR4's
-    // roving tabindex gives them a keyboard model of their own. Announcing
-    // both would read every city twice and put 750 tab stops on the map — the
-    // arrangement `worldLevelShared.tsx` calls "indefensible for 235".
-    const { container } = renderLevel();
-
-    expect(screen.getAllByRole("button", { name: "Lima" })).toHaveLength(1);
-    expect(container.querySelector("[data-markers]")).toHaveAttribute("aria-hidden");
   });
 
   test("adds a place when its marker is tapped, and reports its hover", () => {
@@ -283,5 +300,208 @@ describe("CountryLevel", () => {
     expect(props.onHoverPlace).toHaveBeenCalledWith(CUSCO, expect.anything());
     fireEvent.mouseLeave(marker);
     expect(props.onHoverPlace).toHaveBeenLastCalledWith(null, null);
+  });
+});
+
+/**
+ * §5.3.1 and §5.3.2, which opening 245 countries is what made load-bearing.
+ *
+ * The markers used to be `aria-hidden` with no keyboard model at all, and the
+ * arrangement they would otherwise have inherited from `ChinaLevel` — a tab
+ * stop per curated marker — is the one `worldLevelShared.tsx` calls "fine for
+ * thirty of them and indefensible for 235". A country shard runs to 750.
+ *
+ * Two properties are asserted together throughout, because either alone is
+ * satisfiable by a wrong implementation: the marker layer costs ONE tab stop,
+ * and the list still reaches every place at full size.
+ */
+describe("CountryLevel markers", () => {
+  test("the marker group is one tab stop, not one per marker", () => {
+    const { container } = renderLevel();
+
+    const drawn = markers(container);
+    expect(drawn).toHaveLength(3);
+    expect(drawn.map((el) => el.getAttribute("role"))).toEqual(["button", "button", "button"]);
+    // The roving tabindex: one 0, the rest -1. Three markers is a weak fixture
+    // for the claim on its own, so the COUNT is asserted rather than the set —
+    // 750 of them must still add exactly one stop between the map and the
+    // control after it.
+    expect(drawn.filter((el) => el.getAttribute("tabindex") === "0")).toHaveLength(1);
+    expect(drawn[0]).toHaveAttribute("tabindex", "0");
+  });
+
+  test("arrow keys move the active marker without leaving the group", () => {
+    const { container } = renderLevel();
+    const [lima, cusco, isla] = markers(container);
+
+    act(() => lima.focus());
+    expect(document.activeElement).toBe(lima);
+
+    fireEvent.keyDown(lima, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(cusco);
+    // The stop moves with the caret — that is what makes it roving rather than
+    // a fixed first marker Tab always lands on.
+    expect(cusco).toHaveAttribute("tabindex", "0");
+    expect(lima).toHaveAttribute("tabindex", "-1");
+    // And the caret is visible, which a roving tabindex nobody can see is not.
+    expect(cusco.querySelector("[data-focus-ring]")).not.toBeNull();
+    expect(lima.querySelector("[data-focus-ring]")).toBeNull();
+
+    // Off the end it wraps rather than escaping: an arrow key must not be a
+    // way out of the group, or the roving stop stops being one stop.
+    fireEvent.keyDown(cusco, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(isla);
+    fireEvent.keyDown(isla, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(lima);
+    fireEvent.keyDown(lima, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(isla);
+
+    fireEvent.keyDown(isla, { key: "Home" });
+    expect(document.activeElement).toBe(lima);
+    fireEvent.keyDown(lima, { key: "End" });
+    expect(document.activeElement).toBe(isla);
+
+    expect(container.querySelector("[data-markers]")!.contains(document.activeElement)).toBe(true);
+  });
+
+  test("Enter and Space act on the marker the caret is on", () => {
+    // A roving tabindex that cannot activate anything is a tour of the map,
+    // not a way to plan with it.
+    const { container, props } = renderLevel();
+    const [lima, cusco] = markers(container);
+
+    act(() => lima.focus());
+    fireEvent.keyDown(lima, { key: "Enter" });
+    expect(props.onTogglePlace).toHaveBeenLastCalledWith(LIMA);
+
+    fireEvent.keyDown(cusco, { key: " " });
+    expect(props.onTogglePlace).toHaveBeenLastCalledWith(CUSCO);
+    expect(props.onTogglePlace).toHaveBeenCalledTimes(2);
+  });
+
+  test("announces its own selected state, and starts the caret on the selection", () => {
+    const { container } = renderLevel({ selected: ["cusco"] });
+    const [lima, cusco] = markers(container);
+
+    expect(cusco).toHaveAttribute("aria-pressed", "true");
+    expect(cusco).toHaveAttribute("aria-label", "Cusco (selected)");
+    expect(lima).toHaveAttribute("aria-pressed", "false");
+    // Tab lands on what the user already chose rather than on whichever place
+    // the shard happens to list first — `useCountrySelection`'s `tabStop`
+    // ordering, with `selected` widened from one code to a set of ids.
+    expect(cusco).toHaveAttribute("tabindex", "0");
+    expect(lima).toHaveAttribute("tabindex", "-1");
+  });
+
+  test("keyboard focus stays visible on a marker that is already selected", () => {
+    // The two states land on the same marker constantly — selecting from the
+    // keyboard means focusing and then pressing Enter — and at the same radius
+    // the solid `--seal` ring paints over the dashed focus one, so the
+    // indicator disappears exactly when someone is relying on it.
+    const { container } = renderLevel({ selected: ["cusco"] });
+    const [, cusco] = markers(container);
+    act(() => cusco.focus());
+
+    const focus = Number(circleFor(container, "cusco", "data-focus-ring").getAttribute("r"));
+    const selection = Number(
+      circleFor(container, "cusco", "data-selection-ring").getAttribute("r")
+    );
+    expect(focus).toBeGreaterThan(selection);
+    expect(circleFor(container, "cusco", "data-focus-ring")).toHaveAttribute(
+      "stroke-dasharray",
+      "3 2"
+    );
+  });
+
+  test("the visible radius is unchanged", () => {
+    // §5.3.2 is explicit that the DOT stays where `radiusFor` put it and only
+    // the target grows. A fix that inflated the circle would be visible on
+    // every map in the app and would bury the country under its own cities.
+    const { container } = renderLevel({
+      places: [
+        place({ id: "cur", name: "Machu Picchu", kind: "curated", lon: -77.5, lat: -12 }),
+        place({ id: "mun", name: "Callao", level: "municipality", lon: -76, lat: -12 }),
+        place({ id: "pref", name: "Arequipa", level: "prefecture", lon: -74.5, lat: -12 }),
+        place({ id: "cty", name: "Nazca", level: "county", lon: -73, lat: -12 }),
+      ],
+    });
+
+    const ids = ["cur", "mun", "pref", "cty"];
+    expect(ids.map((id) => dotR(container, id))).toEqual([7, 8, 6.5, 4.5]);
+    for (const id of ids) {
+      expect(dotR(container, id)).toBeGreaterThanOrEqual(4.5);
+      expect(dotR(container, id)).toBeLessThanOrEqual(9);
+      // Hit area first, so the dot is never the target's edge (`WorldMap.tsx`).
+      expect(hitR(container, id)).toBeGreaterThan(dotR(container, id));
+    }
+  });
+
+  test("a marker with room around it gets the whole --tap-min target", () => {
+    // jsdom computes no layout, so the assertion is against the radius in
+    // viewBox units that IS 44 CSS px at the widest the map ever renders —
+    // `max-w-6xl` less its gutters, from app/plan/page.tsx. Every narrower
+    // viewport stretches the same viewBox over fewer CSS pixels and therefore
+    // gets a LARGER target, so the widest rendering is the worst case and the
+    // only one worth pinning.
+    expect(TAP_MIN_R * 2 * (MAP_MAX_RENDER_W / MAP_VIEW_W)).toBeCloseTo(TAP_MIN_PX, 9);
+
+    const { container } = renderLevel();
+    for (const id of ["lima", "cusco", "isla"]) {
+      expect(hitR(container, id)).toBeCloseTo(TAP_MIN_R, 9);
+    }
+  });
+
+  test("a crowded marker's target shrinks rather than swallowing its neighbour", () => {
+    // The trade `nonOverlappingRadii` was written for, applied to cities
+    // instead of micro-states: two overlapping transparent circles let paint
+    // order decide which place a tap adds, and a wrong selection is worse than
+    // a hard one. It is only acceptable because the list below reaches both at
+    // full size, which the last assertion is.
+    const near = [
+      place({ id: "a", name: "Barranco", lon: -76, lat: -12 }),
+      place({ id: "b", name: "Chorrillos", lon: -75.9, lat: -12 }),
+    ];
+    const { container } = renderLevel({ places: near });
+
+    const gap = markerX(container, "b") - markerX(container, "a");
+    expect(gap).toBeGreaterThan(0);
+    expect(hitR(container, "a") + hitR(container, "b")).toBeLessThanOrEqual(gap + 1e-9);
+    expect(hitR(container, "a")).toBeLessThan(TAP_MIN_R);
+    // Never below the dot it sits behind, though: a target inside the visible
+    // circle would make the dot's own edge the target's edge.
+    expect(hitR(container, "a")).toBeGreaterThanOrEqual(dotR(container, "a"));
+
+    for (const name of ["Barranco", "Chorrillos"]) {
+      const chip = screen.getAllByRole("button", { name }).find((el) => el.tagName === "BUTTON");
+      expect(chip).toBeDefined();
+      expect(chip!.className).toContain("min-h-[var(--tap-min)]");
+    }
+  });
+
+  test("Plan 1's reachability criterion still passes", () => {
+    // §12.2, re-run against the level that now draws geometry AND owns a
+    // keyboard model for it. The map gaining tab stops must not cost the list
+    // a single one: every place stays a real `<button>` in the list, at the
+    // minimum tap target, and the marker layer adds exactly one stop on top.
+    const shard = Array.from({ length: 60 }, (_, i) =>
+      place({ id: `G${i}`, name: `City ${i}`, province: i < 40 ? "Lima" : "Cuzco" })
+    );
+    const { container } = renderLevel({ places: shard });
+
+    for (const button of screen.getAllByRole("button", { name: /^Show all/ })) {
+      fireEvent.click(button);
+    }
+
+    const chips = [...container.querySelectorAll("button")].filter((el) =>
+      /^City \d+$/.test(el.textContent ?? "")
+    );
+    expect(chips).toHaveLength(60);
+    for (const chip of chips) {
+      expect(chip.getAttribute("tabindex")).not.toBe("-1");
+      expect(chip.className).toContain("min-h-[var(--tap-min)]");
+    }
+
+    expect(markers(container)).toHaveLength(60);
+    expect(markers(container).filter((el) => el.getAttribute("tabindex") === "0")).toHaveLength(1);
   });
 });
