@@ -137,3 +137,71 @@ export function resolveTerritory(properties, index) {
   if (folded !== undefined) return { country: folded, selectable: false };
   return { country: attributeFeature(properties, index), selectable: true };
 }
+
+/**
+ * The five properties a province feature carries.
+ *
+ * Natural Earth ships 121 per feature and they cost more than the geometry.
+ * `name` and `name_en` are what the UI renders; `iso_3166_2` and `gn_a1_code`
+ * are join keys for later work; `sel` is §7.2's selectable flag, 1 or 0 rather
+ * than a boolean because it is repeated 4,589 times.
+ *
+ * `iso_3166_2` is deliberately NOT the feature id: 4,596 features carry only
+ * 4,501 distinct values, 60 codes are reused (worst PH-MNL ×17) and 12 are
+ * `-99-X##~` placeholders. `adm1_code` is unique across all 4,596.
+ */
+function projectProperties(p, selectable) {
+  return {
+    name: p.name ?? null,
+    name_en: p.name_en ?? null,
+    iso_3166_2: p.iso_3166_2 ?? null,
+    gn_a1_code: p.gn_a1_code ?? null,
+    sel: selectable ? 1 : 0,
+  };
+}
+
+/** Admin-1 features grouped by country, sorted so a rebuild is byte-stable. */
+export function groupByCountry(admin1, index) {
+  const byCountry = new Map();
+  const orphans = [];
+  for (const source of admin1.features) {
+    const p = source.properties;
+    const { country, selectable } = resolveTerritory(p, index);
+    if (country === null) {
+      if (!EXCLUDED.has(p.gu_a3)) orphans.push({ adm1_code: p.adm1_code, name: p.name });
+      continue;
+    }
+    if (!byCountry.has(country)) byCountry.set(country, []);
+    byCountry.get(country).push({
+      type: 'Feature',
+      id: p.adm1_code,
+      properties: projectProperties(p, selectable),
+      geometry: source.geometry,
+    });
+  }
+  for (const features of byCountry.values()) {
+    features.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+  return { byCountry, orphans };
+}
+
+/**
+ * Every country the reference set names must have a province file.
+ *
+ * One-way, like build-globe-topology.mjs's gate: extra emitted countries are
+ * fine. The reference is the committed city-shard set, so this asserts the
+ * invariant PR4 actually depends on — a country the picker can open has
+ * geometry to draw.
+ *
+ * Names every offender. A count tells an operator a gate failed; the names
+ * tell them what broke.
+ */
+export function assertCoverage(emitted, reference) {
+  const missing = [...reference].filter((code) => !emitted.has(code)).sort();
+  if (missing.length > 0) {
+    throw new Error(
+      `province build cannot reach ${missing.length} countries that have a city shard: ` +
+      `${missing.join(', ')} — every country the picker can open must have geometry`
+    );
+  }
+}
