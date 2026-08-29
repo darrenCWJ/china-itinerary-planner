@@ -398,3 +398,50 @@ describe("assignCities", () => {
     expect(placed(cityProvince).G1).toBe("AAA-1");
   });
 });
+
+import { provincePayload } from "./build-provinces.mjs";
+
+describe("provincePayload", () => {
+  const topo = { type: "Topology", objects: { provinces: { type: "GeometryCollection", geometries: [] } }, arcs: [] };
+  const now = "2026-08-30T00:00:00.000Z";
+
+  test("stamps generatedAt on a first build", () => {
+    expect(provincePayload("PE", topo, {}, null, now).generatedAt).toBe(now);
+  });
+
+  test("keeps the previous timestamp when the topology is unchanged", () => {
+    // 246 files whose only difference is a timestamp is 246 diffs of noise,
+    // and it hides the one file that really did change.
+    const before = provincePayload("PE", topo, {}, null, "2026-01-01T00:00:00.000Z");
+    const after = provincePayload("PE", topo, {}, before, now);
+    expect(after.generatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  test("restamps when the topology changes", () => {
+    const before = provincePayload("PE", topo, {}, null, "2026-01-01T00:00:00.000Z");
+    const changed = { ...topo, arcs: [[[0, 0], [1, 1]]] };
+    expect(provincePayload("PE", changed, {}, before, now).generatedAt).toBe(now);
+  });
+
+  test("restamps when only the city assignment changes", () => {
+    // cityProvince is part of what the file is for, so a change to it is a
+    // real change even though the geometry is identical.
+    const before = provincePayload("PE", topo, {}, null, "2026-01-01T00:00:00.000Z");
+    expect(provincePayload("PE", topo, { G1: "PER-1" }, before, now).generatedAt).toBe(now);
+  });
+
+  test("compares payload only, never the envelope", () => {
+    // If the comparison included generatedAt it could never match, and the
+    // guard would be dead code that looks alive.
+    const before = { ...provincePayload("PE", topo, {}, null, now), source: "something else" };
+    expect(provincePayload("PE", topo, {}, before, "2026-12-31T00:00:00.000Z").generatedAt).toBe(now);
+  });
+
+  test("China declares its own id scheme", () => {
+    // §6.3 D7: CN is a re-envelope of the curated topology, whose join key is
+    // adcode (GB/T 2260), not adm1_code. The loader reads idKey rather than
+    // assuming, so the two schemes can coexist.
+    expect(provincePayload("CN", topo, {}, null, now).idKey).toBe("adcode");
+    expect(provincePayload("PE", topo, {}, null, now).idKey).toBe("adm1_code");
+  });
+});
