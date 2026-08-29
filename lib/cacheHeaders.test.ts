@@ -33,6 +33,27 @@ const TOPOLOGY_SOURCE =
 /** Every /cities/ URL the app actually requests. */
 const SHARD_PATHS = ["/cities/PE.json", "/cities/index.json", "/cities/enrich/PE.json"];
 
+/**
+ * The two subtrees Phase 4 adds. Sibling constants rather than extra entries in
+ * SHARD_PATHS: no `/cities/` rule can match them, so each needs its own rule,
+ * and both take the topology assets' day-long window rather than the shards'
+ * six hours. Folding them into SHARD_PATHS would make every assertion above
+ * claim something untrue of them.
+ */
+const PROVINCES_SOURCE = "/provinces/:path+";
+const CLIMATE_SOURCE = "/climate/:path+";
+
+/** Every /provinces/ URL the app requests: one file per country, plus the index. */
+const PROVINCE_PATHS = ["/provinces/PE.json", "/provinces/index.json"];
+
+/**
+ * public/climate/ does not exist yet — Plan 5 creates it. Rule and guard land
+ * now because they cost nothing until it does (a header rule for a path Next
+ * serves nothing at is inert), and because the alternative is remembering to
+ * add them later, after the first uncached fetch has already shipped.
+ */
+const CLIMATE_PATHS = ["/climate/PE.json"];
+
 async function headerRules() {
   // `headers` is optional on NextConfig; its absence is itself a regression.
   expect(nextConfig.headers).toBeTypeOf("function");
@@ -93,7 +114,50 @@ describe("next.config.ts headers — the /cities/ shard subtree", () => {
   });
 });
 
-describe("next.config.ts headers — the topology rule, and the two staying disjoint", () => {
+describe.each([
+  { name: "provinces", source: PROVINCES_SOURCE, paths: PROVINCE_PATHS, bare: "/provinces" },
+  { name: "climate", source: CLIMATE_SOURCE, paths: CLIMATE_PATHS, bare: "/climate" },
+])("next.config.ts headers — the $name subtree", ({ source, paths, bare }) => {
+  test("the rule exists, at the topology assets' day-long window", async () => {
+    const rules = await headerRules();
+    const rule = rules.find((r) => r.source === source);
+
+    // Fails on: the rule being deleted, the source being edited (including
+    // `:path+` narrowed to `:path`).
+    expect(rule).toBeDefined();
+    // A day, not the cities' six hours. These artifacts are rebuilt by hand and
+    // committed, like the topology assets, not refreshed by a daily workflow.
+    expect(rule!.headers).toEqual([
+      { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+    ]);
+  });
+
+  test("compiled with Next's own matcher, it matches every URL the app fetches", async () => {
+    const rules = await headerRules();
+    const rule = rules.find((r) => r.source === source);
+    expect(rule).toBeDefined();
+
+    for (const pathname of paths) {
+      expect(matches(rule!.source, pathname), pathname).toBe(true);
+    }
+  });
+
+  test("the bare directory is excluded — `:path+`, not `:path*`", async () => {
+    const rules = await headerRules();
+    const rule = rules.find((r) => r.source === source);
+    expect(rule).toBeDefined();
+
+    // Neither is a file. Under `:path*` (zero-or-more) both matched, so a 404
+    // served at those URLs would have carried a day-long public cache.
+    expect(matches(rule!.source, bare)).toBe(false);
+    expect(matches(rule!.source, bare + "/")).toBe(false);
+    // Regression guard on the guard: `:path*` really is the looser pattern, so
+    // this test would be vacuous if the two forms behaved identically here.
+    expect(matches(bare + "/:path*", bare)).toBe(true);
+  });
+});
+
+describe("next.config.ts headers — the topology rule, and the four staying disjoint", () => {
   test("the topology rule still matches /world-globe.json at its own 24h/7d window", async () => {
     const rules = await headerRules();
     const rule = rules.find((r) => r.source === TOPOLOGY_SOURCE);
@@ -114,14 +178,19 @@ describe("next.config.ts headers — the topology rule, and the two staying disj
     // line of the /cities/ rule. This asserts no such overlap exists today.
     const rules = await headerRules();
 
-    for (const pathname of [...SHARD_PATHS, "/world-globe.json"]) {
+    for (const pathname of [
+      ...SHARD_PATHS,
+      ...PROVINCE_PATHS,
+      ...CLIMATE_PATHS,
+      "/world-globe.json",
+    ]) {
       const claiming = rules.filter((r) => matches(r.source, pathname));
       expect(claiming.map((r) => r.source), pathname).toHaveLength(1);
     }
 
     // And in the other direction: the topology rule is single-segment, so it
-    // cannot reach into the shard subtree.
-    for (const pathname of SHARD_PATHS) {
+    // cannot reach into any of the three subtrees.
+    for (const pathname of [...SHARD_PATHS, ...PROVINCE_PATHS, ...CLIMATE_PATHS]) {
       expect(matches(TOPOLOGY_SOURCE, pathname), pathname).toBe(false);
     }
   });

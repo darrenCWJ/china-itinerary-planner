@@ -14,3 +14,18 @@
 # to ignore, so pin the eol rather than relaxing the comparison.
 data/*.md   text eol=lf
 data/*.json text eol=lf
+
+# The same rule, one directory further out, for the same reason.
+#
+# `scripts/build-provinces.mjs` writes each province file as one line of JSON
+# plus a trailing LF, and measures the bytes it is about to write against the
+# gzip budget. `lib/provinceTopology.test.ts` re-measures the file ON DISK
+# against that same budget. Nothing under `public/` was pinned before this, so
+# a fresh Windows clone would take a CRLF copy of all 247 files and measure
+# bytes the generator never wrote — the artifact would no longer be what its
+# own build produced, which is the property the gate exists to hold.
+#
+# `public/climate/*.json` is pinned in the same breath: Plan 5 creates that
+# directory, and until it does the line is inert.
+public/provinces/*.json text eol=lf
+public/climate/*.json   text eol=lf
