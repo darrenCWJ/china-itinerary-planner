@@ -167,6 +167,9 @@ function tsvRow(overrides: Record<number, string> = {}): string {
   base[8] = "CH";
   base[10] = "VS";
   base[14] = "6629";
+  // Column 15 (surveyed elevation) is blank for most of the real dump; column 16
+  // (dem, modelled) is populated nearly everywhere. Zermatt sits at 1,608 m.
+  base[16] = "1608";
   base[17] = "Europe/Zurich";
   base[18] = "2024-11-04";
   for (const [index, value] of Object.entries(overrides)) base[Number(index)] = value;
@@ -185,6 +188,7 @@ describe("parseGeoNamesRows", () => {
         country: "CH",
         admin1Code: "VS",
         population: 6629,
+        elevation: 1608,
         timezone: "Europe/Zurich",
       },
     ]);
@@ -236,6 +240,29 @@ describe("parseGeoNamesRows", () => {
 
   test("tolerates CRLF line endings", () => {
     expect(parseGeoNamesRows(`${tsvRow()}\r\n`)).toHaveLength(1);
+  });
+
+  test("reads elevation, falling back to dem when the elevation column is blank", () => {
+    // Column 15 (elevation) is blank for most of the dump; column 16 (dem) is
+    // the modelled fallback and is populated nearly everywhere.
+    expect(parseGeoNamesRows(`${tsvRow()}\n`)[0].elevation).toBe(1608);
+  });
+
+  test("prefers the surveyed elevation over dem when both are present", () => {
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "1620", 16: "1608" })}\n`)[0].elevation).toBe(1620);
+  });
+
+  test("carries a null elevation when neither column has a value", () => {
+    // Null, not 0: sea level is a real elevation and 0 would place a Himalayan
+    // town at the coast for the climate bias correction that reads this.
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "" })}\n`)[0].elevation).toBeNull();
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "high" })}\n`)[0].elevation).toBeNull();
+  });
+
+  test("keeps the raw admin-1 code beside the row", () => {
+    // Pinned here because the next task joins a city to a polygon on this
+    // code, and the resolved NAME is what the build currently keeps.
+    expect(parseGeoNamesRows(`${tsvRow({ 10: "VS" })}\n`)[0].admin1Code).toBe("VS");
   });
 });
 
