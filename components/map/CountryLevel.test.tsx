@@ -11,7 +11,13 @@ import {
   TAP_MIN_R_FALLBACK,
   tapTargetRadius,
 } from "./CountryLevel";
-import { PE_ENTRY, PE_FILE, PE_TOPOLOGY } from "./countryFixture";
+import {
+  PE_CITY_PROVINCE,
+  PE_ENTRY,
+  PE_FILE,
+  PE_TOPOLOGY,
+  peFileWith,
+} from "./countryFixture";
 import { MAP_VIEW_W, ZOOM_MS } from "./mapShared";
 import type { MapPlace } from "./mapTypes";
 
@@ -80,6 +86,37 @@ const ISLA = place({
   province: "Isla Lejana",
   lon: -109.5,
   lat: -27.5,
+});
+
+/**
+ * A SECOND country, drawn from the same arcs under different unit ids.
+ *
+ * The whole of what makes it useful is that no id in it is an id in Peru:
+ * `RegionId` is `string`, so a region taken in one country stays assignable in
+ * the next and nothing in the type system objects. This is what a stale one
+ * has to be handed to.
+ *
+ * Same geometry on purpose. A second topology would let a difference in the
+ * SHAPES explain a difference in the render, and the property under test is
+ * about the ids alone.
+ */
+const BO_FILE: ProvinceFile = parseProvinceTopology({
+  country: "BO",
+  generatedAt: "2026-08-30T00:00:00.000Z",
+  idKey: "adm1_code",
+  topology: {
+    ...PE_TOPOLOGY,
+    objects: {
+      provinces: {
+        ...PE_TOPOLOGY.objects.provinces,
+        geometries: PE_TOPOLOGY.objects.provinces.geometries.map((geometry) => ({
+          ...geometry,
+          id: geometry.id.replace("PE-", "BO-"),
+        })),
+      },
+    },
+  },
+  cityProvince: { lima: "BO-LIM", cusco: "BO-XXX", isla: "BO-ISL" },
 });
 
 function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
@@ -679,6 +716,26 @@ describe("CountryLevel province zoom", () => {
   const ISL_TY = -8759.25772396361;
 
   /**
+   * The same country, with the cities a test measures placed in the unit it
+   * frames.
+   *
+   * Every test in this block is about the zoom's ARITHMETIC — how a length
+   * scales, what the tap target measures, how often the O(n²) pass runs — and
+   * each of them reads attributes off a marker, so the marker has to be drawn
+   * while the map is zoomed. §6.5's filter draws the cities `cityProvince`
+   * assigns to the framed group and no others, and the shared fixture places
+   * this cast across three different units, so without this they would be
+   * measuring markers that are correctly absent.
+   *
+   * The filter itself is asserted next door, in "CountryLevel zoomed markers".
+   * Weakening it here to keep these green would be testing the zoom against a
+   * map the app does not draw.
+   */
+  function allInIsla(ids: string[]): ProvinceFile {
+    return peFileWith(Object.fromEntries(ids.map((id) => [id, "PE-ISL"])));
+  }
+
+  /**
    * Two places, chosen so one render exercises every scaled attribute: the
    * curated one is labelled and its 7-unit dot clears the `r > 5` branch of the
    * stop number's offset, the county one does neither and is 4.5. Both are
@@ -744,6 +801,7 @@ describe("CountryLevel province zoom", () => {
   function renderZoom(region: RegionId | null) {
     const rendered = renderLevel({
       places: ZOOM_PLACES,
+      provinces: allInIsla(ZOOM_PLACES.map((p) => p.id)),
       selected: ["cur", "cty"],
       routeIds: ["cur", "cty"],
       region,
@@ -856,7 +914,10 @@ describe("CountryLevel province zoom", () => {
     // which is the whole reason the measurement exists.
     for (const width of [1120, 390]) {
       stubRenderedWidth(width);
-      const { container } = renderLevel({ region: "PE-ISL" });
+      const { container } = renderLevel({
+        provinces: allInIsla(["lima", "cusco", "isla"]),
+        region: "PE-ISL",
+      });
 
       for (const id of ["lima", "cusco", "isla"]) {
         expect(hitR(container, id)).toBeCloseTo(tapTargetRadius(width) / ISL_K, 9);
@@ -885,7 +946,10 @@ describe("CountryLevel province zoom", () => {
       place({ id: "a", name: "Barranco", lon: -76, lat: -12 }),
       place({ id: "b", name: "Chorrillos", lon: -75.95, lat: -12 }),
     ];
-    const { container, rerender, props } = renderLevel({ places: near });
+    const { container, rerender, props } = renderLevel({
+      places: near,
+      provinces: allInIsla(["a", "b"]),
+    });
 
     const gap = markerX(container, "b") - markerX(container, "a");
     expect(gap).toBeCloseTo(7, 9);
@@ -902,6 +966,209 @@ describe("CountryLevel province zoom", () => {
     // clamped to 1.880 and quietly stopped being the cap at all.
     expect(hitR(container, "a")).toBeCloseTo(gap / 2, 9);
     expect(hitR(container, "a")).not.toBeCloseTo(6.5 / ISL_K, 3);
+  });
+});
+
+/**
+ * §6.5: the zoomed map draws one province's cities, and `cityProvince` is what
+ * says which those are.
+ *
+ * Plan 2 shipped that Map and nothing has ever read it — this is its first
+ * consumer, and the field it joins on is the only thing that places a city.
+ * NOT the coordinates: a marker's lon/lat decide where it is DRAWN, and the
+ * committed assignment decides which province CONTAINS it. Re-deriving
+ * containment here would be a second answer to a question `build-provinces`
+ * already answered, recomputed per frame, and the two would disagree the
+ * moment a boundary moved.
+ *
+ * Three properties, and the third is what keeps §5.2 true while the first two
+ * hide things:
+ *
+ * - a zoomed map draws only the cities the group's units hold;
+ * - a city the file never placed is drawn in NO province rather than in every
+ *   one — 478 real cities are in exactly that state, and a containment
+ *   fallback would put the same city in all 25 of Peru's departments;
+ * - the LIST is untouched at every zoom. The map filters; the spine does not.
+ *
+ * The filter is applied where the markers are DRAWN and nowhere earlier, which
+ * is why "does not fold k into nonOverlappingRadii" above still sees one call:
+ * `points` and `caps` are computed over the whole country, so the O(n²) pass
+ * stays keyed on the country and a zoom re-runs none of it.
+ */
+describe("CountryLevel zoomed markers", () => {
+  /** A city the fixture places nowhere, drawn over the mainland's west unit. */
+  const UNPLACED = place({ id: "unplaced", name: "Sin Ubicacion", lon: -77, lat: -12 });
+
+  /** The ids the marker layer actually drew, in draw order. */
+  function drawn(container: HTMLElement): string[] {
+    return markers(container).map((el) => el.getAttribute("data-place") ?? "");
+  }
+
+  /** Which of these places the list beside the map reaches as a real button. */
+  function listed(names: string[]): string[] {
+    return names.filter((name) =>
+      screen.getAllByRole("button", { name }).some((el) => el.tagName === "BUTTON")
+    );
+  }
+
+  test("shows only the cities the zoomed unit contains", () => {
+    const { container, rerender, props } = renderLevel();
+
+    // Unzoomed, the country's whole shard.
+    expect(drawn(container)).toEqual(["lima", "cusco", "isla"]);
+
+    // `lima` is the only city the fixture assigns to PE-LIM, and `cusco` is
+    // drawn inside the same frame two units east of it — which is the point:
+    // the committed assignment places a city, not the pixel it lands on.
+    rerender(<CountryLevel {...props} region="PE-LIM" />);
+    expect(drawn(container)).toEqual(["lima"]);
+
+    rerender(<CountryLevel {...props} region="PE-ISL" />);
+    expect(drawn(container)).toEqual(["isla"]);
+
+    // And back out again: a zoom hides markers, it does not drop them.
+    rerender(<CountryLevel {...props} region={null} />);
+    expect(drawn(container)).toEqual(["lima", "cusco", "isla"]);
+  });
+
+  test("the marker layer is still one tab stop, over the cities that remain", () => {
+    // §5.3.1 has to survive the filter. The roving tabindex is chosen from the
+    // places the layer DRAWS, or `tabIndex 0` lands on a node the level has
+    // stopped rendering — a tab stop that goes nowhere, which is the failure
+    // the pattern exists to prevent.
+    const { container, rerender, props } = renderLevel({ region: "PE-LIM" });
+
+    const stops = () => markers(container).filter((el) => el.getAttribute("tabindex") === "0");
+    expect(drawn(container)).toEqual(["lima"]);
+    expect(stops()).toHaveLength(1);
+
+    // Arrows wrap inside the visible set rather than stepping onto a hidden
+    // neighbour: one drawn marker means every arrow is the same marker.
+    act(() => markers(container)[0].focus());
+    fireEvent.keyDown(markers(container)[0], { key: "ArrowRight" });
+    expect(stops()).toHaveLength(1);
+    expect(stops()[0].getAttribute("data-place")).toBe("lima");
+
+    rerender(<CountryLevel {...props} region="PE-ISL" />);
+    expect(drawn(container)).toEqual(["isla"]);
+    expect(stops()).toHaveLength(1);
+    expect(stops()[0].getAttribute("data-place")).toBe("isla");
+  });
+
+  test("the caret steps through the drawn markers, not the country's full list", () => {
+    // The one property the `index` / `order` split in the JSX exists for, and
+    // the one a wrong implementation survives most easily: arrow keys wrap
+    // modulo the number of markers the hook was given, so passing the COUNTRY
+    // index instead of the DRAWN one is invisible whenever the two happen to
+    // be congruent. Three visible cities at country indices 0, 1 and 4 is a
+    // cast where they are not — stepping right off the third wraps to
+    // `4 % 3 = 1`, the middle marker, instead of back to the first.
+    const cast = [
+      place({ id: "n0", name: "Ancon", lon: -77.8, lat: -11.8 }),
+      place({ id: "n1", name: "Barranca", lon: -77.4, lat: -12.4 }),
+      place({ id: "e0", name: "Sicuani", lon: -75.4, lat: -11.8 }),
+      place({ id: "e1", name: "Urubamba", lon: -74.6, lat: -12.4 }),
+      place({ id: "n2", name: "Canta", lon: -76.6, lat: -13 }),
+    ];
+    const { container } = renderLevel({
+      places: cast,
+      provinces: peFileWith({
+        n0: "PE-LIM",
+        n1: "PE-LIM",
+        n2: "PE-LIM",
+        e0: "PE-CUS",
+        e1: "PE-CUS",
+      }),
+      region: "PE-LIM",
+    });
+
+    expect(drawn(container)).toEqual(["n0", "n1", "n2"]);
+    const [first, middle, third] = markers(container);
+
+    act(() => third.focus());
+    fireEvent.keyDown(third, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(first);
+    expect(document.activeElement).not.toBe(middle);
+
+    // And the stop went with it, so Tab re-enters where the caret is.
+    expect(first).toHaveAttribute("tabindex", "0");
+    expect(third).toHaveAttribute("tabindex", "-1");
+  });
+
+  test("a city whose id is absent from cityProvince is hidden when zoomed, not shown everywhere", () => {
+    // 478 cities across the 246 committed files are placed by neither
+    // containment nor `a1c`. Showing an unplaced city inside every province is
+    // worse than showing it in none: it would assert a fact the build was
+    // careful not to invent, once per province.
+    const places = [LIMA, UNPLACED];
+    const { container, rerender, props } = renderLevel({ places });
+
+    expect(PE_CITY_PROVINCE).not.toHaveProperty(UNPLACED.id);
+    expect(drawn(container)).toEqual(["lima", "unplaced"]);
+
+    // Drawn at lon -77, inside PE-LIM's own span of -78..-76, so a containment
+    // fallback would show it here. It has no assignment, so nothing places it.
+    rerender(<CountryLevel {...props} places={places} region="PE-LIM" />);
+    expect(drawn(container)).toEqual(["lima"]);
+
+    // And in no other province either — hidden once, not moved.
+    for (const region of ["PE-CUS", "PE-ISL"]) {
+      rerender(<CountryLevel {...props} places={places} region={region} />);
+      expect(drawn(container)).not.toContain("unplaced");
+    }
+
+    // Same for a city placed in a unit nobody can zoom to: `cusco` is assigned
+    // to PE-XXX, which is `sel: 0`, so no group names it and no zoom draws it.
+    // The list below is where it stays reachable.
+    rerender(<CountryLevel {...props} places={[CUSCO]} region="PE-CUS" />);
+    expect(drawn(container)).toEqual([]);
+  });
+
+  test("the list still reaches every city in the country, zoomed or not", () => {
+    // §5.2's invariant, and the reason the filter is allowed to hide anything
+    // at all. The map is the enhancement; the list is the spine, and it is
+    // built from `places` whole at every zoom.
+    const names = ["Lima", "Cusco", "Puerto Lejano"];
+    const { container, rerender, props } = renderLevel();
+
+    expect(listed(names)).toEqual(names);
+
+    rerender(<CountryLevel {...props} region="PE-ISL" />);
+    expect(drawn(container)).toEqual(["isla"]);
+    expect(listed(names)).toEqual(names);
+
+    // Including the two the zoom can never reach from here — so while the map
+    // is framed on the island, the list is the only control either of them has.
+    for (const name of ["Lima", "Cusco"]) {
+      const chip = screen.getAllByRole("button", { name }).find((el) => el.tagName === "BUTTON");
+      expect(chip).toBeDefined();
+      expect(chip!.getAttribute("tabindex")).not.toBe("-1");
+    }
+  });
+
+  test("clears the zoom when the country changes", () => {
+    // A region id belongs to the country it was taken in. `MapExplorer` drops
+    // it on the way down into a new one, but nothing MAKES it: `RegionId` is
+    // `string`, so a stale id stays assignable and no compiler points at it.
+    //
+    // So the level answers for it too, and answers with an UNZOOMED map rather
+    // than an empty one. The scheme is what resolves a region, and the new
+    // country's scheme has never heard of the old country's group — which is
+    // no transform AND no filter, because a filter keyed on a group that does
+    // not exist would hide every city in the country that just opened.
+    const { container, rerender, props } = renderLevel({ region: "PE-ISL" });
+
+    expect(drawn(container)).toEqual(["isla"]);
+    expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).not.toBe(
+      "translate(0px, 0px) scale(1)"
+    );
+
+    rerender(<CountryLevel {...props} country="BO" provinces={BO_FILE} region="PE-ISL" />);
+
+    expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).toBe(
+      "translate(0px, 0px) scale(1)"
+    );
+    expect(drawn(container)).toEqual(["lima", "cusco", "isla"]);
   });
 });
 
