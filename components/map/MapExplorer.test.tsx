@@ -7,6 +7,7 @@ import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
 import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
 import { DEFAULT_PREFS, PREFS_COOKIE, serializePrefsCookie, type UserPrefs } from "@/lib/prefs";
+import { PE_TOPOLOGY } from "./countryFixture";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
 
@@ -1357,6 +1358,203 @@ describe("the open country's province file", () => {
       screen.getByRole("group", { name: "Map of China segmented by region" })
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Zoom into North China/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * §6.1's chrome, taken off China.
+ *
+ * Every region affordance this component draws was gated on `hasCurated`, so
+ * the other 245 countries got a bare header with no way in and no way out of a
+ * province: the zoom existed inside `CountryLevel` from Task 4 and nothing on
+ * screen could reach it. What is asserted here is the coordination — which
+ * control is offered in which of the two machines' states, what it moves, and
+ * that China's own chrome came through the generalisation untouched.
+ *
+ * How the zoom is DRAWN is `CountryLevel.test.tsx`'s; that a control here
+ * reaches it at all is pinned below, because nothing else would notice a
+ * `<select>` wired to state no renderer ever receives.
+ */
+describe("the province level's chrome", () => {
+  /**
+   * Peru with something to choose between — the shared four-unit fixture,
+   * three selectable and one `sel: 0`, served where `provinceFixture` serves
+   * its single square. §6.6's gate makes that square a country with no region
+   * control at all, which is the wrong country to test a region control in.
+   *
+   * `cityProvince` names the two ids `PE_SHARD` actually ships, in two
+   * different units, so a zoom is observable as the markers it stops drawing
+   * rather than only as a transform nobody can see.
+   */
+  const PE_ZOOMABLE = {
+    country: "PE",
+    generatedAt: "2026-08-30T00:00:00.000Z",
+    idKey: "adm1_code",
+    topology: PE_TOPOLOGY,
+    cityProvince: { G3936456: "PE-LIM", G3941584: "PE-CUS" },
+  };
+
+  /**
+   * The manifest answers for nobody here, so `CountryLevel` falls back to a fit
+   * over its own units. `PROJECTION_FIXTURE` frames a one-degree square at the
+   * origin and this fixture lives at 78°W — framed by that entry every marker
+   * would be projected off the viewBox, which is a rendering nothing asserted
+   * below is about and a confusing thing to leave true.
+   */
+  function zoomableFetch(url: string) {
+    const href = String(url);
+    if (href === "/provinces/PE.json") {
+      return Promise.resolve({ ok: true, status: 200, json: async () => PE_ZOOMABLE });
+    }
+    if (href === PROJECTION_PATH) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    }
+    return defaultFetch(href);
+  }
+
+  beforeEach(() => {
+    fetchMock = vi.fn(zoomableFetch);
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  /** The map's markers, by the name a screen reader gets — never the list's chips. */
+  function markerNames(container: HTMLElement): string[] {
+    return [...container.querySelectorAll("[data-markers] [data-place]")].map(
+      (el) => el.getAttribute("aria-label") ?? ""
+    );
+  }
+
+  function regionControl(): HTMLSelectElement {
+    return screen.getByRole("combobox", { name: "Zoom to a province" }) as HTMLSelectElement;
+  }
+
+  test("a non-China country gets a region control", async () => {
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+
+    // The country's SELECTABLE units and no others. `PE-XXX` is real geometry
+    // that shapes the outline without being a subdivision (§7.2), so it is
+    // drawn and it is not a destination — offering it here would be the
+    // Northern-Cyprus bug with a Peruvian name.
+    expect([...regionControl().querySelectorAll("option")].map((o) => o.textContent)).toEqual([
+      "All of Peru",
+      "Lima",
+      "Cuzco",
+      "Isla Lejana",
+    ]);
+    expect(markerNames(container).sort()).toEqual(["Cusco", "Lima"]);
+    // C5's 44px minimum, which its sibling controls are each pinned to
+    // separately above. This one is the only way into a province, and it is
+    // the one control in the header that is not a `STEP_UP_BUTTON` and so
+    // cannot inherit the token from that constant.
+    expect(regionControl().className).toContain("min-h-[var(--tap-min)]");
+
+    fireEvent.change(regionControl(), { target: { value: "PE-CUS" } });
+    await settle();
+
+    // It reaches the renderer, which is the half a control cannot prove about
+    // itself: §6.5 draws the group's own cities and drops the rest.
+    expect(markerNames(container)).toEqual(["Cusco"]);
+    // And §5.2 is untouched — the map filters, the spine does not.
+    expect(chip("Lima")).toBeInTheDocument();
+  });
+
+  test("the back path is level-aware: region -> country -> world", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+
+    // One rung is offered at a time, and which one is a question about BOTH
+    // machines: the country level's step up is the world, a region's step up
+    // is the country, and a control that read only `level` could not tell them
+    // apart.
+    expect(screen.getByRole("button", { name: "← All countries" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "← All Peru" })).toBeNull();
+
+    fireEvent.change(regionControl(), { target: { value: "PE-CUS" } });
+    await settle();
+    expect(screen.getByRole("button", { name: "← All Peru" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "← All countries" })).toBeNull();
+
+    // region -> country. The LEVEL machine does not move with it: the two are
+    // independent, and a back control that folded the zoom into `MapLevel`
+    // would land the user in the world picker from one press.
+    fireEvent.click(screen.getByRole("button", { name: "← All Peru" }));
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /pick a country/ })).toBeNull();
+    expect(regionControl().value).toBe("");
+
+    // country -> world, which is the level machine and only the level machine.
+    fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
+    await settle();
+    expect(screen.getByRole("group", { name: /pick a country/ })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Map of Peru" })).toBeNull();
+
+    // And back down again, to the whole country rather than to a region the
+    // user had already stepped out of.
+    fireEvent.click(screen.getByRole("button", { name: "← Back to Peru" }));
+    await settle();
+    expect(regionControl().value).toBe("");
+    expect(screen.getByRole("button", { name: "← All countries" })).toBeInTheDocument();
+  });
+
+  test("the caption names the zoomed region", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+    // Nothing to caption while the whole country is drawn: the map is showing
+    // every city it has, so there is no absence to explain.
+    expect(screen.queryByText(/Showing/)).toBeNull();
+
+    fireEvent.change(regionControl(), { target: { value: "PE-CUS" } });
+    await settle();
+
+    // Named, and paired with where the cities it stopped drawing went. A zoom
+    // that silently removes markers reads as a country with fewer cities in
+    // it, which is the reading §5.2 exists to prevent.
+    expect(
+      screen.getByText("Showing Cuzco — the list below still reaches every city")
+    ).toBeInTheDocument();
+  });
+
+  test("China's chrome is unchanged", async () => {
+    render(<Harness country="CN" />);
+    await settle();
+
+    // China's region control is the map itself — every province is a zoom
+    // button — so the `<select>` the other 245 get would be a second control
+    // for the same choice. `regionSchemeFor` is never even asked: this
+    // component fetches China's curated asset, not a province file, so it
+    // holds no units to build a scheme from.
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Click a region to zoom in" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Markers show curated picks — zoom into a region for every city")
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Zoom into North China/ }));
+    await settle();
+
+    // §9.5's chrome half: the strings, the heading and the back control are
+    // the ones pre-Phase-4 China rendered, down to "North China" being the
+    // region name and the country name rather than the group label the other
+    // 245 now show.
+    expect(screen.getByRole("button", { name: "← All China" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "North China" })).toBeInTheDocument();
+    expect(screen.getByText("Click any marker to add it to your trip")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "← All China" }));
+    await settle();
+    expect(screen.getByRole("heading", { name: "Click a region to zoom in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Zoom into North China/ })).toBeInTheDocument();
+
+    // The one thing China does GAIN, stated rather than left for a reader to
+    // discover: the country-level rung of the back path, which every one of
+    // the 246 gets and none of them had. It is the level machine's control,
+    // not a region affordance — China's region chrome above is byte-for-byte
+    // what pre-Phase-4 China rendered — and it is offered here, out of the
+    // whole country, exactly as it is for Peru.
+    expect(screen.getByRole("button", { name: "← All countries" })).toBeInTheDocument();
   });
 });
 
