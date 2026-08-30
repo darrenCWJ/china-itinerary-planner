@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
+  ARRIVABLE_AIRPORT_SIZES,
   findAirport,
   searchAirports,
   nearestAirports,
   DEFAULT_AIRPORT_RADIUS_KM,
   type Airport,
 } from "./airports";
+import { allAirports } from "./server/airports";
 
 /** A small hand-built set — real coordinates, so distance tests stay honest. */
 export const FIXTURE: Airport[] = [
@@ -124,6 +126,19 @@ describe("nearestAirports", () => {
     expect(DEFAULT_AIRPORT_RADIUS_KM).toBe(150);
   });
 
+  test("ranks over every size it is handed — the arrivable set is the CALLER's choice", () => {
+    // `ARRIVABLE_AIRPORT_SIZES` is applied by `mainAirportFor` and by
+    // `CountryLevel`'s layer, and deliberately NOT here. `lib/route.ts` asks a
+    // different question — which airports would a flight between these two
+    // places actually use — and a small field is a real answer to it. Baking
+    // the filter into the ranking would silently re-price every leg.
+    const strip: Airport = {
+      iata: "STP", icao: null, name: "Airstrip", municipality: null,
+      country: "GB", lat: 51.5, lon: -0.1, size: "small",
+    };
+    expect(nearestAirports([strip], { lat: 51.5, lon: -0.1 })[0].airport.iata).toBe("STP");
+  });
+
   test("breaks a genuine rank tie alphabetically by IATA, deterministically", () => {
     // Two airports at identical coordinates and the same size rank exactly
     // equal (same `km`, same size bonus), so only the `localeCompare`
@@ -177,5 +192,36 @@ describe("nearestAirports", () => {
     // than just that something, somewhere, got filtered.
     const included = nearestAirports([farLargeAirport], at, { radiusKm: 160 });
     expect(included.map((r) => r.airport.iata)).toEqual(["FAR"]);
+  });
+});
+
+/**
+ * The one set both the card and the map layer read (§10.1, §10.2).
+ *
+ * Pinned here rather than at either reader, because it belongs to neither: the
+ * defect it fixes was precisely that `mainAirportFor` and `CountryLevel`'s
+ * layer each owned a filter and the two disagreed in both directions. A second
+ * copy is how that comes back.
+ */
+describe("ARRIVABLE_AIRPORT_SIZES", () => {
+  test("is large and medium, and is an allow-list rather than a small-denier", () => {
+    expect([...ARRIVABLE_AIRPORT_SIZES].sort()).toEqual(["large", "medium"]);
+    expect(ARRIVABLE_AIRPORT_SIZES.has("small")).toBe(false);
+  });
+
+  test("drops about a fifth of the committed artifact — the airstrips", () => {
+    // The number the docblock's argument rests on, measured rather than
+    // asserted from memory: if the upstream feed re-classifies the set, this is
+    // where "a fifth" stops being true and someone has to look again.
+    const all = allAirports();
+    const arrivable = all.filter((airport) => ARRIVABLE_AIRPORT_SIZES.has(airport.size));
+    expect(all.length).toBeGreaterThan(3_000);
+    expect(all.length - arrivable.length).toBeGreaterThan(0);
+    // Every dropped row is `small`, which is what makes the allow-list and
+    // `!== "small"` agree TODAY — and the allow-list is what keeps a size the
+    // feed grows tomorrow out until someone decides otherwise.
+    for (const airport of all) {
+      expect(ARRIVABLE_AIRPORT_SIZES.has(airport.size)).toBe(airport.size !== "small");
+    }
   });
 });

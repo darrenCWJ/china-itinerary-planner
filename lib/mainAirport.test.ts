@@ -28,22 +28,41 @@ function airportAt(iata: string, km: number, size: AirportSize): Airport {
 }
 
 describe("mainAirportFor", () => {
-  test("returns the RANKED first, which can be 30 km further than the true nearest", () => {
-    // rank = km - SIZE_BONUS_KM[size], large +15 / medium 0 / small -15
-    // (lib/airports.ts:60-64, :139). The penalties are symmetric and compose,
-    // so large beats small up to 30 km further out — twice the bound §10.2
-    // quotes. Verified: large@42km ranks 27 and beats small@13km at 28;
-    // large@44km ranks 29 and loses.
-    // THIS is why the label cannot say "nearest".
-    const small = airportAt("SML", -13, "small");
+  test("returns the RANKED first, which can be 15 km further than the true nearest", () => {
+    // rank = km - SIZE_BONUS_KM[size], large +15 / medium 0. Over the set this
+    // function ranks — `ARRIVABLE_AIRPORT_SIZES`, large and medium — that is
+    // the whole spread, and it is exactly the bound §10.2 quotes.
+    // Verified: large@27km ranks 12 and beats medium@13km at 13; large@29km
+    // ranks 14 and loses. THIS is why the label cannot say "nearest".
+    const medium = airportAt("MED", -13, "medium");
 
-    const wins = mainAirportFor([small, airportAt("BIG", 42, "large")], HERE);
-    expect(wins).toEqual({ iata: "BIG", km: 42 });
+    const wins = mainAirportFor([medium, airportAt("BIG", 27, "large")], HERE);
+    expect(wins).toEqual({ iata: "BIG", km: 27 });
 
-    // Two km further and the same large airport loses to the same small one —
+    // Two km further and the same large airport loses to the same medium one —
     // which is what makes the assertion above a boundary and not a coincidence.
-    const loses = mainAirportFor([small, airportAt("BIG", 44, "large")], HERE);
-    expect(loses).toEqual({ iata: "SML", km: 13 });
+    const loses = mainAirportFor([medium, airportAt("BIG", 29, "large")], HERE);
+    expect(loses).toEqual({ iata: "MED", km: 13 });
+  });
+
+  test("never names a size the map will not draw", () => {
+    // The fix for the two filters that disagreed. `CountryLevel`'s layer draws
+    // `ARRIVABLE_AIRPORT_SIZES` (§10.1) and this ranked over all three sizes,
+    // so the card could print a code for a diamond that was never on screen.
+    //
+    // A contest the small airport wins on distance and on rank — 3 km scores
+    // 3 + 15 = 18 against the medium's 20 — and loses because an airstrip is
+    // not where anyone arrives. That is the same judgement §10.1 makes about
+    // drawing it, made once, in one place.
+    const small = airportAt("SML", 3, "small");
+    const medium = airportAt("MED", 20, "medium");
+    expect(mainAirportFor([small, medium], HERE)).toEqual({ iata: "MED", km: 20 });
+
+    // Filtered BEFORE the ranking rather than after. An implementation that
+    // took `[0]` and then rejected it would answer null for the pair above and
+    // withhold a perfectly usable airport; here null means there is genuinely
+    // nothing to name.
+    expect(mainAirportFor([small], HERE)).toBeNull();
   });
 
   test("the label says Main airport, and says nothing about proximity", () => {

@@ -1,4 +1,4 @@
-import { nearestAirports, type Airport } from "./airports";
+import { ARRIVABLE_AIRPORT_SIZES, nearestAirports, type Airport } from "./airports";
 import type { LatLon } from "./geo";
 
 /**
@@ -18,12 +18,15 @@ import type { LatLon } from "./geo";
  * The label, which deliberately does not claim proximity.
  *
  * `nearestAirports` ranks on `km - SIZE_BONUS_KM[size]` with large +15 and
- * small -15 (lib/airports.ts:60-64). The two penalties are symmetric and
- * compose, so a large airport wins from up to 30 km further out than a small
- * one — twice the bound §10.2 quotes, and far enough that "nearest" would be a
- * lie the ranking eventually tells. That is the whole point of the discount:
- * London City really is closer to London than Heathrow, and really is not
- * London's main airport.
+ * medium 0, so over the set this function ranks — `ARRIVABLE_AIRPORT_SIZES` —
+ * a large airport wins from up to 15 km further out than a medium one. Far
+ * enough that "nearest" would be a lie the ranking eventually tells, and that
+ * is the whole point of the discount: London City really is closer to London
+ * than Heathrow, and really is not London's main airport.
+ *
+ * 15 and not the 30 an earlier version of this docblock recorded, because that
+ * number came from `small`'s -15 composing with `large`'s +15 — and `small` is
+ * no longer in the running here.
  */
 export const MAIN_AIRPORT_LABEL = "Main airport";
 
@@ -36,13 +39,34 @@ export interface MainAirport {
 /**
  * The single airport to name for a place, or null if there is none to name.
  *
- * Null in two cases, which the caller should treat alike: the array is empty,
- * and nothing in it is within `DEFAULT_AIRPORT_RADIUS_KM`. Both mean the same
- * thing to a reader — this place has no airport worth calling its own — and
- * saying nothing is better than naming one 600 km away.
+ * Null in three cases, which the caller should treat alike: the array is empty,
+ * nothing in it is within `DEFAULT_AIRPORT_RADIUS_KM`, and nothing within that
+ * radius is a size anyone arrives at. All three mean the same thing to a reader
+ * — this place has no airport worth calling its own — and saying nothing is
+ * better than naming one 600 km away, or an aeroclub.
  *
  * The distance is rounded here rather than at the JSX, so "TNA · 30 km" has
  * one place that decides what 30 is.
+ *
+ * ## The card names only what the map can draw
+ *
+ * `ARRIVABLE_AIRPORT_SIZES` before the ranking, not after: a filter applied to
+ * `[0]` would answer null whenever the winner happened to be small, rather than
+ * naming the best airport a traveller can actually use.
+ *
+ * Sharing §10.1's set is what makes the card's claim checkable, and the shape
+ * of the argument is containment. This function narrows the open country's rows
+ * by that set AND by `DEFAULT_AIRPORT_RADIUS_KM`; the layer narrows the same
+ * rows by that set and by nothing else. So what this names is always a member
+ * of what the layer drew — never the reverse, and that asymmetry is correct: a
+ * map showing a country's airports beyond 150 km of the open city is a map,
+ * while a card naming a code with no diamond under it is a broken promise.
+ *
+ * When the layer is OFF nothing is drawn and there is nothing to disagree with;
+ * §10.2's line is a fact about the open place either way. lib/airports.ts's
+ * docblock carries the decision and the case for it, and
+ * `CountryLevel.test.tsx`'s "the airport the card names is one the layer drew"
+ * is what holds the two together, by rendering both at once.
  *
  * ## The border limit
  *
@@ -76,7 +100,8 @@ export interface MainAirport {
  * here.
  */
 export function mainAirportFor(airports: readonly Airport[], at: LatLon): MainAirport | null {
-  const [best] = nearestAirports(airports, at, { limit: 1 });
+  const arrivable = airports.filter((airport) => ARRIVABLE_AIRPORT_SIZES.has(airport.size));
+  const [best] = nearestAirports(arrivable, at, { limit: 1 });
   if (best === undefined) return null;
   return { iata: best.airport.iata, km: best.km };
 }
