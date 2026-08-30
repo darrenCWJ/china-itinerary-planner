@@ -390,6 +390,16 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
         selected={routeIds}
         routeIds={routeIds}
         month={month}
+        // The whole country, deliberately — and stated, because nothing else
+        // states it. Phase 4 widened this prop from `ChinaRegion` to
+        // `RegionId`, which is `string`, so `null` stayed assignable and no
+        // compiler pointed at the one call site the widening did not migrate.
+        // There is nothing here to migrate TO: the province chrome is
+        // `MapExplorer`'s — a `<select>` and a step-up button — and this
+        // surface renders none of it, so a framing would be one nothing could
+        // leave. It would also cost stops: a framed level filters its markers
+        // to the framed group's own cities (§6.5), and a trip's stops are
+        // spread across provinces by definition.
         zoomRegion={null}
         // A view of the plan, not a picker for one: the markers keep their
         // dots, labels and hover and drop every control §5.3 gave them, so
