@@ -2,14 +2,21 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { COUNTRY_DETAIL, detailFor } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
-import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
+import {
+  IDENTITY_TRANSFORM,
+  MAX_ZOOM_K,
+  ZOOM_FILL,
+  type MapTransform,
+} from "@/lib/mapTransform";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { unitLabel, type RegionId } from "@/lib/regionScheme";
 import FO_PROVINCES from "@/public/provinces/FO.json";
 import {
+  ADMIN1_MAX_ZOOM_K,
   buildCountryView,
   CountryLevel,
   MAP_MAX_RENDER_W,
+  MIN_FRAMED_EXTENT,
   paintedAt,
   TAP_MIN_PX,
   TAP_MIN_R_FALLBACK,
@@ -1025,6 +1032,226 @@ describe("CountryLevel province zoom", () => {
     // And an unzoomed card anchors to the projection untouched, which is what
     // every render before this plan did.
     expect(paintedAt(centre, IDENTITY_TRANSFORM)).toEqual(centre);
+  });
+});
+
+/**
+ * How much of the frame a framed unit actually fills — the property nobody
+ * measured, and the one the zoom exists to deliver.
+ *
+ * Every other assertion about the zoom is about a RATIO: that lengths divide by
+ * `k`, that the tap target survives it, that the centre of the framed unit
+ * lands on the centre of the view. All of them hold at `k = 5` and all of them
+ * hold at `k = 80`, so none of them can tell a province that fills the viewport
+ * from a province that is a speck in the middle of one. That is the shape the
+ * defect shipped in.
+ *
+ * Measured over the 246 committed province files, `MAX_ZOOM_K = 5` clamps
+ * **3,039 of the 4,525 zoomable groups (67.2%)**. The ceiling was tuned for
+ * `ChinaLevel`, whose seven groups are five provinces each and never ask for
+ * more than 3.5x; ONE admin-1 unit asks for far more, and got 5x. What that
+ * costs, as the fraction of the viewBox's area the unit's own bounding box
+ * covers — measured against the committed files, not estimated:
+ *
+ * | unit              | bbox (viewBox units) | at k <= 5 | framed |
+ * | ----------------- | -------------------- | --------- | ------ |
+ * | Rhode Island (US) | 4.4 x 6.7            | 0.14%     | 36.3%  |
+ * | Delhi (IN)        | 9.7 x 9.8            | 0.45%     | 54.9%  |
+ * | Paris (FR)        | 10.5 x 5.5           | 0.27%     | 56.4%  |
+ * | Jakarta (ID)      | 5.6 x 5.9            | 0.16%     | 52.5%  |
+ * | Berlin (DE)       | 31.7 x 25.4          | 3.8%      | 69.7%  |
+ * | Moscow (RU)       | 24.7 x 23.5          | 2.7%      | 58.6%  |
+ * | Texas (US)        | 75.8 x 72.0          | 25.6%     | 58.8%  |
+ * | Tokyo (JP)        | 344 x 309            | 62.2%     | 62.2%  |
+ *
+ * Tokyo is the control: it is big enough that the ceiling never bound on it,
+ * which is why the defect was invisible to anyone who tried the feature on a
+ * large province.
+ *
+ * So this block asserts the fill fraction directly, for a large unit and a
+ * small one, off the transform the component actually rendered rather than off
+ * `transformForFeatures` — the arithmetic grading its own homework is what the
+ * "province zoom" block above already avoids.
+ */
+describe("CountryLevel province zoom — the fraction of the frame the unit fills", () => {
+  /** A square ring wound clockwise in (lon, lat), which d3-geo reads as inside. */
+  function ring(x0: number, y0: number, size: number): number[][] {
+    return [
+      [x0 + size, y0 + size],
+      [x0 + size, y0],
+      [x0, y0],
+      [x0, y0 + size],
+      [x0 + size, y0 + size],
+    ];
+  }
+
+  /**
+   * One country, three units, spanning the whole range of the problem.
+   *
+   * Separate arcs rather than the shared ones `countryFixture` uses, because
+   * nothing here is about `merge()`: what matters is that the three differ in
+   * SIZE by three orders of magnitude, which is the real spread of admin-1 units
+   * and the reason one ceiling cannot serve them all.
+   *
+   * - **XA-BIG**, 4 degrees square, is a province the size of Texas — the fit
+   *   already frames it and no ceiling was ever in its way;
+   * - **XA-SML**, 0.05 degrees square, is Rhode Island's case — big enough to be
+   *   a real place with real cities, small enough that `MAX_ZOOM_K` decided its
+   *   framing instead of the fit;
+   * - **XA-DOT**, 0.003 degrees square, is Jarvis Island's — an uninhabited
+   *   speck that a ceiling must still catch, because "frame it" has no useful
+   *   answer.
+   */
+  const XA_TOPOLOGY = {
+    type: "Topology",
+    arcs: [ring(0, 0, 4), ring(5, 0, 0.05), ring(6, 0, 0.003)],
+    objects: {
+      provinces: {
+        type: "GeometryCollection",
+        geometries: [
+          {
+            type: "Polygon",
+            id: "XA-BIG",
+            arcs: [[0]],
+            properties: { name: "Grande", name_en: "Grande", sel: 1 },
+          },
+          {
+            type: "Polygon",
+            id: "XA-SML",
+            arcs: [[1]],
+            properties: { name: "Pequena", name_en: "Pequena", sel: 1 },
+          },
+          {
+            type: "Polygon",
+            id: "XA-DOT",
+            arcs: [[2]],
+            properties: { name: "Mota", name_en: "Mota", sel: 1 },
+          },
+        ],
+      },
+    },
+  };
+
+  const XA_FILE: ProvinceFile = parseProvinceTopology({
+    country: "XA",
+    generatedAt: "2026-08-30T00:00:00.000Z",
+    idKey: "adm1_code",
+    topology: XA_TOPOLOGY,
+    cityProvince: {},
+  });
+
+  /** No manifest entry, so the fit over the three units is the frame. */
+  const XA_VIEW = buildCountryView(XA_FILE, null);
+
+  /** The `translate(...px, ...px) scale(...)` the component wrote, as numbers. */
+  function renderedTransform(container: HTMLElement): MapTransform {
+    const style = container.querySelector<SVGGElement>("[data-zoom]")?.style.transform ?? "";
+    const [tx, ty, k] = [...style.matchAll(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g)].map((m) =>
+      Number(m[0])
+    );
+    if (k === undefined) throw new Error(`unparseable transform: ${style}`);
+    return { k, tx, ty };
+  }
+
+  /**
+   * How much of the viewBox the unit's bounding box covers once the rendered
+   * transform has been applied to it — per axis, and as area.
+   *
+   * The unit's bounds come from the same `pathGen` that drew it and the
+   * transform comes off the DOM, so this is the composition a browser performs
+   * rather than a re-derivation of it.
+   */
+  function framed(
+    container: HTMLElement,
+    unitId: string
+  ): { x: number; y: number; area: number; k: number } {
+    const shape = XA_VIEW.selectableFeatures.get(unitId);
+    if (!shape) throw new Error(`no feature for ${unitId}`);
+    const [[x0, y0], [x1, y1]] = XA_VIEW.pathGen.bounds(shape);
+    const transform = renderedTransform(container);
+    const min = paintedAt({ x: x0, y: y0 }, transform);
+    const max = paintedAt({ x: x1, y: y1 }, transform);
+    const x = (max.x - min.x) / MAP_VIEW_W;
+    const y = (max.y - min.y) / MAP_VIEW_H;
+    return { x, y, area: x * y, k: transform.k };
+  }
+
+  function renderXa(region: RegionId | null) {
+    return render(
+      <CountryLevel
+        country="XA"
+        provinces={XA_FILE}
+        projection={null}
+        places={[]}
+        selected={[]}
+        month={10}
+        routeIds={[]}
+        region={region}
+        onTogglePlace={vi.fn()}
+        onHoverPlace={vi.fn()}
+      />
+    );
+  }
+
+  test("a large unit fills the frame, and always did", () => {
+    // The control. `XA-BIG` is 4 of this country's 6.003 degrees, so the fit
+    // asks for k just under 1 and no ceiling was ever involved — which is why a
+    // suite that only framed big provinces could not see the defect.
+    const { container } = renderXa("XA-BIG");
+    const fill = framed(container, "XA-BIG");
+
+    expect(fill.k).toBeLessThan(MAX_ZOOM_K);
+    expect(Math.max(fill.x, fill.y)).toBeCloseTo(ZOOM_FILL, 9);
+    expect(fill.area).toBeGreaterThan(0.5);
+  });
+
+  test("a small unit fills the frame too, instead of sitting as a speck in it", () => {
+    // Rhode Island's case, and the defect. `XA-SML` is 0.05 degrees across —
+    // 6.997 viewBox units — so the fit asks for k = 77.98 and `MAX_ZOOM_K` used
+    // to answer 5. At 5 the unit covered 4.07% of the frame's width and 0.23%
+    // of its area: framed dead centre, and invisible. Fitted it is 63.4% and
+    // 55.8%.
+    const { container } = renderXa("XA-SML");
+    const fill = framed(container, "XA-SML");
+
+    expect(fill.k).toBeGreaterThan(MAX_ZOOM_K);
+    expect(Math.max(fill.x, fill.y)).toBeCloseTo(ZOOM_FILL, 9);
+    // The claim the defect fails, in the terms a user sees it in.
+    expect(fill.area).toBeGreaterThan(0.5);
+  });
+
+  test("a speck below the framing floor is still clamped, so the ceiling is real", () => {
+    // `XA-DOT` is 0.003 degrees — 0.42 viewBox units, under the framing floor —
+    // and the fit would ask for k = 1299.7. Below `MIN_FRAMED_EXTENT` there is
+    // nothing left to frame: the geometry is finer than the coordinate system
+    // it is drawn in, and more magnification only magnifies the simplifier's
+    // rounding. Clamped it still covers 39.4% of the frame, against 0.0008% at
+    // the old ceiling — a clamp is a worse frame, never no frame.
+    const { container } = renderXa("XA-DOT");
+    const fill = framed(container, "XA-DOT");
+
+    expect(fill.k).toBe(ADMIN1_MAX_ZOOM_K);
+    expect(Math.max(fill.x, fill.y)).toBeLessThan(ZOOM_FILL);
+    // Finite, centred, and still two orders of magnitude better than 5x — a
+    // clamp is a worse frame, never a broken one.
+    expect(Number.isFinite(fill.area)).toBe(true);
+    expect(fill.area).toBeGreaterThan(0.1);
+  });
+
+  test("the admin-1 ceiling is derived from an extent, not picked", () => {
+    // What makes the two paths differ, as arithmetic: the ceiling is the scale
+    // a square unit of `MIN_FRAMED_EXTENT` viewBox units is framed at, so the
+    // number that has to be defensible is an EXTENT in the map's own units
+    // rather than a magnification with no units at all.
+    expect(ADMIN1_MAX_ZOOM_K).toBe(
+      (ZOOM_FILL * Math.min(MAP_VIEW_W, MAP_VIEW_H)) / MIN_FRAMED_EXTENT
+    );
+    expect(MIN_FRAMED_EXTENT).toBe(0.5);
+    expect(ADMIN1_MAX_ZOOM_K).toBeCloseTo(1091.2, 9);
+
+    // And China's ceiling has not moved — `chinaBaseline.test.tsx` pins that
+    // byte for byte. Two constants because they answer two questions.
+    expect(MAX_ZOOM_K).toBe(5);
   });
 });
 
