@@ -100,6 +100,34 @@ const ISLA = place({
   lat: -27.5,
 });
 
+/** Degrees of latitude per km, for an airport placed along a place's meridian. */
+const KM_PER_DEGREE = (6371 * Math.PI) / 180;
+
+/**
+ * An airport exactly `km` due north of a place.
+ *
+ * Along the meridian, where the great-circle distance is exactly `R · dLat` —
+ * so "30 km away" is 30 km rather than 30-ish, and the number the card prints
+ * is pinned by the fixture instead of by whichever way `Math.round` fell.
+ */
+function airportNear(
+  place: MapPlace,
+  iata: string,
+  km: number,
+  size: Airport["size"] = "medium"
+): Airport {
+  return {
+    iata,
+    icao: null,
+    name: `${iata} Airport`,
+    municipality: place.name,
+    country: "PE",
+    lat: place.lat + km / KM_PER_DEGREE,
+    lon: place.lon,
+    size,
+  };
+}
+
 /**
  * A SECOND country, drawn from the same arcs under different unit ids.
  *
@@ -221,6 +249,16 @@ function unitTitles(container: HTMLElement): (string | null)[] {
 /** Every marker group, in the order they are drawn. */
 function markers(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>("[data-markers] [data-place]")];
+}
+
+/** Every airport mark §10.1's layer drew, in the order they are drawn. */
+function airportMarks(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>("[data-airports] [data-airport]")];
+}
+
+/** The IATA codes the layer put on the map. */
+function airportCodes(container: HTMLElement): (string | null)[] {
+  return airportMarks(container).map((mark) => mark.getAttribute("data-airport"));
 }
 
 /**
@@ -793,6 +831,18 @@ describe("CountryLevel province zoom", () => {
     place({ id: "cty", name: "Nazca", level: "county", lon: -73, lat: -12 }),
   ];
 
+  /**
+   * One airport, and `showAirports` on, so §10.1's layer is drawn in BOTH
+   * renders below.
+   *
+   * The layer is the newest thing inside `[data-zoom]` and the easiest to add a
+   * raw length to, since its mark is a square rather than a circle and carries
+   * three of them — a width, a height and a stroke. Drawing it here is what puts
+   * those three inside "every stroke, radius and font divides by k" instead of
+   * beside it.
+   */
+  const ZOOM_AIRPORT = airportNear(ZOOM_PLACES[0], "CUZ", 20, "large");
+
   function num(el: Element | null, attr: string): number {
     if (!el) throw new Error(`no element carrying ${attr}`);
     const raw = el.getAttribute(attr);
@@ -809,6 +859,7 @@ describe("CountryLevel province zoom", () => {
   /** Every length the zoom has to divide, read off one rendered map. */
   function lengths(container: HTMLElement): Record<string, number> {
     const q = (selector: string) => container.querySelector(selector);
+    const airport = q("[data-airport]");
     const dot = circleFor(container, "cur", "data-dot");
     const cy = num(dot, "cy");
     const label = q('[data-place="cur"] text[data-label]');
@@ -840,6 +891,12 @@ describe("CountryLevel province zoom", () => {
       labelLift: cy - num(label, "y"),
       stopFont: num(stop, "font-size"),
       stopDrop: num(stop, "y") - cy,
+      // §10.1's layer. Its `x` and `y` are positions rather than lengths — the
+      // mark's CENTRE is where the projection put the airport and does not
+      // scale — so what is held here is the square it is drawn as.
+      airportWidth: num(airport, "width"),
+      airportHeight: num(airport, "height"),
+      airportStroke: num(airport, "stroke-width"),
     };
   }
 
@@ -851,6 +908,8 @@ describe("CountryLevel province zoom", () => {
       selected: ["cur", "cty"],
       routeIds: ["cur", "cty"],
       region,
+      airports: [ZOOM_AIRPORT],
+      showAirports: true,
     });
     // The focus ring is drawn only for the marker the caret is on, and it is
     // one of the radii under test.
@@ -1638,34 +1697,6 @@ describe("CountryLevel read-only", () => {
  * who has never found the toggle still deserves.
  */
 
-/** Degrees of latitude per km, for an airport placed along a place's meridian. */
-const KM_PER_DEGREE = (6371 * Math.PI) / 180;
-
-/**
- * An airport exactly `km` due north of a place.
- *
- * Along the meridian, where the great-circle distance is exactly `R · dLat` —
- * so "30 km away" is 30 km rather than 30-ish, and the number the card prints
- * is pinned by the fixture instead of by whichever way `Math.round` fell.
- */
-function airportNear(
-  place: MapPlace,
-  iata: string,
-  km: number,
-  size: Airport["size"] = "medium"
-): Airport {
-  return {
-    iata,
-    icao: null,
-    name: `${iata} Airport`,
-    municipality: place.name,
-    country: "PE",
-    lat: place.lat + km / KM_PER_DEGREE,
-    lon: place.lon,
-    size,
-  };
-}
-
 describe("CountryLevel main airport", () => {
   test("the card shows the main airport for the selected place", () => {
     // Two airports, one per city, and that is what makes the assertion about
@@ -1726,5 +1757,155 @@ describe("CountryLevel main airport", () => {
     // `mainAirportFor` answers per place and not per country.
     fireEvent.click(container.querySelector('[data-place="isla"]')!);
     expect(container.querySelector("[data-main-airport]")).toBeNull();
+  });
+});
+
+/**
+ * §10.1's map layer: the open country's airports, drawn behind a toggle.
+ *
+ * Decorative in the exact sense `readOnly` markers are, and for a stricter
+ * reason. A read-only marker is a control the surface cannot honour; an airport
+ * is not a place at all. "Airports are never selectable trip stops" is enforced
+ * by an `Airport` never becoming a `MapPlace`, and this layer is where that
+ * separation becomes visible: the marks are built from a different array, carry
+ * no role, no tab stop and no handler, and nothing in this file can hand one to
+ * `onTogglePlace`.
+ *
+ * `showAirports` is a flag rather than "pass an empty array when it is off",
+ * because the array has two readers and only one of them is the layer. The
+ * card's "Main airport" line is a fact about the place a user has just opened,
+ * and a reader who never finds the map toggle still deserves it.
+ */
+describe("CountryLevel airport layer", () => {
+  const LARGE = airportNear(LIMA, "LGE", 20, "large");
+  const MEDIUM = airportNear(CUSCO, "MED", 20, "medium");
+  const SMALL = airportNear(CUSCO, "SML", 8, "small");
+  const AIRPORTS = [LARGE, MEDIUM, SMALL];
+
+  test("draws nothing until the layer is asked for", () => {
+    // §10.1's default, and it has to hold HERE rather than only in the toggle
+    // that will drive it: `MapExplorer` has passed `airports` since PR1, so a
+    // layer that drew whenever it was handed an array would already be on for
+    // every country, with nothing anywhere to turn it off.
+    const { container } = renderLevel({ airports: AIRPORTS });
+
+    expect(container.querySelector("[data-airports]")).toBeNull();
+    expect(airportMarks(container)).toHaveLength(0);
+  });
+
+  test("draws large and medium airports, never small", () => {
+    // §10.1. The committed artifact is 1,148 large / 2,092 medium / 892 small,
+    // so this drops a fifth of the set — and an allow-list is what drops it,
+    // rather than `!== "small"`, so a size the upstream feed grows later is
+    // drawn only once someone has said it should be.
+    const { container } = renderLevel({ airports: AIRPORTS, showAirports: true });
+
+    expect(airportCodes(container)).toEqual(["LGE", "MED"]);
+  });
+
+  test("airport marks are not in the tab order, and cost the list nothing", () => {
+    const { container } = renderLevel({ airports: AIRPORTS, showAirports: true });
+
+    for (const mark of airportMarks(container)) {
+      // `READ_ONLY_MARKER`'s emptiness, one step further: there is no branch
+      // here that could put any of these back.
+      expect(mark.getAttribute("role")).toBeNull();
+      expect(mark.getAttribute("tabindex")).toBeNull();
+      expect(mark.getAttribute("aria-label")).toBeNull();
+      expect(mark.getAttribute("aria-pressed")).toBeNull();
+      expect(mark.getAttribute("aria-haspopup")).toBeNull();
+    }
+
+    // Out of the accessibility tree altogether, because the airport a reader
+    // can act on is the one named on the card — a dialog they can open, focus
+    // and read. A dot on a map with no name is not a second way to reach it.
+    const layer = container.querySelector("[data-airports]")!;
+    expect(layer).toHaveAttribute("aria-hidden");
+    expect(layer.getAttribute("class")).toContain("pointer-events-none");
+
+    // Plan 1's reachability criterion in miniature: the layer must not change
+    // the number of controls a user can reach, in either direction. Task 7
+    // re-runs the criterion itself.
+    const withLayer = screen.getAllByRole("button").length;
+    cleanup();
+    renderLevel({ airports: AIRPORTS });
+    expect(screen.getAllByRole("button")).toHaveLength(withLayer);
+  });
+
+  test("clicking an airport mark does not select anything", () => {
+    // What makes the click inert is that no handler exists, which is §10.1's
+    // invariant. `pointer-events-none` is not the thing under test: jsdom
+    // dispatches straight through it, so a handler left on the mark would fire.
+    const { container, props } = renderLevel({ airports: AIRPORTS, showAirports: true });
+    const [mark] = airportMarks(container);
+
+    fireEvent.click(mark);
+    fireEvent.keyDown(mark, { key: "Enter" });
+    fireEvent.mouseEnter(mark, { clientX: 10, clientY: 10 });
+
+    expect(props.onTogglePlace).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Nor a tooltip: `PlacePopup` describes a MapPlace, and an airport is not
+    // one. The hover reporter is typed on that and the layer never calls it.
+    expect(props.onHoverPlace).not.toHaveBeenCalled();
+  });
+
+  test("airport marks sit inside the zoom wrapper, beneath the city markers", () => {
+    const { container } = renderLevel({ airports: AIRPORTS, showAirports: true });
+    const zoom = container.querySelector("[data-zoom]")!;
+    const layer = container.querySelector("[data-airports]")!;
+
+    // Everything drawn is inside the one transform group. A layer left outside
+    // it would stay put while the country slid under it.
+    expect(zoom.contains(layer)).toBe(true);
+    for (const mark of airportMarks(container)) expect(zoom.contains(mark)).toBe(true);
+
+    // And under the markers in paint order: the interactive layer is the one
+    // that must never be obscured, decoratively or otherwise.
+    const markerLayer = container.querySelector("[data-markers]")!;
+    expect(
+      layer.compareDocumentPosition(markerLayer) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  test("the zoom moves the mark; the mark does not move itself", () => {
+    // An airport exactly on Lima, so the centre of its mark has a marker to be
+    // checked against. The mark's `x` and `y` are a scaled inset off that
+    // centre, which is the shape a raw length hides in — the centre itself is
+    // where the projection put the airport and must not move at all.
+    //
+    // Drawn at BOTH framings, and deliberately: §6.5 filters cities to the
+    // framed group through `cityProvince`, and nothing assigns an airport to a
+    // province, so there is no honest filtered set to draw. It is also what
+    // lets "every stroke, radius and font divides by k" see this layer at all.
+    const airports = [airportNear(LIMA, "LGE", 0, "large")];
+    const centre = (container: HTMLElement) => {
+      const [mark] = airportMarks(container);
+      return Number(mark.getAttribute("x")) + Number(mark.getAttribute("width")) / 2;
+    };
+
+    const flat = renderLevel({ airports, showAirports: true });
+    const before = centre(flat.container);
+    expect(before).toBeCloseTo(markerX(flat.container, "lima"), 9);
+    cleanup();
+
+    const zoomed = renderLevel({ airports, showAirports: true, region: "PE-ISL" });
+    expect(airportMarks(zoomed.container)).toHaveLength(1);
+    expect(centre(zoomed.container)).toBeCloseTo(before, 9);
+  });
+
+  test("the card names the main airport whether or not the layer is on", () => {
+    // Two features over one array (§10.1 and §10.2). The toggle is about
+    // clutter on the map; the card's line is a fact about the place a user has
+    // just opened, and gating it on a control they may never have found would
+    // withhold it from exactly the readers who never found the control.
+    const { container } = renderLevel({ airports: [airportNear(CUSCO, "CUZ", 30)] });
+
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+
+    expect(airportMarks(container)).toHaveLength(0);
+    expect(container.querySelector("[data-main-airport]")!.textContent).toBe(
+      "Main airport: CUZ · 30 km"
+    );
   });
 });

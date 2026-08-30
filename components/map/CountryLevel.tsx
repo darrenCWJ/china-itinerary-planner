@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
-import type { Airport } from "@/lib/airports";
+import type { Airport, AirportSize } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
@@ -143,6 +143,39 @@ const SELECTION_RING = 3.5;
  */
 const FOCUS_RING = SELECTION_RING + 2.5;
 const ROUTE_STROKE = 2;
+/**
+ * §10.1's airport mark: half the side of the square that is rotated 45° into a
+ * diamond, and the weight of its outline.
+ *
+ * A diamond because every other mark on this map is a circle — a city dot, its
+ * selection ring, its focus ring — and an airport is none of those and is not
+ * selectable at all. The shape has to carry that on its own, since the layer
+ * draws no text: labelling all 502 of the United States' would bury the cities
+ * the map exists to choose between, and the one airport a reader can act on is
+ * named on the card instead.
+ *
+ * 2.4 puts the diamond 4.8 units across the flats, against 9 for the smallest
+ * city dot's diameter and 16 for a municipality's, so the layer reads as
+ * infrastructure underneath the places rather than as a fourth kind of place.
+ * Divided by `k` at the use site, like every constant above it.
+ */
+const AIRPORT_MARK = 2.4;
+const AIRPORT_STROKE = 1;
+
+/**
+ * The sizes the layer draws (§10.1): `large` and `medium`, never `small`.
+ *
+ * An allow-list rather than `size !== "small"`, so a size the upstream feed
+ * grows later is drawn only once someone has decided it should be. The
+ * committed artifact is 1,148 large, 2,092 medium and 892 small, so this drops
+ * a fifth of the set — the airstrips and the aeroclubs, which are not where
+ * anyone arrives on the kind of trip this app plans.
+ *
+ * What it does not decide is how big a mark is. Size chooses WHETHER an airport
+ * is drawn and nothing else: a two-tier glyph would put a second visual scale
+ * beside the city dots', and a reader cannot act on the difference anyway.
+ */
+const DRAWN_AIRPORT_SIZES: ReadonlySet<AirportSize> = new Set<AirportSize>(["large", "medium"]);
 
 /**
  * The empty airport array, as one module-level value rather than a `[]` literal
@@ -751,6 +784,20 @@ export interface CountryLevelProps {
    * moment it is open.
    */
   airports?: Airport[];
+  /**
+   * Whether §10.1's airport layer is drawn on the map.
+   *
+   * Off by default, which is the spec's default and here also the only safe
+   * one: `MapExplorer` has passed `airports` since PR1 for the route
+   * estimator, so a layer that drew whenever it was handed an array would
+   * already be on for every country, with nothing anywhere to turn it off.
+   *
+   * A flag rather than "pass no airports when it is off", because the array has
+   * two readers and only one of them is the layer. The card's "Main airport"
+   * line is a fact about the place a user has just opened (§10.2), and a reader
+   * who never finds the toggle still deserves it.
+   */
+  showAirports?: boolean;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -766,6 +813,7 @@ export function CountryLevel({
   region = null,
   readOnly = false,
   airports = NO_AIRPORTS,
+  showAirports = false,
   onTogglePlace,
   onHoverPlace,
 }: CountryLevelProps) {
@@ -1112,6 +1160,33 @@ export function CountryLevel({
     [airports, cardPlace]
   );
 
+  /**
+   * §10.1's layer, projected once per country rather than once per frame.
+   *
+   * Empty while the layer is off, so a country whose airports have landed pays
+   * nothing for them until someone asks: this level re-renders on every hover —
+   * `onHoverPlace` reports up to `MapExplorer`, which holds the tooltip — and a
+   * `filter().map()` in the JSX would re-project all 502 of the United States'
+   * on every mouse move. Per country the drawn set is a median of 4 and a
+   * maximum of those 502, across the 233 countries with any at all.
+   *
+   * `project` and never `points`: that array is indexed by place and is what
+   * `caps` and `marks` were computed over. An airport is not one of them, and
+   * §10.1's "never a selectable trip stop" is exactly that the two never merge.
+   */
+  const airportMarks = useMemo(
+    () =>
+      showAirports
+        ? airports
+            .filter((airport) => DRAWN_AIRPORT_SIZES.has(airport.size))
+            .map((airport) => {
+              const [x, y] = project(airport.lon, airport.lat);
+              return { iata: airport.iata, x, y };
+            })
+        : [],
+    [showAirports, airports, project]
+  );
+
   const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
   return (
@@ -1189,6 +1264,59 @@ export function CountryLevel({
                 className="pointer-events-none"
                 aria-hidden
               />
+            )}
+
+            {/*
+              §10.1's airport layer, and decorative in a stronger sense than a
+              `readOnly` marker is. A read-only marker is a control the surface
+              cannot honour; an airport is not a place at all — so there is no
+              role to drop, no card to open, and no `MapPlace` to hand to
+              `onTogglePlace`, because `Airport` is a separate type that never
+              becomes one.
+
+              `aria-hidden`, because the airport a reader can act on is the one
+              the card names — a dialog they can open, focus and read — and an
+              unlabelled diamond is not a second way to reach it.
+              `pointer-events-none` and beneath the markers for one reason
+              between them: a decoration must never take a tap that belonged to
+              a city's `--tap-min` target, nor sit on top of one.
+
+              §10.1 also asks for the layer "below a zoom threshold", and that
+              cannot be a number here. `k` is not a stable quantity — 3,039 of
+              the 4,525 zoomable groups clamp against `ADMIN1_MAX_ZOOM_K`, and
+              `transformForFeatures` answers `IDENTITY_TRANSFORM` with `k === 1`
+              for a group whose bounds are non-finite, which is a case this
+              level actually sees. The threshold that does exist is the LEVEL:
+              airports are drawn on a country and never on the world map, where
+              4,132 marks would be a grey wash over every continent.
+
+              Inside the country the province zoom does not gate the layer
+              either — it MOVES it, exactly as it moves the cities. §6.5 filters
+              cities to the framed group through `cityProvince`; nothing
+              assigns an airport to a province, so the choice is between drawing
+              them all and letting the frame clip, or drawing none. None would
+              make a toggle pressed before a zoom look broken after it.
+            */}
+            {airportMarks.length > 0 && (
+              <g data-airports="" className="pointer-events-none" aria-hidden>
+                {airportMarks.map(({ iata, x, y }) => (
+                  <rect
+                    key={iata}
+                    data-airport={iata}
+                    x={x - AIRPORT_MARK / k}
+                    y={y - AIRPORT_MARK / k}
+                    width={(2 * AIRPORT_MARK) / k}
+                    height={(2 * AIRPORT_MARK) / k}
+                    // A rotation, which the zoom neither scales nor needs to:
+                    // about the airport's own projected point, so the diamond
+                    // stays centred on it at every `k`.
+                    transform={`rotate(45 ${x} ${y})`}
+                    fill="var(--paper)"
+                    stroke="var(--ink-2)"
+                    strokeWidth={AIRPORT_STROKE / k}
+                  />
+                ))}
+              </g>
             )}
 
             {/*
