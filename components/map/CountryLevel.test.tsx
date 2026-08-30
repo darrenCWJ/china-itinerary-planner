@@ -1909,3 +1909,87 @@ describe("CountryLevel airport layer", () => {
     );
   });
 });
+
+/**
+ * The card and the layer, held to ONE set (§10.1 + §10.2).
+ *
+ * Neither block above compares them. "draws large and medium airports, never
+ * small" renders the layer and never opens a card; "the card shows the main
+ * airport for the selected place" opens a card and never draws the layer. So
+ * the two filtered the same array on different axes and nothing noticed — the
+ * card ranking over all three sizes, the layer drawing an allow-list of two.
+ *
+ * A card naming a mark the map will not draw is the failure that matters: the
+ * reader is handed a code, looks at the map for it, and there is nothing there.
+ * This is the test that makes "the card's claim is verifiable on screen" a
+ * property of the component rather than a coincidence of two fixtures.
+ */
+describe("CountryLevel airport agreement", () => {
+  /**
+   * A small airport near enough to Cusco to WIN the ranking: 3 km ranks
+   * 3 + 15 = 18, against the medium's 20 - 0 = 20 (`SIZE_BONUS_KM`).
+   *
+   * That is the defect in one fixture. Every other airport fixture in this
+   * file puts the small one far enough out to lose, which is exactly why the
+   * disagreement survived: it is invisible on a set where the ranking and the
+   * allow-list happen to pick the same row.
+   */
+  const AGREEMENT_AIRPORTS = [
+    airportNear(LIMA, "LGE", 20, "large"),
+    airportNear(CUSCO, "MED", 20, "medium"),
+    airportNear(CUSCO, "SML", 3, "small"),
+  ];
+
+  /** The IATA code the open card claims, or null when it claims none. */
+  function namedAirport(container: HTMLElement): string | null {
+    const line = container.querySelector("[data-main-airport]");
+    if (!line) return null;
+    // The only run of three capitals in "Main airport: MED · 20 km" is the
+    // code; the label carries none, which `MAIN_AIRPORT_LABEL` pins.
+    return /\b([A-Z]{3})\b/.exec(line.textContent ?? "")?.[1] ?? null;
+  }
+
+  test("the airport the card names is one the layer drew", () => {
+    const { container } = renderLevel({
+      airports: AGREEMENT_AIRPORTS,
+      showAirports: true,
+    });
+
+    // Both cities, because the disagreement is per place: Lima's ranking picks
+    // a large airport and agrees by luck, Cusco's is the one that did not.
+    // `isla` is left out on purpose — it is 3,500 km from every row here, so
+    // its card carries no line and there would be nothing to compare.
+    for (const id of ["lima", "cusco"]) {
+      fireEvent.click(container.querySelector(`[data-place="${id}"]`)!);
+
+      // Armed. A card with no line at all satisfies the membership below
+      // vacuously, and a level that simply stopped naming airports is not the
+      // fix this test is asking for.
+      const named = namedAirport(container);
+      expect(named, `no main airport named on ${id}`).not.toBeNull();
+      expect(airportCodes(container)).toContain(named);
+    }
+
+    // And the layer is still a filter rather than a passthrough: `SML` is
+    // absent from the map, which is what made naming it a broken promise.
+    expect(airportCodes(container)).toEqual(["LGE", "MED"]);
+  });
+
+  test("the card names the drawable airport, not the small one that out-ranks it", () => {
+    // The direction of the fix, stated once as a value rather than as a
+    // membership: the ranking is restricted to the set the map can show, so
+    // `MED` at 20 km wins a contest `SML` at 3 km would otherwise take.
+    //
+    // Asserted with the layer OFF, because the decision belongs to the card
+    // and not to the toggle — §10.2's line is a fact about the open place, and
+    // a reader who never finds the toggle gets the same answer.
+    const { container } = renderLevel({ airports: AGREEMENT_AIRPORTS });
+
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+
+    expect(airportMarks(container)).toHaveLength(0);
+    expect(container.querySelector("[data-main-airport]")!.textContent).toBe(
+      "Main airport: MED · 20 km"
+    );
+  });
+});

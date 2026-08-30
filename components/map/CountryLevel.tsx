@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
-import type { Airport, AirportSize } from "@/lib/airports";
+import { ARRIVABLE_AIRPORT_SIZES, type Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
@@ -163,19 +163,16 @@ const AIRPORT_MARK = 2.4;
 const AIRPORT_STROKE = 1;
 
 /**
- * The sizes the layer draws (§10.1): `large` and `medium`, never `small`.
+ * §10.1's sizes are `ARRIVABLE_AIRPORT_SIZES`, and this file no longer owns
+ * them: `mainAirportFor` ranks over the same set, so the code the card prints
+ * is always a diamond this layer drew. That used to be two lists on two axes —
+ * an allow-list here, a 150 km cut over all three sizes there — and they
+ * disagreed both ways. lib/airports.ts carries the decision.
  *
- * An allow-list rather than `size !== "small"`, so a size the upstream feed
- * grows later is drawn only once someone has decided it should be. The
- * committed artifact is 1,148 large, 2,092 medium and 892 small, so this drops
- * a fifth of the set — the airstrips and the aeroclubs, which are not where
- * anyone arrives on the kind of trip this app plans.
- *
- * What it does not decide is how big a mark is. Size chooses WHETHER an airport
+ * What size does NOT decide is how big a mark is. It chooses WHETHER an airport
  * is drawn and nothing else: a two-tier glyph would put a second visual scale
  * beside the city dots', and a reader cannot act on the difference anyway.
  */
-const DRAWN_AIRPORT_SIZES: ReadonlySet<AirportSize> = new Set<AirportSize>(["large", "medium"]);
 
 /**
  * The empty airport array, as one module-level value rather than a `[]` literal
@@ -1187,7 +1184,7 @@ export function CountryLevel({
     () =>
       showAirports
         ? airports
-            .filter((airport) => DRAWN_AIRPORT_SIZES.has(airport.size))
+            .filter((airport) => ARRIVABLE_AIRPORT_SIZES.has(airport.size))
             .map((airport) => {
               const [x, y] = project(airport.lon, airport.lat);
               return { iata: airport.iata, x, y };

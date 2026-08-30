@@ -46,6 +46,53 @@ export interface RankedAirport {
  */
 export const DEFAULT_AIRPORT_RADIUS_KM = 150;
 
+/**
+ * The sizes that count as somewhere a traveller ARRIVES: `large` and `medium`,
+ * never `small` (§10.1).
+ *
+ * ## This is a product decision, and it has one owner on purpose
+ *
+ * It started as §10.1's rule for the map layer alone — `large` and `medium`
+ * only, because the committed artifact is 1,148 large, 2,092 medium and 892
+ * small, and that last fifth is airstrips and aeroclubs. The card's "Main
+ * airport" line (§10.2) ranked over all three, and so the two surfaces filtered
+ * the same array on different axes and disagreed in the way that costs a reader
+ * something: the card could name a `small` airport the map would never draw, so
+ * "Main airport: XYZ" pointed at a diamond that is not on screen.
+ *
+ * **The set governs; the card was narrowed to it.** The alternative — drawing
+ * the card's pick regardless of size — was rejected on three counts:
+ *
+ * - It fixes the wrong half. The complaint is not "the map is missing a mark",
+ *   it is that a card named an aeroclub the *card itself* should not have named.
+ *   An airstrip is not a traveller's main airport whether or not it is drawn,
+ *   and the argument §10.1 makes for keeping it off the map is the same
+ *   argument for keeping it out of that sentence.
+ * - It makes the layer depend on which card is open. The marks are projected
+ *   once per country precisely so a hover cannot re-project 502 of them; a
+ *   diamond that appears and vanishes as a reader taps between cities is both a
+ *   new dependency and a worse map.
+ * - It leaves the drawn set a function of the selection, which is what §10.1's
+ *   "size chooses WHETHER an airport is drawn and nothing else" rules out.
+ *
+ * The narrowing also settles a discrepancy §10.2 already carried. The spec says
+ * `[0]` "can legitimately be 15 km further than the true nearest", but the
+ * penalties in `SIZE_BONUS_KM` are symmetric and compose, so across all three
+ * sizes a large airport wins from up to **30** km further out. Over this set the
+ * widest spread is large (+15) against medium (0) — 15 km, exactly the number
+ * the spec quotes. `nearestAirports` itself is unchanged and still ranks over
+ * whatever it is handed: `lib/route.ts` estimates flights between real airports
+ * of any size, which is a different question from what to name a place's
+ * gateway.
+ *
+ * An allow-list rather than `size !== "small"`, so a size the upstream feed
+ * grows later is used only once someone has decided it should be.
+ */
+export const ARRIVABLE_AIRPORT_SIZES: ReadonlySet<AirportSize> = new Set<AirportSize>([
+  "large",
+  "medium",
+]);
+
 const DEFAULT_NEAREST_LIMIT = 5;
 
 /**
