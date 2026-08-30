@@ -1,12 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ProjectionEntry } from "@/lib/countryProjection";
+import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
 import {
   buildCountryView,
   CountryLevel,
   MAP_MAX_RENDER_W,
+  paintedAt,
   TAP_MIN_PX,
   TAP_MIN_R_FALLBACK,
   tapTargetRadius,
@@ -18,7 +20,7 @@ import {
   PE_TOPOLOGY,
   peFileWith,
 } from "./countryFixture";
-import { MAP_VIEW_W, ZOOM_MS } from "./mapShared";
+import { MAP_VIEW_H, MAP_VIEW_W, ZOOM_MS } from "./mapShared";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -966,6 +968,43 @@ describe("CountryLevel province zoom", () => {
     // clamped to 1.880 and quietly stopped being the cap at all.
     expect(hitR(container, "a")).toBeCloseTo(gap / 2, 9);
     expect(hitR(container, "a")).not.toBeCloseTo(6.5 / ISL_K, 3);
+  });
+
+  /**
+   * §6.5's card anchor, and the axis jsdom cannot be asked about.
+   *
+   * `SelectedPlaceCard` is an HTML sibling of the `<svg>`, so no transform
+   * inside it reaches the card: it positions itself from a percentage of the
+   * frame, and the anchor therefore has to be where the marker is PAINTED
+   * rather than where it was projected. That the rendered card follows is
+   * asserted in `SelectedPlaceCard.test.tsx` — on the `top` axis only, because
+   * the `left` declaration is wrapped in a `clamp()` for §5.4's off-frame
+   * markers and jsdom's CSS parser drops a declaration it cannot compute
+   * rather than storing it. So the maths is a named function, and both axes
+   * are pinned here.
+   */
+  test("paints a point where the transform leaves it, on both axes", () => {
+    const view = buildCountryView(PE_FILE, PE_ENTRY);
+    const island = view.selectableFeatures.get("PE-ISL");
+    if (!island) throw new Error("no feature for PE-ISL");
+    const [[x0, y0], [x1, y1]] = view.pathGen.bounds(island);
+    const centre = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+
+    // Unzoomed the island is nowhere near the frame — 4,400 units west of it
+    // and four frame-heights below — which is the separation an untransformed
+    // anchor would leave between a card and the marker it names.
+    expect(centre.x).toBeLessThan(0);
+    expect(centre.y).toBeGreaterThan(MAP_VIEW_H);
+
+    // Framed on it, its centre IS the frame's centre, because that is what
+    // `transformForBounds` computes: k * midpoint + t === view / 2.
+    const painted = paintedAt(centre, { k: ISL_K, tx: ISL_TX, ty: ISL_TY });
+    expect(painted.x).toBeCloseTo(MAP_VIEW_W / 2, 9);
+    expect(painted.y).toBeCloseTo(MAP_VIEW_H / 2, 9);
+
+    // And an unzoomed card anchors to the projection untouched, which is what
+    // every render before this plan did.
+    expect(paintedAt(centre, IDENTITY_TRANSFORM)).toEqual(centre);
   });
 });
 

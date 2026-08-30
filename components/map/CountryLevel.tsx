@@ -7,7 +7,7 @@ import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specifi
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
-import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
+import { IDENTITY_TRANSFORM, type MapTransform } from "@/lib/mapTransform";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
@@ -250,6 +250,31 @@ function useRenderedWidth(ref: RefObject<HTMLElement | null>): number | null {
   }, [ref]);
 
   return width;
+}
+
+/**
+ * Where a projected point ends up once the zoom has moved it.
+ *
+ * The matrix is `translate(tx, ty) scale(k)` about the viewBox origin, so this
+ * is three multiplications — unremarkable, except that it is the ONLY way the
+ * card can follow its marker. `SelectedPlaceCard` is an HTML sibling of the
+ * `<svg>` and positions itself from a percentage of the frame; the transform
+ * reaches everything inside `[data-zoom]` and nothing outside it. A card handed
+ * the PROJECTED position would sit where its marker was before the zoom, which
+ * for the island in the fixture is 4,400 units west of the frame the marker is
+ * now centred in — and the card is the only affordance a touch user has for
+ * reaching a place at all.
+ *
+ * A named function rather than two expressions in the JSX because it is the
+ * piece a test can hold: jsdom drops the card's `left` declaration, which is
+ * wrapped in a `clamp()` it cannot compute, so the x axis has no rendered form
+ * to be asserted against and is pinned through this instead.
+ */
+export function paintedAt(
+  point: { x: number; y: number },
+  { k, tx, ty }: MapTransform
+): { x: number; y: number } {
+  return { x: point.x * k + tx, y: point.y * k + ty };
 }
 
 /** A place big enough to be worth a name on a country-wide map. */
@@ -709,14 +734,20 @@ export function CountryLevel({
    * `view` in the deps rather than `view.pathGen` and `view.selectableFeatures`
    * separately: they are two fields of one memoised object and cannot change
    * apart from each other.
+   *
+   * Kept whole as well as destructured, because `paintedAt` takes the matrix
+   * rather than three loose numbers — and rebuilding an object literal at the
+   * call site would hand it a new one on every render.
    */
-  const { k, tx, ty } = useMemo(() => {
+  const transform = useMemo(() => {
     if (!region) return IDENTITY_TRANSFORM;
     const features = (group?.unitIds ?? [])
       .map((id) => view.selectableFeatures.get(id))
       .filter((shape) => shape !== undefined);
     return transformForFeatures(view.pathGen, features);
   }, [region, group, view]);
+
+  const { k, tx, ty } = transform;
 
   /**
    * The `--tap-min` ceiling for THIS rendering, not for the one the widest
@@ -865,6 +896,35 @@ export function CountryLevel({
    * rendering a city the map no longer draws.
    */
   const [card, setCard] = useState<{ id: string; viaKeyboard: boolean } | null>(null);
+
+  /**
+   * The framing the open card belongs to, and the close when it changes.
+   *
+   * A card outlives a zoom badly, in two different ways. Its place may not be
+   * drawn at the new framing at all — §6.5 filters the markers to the group's
+   * own cities — which would leave a card describing a city nothing on the map
+   * shows. And even when the city IS drawn, the card would arrive at its new
+   * anchor INSTANTLY while the marker takes `ZOOM_MS` to glide there, so the
+   * two would sit visibly apart for the whole transition. Neither is worth
+   * carrying: the card is a surface about one place in one frame, and the frame
+   * has been replaced.
+   *
+   * Adjusted during render rather than in an effect, which is what the React
+   * docs prescribe for state that has to follow a prop: an effect would commit
+   * one frame of the stale card first, at the old framing's anchor, and only
+   * then close it — the flash this exists to prevent. React discards this
+   * render and re-runs the component with the new state before anything
+   * reaches the DOM.
+   *
+   * Storing the framing on the card instead and hiding it when the two
+   * disagree would leave it OPEN, so zooming away and back would resurrect a
+   * card the user had watched vanish.
+   */
+  const [cardRegion, setCardRegion] = useState<RegionId | null>(region);
+  if (cardRegion !== region) {
+    setCardRegion(region);
+    setCard(null);
+  }
 
   /**
    * Activating a marker does BOTH: it toggles the place, exactly as a tap
@@ -1119,7 +1179,15 @@ export function CountryLevel({
             place={cardPlace}
             month={month}
             selected={selected.includes(cardPlace.id)}
-            anchor={{ x: marks[cardIndex].x, y: marks[cardIndex].y }}
+            // The marker's PAINTED position, not the projected one its own
+            // `cx`/`cy` carry. This card is a sibling of the `<svg>`, so the
+            // `[data-zoom]` transform that moves every marker moves nothing
+            // about it: it is positioned in percentages of the frame, and
+            // `paintedAt` is what turns a point inside the transformed group
+            // into the frame coordinate a percentage can be taken from.
+            // Without it a zoomed card and its marker separate by the whole
+            // reach of the zoom.
+            anchor={paintedAt(marks[cardIndex], transform)}
             takeFocus={card.viaKeyboard}
             onToggle={() => onTogglePlace(cardPlace)}
             onDismiss={(heldFocus) => {
