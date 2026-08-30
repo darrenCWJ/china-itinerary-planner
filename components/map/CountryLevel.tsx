@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { geoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
@@ -119,34 +119,108 @@ const ROUTE_STROKE = 2;
 export const TAP_MIN_PX = 44;
 
 /**
- * The widest the map is ever laid out, in CSS pixels: `/plan`'s `max-w-6xl`
- * (72rem) less its `px-4` gutters, from `app/plan/page.tsx`.
+ * `--tap-min` as a marker radius in viewBox units, at a given rendered width
+ * (§5.3.2).
  *
  * The SVG is `w-full` over a fixed 860-unit viewBox, so one viewBox unit is
- * `renderedWidth / MAP_VIEW_W` CSS pixels and a radius in viewBox units means
- * a different number of pixels on every viewport. The WIDEST rendering is the
- * worst case and therefore the only one worth sizing against: every narrower
- * one stretches the same viewBox over fewer pixels and gets a larger target.
- */
-export const MAP_MAX_RENDER_W = 1120;
-
-/**
- * `--tap-min` as a marker radius, in viewBox units (§5.3.2).
+ * `renderedWidth / MAP_VIEW_W` CSS pixels — 1.30px across a 1120px desktop
+ * column, 0.45px across a 390px phone. A radius in viewBox units is therefore
+ * a different number of pixels on every viewport, and it moves the OPPOSITE
+ * way from the viewport: a NARROWER screen stretches the same viewBox over
+ * FEWER pixels, each unit is worth less, and the compliant radius is LARGER.
+ * 16.9 units on the desktop column; 48.5 on the phone.
  *
- * Derived rather than written down, because the two numbers it comes from are
- * both real and both liable to move: 44 is the token, 1120 is the layout.
+ * That inversion is why this is a function of a measured width and not the
+ * constant it obviously wants to be. Folding `MAP_MAX_RENDER_W` in and calling
+ * the widest layout the worst case reads as the conservative choice and is the
+ * exact opposite of one: it yields 44px at 1120 and less at every width below
+ * — 30px at 768, 15px at 390 — so it fails 2.5.8 on every phone, i.e. on
+ * precisely the devices a minimum tap target exists for. If a later PR is
+ * tempted to simplify this back to a constant, that is the arithmetic it has
+ * to answer, and `CountryLevel.test.tsx` asserts it at three widths.
+ *
+ * `renderedWidth` must be positive; `useRenderedWidth` is what guarantees it,
+ * by reporting an unmeasurable container as null rather than as 0.
+ *
  * `WorldMap`'s docblock converts the same way when it calls its 9-unit hit
  * circle "~22px at desktop" — and reaches the opposite conclusion for the
  * world level, where a compliant circle would swallow San Marino's neighbours
  * outright. At country level the same collision is possible between two
  * cities, so this is a ceiling and `nonOverlappingRadii` is what enforces it.
+ * The narrower the screen the harder that cap bites, which is the trade §5.2's
+ * list is there to make acceptable.
  *
  * Unscaled for the reason the marker constants above are: `k` is 1 at country
  * level. PR5's province zoom divides this one too — a magnified map draws the
- * same radius over `k` times as many CSS pixels, so `TAP_MIN_R / k` is what
- * keeps the target 44px rather than 44k.
+ * same radius over `k` times as many CSS pixels, so `/ k` is what keeps the
+ * target 44px rather than 44k.
  */
-export const TAP_MIN_R = (TAP_MIN_PX / 2) * (MAP_VIEW_W / MAP_MAX_RENDER_W);
+export function tapTargetRadius(renderedWidth: number): number {
+  return (TAP_MIN_PX / 2) * (MAP_VIEW_W / renderedWidth);
+}
+
+/**
+ * The widest the map is ever laid out, in CSS pixels: `/plan`'s `max-w-6xl`
+ * (72rem) less its `px-4` gutters, from `app/plan/page.tsx`.
+ */
+export const MAP_MAX_RENDER_W = 1120;
+
+/**
+ * The radius used until a width can be measured: the server render, the first
+ * client paint, and jsdom — which lays nothing out and answers 0 to every
+ * `getBoundingClientRect`.
+ *
+ * The widest layout gives the SMALLEST compliant radius, so this is the floor
+ * of the honest range rather than a middle guess. An unmeasured frame then
+ * draws a target that is merely too small on a phone, for the one commit
+ * before the measurement replaces it, instead of one that swallows half the
+ * country's cities on a desktop and has to shrink back.
+ */
+export const TAP_MIN_R_FALLBACK = tapTargetRadius(MAP_MAX_RENDER_W);
+
+/**
+ * The container's own width in CSS pixels, or null while there is nothing to
+ * measure.
+ *
+ * §5.3.2's target is specified in CSS pixels and drawn in viewBox units, and
+ * only the browser knows the ratio between them: `w-full` hands the width to
+ * the layout, so a phone, a tablet and a desktop column each produce a
+ * different one. Measuring is the only way to honour a pixel token from inside
+ * a scaled viewBox — any compile-time constant is correct at exactly one width
+ * and wrong at all the others.
+ *
+ * `useEffect` rather than `useLayoutEffect`: this is a `"use client"` component
+ * that Next still renders on the server, where a layout effect is a warning and
+ * a no-op. The cost is one commit at `TAP_MIN_R_FALLBACK`, and the circle it
+ * sizes is `fill="transparent"`, so nothing visible moves when it is replaced.
+ *
+ * The observer is what carries it through a rotation or a window drag, both of
+ * which change the ratio without remounting anything. jsdom implements no
+ * `ResizeObserver`, so there the mount measurement stands alone.
+ */
+function useRenderedWidth(ref: RefObject<HTMLElement | null>): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const measure = () => {
+      const measured = node.getBoundingClientRect().width;
+      // 0 is what jsdom answers for everything and what a browser answers for
+      // a `display: none` subtree. Neither is a width to divide by.
+      setWidth(measured > 0 ? measured : null);
+    };
+    measure();
+
+    if (typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
+}
 
 /** A place big enough to be worth a name on a country-wide map. */
 const LABELLED_PREFECTURE_POPULATION = 3_000_000;
@@ -356,6 +430,15 @@ export function CountryLevel({
   const { name, code } = getCountry(country);
   const label = name || code || "this country";
 
+  /**
+   * The `--tap-min` ceiling for THIS rendering, not for the one the widest
+   * layout would have produced. The container is the SVG's own parent and the
+   * SVG is `w-full`, so its width is the width the 860-unit viewBox is
+   * stretched across.
+   */
+  const renderedWidth = useRenderedWidth(containerRef);
+  const tapMinR = renderedWidth === null ? TAP_MIN_R_FALLBACK : tapTargetRadius(renderedWidth);
+
   const view = useMemo(() => {
     const topology = provinces.topology;
     const collection = topology.objects[PROVINCE_OBJECT] as GeometryCollection<UnitProps>;
@@ -410,39 +493,60 @@ export function CountryLevel({
     [routeIds, places, project]
   );
 
+  const points = useMemo(
+    () =>
+      places.map((place) => {
+        const [x, y] = project(place.lon, place.lat);
+        return { x, y };
+      }),
+    [places, project]
+  );
+
+  /**
+   * How large each marker's target may grow before it reaches its nearest
+   * neighbour's — half the gap, so two circles can touch but never overlap.
+   *
+   * `Infinity` as the ceiling because the ceiling is not known here: it is
+   * `tapMinR`, which changes with the measured width, and folding it in would
+   * make this O(n²) pass re-run on every frame of a window drag. Half the gap
+   * is a property of where the cities are and nothing else, so it is computed
+   * once per country and the width only chooses where to clip it. A lone place
+   * has no neighbour and comes back `Infinity`, which `Math.min` below reads
+   * correctly as "no cap at all".
+   *
+   * The cap is what `lib/dragLayer.ts` was written for, applied to cities
+   * rather than micro-states: two overlapping transparent circles let paint
+   * order decide which place a tap adds, silently and wrongly. Cities crowd far
+   * harder than San Marino and Vatican City — a country shard puts a dozen
+   * inside one metro area — and harder still on a phone, where `tapMinR` is
+   * three times what it is on a desktop and so meets the cap three times as
+   * often. That is only acceptable because the list below reaches every one of
+   * them at the full `--tap-min`: the equivalent control WCAG 2.2 AA 2.5.8
+   * allows, which §5.2 already required to exist.
+   *
+   * O(n²), and the largest shard is ~750 places — ~560k distance checks. The
+   * memo is keyed on the same inputs as the topology decode above it, which
+   * costs more, so this still runs once per country and never on a hover, a
+   * selection, or a resize.
+   */
+  const caps = useMemo(() => nonOverlappingRadii(points, Infinity), [points]);
+
   /**
    * Marker positions and their transparent targets (§5.3.2).
-   *
-   * `nonOverlappingRadii` caps each target at half the distance to its nearest
-   * neighbour, for the reason `lib/dragLayer.ts` gives about San Marino and
-   * Vatican City: two overlapping transparent circles let paint order decide
-   * which place a tap adds, silently and wrongly. Cities crowd far harder than
-   * micro-states — a country shard puts a dozen inside one metro area — so the
-   * cap bites often, and it is only acceptable because the list below reaches
-   * every one of them at the full `--tap-min`. That is the equivalent control
-   * WCAG 2.2 AA 2.5.8 allows, and §5.2 already required it to exist.
    *
    * The floor is the marker's own dot: a target INSIDE the visible circle
    * would make the dot's edge the target's edge, which is the failure the
    * hit-area-first ordering exists to prevent. Where two dots are closer than
    * their own radii they already overlapped before this existed.
-   *
-   * `nonOverlappingRadii` is O(n²) and the largest shard is ~750 places, so
-   * this is ~560k distance checks. It runs once per country — the memo it sits
-   * in is keyed on the same inputs as the topology decode above it, which
-   * costs more — and never on a hover or a selection.
    */
-  const marks = useMemo(() => {
-    const points = places.map((place) => {
-      const [x, y] = project(place.lon, place.lat);
-      return { x, y };
-    });
-    const capped = nonOverlappingRadii(points, TAP_MIN_R);
-    return points.map((point, index) => {
-      const r = radiusFor(places[index]);
-      return { ...point, r, hitR: Math.max(r, capped[index]) };
-    });
-  }, [places, project]);
+  const marks = useMemo(
+    () =>
+      points.map((point, index) => {
+        const r = radiusFor(places[index]);
+        return { ...point, r, hitR: Math.max(r, Math.min(caps[index], tapMinR)) };
+      }),
+    [points, caps, places, tapMinR]
+  );
 
   /**
    * The place whose card is open, and whether the keyboard opened it (§5.3.3).

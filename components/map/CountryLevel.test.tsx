@@ -2,7 +2,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { parseProvinceTopology } from "@/lib/provinceTopology";
-import { CountryLevel, MAP_MAX_RENDER_W, TAP_MIN_PX, TAP_MIN_R } from "./CountryLevel";
+import {
+  CountryLevel,
+  MAP_MAX_RENDER_W,
+  TAP_MIN_PX,
+  TAP_MIN_R_FALLBACK,
+  tapTargetRadius,
+} from "./CountryLevel";
 import { MAP_VIEW_W } from "./mapShared";
 import type { MapPlace } from "./mapTypes";
 
@@ -175,6 +181,10 @@ function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
 }
 
 afterEach(cleanup);
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 /** Subpath count: one `M` per ring, which is what `merge()` changes. */
 function rings(d: string | null): number {
@@ -205,6 +215,30 @@ function dotR(container: HTMLElement, id: string): number {
 /** Every marker group, in the order they are drawn. */
 function markers(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>("[data-markers] [data-place]")];
+}
+
+/**
+ * The width jsdom will never compute.
+ *
+ * jsdom lays nothing out and answers 0 to every `getBoundingClientRect`, which
+ * is the "nothing measurable" branch the component falls back on — so a test
+ * about the MEASURED path has to supply the measurement itself. Stubbed on the
+ * prototype rather than on a node because the node being measured is the
+ * component's own container ref, which a test has no handle on until the render
+ * that reads it has already happened.
+ */
+function stubRenderedWidth(width: number): void {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    width,
+    height: 620,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: 620,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect);
 }
 
 describe("CountryLevel", () => {
@@ -436,19 +470,82 @@ describe("CountryLevel markers", () => {
     }
   });
 
-  test("a marker with room around it gets the whole --tap-min target", () => {
-    // jsdom computes no layout, so the assertion is against the radius in
-    // viewBox units that IS 44 CSS px at the widest the map ever renders —
-    // `max-w-6xl` less its gutters, from app/plan/page.tsx. Every narrower
-    // viewport stretches the same viewBox over fewer CSS pixels and therefore
-    // gets a LARGER target, so the widest rendering is the worst case and the
-    // only one worth pinning.
-    expect(TAP_MIN_R * 2 * (MAP_MAX_RENDER_W / MAP_VIEW_W)).toBeCloseTo(TAP_MIN_PX, 9);
+  test("the external numbers the target is built from are what they claim", () => {
+    // Literals, deliberately. The version of this that read
+    //   TAP_MIN_R * 2 * (MAP_MAX_RENDER_W / MAP_VIEW_W) === TAP_MIN_PX
+    // substitutes to TAP_MIN_PX === TAP_MIN_PX and holds for ANY values of all
+    // four — it cannot catch a wrong token or a wrong layout width, which are
+    // the only two things about it that can go wrong. Each number is checked
+    // against the external fact it encodes instead.
+    expect(TAP_MIN_PX).toBe(44); // `--tap-min` in app/globals.css; WCAG 2.5.8
+    expect(MAP_VIEW_W).toBe(860); // the viewBox every level shares
+    expect(MAP_MAX_RENDER_W).toBe(1120); // max-w-6xl (72rem) less px-4 gutters
+
+    // And the direction, which the docblock used to state backwards: fewer
+    // pixels across the same viewBox means each unit is worth less, so the
+    // compliant radius is BIGGER on a phone than on a desktop, not smaller.
+    expect(tapTargetRadius(390)).toBeGreaterThan(tapTargetRadius(1120));
+  });
+
+  test("a marker with room around it gets 44 CSS px at the width it renders at", () => {
+    // The radii are hand-computed from the token and the viewBox — 22 * 860 /
+    // width — rather than from the code that produces them, so a change to
+    // either constant fails here instead of silently redefining the target.
+    for (const [width, radius] of [
+      [1120, 16.892857142857142], // the widest /plan ever lays the map out
+      [768, 24.635416666666668], // tablet
+      [390, 48.51282051282052], // phone: nearly 3x the desktop radius
+    ] as const) {
+      stubRenderedWidth(width);
+      const { container } = renderLevel();
+      for (const id of ["lima", "cusco", "isla"]) {
+        expect(hitR(container, id)).toBeCloseTo(radius, 9);
+        // The same claim in the units WCAG states it in: viewBox units the
+        // component chose, times the CSS pixels per unit this width implies.
+        expect(hitR(container, id) * 2 * (width / MAP_VIEW_W)).toBeCloseTo(44, 9);
+      }
+      cleanup();
+      vi.restoreAllMocks();
+    }
+  });
+
+  test("falls back to the widest-layout radius when nothing is measurable", () => {
+    // jsdom lays nothing out, and neither has a browser at first paint. The
+    // fallback is the floor of the honest range — the radius the WIDEST layout
+    // needs — so an unmeasured frame undershoots for one commit rather than
+    // drawing a phone-sized target across a desktop map.
+    expect(TAP_MIN_R_FALLBACK).toBeCloseTo(16.892857142857142, 9);
 
     const { container } = renderLevel();
     for (const id of ["lima", "cusco", "isla"]) {
-      expect(hitR(container, id)).toBeCloseTo(TAP_MIN_R, 9);
+      expect(hitR(container, id)).toBeCloseTo(TAP_MIN_R_FALLBACK, 9);
     }
+  });
+
+  test("re-measures the target when the container is resized", () => {
+    // A rotation or a window drag changes the pixels-per-unit ratio without
+    // remounting anything, so a target sized once at mount would stay at the
+    // old width's radius for the rest of the session.
+    let notify: (() => void) | null = null;
+    class FakeResizeObserver {
+      constructor(callback: () => void) {
+        notify = callback;
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {
+        notify = null;
+      }
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+    stubRenderedWidth(1120);
+    const { container } = renderLevel();
+    expect(hitR(container, "lima")).toBeCloseTo(16.892857142857142, 9);
+
+    stubRenderedWidth(390);
+    act(() => notify!());
+    expect(hitR(container, "lima")).toBeCloseTo(48.51282051282052, 9);
   });
 
   test("a crowded marker's target shrinks rather than swallowing its neighbour", () => {
@@ -466,10 +563,20 @@ describe("CountryLevel markers", () => {
     const gap = markerX(container, "b") - markerX(container, "a");
     expect(gap).toBeGreaterThan(0);
     expect(hitR(container, "a") + hitR(container, "b")).toBeLessThanOrEqual(gap + 1e-9);
-    expect(hitR(container, "a")).toBeLessThan(TAP_MIN_R);
+    expect(hitR(container, "a")).toBeLessThan(TAP_MIN_R_FALLBACK);
     // Never below the dot it sits behind, though: a target inside the visible
     // circle would make the dot's own edge the target's edge.
     expect(hitR(container, "a")).toBeGreaterThanOrEqual(dotR(container, "a"));
+
+    // Half the gap, whatever the width asks for. The cap is where the cities
+    // are, and a phone — which wants nearly three times the desktop radius —
+    // does not get to widen it: this is the one place the honest radius is NOT
+    // what is drawn, and the list below is why that is allowed.
+    cleanup();
+    stubRenderedWidth(390);
+    const phone = renderLevel({ places: near }).container;
+    expect(hitR(phone, "a")).toBeCloseTo(gap / 2, 9);
+    expect(hitR(phone, "a")).toBeLessThan(tapTargetRadius(390));
 
     for (const name of ["Barranco", "Chorrillos"]) {
       const chip = screen.getAllByRole("button", { name }).find((el) => el.tagName === "BUTTON");
