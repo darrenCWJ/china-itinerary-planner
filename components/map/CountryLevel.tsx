@@ -7,7 +7,7 @@ import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specifi
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
-import { IDENTITY_TRANSFORM, type MapTransform } from "@/lib/mapTransform";
+import { IDENTITY_TRANSFORM, ZOOM_FILL, type MapTransform } from "@/lib/mapTransform";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
@@ -141,6 +141,74 @@ const SELECTION_RING = 3.5;
  */
 const FOCUS_RING = SELECTION_RING + 2.5;
 const ROUTE_STROKE = 2;
+
+/**
+ * The smallest extent, in viewBox units, a unit is framed as though it had.
+ *
+ * Half a unit, and what makes that a measurement rather than a taste is where
+ * it lands in the committed geometry. Sorting all 4,525 zoomable groups by the
+ * side of the square that fits at the same scale — `ZOOM_FILL · 620 / k` — the
+ * bottom of the list reads:
+ *
+ *     Jarvis 0.095 · Howland 0.095 · Navassa 0.135 · Ashmore 0.174 ·
+ *     Wake 0.184 · Palmyra 0.194 · Baker 0.203 · Johnston 0.251 ·
+ *     Midway 0.283 · VEN+99? 0.363   ← the floor sits here, at 0.5 →
+ *     Pateros 0.536 · Pukapuka 0.540 · Three Kings 0.588 · …
+ *
+ * Ten groups fall below it and **not one of them has a city assigned to it** —
+ * nine uninhabited atolls and one of Venezuela's unnamed remainder units. The
+ * smallest group any city is in is GB London at **0.951**, nearly twice the
+ * floor. So the ceiling this feeds binds only on geometry no traveller can
+ * reach, and every province anyone can plan in gets the fit itself.
+ *
+ * Below the floor there is nothing left to frame. A polygon under half a
+ * viewBox unit across is finer than the coordinate system the map is drawn in,
+ * so more magnification magnifies the simplifier's rounding rather than the
+ * island.
+ */
+export const MIN_FRAMED_EXTENT = 0.5;
+
+/**
+ * The zoom ceiling for the ADMIN-1 path — 1091.2, against `MAX_ZOOM_K`'s 5.
+ *
+ * ## Why the two paths differ
+ *
+ * `MAX_ZOOM_K` was tuned for `ChinaLevel`, and correctly. Its seven groups are
+ * several provinces each, and measured against the curated asset they actually
+ * render the fits run 1.885 (Northwest) to 3.755 (Central) — so on the real
+ * China map the ceiling never fires at all, and 5 is a guard rather than a
+ * policy.
+ *
+ * This level frames ONE admin-1 unit, which is a different regime by two orders
+ * of magnitude: over the committed province files, **3,039 of the 4,525
+ * zoomable groups (67.2%) fit above 5x.** For them the shared ceiling was not a
+ * guard, it was the framing, and it framed badly — Rhode Island covers 0.14% of
+ * the viewBox at 5x against 36.3% fitted, Delhi 0.45% against 54.9%, Jakarta
+ * 0.16% against 52.5%. "Zoom to this province" left the province a speck in the
+ * middle of an empty frame.
+ *
+ * Nothing that `MAX_ZOOM_K`'s docblock warns about applies here. "The outlines
+ * become a handful of fat strokes and the labels outgrow the map" is a fact
+ * about lengths that do NOT divide by `k`, and every length in this file does —
+ * that is the whole of the discipline the marker constants above describe. A
+ * magnified unit is drawn with the same stroke weights, marker radii and font
+ * sizes on screen at `k` = 800 as at `k` = 1.
+ *
+ * ## Why this number
+ *
+ * Derived from an extent rather than picked as a magnification: it is the scale
+ * a square unit of `MIN_FRAMED_EXTENT` viewBox units is fitted at. That puts
+ * the number that has to be defended into the map's own units, where it can be
+ * checked against the geometry — which is what `MIN_FRAMED_EXTENT` does — and
+ * leaves this constant as arithmetic. A ceiling chosen directly in `k` would be
+ * a magnification with nothing to measure it against, which is how 5 came to
+ * outlive the framing it was chosen for.
+ *
+ * It remains a real ceiling. `transformForBounds` divides by the bounds' extent
+ * and answers `Infinity` for a point, so something finite has to stop it; ten
+ * groups in the committed set reach this one.
+ */
+export const ADMIN1_MAX_ZOOM_K = (ZOOM_FILL * Math.min(MAP_VIEW_W, MAP_VIEW_H)) / MIN_FRAMED_EXTENT;
 
 /** `--tap-min`, in CSS pixels — `app/globals.css`, and WCAG 2.2 AA 2.5.8. */
 export const TAP_MIN_PX = 44;
@@ -768,13 +836,18 @@ export function CountryLevel({
    * Kept whole as well as destructured, because `paintedAt` takes the matrix
    * rather than three loose numbers — and rebuilding an object literal at the
    * call site would hand it a new one on every render.
+   *
+   * `ADMIN1_MAX_ZOOM_K` and not the shared default, which is the difference
+   * between framing a province and pointing at one: two thirds of the world's
+   * admin-1 units fit above `MAX_ZOOM_K`, so at the default this line drew
+   * Rhode Island at 0.14% of the frame. The constant carries the argument.
    */
   const transform = useMemo(() => {
     if (!region) return IDENTITY_TRANSFORM;
     const features = (group?.unitIds ?? [])
       .map((id) => view.selectableFeatures.get(id))
       .filter((shape) => shape !== undefined);
-    return transformForFeatures(view.pathGen, features);
+    return transformForFeatures(view.pathGen, features, ADMIN1_MAX_ZOOM_K);
   }, [region, group, view]);
 
   const { k, tx, ty } = transform;

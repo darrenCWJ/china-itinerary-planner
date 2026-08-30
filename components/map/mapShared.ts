@@ -4,6 +4,7 @@ import { useEffect, useState, type RefObject } from "react";
 import { geoMercator, geoPath, type GeoPath, type GeoProjection } from "d3-geo";
 import {
   IDENTITY_TRANSFORM,
+  MAX_ZOOM_K,
   transformForBounds,
   type MapTransform,
   type PixelBounds,
@@ -73,10 +74,19 @@ export function buildFitProjection<P extends GeoJSON.GeoJsonProperties>(
  * Finiteness is the test rather than `features.length`, because the two failure
  * modes are the same failure: what matters is whether anything was drawn, not
  * whether anything was passed.
+ *
+ * `maxK` is the caller's zoom ceiling and defaults to `MAX_ZOOM_K`, which is
+ * what `ChinaLevel` takes: its seven curated regions are several provinces each
+ * and the ceiling is a guard they never reach. `CountryLevel` frames ONE
+ * admin-1 unit and passes `ADMIN1_MAX_ZOOM_K` instead, because at 5 the ceiling
+ * stops being a guard and becomes the framing — 3,039 of the 4,525 committed
+ * groups hit it, and Rhode Island ends up filling 0.14% of the viewBox. The
+ * argument for the number, and for why two paths need two, is on that constant.
  */
 export function transformForFeatures<P extends GeoJSON.GeoJsonProperties>(
   pathGen: GeoPath,
-  features: Array<GeoJSON.Feature<GeoJSON.Geometry, P>>
+  features: Array<GeoJSON.Feature<GeoJSON.Geometry, P>>,
+  maxK: number = MAX_ZOOM_K
 ): MapTransform {
   const bounds = pathGen.bounds({
     type: "FeatureCollection",
@@ -85,7 +95,7 @@ export function transformForFeatures<P extends GeoJSON.GeoJsonProperties>(
   if (!bounds.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) {
     return IDENTITY_TRANSFORM;
   }
-  return transformForBounds(bounds, MAP_VIEW_W, MAP_VIEW_H);
+  return transformForBounds(bounds, MAP_VIEW_W, MAP_VIEW_H, maxK);
 }
 
 /** Projects a lon/lat pair into viewBox pixels, or the origin if unprojectable. */
