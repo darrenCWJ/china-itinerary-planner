@@ -3,6 +3,7 @@ import { join, posix } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Airport, AirportSize } from "./airports";
 import { MAIN_AIRPORT_LABEL, mainAirportFor } from "./mainAirport";
+import { airportsForCountry } from "./server/airports";
 
 /**
  * Distances are built along a meridian, where the great-circle distance is
@@ -165,5 +166,67 @@ describe("lib/mainAirport.ts", () => {
     const server = FILES.find((file) => file.path === "lib/server/airports.ts")!;
     expect(valueImportOf(server.code, /airports\.json/)).toBe(true);
     expect(valueImportClosure(FILES, "lib/server/airports.ts")).toContain("lib/server/airports.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The border limit
+// ---------------------------------------------------------------------------
+
+/**
+ * Basel, because Switzerland's own answer for it is 68 km worse than the true
+ * one and the true one is French.
+ *
+ * Coordinates as the app ships them in public/cities/CH.json, and the airports
+ * come through `airportsForCountry` — the exact function
+ * /api/map/airports?country=XX calls — so what is measured here is the array
+ * the card really receives rather than an invented one.
+ */
+const BASEL = { lat: 47.55839, lon: 7.57327 };
+
+describe("the border limit", () => {
+  test("names an airport from the loaded country only, and says so", () => {
+    // Not a bug to fix in this PR — fixing it means a second fetch or an
+    // unfiltered artifact, both out of scope. It is a limit to RECORD, so the
+    // next reader does not treat the answer as globally ranked.
+    //
+    // `mainAirportFor` applies NO country predicate. The scope is entirely the
+    // caller's array, and in the app that array is one country's rows, so for
+    // a place near a border the true main airport is not out-ranked — it is
+    // absent. Basel's card names Zürich, 74 km away.
+    expect(mainAirportFor(airportsForCountry("CH"), BASEL)).toEqual({ iata: "ZRH", km: 74 });
+
+    // Hand the same place its neighbour's rows and the same call is right:
+    // EuroAirport is 6 km from the city and in France. That is what makes this
+    // the caller's limit and not the resolver's — and why the record lives on
+    // the resolver's docblock rather than in the card's copy, which would
+    // become a lie, in JSX, on the day the array widens.
+    const withNeighbour = [...airportsForCountry("CH"), ...airportsForCountry("FR")];
+    expect(mainAirportFor(withNeighbour, BASEL)).toEqual({ iata: "BSL", km: 6 });
+
+    // ...and it is written down. This one test asserts on prose deliberately,
+    // against lib/contracts.test.ts's rule that prose must never decide a
+    // verdict — because here the prose IS the deliverable. A limit recorded
+    // only in a commit message is a limit nobody finds, and an unpinned
+    // docblock is one tidy-up away from gone. The worked example is pinned
+    // too, so the record cannot decay into a vague hedge.
+    const source = readFileSync(join(process.cwd(), "lib/mainAirport.ts"), "utf8");
+    expect(source).toMatch(/border/i);
+    expect(source).toMatch(/\bBSL\b/);
+    expect(source).toMatch(/\bZRH\b/);
+  });
+
+  test("the fixture is armed: the artifact really does put Basel's airport in France", () => {
+    // Without this, both assertions above could be green because
+    // `airportsForCountry` returned nothing at all. If only this test fails,
+    // the artifact moved — the daily workflow refreshes it — and the limit
+    // itself is unchanged.
+    const ch = airportsForCountry("CH");
+    expect(ch.length).toBeGreaterThan(0);
+    expect(ch.map((airport) => airport.iata)).not.toContain("BSL");
+    expect(airportsForCountry("FR").find((airport) => airport.iata === "BSL")).toMatchObject({
+      country: "FR",
+      size: "large",
+    });
   });
 });

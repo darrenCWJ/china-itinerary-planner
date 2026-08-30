@@ -230,10 +230,19 @@ export function MapExplorer({
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   /**
-   * The country's airports, for the route estimator. Empty until they load,
+   * The country's airports — for the route estimator, and since PR8 for the
+   * card's "Main airport" line and §10.1's layer too. Empty until they load,
    * and empty is exactly the "no airport data" path `estimateLeg` already
    * handles — so the panel renders correct-but-coarser estimates first and
    * sharpens when they arrive, rather than waiting.
+   *
+   * ONE country's rows, which is the scope of every answer downstream: a
+   * border city's true main airport can be across the border and simply absent
+   * here. `mainAirportFor` in lib/mainAirport.ts carries that record and the
+   * worked case (Basel gets ZRH at 74 km; its real airport is BSL at 6 km, in
+   * France), because the limit belongs to this fetch rather than to the line of
+   * text it ends up as — and the fix, when someone wants it, is a wider fetch
+   * on this line rather than a change there.
    */
   const [airports, setAirports] = useState<Airport[]>([]);
   /**
