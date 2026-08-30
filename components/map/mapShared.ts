@@ -3,6 +3,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import { geoMercator, geoPath, type GeoPath, type GeoProjection } from "d3-geo";
 import {
+  IDENTITY_TRANSFORM,
   transformForBounds,
   type MapTransform,
   type PixelBounds,
@@ -51,6 +52,27 @@ export function buildFitProjection<P extends GeoJSON.GeoJsonProperties>(
  * Zoom transform that frames `features` within the shared viewBox. The maths
  * lives in `lib/mapTransform` and is tested there; this only turns features
  * into the pixel bounds it wants.
+ *
+ * **This is where spec §6.2's degenerate-bounds guard lives, and it lives here
+ * because it is a fact about the caller and not about the maths.**
+ * `transformForBounds` refuses the guard in its own docblock — a fallback
+ * invented inside the arithmetic would hide the bug of asking to zoom to
+ * nothing — and this function is its only caller in the app, so guarding once
+ * here covers every level that zooms.
+ *
+ * The hazard is narrower than §6.2 states. A single point is the case it names,
+ * and at the real 860 x 620 viewBox that case is fine: `860/0` and `620/0` are
+ * both `Infinity`, and `MAX_ZOOM_K` clamps the result to exactly the
+ * scale a 4px unit would have received. Guarding zero extent would therefore
+ * send a legitimately tiny province back to identity. What has no defined
+ * answer is an EMPTY collection — a group whose filter matched no unit, or
+ * whose units carry no drawable geometry — for which d3 answers
+ * `[[∞, ∞], [-∞, -∞]]` and the maths answers `scale(-0)` at
+ * `translate(NaN, NaN)`: a map that vanishes rather than one that misframes.
+ *
+ * Finiteness is the test rather than `features.length`, because the two failure
+ * modes are the same failure: what matters is whether anything was drawn, not
+ * whether anything was passed.
  */
 export function transformForFeatures<P extends GeoJSON.GeoJsonProperties>(
   pathGen: GeoPath,
@@ -60,6 +82,9 @@ export function transformForFeatures<P extends GeoJSON.GeoJsonProperties>(
     type: "FeatureCollection",
     features,
   }) as PixelBounds;
+  if (!bounds.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) {
+    return IDENTITY_TRANSFORM;
+  }
   return transformForBounds(bounds, MAP_VIEW_W, MAP_VIEW_H);
 }
 
