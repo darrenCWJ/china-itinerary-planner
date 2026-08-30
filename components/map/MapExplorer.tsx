@@ -236,6 +236,26 @@ export function MapExplorer({
    * sharpens when they arrive, rather than waiting.
    */
   const [airports, setAirports] = useState<Airport[]>([]);
+  /**
+   * Whether §10.1's airport layer is drawn — off until a reader asks for it.
+   *
+   * This component's twelfth `useState`, and deliberately not a fifth
+   * `UserPrefs` field (D11). The cost of that fifth field is not the one the
+   * spec argued: `PrefsSchema` is a `z.object()` and Zod strips unlisted keys,
+   * so `PrefsProvider.setPrefs` would write the correct value to the cookie
+   * and then PUT it to `/api/me/prefs`, which answers 200 with the key
+   * removed — an active clobber of the value the browser had just written,
+   * not merely a failure to persist it. `lib/server/schemas.ts:312-315` is the
+   * scar where that happened to `pivot` for real, and `:330-332` is the
+   * prophylactic one that kept it from happening to `worldView`.
+   *
+   * Nothing is lost by keeping it here. The layer answers "where are this
+   * country's airports", which is a question about the map currently open
+   * rather than a standing preference — the same reason `zoomRegion` above it
+   * is ephemeral — and its default is the quiet one, so a reader who never
+   * touches the toggle never sees a state they did not choose.
+   */
+  const [showAirports, setShowAirports] = useState(false);
   const [hover, setHover] = useState<{
     place: MapPlace;
     pos: { x: number; y: number };
@@ -342,6 +362,27 @@ export function MapExplorer({
     : zoomedGroup
       ? `Showing ${zoomedGroup.label} — the list below still reaches every city`
       : null;
+
+  /**
+   * Whether §10.1's toggle has anything to offer — three conditions, and each
+   * one is a rendering where the button would be a control over nothing.
+   *
+   * The legend beside it already sets the rule: it "reads the marker colours,
+   * so it appears only where there are markers to read", and the world level's
+   * globe button is withdrawn under reduced motion rather than left offering a
+   * view that render would refuse. A toggle whose click changes no pixel is
+   * worse than a missing one, because it reads as a broken feature.
+   *
+   * The first two clauses are `CountryMap`'s own dispatch, restated: China
+   * renders `ChinaLevel`, which §9.5 freezes and which has no layer at all; a
+   * country whose admin-1 file is missing or in flight renders
+   * `CountryPlaceList`, which has no map for a mark to sit on. The third is the
+   * array itself, empty for the first moment of every country and permanently
+   * for one with no rows of its own — and that transience is a control
+   * appearing when its data lands, exactly as the region `<select>` above
+   * already does.
+   */
+  const canDrawAirports = !hasCurated && provinces !== null && airports.length > 0;
 
   /**
    * Everything the open country's map needs: its admin-1 geometry — China's
@@ -806,6 +847,38 @@ export function MapExplorer({
             ))}
           </div>
         )}
+        {/*
+          §10.1's layer toggle, in the slot the legend occupies for China —
+          the two can never both be drawn, because a curated country has no
+          layer to toggle and the other 245 have no colour legend to read.
+
+          `aria-pressed` with one fixed name, rather than the globe button's
+          swapping label. That button chooses between two renderers and neither
+          of them is "on"; this one is a boolean layer, which is the thing
+          `aria-pressed` exists for and which `DetailsStep`'s interest chips
+          already use. It also keeps the accessible name stable, so a reader
+          who has found the control once can find it again in either state.
+
+          NOT `STEP_UP_BUTTON`: that constant is the one step-up control drawn
+          at three rungs, and its whole argument is that the three are the same
+          control in three states. A layer toggle is a fourth thing, and
+          borrowing the class would make that docblock false — so it carries
+          `min-h-[var(--tap-min)]` itself, and a test pins it.
+        */}
+        {canDrawAirports && (
+          <button
+            type="button"
+            onClick={() => setShowAirports((on) => !on)}
+            aria-pressed={showAirports}
+            className={`inline-flex min-h-[var(--tap-min)] items-center rounded-lg border px-3 text-xs font-medium transition-colors ${
+              showAirports
+                ? "border-[var(--accent-ink)] text-[var(--accent-ink)]"
+                : "border-[var(--line-1)] text-[var(--ink-2)] hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+            }`}
+          >
+            Airports
+          </button>
+        )}
       </div>
 
       {citiesUnavailable && (
@@ -832,6 +905,10 @@ export function MapExplorer({
           // already asked for above, and it is the request that keeps
           // `lib/server/airports.ts` and its 876,823 B artifact on the server.
           airports={airports}
+          // The layer's switch, and the only writer of it. `airports` above
+          // reaches the card whether this is on or off (§10.2): the toggle
+          // governs what the map draws, never what the card knows.
+          showAirports={showAirports}
           onZoomRegion={showRegion}
           onTogglePlace={togglePlace}
           onHoverPlace={(place, pos) =>
