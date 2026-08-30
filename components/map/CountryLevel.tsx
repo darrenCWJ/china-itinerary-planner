@@ -675,6 +675,26 @@ export function CountryLevel({
   const scheme = useMemo(() => regionSchemeFor(country, provinces.units), [country, provinces]);
 
   /**
+   * The group the level is framed on, or null for the whole country.
+   *
+   * Hoisted out of the transform below because it is now read TWICE — the
+   * transform frames this group, the marker layer filters to it — and those
+   * two must never disagree. A map framed on one group while its markers
+   * answered to another would be showing the wrong province's cities, and it
+   * would look entirely plausible.
+   *
+   * Null covers both non-choices, and they stay distinct facts: no region was
+   * asked for, or one was and this country's scheme has no such group. §6.6's
+   * single-unit gate arrives as the second, and so does a region id left over
+   * from the country the user just left — `RegionId` is `string`, so a stale
+   * one stays assignable and nothing else would catch it.
+   */
+  const group = useMemo(
+    () => (region ? (scheme.groups.find((candidate) => candidate.id === region) ?? null) : null),
+    [region, scheme]
+  );
+
+  /**
    * The zoom itself, and the identity transform until one is asked for.
    *
    * Three ways to end up unzoomed, and all three are a map rather than a
@@ -692,12 +712,11 @@ export function CountryLevel({
    */
   const { k, tx, ty } = useMemo(() => {
     if (!region) return IDENTITY_TRANSFORM;
-    const group = scheme.groups.find((candidate) => candidate.id === region);
     const features = (group?.unitIds ?? [])
       .map((id) => view.selectableFeatures.get(id))
       .filter((shape) => shape !== undefined);
     return transformForFeatures(view.pathGen, features);
-  }, [region, scheme, view]);
+  }, [region, group, view]);
 
   /**
    * The `--tap-min` ceiling for THIS rendering, not for the one the widest
@@ -784,6 +803,59 @@ export function CountryLevel({
   );
 
   /**
+   * The markers a framed map draws, paired with their index into everything
+   * computed above — §6.5, and `cityProvince`'s first ever reader.
+   *
+   * Plan 2 shipped that Map unconsumed. It is the ONLY thing that places a
+   * city in a province: a marker's lon/lat decide where it is drawn, and the
+   * committed assignment decides which unit contains it. Recomputing
+   * containment here would be a second answer to a question
+   * `scripts/build-provinces.mjs` already answered — per frame, against
+   * simplified geometry — and the two would part company at the first boundary
+   * that moved.
+   *
+   * Two misses, and both hide the city rather than showing it:
+   *
+   * - **no assignment at all.** 478 cities across the 246 files were placed by
+   *   neither containment nor `a1c`. A city shown in every province because it
+   *   is known to be in none asserts, 25 times over for Peru, a fact the build
+   *   was careful not to invent.
+   * - **an assignment naming a unit no group offers.** 43 committed values name
+   *   a `sel: 0` unit — Northern Cyprus, Somaliland, Guantánamo — which §7.2
+   *   keeps out of `regionSchemeFor` on purpose. Those cities are real and the
+   *   list below reaches them; no region draws them.
+   *
+   * The pairs carry the ORIGINAL index because `points`, `caps` and `marks`
+   * are computed over the whole country and must stay that way: `caps` is the
+   * O(n²) pass, keyed on the country so a zoom never re-runs its ~560k
+   * distance checks, and re-indexing it per zoom is the same mistake as
+   * folding `k` into it. So the filter lands at the DRAW, and the arithmetic
+   * above it never learns there is one.
+   */
+  const visible = useMemo(() => {
+    const all = places.map((place, index) => ({ place, index }));
+    if (!group) return all;
+    const units = new Set(group.unitIds);
+    return all.filter(({ place }) => {
+      const unit = provinces.cityProvince.get(place.id);
+      return unit !== undefined && units.has(unit);
+    });
+  }, [group, places, provinces]);
+
+  /**
+   * The same set as `visible`, as the roving tabindex wants it.
+   *
+   * `useMarkerSelection` is handed the DRAWN places and not `places`, because
+   * every one of its answers is about a node: the caret it moves, the tab stop
+   * it parks on, the neighbour an arrow key reaches. Given the whole country it
+   * would put `tabIndex 0` on a marker the zoom is not rendering — a tab stop
+   * that lands nowhere, which is the failure a roving tabindex exists to
+   * prevent — and would step the caret onto hidden cities in between the
+   * visible ones.
+   */
+  const visiblePlaces = useMemo(() => visible.map((entry) => entry.place), [visible]);
+
+  /**
    * The place whose card is open, and whether the keyboard opened it (§5.3.3).
    *
    * The id rather than the place, and re-resolved against `places` below for
@@ -812,7 +884,7 @@ export function CountryLevel({
   };
 
   const { markerProps, focusedId, refocus } = useMarkerSelection(
-    places,
+    visiblePlaces,
     selected,
     activate,
     !readOnly
@@ -928,7 +1000,16 @@ export function CountryLevel({
               a control.
             */}
             <g data-markers="">
-              {places.map((place, index) => {
+              {/*
+                `visible`, and its two indices are two different things. `index`
+                is the place's position in the country — what `marks` and `caps`
+                were computed over, so a zoom re-uses them untouched — while
+                `order` is its position among the markers actually drawn, which
+                is the frame the roving tabindex's arrow keys step through.
+                Passing the wrong one moves the caret to a city that is not on
+                screen.
+              */}
+              {visible.map(({ place, index }, order) => {
                 const { x, y, r, hitR } = marks[index];
                 const isSelected = selected.includes(place.id);
                 const stopIndex = routeIds.indexOf(place.id);
@@ -936,7 +1017,7 @@ export function CountryLevel({
                   <g
                     key={place.id}
                     data-place={place.id}
-                    {...markerProps(place, index)}
+                    {...markerProps(place, order)}
                     onMouseEnter={(e) => reportHover(place, e)}
                     onMouseMove={(e) => reportHover(place, e)}
                     onMouseLeave={() => reportHover(null)}

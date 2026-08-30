@@ -110,14 +110,67 @@ export const PE_TOPOLOGY = {
   },
 };
 
-/** The fixture as the level receives it — through the real parser, not around it. */
-export const PE_FILE: ProvinceFile = parseProvinceTopology({
-  country: "PE",
-  generatedAt: "2026-08-30T00:00:00.000Z",
-  idKey: "adm1_code",
-  topology: PE_TOPOLOGY,
-  cityProvince: {},
-});
+/**
+ * Where each city both test files draw is committed to live.
+ *
+ * A real province file assigns every city in the country's shard to one of its
+ * units, and this fixture said `{}` — "no city is anywhere" — for as long as
+ * nothing read the field. `CountryLevel`'s province zoom is its first reader
+ * (§6.5), and under a zoom an unassigned city is drawn nowhere at all, so an
+ * empty map here is not a neutral default: it is the state in which the zoomed
+ * map is blank.
+ *
+ * The assignments are the ones this fixture's own geometry implies, so a
+ * reader can check them against the arcs above rather than take them on trust.
+ * The units span PE-LIM over lon -78..-76, PE-CUS over -76..-74, PE-XXX over
+ * -74..-72, and PE-ISL out at -110..-109:
+ *
+ * - `lima` (-78) and `cur` (-77.5) fall in **PE-LIM**;
+ * - `b` (-75.95) falls in **PE-CUS**, and `a` (-76) sits on its seam with
+ *   PE-LIM, so it is assigned east to keep the crowded pair in one unit;
+ * - `cty` (-73) and `cusco` (-72) fall in **PE-XXX**, which is `sel: 0` — so
+ *   they are this fixture's copy of the 43 committed `cityProvince` values
+ *   that name a unit no user can zoom to. Both cities exist and the list
+ *   reaches them; no region ever draws them;
+ * - `isla` (-109.5) falls in **PE-ISL**.
+ *
+ * Deliberately partial in two places. `CountryLevel.test.tsx` draws an
+ * `unplaced` city that appears nowhere here, because "assigned to no unit" is
+ * the state 478 real cities are in and the level has to answer for it. And
+ * `CountryMap.test.tsx`'s own cast is absent because that renderer does not
+ * zoom yet; when it does, `peFileWith` is what places its cities without
+ * putting a second copy of this topology in a second file.
+ */
+export const PE_CITY_PROVINCE: Readonly<Record<string, string>> = {
+  lima: "PE-LIM",
+  cur: "PE-LIM",
+  a: "PE-CUS",
+  b: "PE-CUS",
+  cty: "PE-XXX",
+  cusco: "PE-XXX",
+  isla: "PE-ISL",
+};
+
+/**
+ * The fixture as the level receives it — through the real parser, not around
+ * it — with the city assignments a test wants to vary.
+ *
+ * A factory beside the constant because the zoom tests need a country whose
+ * cities sit in the unit under test, and rebuilding the topology inline in
+ * each of them would put a second copy of it in a second file, which is the
+ * drift this module exists to prevent.
+ */
+export function peFileWith(cityProvince: Readonly<Record<string, string>>): ProvinceFile {
+  return parseProvinceTopology({
+    country: "PE",
+    generatedAt: "2026-08-30T00:00:00.000Z",
+    idKey: "adm1_code",
+    topology: PE_TOPOLOGY,
+    cityProvince,
+  });
+}
+
+export const PE_FILE: ProvinceFile = peFileWith(PE_CITY_PROVINCE);
 
 /**
  * The mainland and nothing else, in the frame `rotate: 0` leaves it in — the

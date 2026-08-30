@@ -453,6 +453,26 @@ describe.skipIf(!hasAssets)("the committed province files", () => {
     expect(dangling, `files with unjoinable cityProvince entries: ${dangling.join(", ")}`).toEqual([]);
   });
 
+  it("never offers a zoom into a country whose cities are placed nowhere", () => {
+    // The on-disk counterpart of §6.5's filter. `CountryLevel` draws the
+    // cities `cityProvince` assigns to the framed group and no others, so a
+    // country that offers region groups while placing no city at all would
+    // zoom into geometry with no markers on it — and nothing on screen would
+    // say whether that province is empty or the join is broken.
+    //
+    // Five files place nothing: CC, CX, SJ, TK and VA. Every one of them has a
+    // single selectable unit, so §6.6's `count <= 1` gate already leaves them
+    // with no group to zoom to. That is a fact about today's data rather than
+    // a consequence of the gate — a sixth such file with two units would be a
+    // blank zoomed map — which is why it is pinned rather than reasoned about.
+    const blank: string[] = [];
+    for (const entry of index!.countries) {
+      if (entry.count <= 1) continue;
+      if (readProvince(entry.code).cityProvince.size === 0) blank.push(entry.code);
+    }
+    expect(blank, `zoomable countries placing no city in any unit: ${blank.join(", ")}`).toEqual([]);
+  });
+
   it("gives 34 countries exactly one selectable unit", () => {
     // §6.6 D10, measured within the 246-country emit set (37 across all 250).
     // These are the countries whose province level is a single polygon, so PR5
