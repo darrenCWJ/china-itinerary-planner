@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { geoPath } from "d3-geo";
+import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
 import { getCountry } from "@/lib/countries";
@@ -265,6 +265,123 @@ interface UnitShape {
   label: string | null;
 }
 
+/** One unit as geometry rather than as a path string — what a zoom measures. */
+type UnitFeature = GeoJSON.Feature<GeoJSON.Geometry, UnitProps>;
+
+/**
+ * Everything one country's topology is drawn from, and everything a zoom into
+ * one of its units needs to frame it.
+ *
+ * The first three are what the JSX consumes. The last two used to be computed
+ * here and thrown away, and PR5's province zoom is what wants them back: they
+ * are the pair `transformForFeatures` takes — a generator, and the features to
+ * frame — and they fall out of the same pass that produced the `d` strings.
+ * `pathGen` turns a unit into the path beside it; `pathGen.bounds(feature)`
+ * turns the same unit into the extent the zoom is fitted to. Rebuilding a
+ * projection at zoom time would be that arithmetic twice over and, worse, a
+ * SECOND answer to "where is this province" — the kind of drift that leaves a
+ * marker outside the frame that was supposed to hold it.
+ */
+export interface CountryView {
+  units: UnitShape[];
+  /** The merged national border, or null when the merge drew nothing. */
+  outline: string | null;
+  project: (lon: number, lat: number) => [number, number];
+  /**
+   * The generator the shapes above were drawn through.
+   *
+   * Exposed to be MEASURED with, not to re-draw with: every `d` a unit needs
+   * is already in `units`, and a second `pathGen(feature)` per frame is
+   * precisely the cost the memo around this exists to pay once.
+   */
+  pathGen: GeoPath;
+  /**
+   * The units a region group can name, by id.
+   *
+   * Selectable ones, and drawn ones. `regionSchemeFor` drops `sel: 0` for
+   * §7.2's reason — ISO 3166-1 governs territorial EXTENT while 3166-2 governs
+   * SUBDIVISION identity — and this map drops them for the same one, so the set
+   * that can be zoomed to is exactly the set `data-unit` marks. That matters
+   * because 43 committed `cityProvince` values name a unit this omits: a
+   * lookup that ought to miss must not be made to hit by a second, laxer index
+   * of the same geometry.
+   *
+   * A miss therefore resolves to no feature, an empty list, and
+   * `IDENTITY_TRANSFORM` from the guard in `transformForFeatures` — an
+   * unzoomed map rather than a vanished one.
+   */
+  selectableFeatures: ReadonlyMap<string, UnitFeature>;
+}
+
+/**
+ * Decodes one country's province file into everything drawn from it.
+ *
+ * A module-level function rather than an inline `useMemo` body, because it is
+ * the expensive half of this file — a TopoJSON decode, a `merge()` over every
+ * unit, and one path render each — and out here a test can hold its product in
+ * a hand instead of inferring it from the DOM. The memo is then one line, and
+ * its dependency array is the whole of its policy: this runs once per
+ * topology, and a zoom must never be one of its inputs.
+ */
+export function buildCountryView(
+  provinces: ProvinceFile,
+  projection: ProjectionEntry | null
+): CountryView {
+  const topology = provinces.topology;
+  const collection = topology.objects[PROVINCE_OBJECT] as GeometryCollection<UnitProps>;
+  const features = feature(topology, collection).features;
+
+  /**
+   * `collection.geometries`, not `collection`.
+   *
+   * `@types/topojson-client` declares `merge(topology, GeometryCollection |
+   * Array<Polygon | MultiPolygon>)`, and the runtime accepts only the array:
+   * `mergeArcs` calls `objects.forEach`, so a GeometryCollection throws
+   * "objects.forEach is not a function". The types are wrong, not the docs.
+   */
+  const outline = merge(
+    topology,
+    collection.geometries as Array<Polygon<UnitProps> | MultiPolygon<UnitProps>>
+  );
+
+  // A manifest entry beats a fit; the fit is what a country without one gets.
+  const { projection: proj, pathGen } = projection
+    ? fromManifest(projection)
+    : buildFitProjection(features);
+
+  const byId = new Map<string, ProvinceUnit>(provinces.units.map((unit) => [unit.id, unit]));
+  const units: UnitShape[] = [];
+  const selectableFeatures = new Map<string, UnitFeature>();
+  for (const shape of features) {
+    const d = pathGen(shape);
+    if (!d) continue;
+    const id = typeof shape.id === "string" ? shape.id : "";
+    const unit = typeof shape.id === "string" ? (byId.get(shape.id) ?? null) : null;
+    const selectable = unit?.selectable ?? false;
+    units.push({
+      id,
+      d,
+      selectable,
+      // Endonym first, English second, and the id only when a source carries
+      // neither — `KI-X02~` has a null name and would otherwise render a
+      // `<title>` with nothing in it.
+      label: unit ? (unit.nameEn ?? unit.name ?? unit.id) : null,
+    });
+    // Indexed off the same `selectable` the path above was drawn with, inside
+    // the same `if (!d) continue`, so the zoomable set cannot drift from the
+    // drawn one.
+    if (selectable) selectableFeatures.set(id, shape);
+  }
+
+  return {
+    units,
+    outline: pathGen(outline),
+    project: makeProjector(proj),
+    pathGen,
+    selectableFeatures,
+  };
+}
+
 /** Everything spread onto one marker's `<g>` in a level that can be planned in. */
 interface MarkerInteractionProps {
   ref: (node: SVGGElement | null) => void;
@@ -499,48 +616,16 @@ export function CountryLevel({
   const renderedWidth = useRenderedWidth(containerRef);
   const tapMinR = renderedWidth === null ? TAP_MIN_R_FALLBACK : tapTargetRadius(renderedWidth);
 
-  const view = useMemo(() => {
-    const topology = provinces.topology;
-    const collection = topology.objects[PROVINCE_OBJECT] as GeometryCollection<UnitProps>;
-    const features = feature(topology, collection).features;
-
-    /**
-     * `collection.geometries`, not `collection`.
-     *
-     * `@types/topojson-client` declares `merge(topology, GeometryCollection |
-     * Array<Polygon | MultiPolygon>)`, and the runtime accepts only the array:
-     * `mergeArcs` calls `objects.forEach`, so a GeometryCollection throws
-     * "objects.forEach is not a function". The types are wrong, not the docs.
-     */
-    const outline = merge(
-      topology,
-      collection.geometries as Array<Polygon<UnitProps> | MultiPolygon<UnitProps>>
-    );
-
-    // A manifest entry beats a fit; the fit is what a country without one gets.
-    const { projection: proj, pathGen } = projection
-      ? fromManifest(projection)
-      : buildFitProjection(features);
-
-    const byId = new Map<string, ProvinceUnit>(provinces.units.map((unit) => [unit.id, unit]));
-    const units: UnitShape[] = [];
-    for (const shape of features) {
-      const d = pathGen(shape);
-      if (!d) continue;
-      const unit = typeof shape.id === "string" ? (byId.get(shape.id) ?? null) : null;
-      units.push({
-        id: typeof shape.id === "string" ? shape.id : "",
-        d,
-        selectable: unit?.selectable ?? false,
-        // Endonym first, English second, and the id only when a source carries
-        // neither — `KI-X02~` has a null name and would otherwise render a
-        // `<title>` with nothing in it.
-        label: unit ? (unit.nameEn ?? unit.name ?? unit.id) : null,
-      });
-    }
-
-    return { units, outline: pathGen(outline), project: makeProjector(proj) };
-  }, [provinces, projection]);
+  /**
+   * Once per topology, and on nothing else.
+   *
+   * `[provinces, projection]` is the whole of the policy: the decode, the
+   * merge and one path render per unit are what this costs, and the zoom —
+   * which changes on a click and reads `pathGen` and `selectableFeatures` off
+   * the result — must stay out of these deps. It would re-run all of it to
+   * produce the same paths it produced last time.
+   */
+  const view = useMemo(() => buildCountryView(provinces, projection), [provinces, projection]);
 
   const { units, outline, project } = view;
 
