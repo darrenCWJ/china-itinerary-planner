@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
@@ -161,11 +163,25 @@ describe("routePlaces with resolved stops", () => {
 });
 
 /**
- * One admin-1 unit, wound clockwise in (lon, lat) around the box Peru sits in.
+ * Two admin-1 units, each wound clockwise in (lon, lat), together covering the
+ * box Peru sits in — the western half and the eastern half Cusco is in.
  *
- * d3-geo reads rings spherically, so the anticlockwise version of this square
+ * d3-geo reads rings spherically, so the anticlockwise version of either square
  * is the globe MINUS the square: `geoBounds` answers ±180 and every fit
  * collapses. `MapExplorer.test.tsx`'s fixture carries the same warning.
+ *
+ * **Two and not one, and that is load-bearing rather than decorative.**
+ * `regionSchemeFor` returns NO groups for a country with a single selectable
+ * unit (§6.6 D10: an admin-1 layer with nothing to divide is the national
+ * outline drawn twice), so a one-unit Peru has nowhere to zoom and every
+ * assertion about not zooming there is vacuously true. With two, this country
+ * genuinely has a province level — the picker would put a `<select>` beside its
+ * heading — and "the trip map does not offer one" becomes a fact about this
+ * surface rather than about the fixture.
+ *
+ * `cityProvince` stays empty, as every committed fixture's does, which is also
+ * what makes a wrong framing visible: §6.5 draws only the framed group's own
+ * cities, and Cusco is assigned to neither half.
  */
 const PE_PROVINCES = {
   country: "PE",
@@ -177,9 +193,16 @@ const PE_PROVINCES = {
       [
         [-78, -18],
         [-78, -4],
+        [-74, -4],
+        [-74, -18],
+        [-78, -18],
+      ],
+      [
+        [-74, -18],
+        [-74, -4],
         [-70, -4],
         [-70, -18],
-        [-78, -18],
+        [-74, -18],
       ],
     ],
     objects: {
@@ -188,8 +211,23 @@ const PE_PROVINCES = {
         geometries: [
           {
             type: "Polygon",
-            id: "PE-CUS",
+            id: "PE-AYA",
             arcs: [[0]],
+            properties: {
+              name: "Ayacucho",
+              name_en: "Ayacucho",
+              iso_3166_2: "PE-AYA",
+              gn_a1_code: "PE.03",
+              sel: 1,
+            },
+          },
+          {
+            // The half Cusco's own coordinates fall in — lon -71.97 — so a map
+            // framed on this group draws the province the trip is in and still
+            // drops the trip's stop, because nothing assigned it here.
+            type: "Polygon",
+            id: "PE-CUS",
+            arcs: [[1]],
             properties: {
               name: "Cuzco",
               name_en: "Cuzco",
@@ -481,5 +519,76 @@ describe("the trip map is a view of the trip, not a picker", () => {
     // less, not the map showing less.
     expect(marker).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
+  });
+
+  /**
+   * The province level's own version of the same statement — Plan 4's Task 10.
+   *
+   * `zoomRegion` used to be `ChinaRegion | null`, which made this surface's
+   * `null` the only value it could carry outside China. Phase 4 widened it to
+   * `RegionId` — `string` — so `null` stayed assignable, `tsc` stayed quiet,
+   * and this call site is the one the widening could not point at. Everything
+   * else that reads the prop is in `MapExplorer`, where the change is obvious;
+   * here it is invisible, which is why it gets asserted rather than assumed.
+   *
+   * A known gap, seen and left alone: on the China branch `ChinaLevel` still
+   * draws its seven provinces with `role="button"` and "Zoom into East China"
+   * for a name, wired here to `noop`. That IS a control that cannot do
+   * anything, and it is exactly what `readOnly` exists to suppress — but
+   * `readOnly` is deliberately not spread into `ChinaLevel` (§9.5 freezes
+   * China's rendered output for the whole of Phase 4, and `CountryMap` says so
+   * at its own prop). Suppressing it is a change to a China render, so it
+   * belongs to whoever lifts §9.5, not to this task.
+   */
+  test("the trip map does not offer a region zoom", async () => {
+    const { container } = renderPeru();
+    await settle();
+
+    // The picker's two region affordances: a `<select>` labelled "Zoom to a
+    // province", and the "← All Peru" step-up beside it. Both live in
+    // `MapExplorer`, which this surface does not render — so what is pinned is
+    // that neither arrived here by some other route.
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByLabelText(/zoom to a province/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^←/ })).toBeNull();
+
+    // And the half `zoomRegion={null}` decides on its own: the map is framed
+    // on the whole country. A framed one filters its markers to the framed
+    // group's own cities (§6.5), and `/provinces/PE.json` assigns Cusco to
+    // none — so a trip map that had quietly acquired a region would draw a
+    // trip with no stops on it, and would look like a working map doing it.
+    expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).toBe(
+      "translate(0px, 0px) scale(1)"
+    );
+    expect(container.querySelector('[data-place="G3941584"]')).not.toBeNull();
+  });
+
+  test("passing null is deliberate and documented, not an unmigrated default", () => {
+    // Read as text, because there is nothing else to read it with. `region`
+    // defaults to null inside `CountryLevel`, so dropping the prop entirely
+    // would leave every assertion above green and every render identical —
+    // the failure this guards against is silent at runtime and silent at
+    // compile time, and only the source says which of the two nulls it is.
+    const source = readFileSync(join(process.cwd(), "components", "trip", "RouteMap.tsx"), "utf8");
+    const stripped = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+    expect(stripped).toContain("zoomRegion={null}");
+
+    // Stated, and stated adjacently: the contiguous comment lines directly
+    // above it. Read off the raw source rather than the stripped copy for the
+    // obvious reason, and split on `\r?\n` because this repo is checked out
+    // with `core.autocrlf` on Windows.
+    const lines = source.split(/\r?\n/);
+    const at = lines.findIndex((line) => line.includes("zoomRegion={null}"));
+    expect(at).toBeGreaterThan(0);
+    const preamble: string[] = [];
+    for (let i = at - 1; i >= 0 && /^\s*(\/\/|\*|\/\*)/.test(lines[i]); i--) {
+      preamble.unshift(lines[i]);
+    }
+    const prose = preamble.join(" ");
+    // The two facts a reader needs and cannot recover from the line itself:
+    // what the type became, and that this null is a choice rather than a
+    // leftover.
+    expect(prose).toMatch(/RegionId/);
+    expect(prose).toMatch(/null/);
   });
 });
