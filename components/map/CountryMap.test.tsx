@@ -21,29 +21,40 @@ import type { MapPlace } from "./mapTypes";
  * 1.2MB asset, so the expected set of controls is something the test states.
  */
 
-/** Absolute (untransformed) TopoJSON: one closed ring per province. */
+/**
+ * Absolute (untransformed) TopoJSON: one closed ring per province, wound
+ * south-west, north-west, north-east, south-east.
+ *
+ * That is the order `worldFixture.ts` documents, and load-bearing for the
+ * reason it gives: d3 reads a ring spherically, so the other winding makes each
+ * province *the whole globe minus the rectangle* (`geoArea` 4π against 2.3e-4).
+ * It renders without error and drags `buildFitProjection` onto the entire
+ * sphere, so nothing asserted below would catch it — but any assertion this
+ * file later grows about a path, a fit, a projected marker or a zoom transform
+ * would be measuring an inverted world.
+ */
 const CHINA_FIXTURE = {
   type: "Topology",
   arcs: [
     [
       [116, 39.5],
-      [117, 39.5],
-      [117, 40.5],
       [116, 40.5],
+      [117, 40.5],
+      [117, 39.5],
       [116, 39.5],
     ],
     [
       [121, 31],
-      [122, 31],
-      [122, 32],
       [121, 32],
+      [122, 32],
+      [122, 31],
       [121, 31],
     ],
     [
       [110, 10],
-      [112, 10],
-      [112, 12],
       [110, 12],
+      [112, 12],
+      [112, 10],
       [110, 10],
     ],
   ],
