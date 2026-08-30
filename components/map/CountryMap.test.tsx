@@ -2,7 +2,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Topology } from "topojson-specification";
 import { hasDetailLevel } from "@/lib/countryDetail";
+import type { ProjectionEntry } from "@/lib/countryProjection";
+import type { ProvinceFile } from "@/lib/provinceTopology";
+import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
 import { CountryMap, hasCuratedTopology } from "./CountryMap";
+import { PE_ENTRY, PE_FILE } from "./countryFixture";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -94,13 +98,36 @@ const BEIJING = place({
   lon: 116.4,
 });
 
+/**
+ * 200 catalog cities across two provinces, the shape a real shard has.
+ *
+ * Module scope because two blocks below need the same one, and because the
+ * coordinates are load-bearing for only one of them: spread over the
+ * `countryFixture` mainland rather than stacked on a single point, so the
+ * branch that DRAWS them draws what a shard would. 200 markers at one
+ * coordinate would let `nonOverlappingRadii` collapse every target to nothing
+ * and make the tap-target half of §12.2 unassertable.
+ */
+function peruvianShard(): MapPlace[] {
+  return Array.from({ length: 200 }, (_, i) =>
+    place({
+      id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog",
+      province: i < 120 ? "Lima" : "Cuzco",
+      lon: -78 + (i % 20) * 0.3,
+      lat: -14 + Math.floor(i / 20) * 0.4,
+    })
+  );
+}
+
 function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
   const props = {
     country: "CN",
     topology: CHINA_FIXTURE,
-    // The dispatcher's other two branches, both off by default: these cases
-    // are about China's renderer and about the list a country with no geometry
-    // gets. `CountryLevel.test.tsx` covers the branch between them.
+    // The dispatcher's other two branches, both off by DEFAULT and neither of
+    // them therefore off everywhere: these cases are about China's renderer
+    // and about the list a country with no geometry gets, and the reachability
+    // block at the foot of this file passes a real province file so §12.2 is
+    // proven against the level that draws one too.
     provinces: null,
     projection: null,
     places: [SHANGHAI, BEIJING],
@@ -246,16 +273,6 @@ describe("CountryMap — countries with no curated topology", () => {
 });
 
 describe("CountryPlaceList — a country with a full shard", () => {
-  /** 200 catalog cities across two provinces, the shape a real shard has. */
-  function peruvianShard() {
-    return Array.from({ length: 200 }, (_, i) =>
-      place({
-        id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog",
-        province: i < 120 ? "Lima" : "Cuzco",
-      })
-    );
-  }
-
   test("groups a full shard by province and reaches every city", () => {
     // Before this, the list rendered places.slice(0, 60) — which for 150 of
     // 246 countries hid most of the shard, 690 of Peru's 750 among them.
@@ -312,54 +329,127 @@ describe("CountryPlaceList — a country with a full shard", () => {
 
 describe("reachability — the Phase 4 acceptance criterion", () => {
   /**
-   * Spec 12.2. This is the criterion the whole phase is gated on: a country
+   * Spec §12.2. This is the criterion the whole phase is gated on: a country
    * level that renders geometry must not become the ONLY way to select a
    * place. The repo already rejected per-marker tab stops once — see
    * worldLevelShared.tsx's "indefensible for 235" — and this test is what
    * makes that decision survive a later PR that adds an outline.
+   *
+   * Run once per DISPATCHER BRANCH, and that is the whole point of the shape
+   * below. When Plan 3 made `provinces: null` the default in `renderMap`, every
+   * case here quietly became the list-only fallback: the gate for a phase
+   * about drawing maps stopped rendering one, and deleting `CountryPlaceList`
+   * from `CountryLevel` left all of it green. The criterion is only proven
+   * once it has been proven for a country that HAS a map, so the branch with
+   * geometry is asserted here rather than left to `CountryLevel.test.tsx` —
+   * which is a different file, and not the one §12.2 names.
    */
-  function peruvianShard() {
-    return Array.from({ length: 200 }, (_, i) =>
-      place({
-        id: `G${1000 + i}`, name: `City ${i}`, kind: "catalog",
-        province: i < 120 ? "Lima" : "Cuzco",
-      })
-    );
+  const BRANCHES: {
+    label: string;
+    provinces: ProvinceFile | null;
+    projection: ProjectionEntry | null;
+    /** What the branch must actually have rendered — see `renderCountry`. */
+    hasMap: boolean;
+  }[] = [
+    // No geometry: the list IS the level. That is every country until its
+    // province file arrives, and it is the case this block already covered.
+    { label: "a country with no map", provinces: null, projection: null, hasMap: false },
+    // Geometry plus its §5.4 manifest entry: `CountryLevel`, markers and all.
+    { label: "a country with a map", provinces: PE_FILE, projection: PE_ENTRY, hasMap: true },
+  ];
+
+  /**
+   * The list's own controls: real `<button>` elements, never the markers.
+   *
+   * The distinction is load-bearing on the branch with a map, where §5.3.1
+   * announces every place a SECOND time as an SVG `<g role="button">` with the
+   * same accessible name. A count taken over `getAllByRole("button")` would
+   * therefore still reach 200 with the list deleted outright — which is
+   * exactly the mutation this block failed to catch — so what is counted is
+   * the tag, and the tag is what §5.2 calls the spine.
+   */
+  function listChips(container: HTMLElement): HTMLButtonElement[] {
+    return [...container.querySelectorAll("button")];
   }
 
-  test("every place in an open country is reachable by keyboard", () => {
-    renderMap({ country: "PE", topology: null, places: peruvianShard() });
-
-    for (const button of screen.getAllByRole("button", { name: /^Show all/ })) {
-      fireEvent.click(button);
+  describe.each(BRANCHES)("$label", ({ provinces, projection, hasMap }) => {
+    function renderCountry(places: MapPlace[]) {
+      const rendered = renderMap({ country: "PE", topology: null, provinces, projection, places });
+      // Which branch was taken, asserted rather than assumed. A `provinces`
+      // value that stopped parsing — or a dispatcher that stopped routing on
+      // it — would drop this case silently back onto the list-only fallback
+      // and pass every assertion below, which is precisely how the block lost
+      // its coverage of the map in the first place.
+      expect(screen.queryAllByRole("group", { name: "Map of Peru" })).toHaveLength(hasMap ? 1 : 0);
+      return rendered;
     }
 
-    const reachable = screen
-      .getAllByRole("button")
-      .filter((el) => el.getAttribute("tabindex") !== "-1");
-    expect(reachable.filter((el) => /^City \d+$/.test(el.textContent ?? ""))).toHaveLength(200);
-  });
+    test("every place in an open country is reachable by keyboard", () => {
+      const { container } = renderCountry(peruvianShard());
 
-  test("every place is reachable by filtering, without expanding anything", () => {
-    renderMap({ country: "PE", topology: null, places: peruvianShard() });
+      // `queryAll`, so a level that renders no list at all fails on the count
+      // below rather than on this line: "there are 0 of the 200 chips" names the
+      // defect, "unable to find a Show all button" describes a symptom of it.
+      for (const button of screen.queryAllByRole("button", { name: /^Show all/ })) {
+        fireEvent.click(button);
+      }
 
-    // City 199 is past every per-group cap and is not rendered initially.
-    expect(screen.queryByRole("button", { name: "City 199" })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "City 199" } });
-    expect(screen.getByRole("button", { name: "City 199" })).toBeInTheDocument();
-  });
+      const chips = listChips(container);
+      expect(chips.filter((el) => /^City \d+$/.test(el.textContent ?? ""))).toHaveLength(200);
+      for (const chip of chips) {
+        expect(chip.getAttribute("tabindex")).not.toBe("-1");
+      }
 
-  test("no interactive control opts out of the minimum tap target", () => {
-    renderMap({
-      country: "PE", topology: null,
-      places: [place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" })],
+      // And where there is a map, all 200 markers cost ONE tab stop between
+      // them. That bound is why the list has to reach every place rather than
+      // merely duplicate a marker layer that was already tabbable: assert the
+      // reachability without it and a level could satisfy §12.2 by giving 200
+      // cities 200 tab stops, which the phase rejected.
+      const markers = [...container.querySelectorAll("[data-markers] [data-place]")];
+      expect(markers.filter((el) => el.getAttribute("tabindex") === "0").length)
+        .toBeLessThanOrEqual(1);
     });
 
-    // jsdom computes no layout, so this asserts the class contract rather
-    // than a measured box — which is what the codebase can actually check,
-    // and it still catches a control shipped without the token.
-    for (const el of [...screen.getAllByRole("button"), screen.getByRole("searchbox")]) {
-      expect(el.className).toContain("min-h-[var(--tap-min)]");
-    }
+    test("every place is reachable by filtering, without expanding anything", () => {
+      renderCountry(peruvianShard());
+      // By ACCESSIBLE NAME, since §12.2 is an accessibility criterion — but
+      // narrowed to the list, because on the branch with a map the marker
+      // carries the same name and is present from the start.
+      const chip = (name: string) =>
+        screen.queryAllByRole("button", { name }).find((el) => el.tagName === "BUTTON") ?? null;
+
+      // City 199 is past every per-group cap and is not rendered initially.
+      expect(chip("City 199")).toBeNull();
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "City 199" } });
+      expect(chip("City 199")).not.toBeNull();
+    });
+
+    test("no interactive control opts out of the minimum tap target", () => {
+      // One place, so the map branch has no neighbour to crowd its marker:
+      // §5.3.2's cap is what a crowded target trades away, and this test is
+      // about the size a target reaches when nothing is capping it.
+      const { container } = renderCountry([
+        place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima", lon: -78, lat: -12 }),
+      ]);
+
+      // jsdom computes no layout, so this asserts the class contract rather
+      // than a measured box — which is what the codebase can actually check,
+      // and it still catches a control shipped without the token.
+      for (const el of [...listChips(container), screen.getByRole("searchbox")]) {
+        expect(el.className).toContain("min-h-[var(--tap-min)]");
+      }
+
+      // A marker's target is not a class: it is a transparent circle sized in
+      // viewBox units from the same `--tap-min` token (§5.3.2), so the map half
+      // of the criterion is asserted in the units the map draws in. That the
+      // radius really is 44 CSS px is pinned against the token and the viewBox
+      // as literals in `CountryLevel.test.tsx`; what is claimed HERE is that a
+      // marker on this branch gets the whole of it — a single place has no
+      // neighbour, so `nonOverlappingRadii` caps nothing.
+      for (const marker of container.querySelectorAll("[data-markers] [data-place]")) {
+        const hit = Number(marker.querySelector("circle[data-hit]")?.getAttribute("r"));
+        expect(hit).toBeGreaterThanOrEqual(TAP_MIN_R_FALLBACK);
+      }
+    });
   });
 });
