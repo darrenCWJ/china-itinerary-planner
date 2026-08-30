@@ -7,15 +7,19 @@ import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specifi
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
+import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
+import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
 import { CountryPlaceList } from "./CountryPlaceList";
 import {
   buildFitProjection,
   createHoverReporter,
   makeProjector,
+  transformForFeatures,
   MAP_VIEW_H,
   MAP_VIEW_W,
+  ZOOM_MS,
   type FittedProjection,
   type HoverPos,
 } from "./mapShared";
@@ -27,10 +31,15 @@ import { SelectedPlaceCard } from "./SelectedPlaceCard";
  *
  * A separate file from `ChinaLevel` rather than a generalisation of it, and
  * deliberately: `ChinaLevel` carries the seven curated regions, the nine-dash
- * line and the region zoom, all of which are L3's problem (PR5) and none of
- * which any other country has. §9.5 requires China's rendered output to be
- * byte-identical across this phase, and the cheapest way to guarantee that is
- * for this work to never touch the code path that draws it.
+ * line and China's own region zoom, none of which any other country has. §9.5
+ * requires China's rendered output to be byte-identical across this phase, and
+ * the cheapest way to guarantee that is for this work to never touch the code
+ * path that draws it.
+ *
+ * This level now has a region zoom of its own, and that is convergence rather
+ * than duplication: `regionSchemeFor` answers "what are this country's regions"
+ * for all 246, and China's seven are one of its answers. What is not shared is
+ * the DRAWING, which is the half §9.5 pins.
  *
  * Four things here are load-bearing.
  *
@@ -102,14 +111,21 @@ const VIEW_BOX: ViewBox = [
 ];
 
 /**
- * Marker geometry, in viewBox units at country level.
+ * Marker geometry, in viewBox units **at `k` = 1** — which is to say, the
+ * number each of these is meant to be on screen.
  *
- * Plain numbers rather than `x / k` because this level has no zoom transform:
- * `k` is 1 everywhere here, exactly as it is for `ChinaLevel`'s unzoomed
- * curated radius of 7. PR5 adds the province zoom, and every one of these
- * becomes a division the moment it does — that is the discipline that keeps
- * visual weight scale-invariant, and the reason they are named constants
- * rather than literals scattered through the JSX.
+ * Every one of them is written `/ k` at its use site, and that is not
+ * decoration. The province zoom magnifies the whole group by `k`, so a
+ * constant left undivided is drawn over `k` times as many CSS pixels: at the
+ * ceiling of 5 a 0.7-unit province border is a 3.5-pixel one, and the map
+ * dissolves into a handful of fat strokes exactly as `MAX_ZOOM_K`'s docblock
+ * warns. Dividing here is what makes visual weight scale-invariant, and it is
+ * why these are named constants rather than literals scattered through the JSX
+ * — a literal is a place a `/ k` can go missing without anyone noticing.
+ *
+ * `CountryLevel.test.tsx`'s "every stroke, radius and font divides by k" holds
+ * the whole set to that ratio by rendering the map twice, so a constant added
+ * later without one fails there rather than on someone's screen.
  */
 const UNIT_STROKE = 0.7;
 const OUTLINE_STROKE = 1.2;
@@ -161,10 +177,13 @@ export const TAP_MIN_PX = 44;
  * The narrower the screen the harder that cap bites, which is the trade §5.2's
  * list is there to make acceptable.
  *
- * Unscaled for the reason the marker constants above are: `k` is 1 at country
- * level. PR5's province zoom divides this one too — a magnified map draws the
- * same radius over `k` times as many CSS pixels, so `/ k` is what keeps the
- * target 44px rather than 44k.
+ * At `k` = 1, for the reason the marker constants above are, and divided by
+ * `k` at its use site like every one of them: a magnified map draws the same
+ * radius over `k` times as many CSS pixels, so `/ k` is what keeps the target
+ * 44px rather than 44k. It is the MEASUREMENT that is divided —
+ * `tapTargetRadius(renderedWidth) / k`, never `TAP_MIN_R_FALLBACK / k` —
+ * because a zoomed phone needs three times the radius a zoomed desktop does,
+ * exactly as an unzoomed one does.
  */
 export function tapTargetRadius(renderedWidth: number): number {
   return (TAP_MIN_PX / 2) * (MAP_VIEW_W / renderedWidth);
@@ -273,7 +292,7 @@ type UnitFeature = GeoJSON.Feature<GeoJSON.Geometry, UnitProps>;
  * one of its units needs to frame it.
  *
  * The first three are what the JSX consumes. The last two used to be computed
- * here and thrown away, and PR5's province zoom is what wants them back: they
+ * here and thrown away, and the province zoom is what wants them back: they
  * are the pair `transformForFeatures` takes — a generator, and the features to
  * frame — and they fall out of the same pass that produced the `d` strings.
  * `pathGen` turns a unit into the path beside it; `pathGen.bounds(feature)`
@@ -577,6 +596,22 @@ export interface CountryLevelProps {
   month: number;
   routeIds: string[];
   /**
+   * The region this level is framed on — a `regionSchemeFor` group id — or
+   * null for the whole country.
+   *
+   * `RegionId` and deliberately not `ChinaRegion`. `tsconfig.json` does not set
+   * `noUncheckedIndexedAccess`, so widening that union would let a non-China
+   * key index `REGION_MONTHS` and `REGION_META` with no compile error and a
+   * TypeError at render; `lib/regionScheme.ts` sets out the whole argument.
+   *
+   * Optional, unlike `readOnly`, and the difference is real rather than
+   * stylistic. `readOnly` has to be stated because a caller passing a noop
+   * toggle silently MEANT it and got the opposite; here no caller can
+   * accidentally mean "zoomed", and the whole country is what every picker
+   * shows until someone asks for less.
+   */
+  region?: RegionId | null;
+  /**
    * The level draws a plan rather than building one: no marker is a control,
    * and tapping one opens nothing.
    *
@@ -599,6 +634,7 @@ export function CountryLevel({
   selected,
   month,
   routeIds,
+  region = null,
   readOnly = false,
   onTogglePlace,
   onHoverPlace,
@@ -607,14 +643,7 @@ export function CountryLevel({
   const { name, code } = getCountry(country);
   const label = name || code || "this country";
 
-  /**
-   * The `--tap-min` ceiling for THIS rendering, not for the one the widest
-   * layout would have produced. The container is the SVG's own parent and the
-   * SVG is `w-full`, so its width is the width the 860-unit viewBox is
-   * stretched across.
-   */
   const renderedWidth = useRenderedWidth(containerRef);
-  const tapMinR = renderedWidth === null ? TAP_MIN_R_FALLBACK : tapTargetRadius(renderedWidth);
 
   /**
    * Once per topology, and on nothing else.
@@ -628,6 +657,57 @@ export function CountryLevel({
   const view = useMemo(() => buildCountryView(provinces, projection), [provinces, projection]);
 
   const { units, outline, project } = view;
+
+  /**
+   * The zoomable groups this country offers, and the join between a group id
+   * and the geometry it names.
+   *
+   * `regionSchemeFor` rather than a lookup straight into `selectableFeatures`,
+   * because a group is not always a unit: China's seven regions are a level
+   * ABOVE admin-1 (§6.4) and "East" is five provinces. For the other 245
+   * countries the list is one id long and the two are the same thing.
+   *
+   * Keyed on the province file, so it costs one pass per country. §6.6's
+   * single-unit gate falls out of it for free: a country with one selectable
+   * unit has no groups, so no region id can match and the map stays where it
+   * was.
+   */
+  const scheme = useMemo(() => regionSchemeFor(country, provinces.units), [country, provinces]);
+
+  /**
+   * The zoom itself, and the identity transform until one is asked for.
+   *
+   * Three ways to end up unzoomed, and all three are a map rather than a
+   * blank: no region, a region no group answers to, and a group whose units
+   * carry no drawable geometry. The first is stated here because "nothing is
+   * selected" is not the same fact as "the filter matched nothing" and should
+   * not read as one. The other two both arrive at `transformForFeatures`,
+   * which is where §6.2's guard lives — 43 committed `cityProvince` values
+   * name a unit `regionSchemeFor` omits, so a lookup that misses is a case
+   * this level actually sees.
+   *
+   * `view` in the deps rather than `view.pathGen` and `view.selectableFeatures`
+   * separately: they are two fields of one memoised object and cannot change
+   * apart from each other.
+   */
+  const { k, tx, ty } = useMemo(() => {
+    if (!region) return IDENTITY_TRANSFORM;
+    const group = scheme.groups.find((candidate) => candidate.id === region);
+    const features = (group?.unitIds ?? [])
+      .map((id) => view.selectableFeatures.get(id))
+      .filter((shape) => shape !== undefined);
+    return transformForFeatures(view.pathGen, features);
+  }, [region, scheme, view]);
+
+  /**
+   * The `--tap-min` ceiling for THIS rendering, not for the one the widest
+   * layout would have produced. The container is the SVG's own parent and the
+   * SVG is `w-full`, so its width is the width the 860-unit viewBox is
+   * stretched across — and `k` is how much of that width the zoom is
+   * currently spending on one province.
+   */
+  const tapMinR =
+    (renderedWidth === null ? TAP_MIN_R_FALLBACK : tapTargetRadius(renderedWidth)) / k;
 
   const routePoints = useMemo(
     () =>
@@ -652,12 +732,15 @@ export function CountryLevel({
    * neighbour's — half the gap, so two circles can touch but never overlap.
    *
    * `Infinity` as the ceiling because the ceiling is not known here: it is
-   * `tapMinR`, which changes with the measured width, and folding it in would
-   * make this O(n²) pass re-run on every frame of a window drag. Half the gap
-   * is a property of where the cities are and nothing else, so it is computed
-   * once per country and the width only chooses where to clip it. A lone place
-   * has no neighbour and comes back `Infinity`, which `Math.min` below reads
-   * correctly as "no cap at all".
+   * `tapMinR`, which changes with the measured width AND with the zoom, and
+   * folding either in would make this O(n²) pass re-run on every frame of a
+   * window drag or a province zoom. Half the gap is a property of where the
+   * cities are and nothing else — a zoom magnifies the frame the markers were
+   * projected into rather than moving them within it, so the gap between two
+   * of them is the same number of viewBox units at every `k`. It is therefore
+   * computed once per country, and the width and the zoom only choose where to
+   * clip it. A lone place has no neighbour and comes back `Infinity`, which
+   * `Math.min` below reads correctly as "no cap at all".
    *
    * The cap is what `lib/dragLayer.ts` was written for, applied to cities
    * rather than micro-states: two overlapping transparent circles let paint
@@ -683,14 +766,21 @@ export function CountryLevel({
    * would make the dot's edge the target's edge, which is the failure the
    * hit-area-first ordering exists to prevent. Where two dots are closer than
    * their own radii they already overlapped before this existed.
+   *
+   * Two of the three terms are divided by `k` and one is not, which is the
+   * whole of the clamp-after discipline in one line. The dot is a drawn length
+   * and the tap target is a pixel promise, so both shrink as the map is
+   * magnified; `caps` is a gap between two projected points, which the zoom
+   * does not change. This memo is O(n) and may re-run per zoom; the O(n²) one
+   * above must not.
    */
   const marks = useMemo(
     () =>
       points.map((point, index) => {
-        const r = radiusFor(places[index]);
+        const r = radiusFor(places[index]) / k;
         return { ...point, r, hitR: Math.max(r, Math.min(caps[index], tapMinR)) };
       }),
-    [points, caps, places, tapMinR]
+    [points, caps, places, tapMinR, k]
   );
 
   /**
@@ -745,157 +835,188 @@ export function CountryLevel({
           role="group"
           aria-label={`Map of ${label}`}
         >
-          <g data-units="">
-            {units.map((unit) => (
-              <path
-                key={unit.id}
-                // Only the selectable ones are marked, because this is the
-                // attribute PR5 hangs the province zoom on: a unit that is not
-                // a subdivision must not become one by being drawn.
-                data-unit={unit.selectable ? unit.id : undefined}
-                d={unit.d}
-                fill="var(--surf-2)"
-                stroke="var(--paper)"
-                strokeWidth={UNIT_STROKE}
-              >
-                {unit.selectable && unit.label && <title>{unit.label}</title>}
-              </path>
-            ))}
-          </g>
-
-          {/* The national border, over the seams the units drew. */}
-          {outline && (
-            <path
-              data-outline=""
-              d={outline}
-              fill="none"
-              stroke="var(--ink-2)"
-              strokeOpacity={0.55}
-              strokeWidth={OUTLINE_STROKE}
-              className="pointer-events-none"
-              aria-hidden
-            />
-          )}
-
           {/*
-            Suggested route, in neutral ink for the reason `ChinaLevel` gives:
-            at strokeOpacity 0.75 no fixed colour clears 3:1 against both
-            papers, and an accent-coloured line would read as the same mark as
-            the `--seal` selection ring beside it.
-          */}
-          {routePoints.length >= 2 && (
-            <polyline
-              points={routePoints.map(([x, y]) => `${x},${y}`).join(" ")}
-              fill="none"
-              stroke="var(--ink-1)"
-              strokeWidth={ROUTE_STROKE}
-              strokeDasharray="7 5"
-              strokeLinecap="round"
-              opacity={0.75}
-              className="pointer-events-none"
-            />
-          )}
+            The province zoom, and the only thing in this file that moves the
+            map. Everything drawn is inside it, so a zoom frames the provinces
+            and the markers together; a marker layer left outside would stay
+            put while the country slid under it.
 
-          {/*
-            Markers, each one a button on a roving tabindex (§5.3.1) rather
-            than the `aria-hidden` backdrop they were, or the tab stop per
-            curated marker `ChinaLevel` gives them. Every place is announced
-            twice — here and in the list — and that is the right trade now
-            that both are operable: the list is the spine, and this layer adds
-            exactly one stop to the tab order however many cities it draws.
+            Unconditional, and identity until a region is chosen. A wrapper
+            mounted only while zoomed would remount every marker under it on
+            each zoom — taking `useMarkerSelection`'s node refs, the roving tab
+            stop and whatever the caret was on with them — and would give the
+            transition nothing to animate from, since a node created with its
+            final transform has no previous value to leave.
 
-            "Now that both are operable" is the whole of it, and `readOnly` is
-            the case where only one of them is: the marker keeps its dot, its
-            label and its hover, and drops every attribute that claimed it was
-            a control.
+            A CSS transform rather than the SVG attribute, because it is the
+            one that transitions, and `transformOrigin: 0 0` because the
+            translate is computed about the viewBox origin. `ChinaLevel` frames
+            its regions exactly this way.
           */}
-          <g data-markers="">
-            {places.map((place, index) => {
-              const { x, y, r, hitR } = marks[index];
-              const isSelected = selected.includes(place.id);
-              const stopIndex = routeIds.indexOf(place.id);
-              return (
-                <g
-                  key={place.id}
-                  data-place={place.id}
-                  {...markerProps(place, index)}
-                  onMouseEnter={(e) => reportHover(place, e)}
-                  onMouseMove={(e) => reportHover(place, e)}
-                  onMouseLeave={() => reportHover(null)}
+          <g
+            data-zoom=""
+            style={{
+              transform: `translate(${tx}px, ${ty}px) scale(${k})`,
+              transformOrigin: "0 0",
+              transition: `transform ${ZOOM_MS}ms cubic-bezier(0.33, 1, 0.68, 1)`,
+            }}
+          >
+            <g data-units="">
+              {units.map((unit) => (
+                <path
+                  key={unit.id}
+                  // Only the selectable ones are marked, and it is the same
+                  // `selectable` flag `selectableFeatures` is indexed off, so
+                  // what is marked here and what a region can be zoomed to are
+                  // one decision: a unit that is not a subdivision must not
+                  // become one by being drawn.
+                  data-unit={unit.selectable ? unit.id : undefined}
+                  d={unit.d}
+                  fill="var(--surf-2)"
+                  stroke="var(--paper)"
+                  strokeWidth={UNIT_STROKE / k}
                 >
-                  {/* Hit area first, so the visible dot is never the target's
-                      edge — the ordering `WorldMap` establishes. */}
-                  <circle data-hit="" cx={x} cy={y} r={hitR} fill="transparent" />
-                  {place.id === focusedId && (
-                    // Dashed, so keyboard focus stays distinguishable from
-                    // selection when they land on the same place — the same
-                    // distinction `worldLevelShared`'s `strokeFor` draws.
+                  {unit.selectable && unit.label && <title>{unit.label}</title>}
+                </path>
+              ))}
+            </g>
+
+            {/* The national border, over the seams the units drew. */}
+            {outline && (
+              <path
+                data-outline=""
+                d={outline}
+                fill="none"
+                stroke="var(--ink-2)"
+                strokeOpacity={0.55}
+                strokeWidth={OUTLINE_STROKE / k}
+                className="pointer-events-none"
+                aria-hidden
+              />
+            )}
+
+            {/*
+              Suggested route, in neutral ink for the reason `ChinaLevel` gives:
+              at strokeOpacity 0.75 no fixed colour clears 3:1 against both
+              papers, and an accent-coloured line would read as the same mark as
+              the `--seal` selection ring beside it.
+            */}
+            {routePoints.length >= 2 && (
+              <polyline
+                points={routePoints.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill="none"
+                stroke="var(--ink-1)"
+                strokeWidth={ROUTE_STROKE / k}
+                strokeDasharray={`${7 / k} ${5 / k}`}
+                strokeLinecap="round"
+                opacity={0.75}
+                className="pointer-events-none"
+              />
+            )}
+
+            {/*
+              Markers, each one a button on a roving tabindex (§5.3.1) rather
+              than the `aria-hidden` backdrop they were, or the tab stop per
+              curated marker `ChinaLevel` gives them. Every place is announced
+              twice — here and in the list — and that is the right trade now
+              that both are operable: the list is the spine, and this layer adds
+              exactly one stop to the tab order however many cities it draws.
+
+              "Now that both are operable" is the whole of it, and `readOnly` is
+              the case where only one of them is: the marker keeps its dot, its
+              label and its hover, and drops every attribute that claimed it was
+              a control.
+            */}
+            <g data-markers="">
+              {places.map((place, index) => {
+                const { x, y, r, hitR } = marks[index];
+                const isSelected = selected.includes(place.id);
+                const stopIndex = routeIds.indexOf(place.id);
+                return (
+                  <g
+                    key={place.id}
+                    data-place={place.id}
+                    {...markerProps(place, index)}
+                    onMouseEnter={(e) => reportHover(place, e)}
+                    onMouseMove={(e) => reportHover(place, e)}
+                    onMouseLeave={() => reportHover(null)}
+                  >
+                    {/* Hit area first, so the visible dot is never the target's
+                        edge — the ordering `WorldMap` establishes. */}
+                    <circle data-hit="" cx={x} cy={y} r={hitR} fill="transparent" />
+                    {place.id === focusedId && (
+                      // Dashed, so keyboard focus stays distinguishable from
+                      // selection when they land on the same place — the same
+                      // distinction `worldLevelShared`'s `strokeFor` draws.
+                      <circle
+                        data-focus-ring=""
+                        cx={x}
+                        cy={y}
+                        r={r + FOCUS_RING / k}
+                        fill="none"
+                        stroke="var(--ink-0)"
+                        strokeWidth={1.2 / k}
+                        strokeDasharray={`${3 / k} ${2 / k}`}
+                        className="pointer-events-none"
+                      />
+                    )}
+                    {isSelected && (
+                      <circle
+                        data-selection-ring=""
+                        cx={x}
+                        cy={y}
+                        r={r + SELECTION_RING / k}
+                        fill="none"
+                        stroke="var(--seal)"
+                        strokeWidth={2 / k}
+                        opacity={0.9}
+                      />
+                    )}
                     <circle
-                      data-focus-ring=""
+                      data-dot=""
                       cx={x}
                       cy={y}
-                      r={r + FOCUS_RING}
-                      fill="none"
-                      stroke="var(--ink-0)"
-                      strokeWidth={1.2}
-                      strokeDasharray="3 2"
-                      className="pointer-events-none"
-                    />
-                  )}
-                  {isSelected && (
-                    <circle
-                      data-selection-ring=""
-                      cx={x}
-                      cy={y}
-                      r={r + SELECTION_RING}
-                      fill="none"
-                      stroke="var(--seal)"
-                      strokeWidth={2}
-                      opacity={0.9}
-                    />
-                  )}
-                  <circle
-                    data-dot=""
-                    cx={x}
-                    cy={y}
-                    r={r}
-                    fill={FIT_COLORS[fitForPlace(place, month)]}
-                    fillOpacity={place.kind === "curated" ? 0.95 : 0.8}
-                    stroke="var(--paper)"
-                    strokeWidth={MARKER_STROKE}
-                  />
-                  {isSelected && stopIndex >= 0 && (
-                    <text
-                      x={x}
-                      y={y + (r > 5 ? 3.2 : 2.8)}
-                      textAnchor="middle"
-                      fontSize={Math.max(8, r * 1.1)}
-                      fontWeight={700}
-                      fill="var(--paper)"
-                      className="pointer-events-none"
-                    >
-                      {stopIndex + 1}
-                    </text>
-                  )}
-                  {labelFor(place) && (
-                    <text
-                      x={x}
-                      y={y - r - 3}
-                      textAnchor="middle"
-                      fontSize={11}
-                      fontWeight={600}
-                      fill="var(--ink-0)"
+                      r={r}
+                      fill={FIT_COLORS[fitForPlace(place, month)]}
+                      fillOpacity={place.kind === "curated" ? 0.95 : 0.8}
                       stroke="var(--paper)"
-                      strokeWidth={3}
-                      paintOrder="stroke"
-                      className="pointer-events-none"
-                    >
-                      {place.name}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+                      strokeWidth={MARKER_STROKE / k}
+                    />
+                    {isSelected && stopIndex >= 0 && (
+                      <text
+                        data-stop=""
+                        x={x}
+                        y={y + (r > 5 / k ? 3.2 / k : 2.8 / k)}
+                        textAnchor="middle"
+                        fontSize={Math.max(8 / k, r * 1.1)}
+                        fontWeight={700}
+                        fill="var(--paper)"
+                        className="pointer-events-none"
+                      >
+                        {stopIndex + 1}
+                      </text>
+                    )}
+                    {labelFor(place) && (
+                      <text
+                        data-label=""
+                        x={x}
+                        y={y - r - 3 / k}
+                        textAnchor="middle"
+                        fontSize={11 / k}
+                        fontWeight={600}
+                        fill="var(--ink-0)"
+                        stroke="var(--paper)"
+                        strokeWidth={3 / k}
+                        paintOrder="stroke"
+                        className="pointer-events-none"
+                      >
+                        {place.name}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </g>
           </g>
         </svg>
 

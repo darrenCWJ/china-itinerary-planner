@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ProjectionEntry } from "@/lib/countryProjection";
-import type { ProvinceFile } from "@/lib/provinceTopology";
+import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
+import type { RegionId } from "@/lib/regionScheme";
 import {
   buildCountryView,
   CountryLevel,
@@ -10,8 +11,8 @@ import {
   TAP_MIN_R_FALLBACK,
   tapTargetRadius,
 } from "./CountryLevel";
-import { PE_ENTRY, PE_FILE } from "./countryFixture";
-import { MAP_VIEW_W } from "./mapShared";
+import { PE_ENTRY, PE_FILE, PE_TOPOLOGY } from "./countryFixture";
+import { MAP_VIEW_W, ZOOM_MS } from "./mapShared";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -23,6 +24,34 @@ import type { MapPlace } from "./mapTypes";
  * asserted against both renderers now, and one copy of the topology is what
  * keeps the two from testing different countries under the same name.
  */
+
+/**
+ * A passthrough spy over the one O(n²) pass this file runs.
+ *
+ * `nonOverlappingRadii` is deliberately called with `Infinity` so the cap it
+ * computes is a fact about where the cities are and about nothing else — not
+ * about the measured width, and not about the zoom. That is what lets its
+ * ~560k distance checks run once per country instead of once per frame, and it
+ * is invisible in the DOM: a version that folded `k` in would produce a
+ * slightly different radius and no other trace at all. The spy is what makes
+ * the ceiling and the call count assertable; it forwards to the real function,
+ * so every other test in this file sees the module unchanged.
+ */
+const { capCall } = vi.hoisted(() => ({ capCall: vi.fn() }));
+
+vi.mock("@/lib/dragLayer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dragLayer")>();
+  return {
+    ...actual,
+    nonOverlappingRadii: (
+      points: Parameters<typeof actual.nonOverlappingRadii>[0],
+      ceiling: number
+    ) => {
+      capCall(ceiling);
+      return actual.nonOverlappingRadii(points, ceiling);
+    },
+  };
+});
 
 function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlace {
   return {
@@ -560,13 +589,23 @@ describe("CountryLevel view", () => {
     // The dependency array is the whole of this memo's policy, and adding the
     // zoom to it is the mistake returning more invites: the decode, the
     // `merge()` and one `pathGen` call per unit would re-run on every region
-    // click to produce the same four paths. `provinces.units` is read exactly
-    // once per build, so a getter counts the builds.
-    let builds = 0;
+    // click to produce the same four paths.
+    //
+    // `provinces.topology` is read by `buildCountryView` and by nothing else,
+    // so a getter on it counts the builds exactly. `provinces.units` is read
+    // once by that build — for the id-to-unit join — and once by
+    // `regionSchemeFor`, which is the other per-country pass this level runs;
+    // counting both is what pins that a zoom re-runs NEITHER of them.
+    let decodes = 0;
+    let unitReads = 0;
     const counted: ProvinceFile = {
       ...PE_FILE,
+      get topology() {
+        decodes++;
+        return PE_FILE.topology;
+      },
       get units() {
-        builds++;
+        unitReads++;
         return PE_FILE.units;
       },
     };
@@ -583,10 +622,10 @@ describe("CountryLevel view", () => {
     };
 
     const { rerender } = render(<CountryLevel {...props} />);
-    expect(builds).toBe(1);
+    expect(decodes).toBe(1);
+    expect(unitReads).toBe(2);
 
-    // Everything a zoom changes alongside itself. When the region prop lands
-    // (PR5) it joins this list, and not the dependency array.
+    // Everything a zoom changes alongside itself, and the zoom.
     rerender(
       <CountryLevel
         {...props}
@@ -594,9 +633,275 @@ describe("CountryLevel view", () => {
         selected={["lima"]}
         month={3}
         routeIds={["lima", "cusco"]}
+        region="PE-ISL"
       />
     );
-    expect(builds).toBe(1);
+    expect(decodes).toBe(1);
+    expect(unitReads).toBe(2);
+  });
+});
+
+/**
+ * The province zoom, and the `/ k` discipline it drags in behind it (§6.1).
+ *
+ * Until now this level applied no transform at all: `k` was implicitly 1, and
+ * every stroke, radius and font was written as the plain number it wanted to be
+ * on screen. A zoom makes that assumption false everywhere at once. The group
+ * is magnified by `k`, so a constant left undivided is drawn over `k` times as
+ * many CSS pixels — a 0.7-unit border becomes a 2.4-pixel one, and the 44px tap
+ * target becomes 44k.
+ *
+ * So the property asserted here is ONE property, not fifteen: **everything
+ * except the projected position divides by `k`.** The positions do not, because
+ * the transform is what moves them; every length, radius, dash and font does,
+ * because the transform is what magnifies them. The test renders the same map
+ * twice — once unzoomed and once framed on one province — and holds every
+ * attribute to that ratio, so a constant added later without a `/ k` fails here
+ * rather than on someone's screen.
+ *
+ * `PE-ISL` is the region under test because it is the only one of the three
+ * that magnifies. The two mainland units are 2° wide and 4° tall inside a frame
+ * that is 6° by 4°, so latitude constrains their fit and `k` lands just under 1
+ * — arithmetically correct, and useless for telling `x` from `x / k`. The
+ * island is 1° square and reaches 3.46.
+ */
+describe("CountryLevel province zoom", () => {
+  /**
+   * `PE-ISL`'s transform, hand-checkable from the bounds `CountryLevel view`
+   * pins: the island measures [[-4470, 2544.726…], [-4330, 2702.562…]], so
+   * `k = 0.88 * 620 / 157.836…`, `tx = 430 - k * -4400` and
+   * `ty = 310 - k * 2623.644…`. Literals rather than a call to
+   * `transformForFeatures`, which would be the component's own arithmetic
+   * grading its own homework.
+   */
+  const ISL_K = 3.456740277026829;
+  const ISL_TX = 15639.657218918048;
+  const ISL_TY = -8759.25772396361;
+
+  /**
+   * Two places, chosen so one render exercises every scaled attribute: the
+   * curated one is labelled and its 7-unit dot clears the `r > 5` branch of the
+   * stop number's offset, the county one does neither and is 4.5. Both are
+   * selected and both are route stops, which is what draws the selection rings,
+   * the stop numbers and the route line.
+   */
+  const ZOOM_PLACES = [
+    place({ id: "cur", name: "Machu Picchu", kind: "curated", lon: -77.5, lat: -12 }),
+    place({ id: "cty", name: "Nazca", level: "county", lon: -73, lat: -12 }),
+  ];
+
+  function num(el: Element | null, attr: string): number {
+    if (!el) throw new Error(`no element carrying ${attr}`);
+    const raw = el.getAttribute(attr);
+    if (raw === null) throw new Error(`no ${attr} on ${el.nodeName}`);
+    return Number(raw);
+  }
+
+  function dash(el: Element | null, attr: string): [number, number] {
+    if (!el) throw new Error(`no element carrying ${attr}`);
+    const [on, off] = (el.getAttribute(attr) ?? "").trim().split(/\s+/).map(Number);
+    return [on, off];
+  }
+
+  /** Every length the zoom has to divide, read off one rendered map. */
+  function lengths(container: HTMLElement): Record<string, number> {
+    const q = (selector: string) => container.querySelector(selector);
+    const dot = circleFor(container, "cur", "data-dot");
+    const cy = num(dot, "cy");
+    const label = q('[data-place="cur"] text[data-label]');
+    const stop = q('[data-place="cur"] text[data-stop]');
+    const route = q("polyline");
+    const [routeOn, routeOff] = dash(route, "stroke-dasharray");
+    const focus = circleFor(container, "cur", "data-focus-ring");
+    const [focusOn, focusOff] = dash(focus, "stroke-dasharray");
+    const ring = circleFor(container, "cur", "data-selection-ring");
+    return {
+      unitStroke: num(q("[data-units] path"), "stroke-width"),
+      outlineStroke: num(q("[data-outline]"), "stroke-width"),
+      routeStroke: num(route, "stroke-width"),
+      routeDashOn: routeOn,
+      routeDashOff: routeOff,
+      dotR: num(dot, "r"),
+      dotStroke: num(dot, "stroke-width"),
+      hitR: num(circleFor(container, "cur", "data-hit"), "r"),
+      focusR: num(focus, "r"),
+      focusStroke: num(focus, "stroke-width"),
+      focusDashOn: focusOn,
+      focusDashOff: focusOff,
+      selectionR: num(ring, "r"),
+      selectionStroke: num(ring, "stroke-width"),
+      labelFont: num(label, "font-size"),
+      labelStroke: num(label, "stroke-width"),
+      // The label sits above the dot by the dot's own radius plus a gap, so the
+      // LIFT is the scaled quantity and the `y` it produces is not.
+      labelLift: cy - num(label, "y"),
+      stopFont: num(stop, "font-size"),
+      stopDrop: num(stop, "y") - cy,
+    };
+  }
+
+  /** The same map, framed on `region`, with the caret on the curated marker. */
+  function renderZoom(region: RegionId | null) {
+    const rendered = renderLevel({
+      places: ZOOM_PLACES,
+      selected: ["cur", "cty"],
+      routeIds: ["cur", "cty"],
+      region,
+    });
+    // The focus ring is drawn only for the marker the caret is on, and it is
+    // one of the radii under test.
+    act(() => markers(rendered.container)[0].focus());
+    return rendered;
+  }
+
+  test("draws one transform group, and applies no transform until a region is selected", () => {
+    const { container, rerender, props } = renderLevel();
+
+    const zoom = container.querySelector<SVGGElement>("[data-zoom]");
+    expect(zoom).not.toBeNull();
+    expect(container.querySelectorAll("[data-zoom]")).toHaveLength(1);
+    // Everything the map draws is inside it, or a zoom would frame the
+    // provinces and leave the markers where they were.
+    expect(zoom!.querySelector("[data-units]")).not.toBeNull();
+    expect(zoom!.querySelector("[data-outline]")).not.toBeNull();
+    expect(zoom!.querySelector("[data-markers]")).not.toBeNull();
+    expect(zoom!.style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(zoom!.getAttribute("style")).toContain(`transform ${ZOOM_MS}ms`);
+
+    rerender(<CountryLevel {...props} region="PE-ISL" />);
+
+    // The SAME node, not a replacement. That is why the group is
+    // unconditional: a wrapper mounted only while zoomed would give the
+    // transition nothing to animate from, and would unmount and remount every
+    // marker under it on each zoom — taking the roving tabindex's node refs and
+    // whatever the caret was on with them.
+    const zoomed = container.querySelector<SVGGElement>("[data-zoom]");
+    expect(zoomed).toBe(zoom);
+    expect(zoomed!.style.transform).toBe(`translate(${ISL_TX}px, ${ISL_TY}px) scale(${ISL_K})`);
+
+    // A region no group answers to is an unzoomed map rather than a vanished
+    // one. `PE-XXX` is real geometry and `sel: 0`, so `regionSchemeFor` omits
+    // it — which is exactly the shape of the 43 committed `cityProvince` values
+    // that name a unit nobody can zoom to.
+    rerender(<CountryLevel {...props} region="PE-XXX" />);
+    expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).toBe(
+      "translate(0px, 0px) scale(1)"
+    );
+  });
+
+  test("a country with one selectable unit cannot be zoomed at all", () => {
+    // §6.6 D10, arriving at the transform rather than at the chrome. At one
+    // selectable unit `regionSchemeFor` returns no groups, so the id of that
+    // very unit names nothing zoomable — and the difference is only visible
+    // because this level resolves a region through the SCHEME rather than
+    // straight into `selectableFeatures`. A group is not always a unit (China's
+    // are five provinces each), and a unit is not always a group.
+    const lone = parseProvinceTopology({
+      country: "PE",
+      generatedAt: "2026-08-30T00:00:00.000Z",
+      idKey: "adm1_code",
+      topology: {
+        ...PE_TOPOLOGY,
+        objects: {
+          provinces: {
+            ...PE_TOPOLOGY.objects.provinces,
+            geometries: PE_TOPOLOGY.objects.provinces.geometries.map((geometry) =>
+              geometry.id === "PE-LIM"
+                ? geometry
+                : { ...geometry, properties: { ...geometry.properties, sel: 0 } }
+            ),
+          },
+        },
+      },
+      cityProvince: {},
+    });
+
+    const { container } = renderLevel({ provinces: lone, region: "PE-LIM" });
+
+    // The unit is real, drawn and offered — so the identity transform below is
+    // the gate answering, not the geometry having gone missing.
+    const offered = [...container.querySelectorAll("[data-unit]")].map((el) =>
+      el.getAttribute("data-unit")
+    );
+    expect(offered).toEqual(["PE-LIM"]);
+    expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).toBe(
+      "translate(0px, 0px) scale(1)"
+    );
+  });
+
+  test("every stroke, radius and font divides by k", () => {
+    const flat = lengths(renderZoom(null).container);
+    cleanup();
+    const { container } = renderZoom("PE-ISL");
+    const zoomed = lengths(container);
+
+    for (const key of Object.keys(flat)) {
+      // Positive, so `x / k` is a claim about a real length rather than about a
+      // zero that divides to a zero whatever the implementation does.
+      expect(flat[key]).toBeGreaterThan(0);
+      expect(zoomed[key]).toBeCloseTo(flat[key] / ISL_K, 9);
+    }
+
+    // And the one family that must NOT scale. The markers stay where the
+    // projection put them — `x(lon) = 10 + (lon + 78) * 140`, the frame
+    // `CountryLevel view` pins — and the transform is what moves them.
+    expect(markerX(container, "cur")).toBeCloseTo(10 + 0.5 * 140, 6);
+    expect(markerX(container, "cty")).toBeCloseTo(10 + 5 * 140, 6);
+  });
+
+  test("the measured tap target stays 44 CSS px when zoomed", () => {
+    // Plan 3 made the radius a MEASUREMENT rather than a constant, so the zoom
+    // has to divide the measurement — `tapTargetRadius(width) / k`, never
+    // `TAP_MIN_R_FALLBACK / k`. At 390px the two differ by a factor of three,
+    // which is the whole reason the measurement exists.
+    for (const width of [1120, 390]) {
+      stubRenderedWidth(width);
+      const { container } = renderLevel({ region: "PE-ISL" });
+
+      for (const id of ["lima", "cusco", "isla"]) {
+        expect(hitR(container, id)).toBeCloseTo(tapTargetRadius(width) / ISL_K, 9);
+        // The same claim in WCAG 2.5.8's own units: the radius the component
+        // chose, magnified by the zoom, over the pixels this width gives a
+        // viewBox unit.
+        expect(hitR(container, id) * ISL_K * 2 * (width / MAP_VIEW_W)).toBeCloseTo(44, 9);
+      }
+      if (width === 390) {
+        expect(hitR(container, "lima")).not.toBeCloseTo(TAP_MIN_R_FALLBACK / ISL_K, 3);
+      }
+
+      cleanup();
+      vi.restoreAllMocks();
+    }
+  });
+
+  test("does not fold k into nonOverlappingRadii", () => {
+    // The cap is half the gap between two markers IN THE FRAME THEY WERE
+    // PROJECTED INTO, and a zoom does not move them in that frame — it
+    // magnifies the frame. So the cap is zoom-independent, `Infinity` stays the
+    // ceiling, and the O(n²) pass runs once per country rather than once per
+    // zoom frame.
+    capCall.mockClear();
+    const near = [
+      place({ id: "a", name: "Barranco", lon: -76, lat: -12 }),
+      place({ id: "b", name: "Chorrillos", lon: -75.95, lat: -12 }),
+    ];
+    const { container, rerender, props } = renderLevel({ places: near });
+
+    const gap = markerX(container, "b") - markerX(container, "a");
+    expect(gap).toBeCloseTo(7, 9);
+    expect(capCall).toHaveBeenCalledTimes(1);
+    expect(capCall).toHaveBeenCalledWith(Infinity);
+
+    rerender(<CountryLevel {...props} region="PE-ISL" />);
+
+    // Not a second pass — ~560k distance checks is what one is worth on the
+    // largest shard.
+    expect(capCall).toHaveBeenCalledTimes(1);
+    // Half the gap, unchanged. Folding `k` in would have produced 1.012, below
+    // the 6.5 / k floor these prefecture dots set, so the target would have
+    // clamped to 1.880 and quietly stopped being the cap at all.
+    expect(hitR(container, "a")).toBeCloseTo(gap / 2, 9);
+    expect(hitR(container, "a")).not.toBeCloseTo(6.5 / ISL_K, 3);
   });
 });
 
