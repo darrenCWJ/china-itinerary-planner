@@ -1508,6 +1508,13 @@ export function CountryLevel({
               Rendered only when there is one, because the wrapper is
               `empty:hidden`: a row saying "no airport" would spend a line
               telling a reader something they did not ask.
+
+              And never "in Switzerland" either, though the answer really is
+              scoped to the one country whose rows `airports` carries — a
+              border city's true main airport can be across the border and
+              absent from the array. That limit is real, and it is recorded on
+              `mainAirportFor` instead of here; its docblock has the worked case
+              and the reason the copy stays clean.
             */}
             {mainAirport && (
               <p data-main-airport="">
