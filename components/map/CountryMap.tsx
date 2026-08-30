@@ -118,6 +118,17 @@ export interface CountryMapProps extends LevelProps {
   provinces: ProvinceFile | null;
   /** Its §5.4 manifest entry, or null to fall back to a fit over the units. */
   projection: ProjectionEntry | null;
+  /**
+   * The map is a VIEW of a plan rather than a picker for one — `RouteMap`
+   * (§2.1) — so `CountryLevel` draws its markers without offering to toggle
+   * anything.
+   *
+   * Deliberately not spread into the other two branches. `ChinaLevel` is
+   * frozen by §9.5 and has no card to suppress; `CountryPlaceList` is §5.2's
+   * spine and is the one control per place a read-only surface keeps, so
+   * silencing it would leave a trip's stops announced by nothing at all.
+   */
+  readOnly?: boolean;
 }
 
 export function CountryMap({
@@ -125,6 +136,7 @@ export function CountryMap({
   topology,
   provinces,
   projection,
+  readOnly = false,
   ...level
 }: CountryMapProps) {
   if (hasCuratedTopology(country)) {
@@ -143,6 +155,7 @@ export function CountryMap({
         selected={level.selected}
         month={level.month}
         routeIds={level.routeIds}
+        readOnly={readOnly}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
       />
