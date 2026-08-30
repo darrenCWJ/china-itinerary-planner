@@ -700,6 +700,36 @@ export function CountryLevel({
   const scheme = useMemo(() => regionSchemeFor(country, provinces.units), [country, provinces]);
 
   /**
+   * Whether this country has a province level to offer at all — §6.6 D10.
+   *
+   * 34 of the 246 ship exactly ONE selectable unit, so their admin-1 layer is
+   * the national outline drawn a second time: nothing to choose between, and
+   * `regionSchemeFor` makes no group out of it. Read off the scheme rather than
+   * counting `provinces.units` a second time, and deliberately not off
+   * `provinces/index.json` — the two agree for all 246 committed files
+   * (`lib/regionScheme.test.ts` pins that they do), and the one that agrees
+   * with the geometry this level is actually DRAWING is the scheme. A test
+   * fixture, a half-built country and a file that has moved on since the index
+   * was written are all cases where the index answers about a different map.
+   *
+   * What it suppresses here is the unit's NAME, and the Faroes are why that is
+   * not cosmetic. `FRO-1443` is one MultiPolygon spanning the whole
+   * archipelago, Suðuroy to Fugloy, and Natural Earth names it `Eysturoyar` —
+   * one island of eighteen, and not the one Tórshavn is on. Titling that
+   * polygon tells a reader the Faroe Islands are Eysturoy. Monaco and Puerto
+   * Rico get the merely redundant version of the same label, and all 34 are
+   * treated alike: where the province layer has nothing to divide, it says
+   * nothing. The country is still named, once, by the `<svg>`'s own aria-label.
+   *
+   * `data-unit` is NOT gated on this, and the difference is the point. That
+   * mark is §7.2's — "this polygon is a subdivision rather than territorial
+   * extent" — which stays true of a lone unit. What a lone unit is not is a
+   * place to zoom to, and the transform above already answers that through the
+   * scheme rather than through the mark.
+   */
+  const offersRegions = scheme.groups.length > 0;
+
+  /**
    * The group the level is framed on, or null for the whole country.
    *
    * Hoisted out of the transform below because it is now read TWICE — the
@@ -999,16 +1029,21 @@ export function CountryLevel({
                   key={unit.id}
                   // Only the selectable ones are marked, and it is the same
                   // `selectable` flag `selectableFeatures` is indexed off, so
-                  // what is marked here and what a region can be zoomed to are
-                  // one decision: a unit that is not a subdivision must not
-                  // become one by being drawn.
+                  // what is marked here and what a group can name are one
+                  // decision: a unit that is not a subdivision must not become
+                  // one by being drawn.
+                  //
+                  // "Marked" and "zoomable" are two things, and §6.6 D10 is
+                  // where they part: a country with ONE subdivision still has
+                  // that subdivision, and still has nowhere to zoom. The mark
+                  // states the first; `offersRegions` decides the second.
                   data-unit={unit.selectable ? unit.id : undefined}
                   d={unit.d}
                   fill="var(--surf-2)"
                   stroke="var(--paper)"
                   strokeWidth={UNIT_STROKE / k}
                 >
-                  {unit.selectable && unit.label && <title>{unit.label}</title>}
+                  {offersRegions && unit.selectable && unit.label && <title>{unit.label}</title>}
                 </path>
               ))}
             </g>

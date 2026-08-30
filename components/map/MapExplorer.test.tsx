@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
+import { COUNTRY_DETAIL, hasDetailLevel } from "@/lib/countryDetail";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
 import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
@@ -1231,6 +1232,31 @@ describe("the open country's province file", () => {
     // Armed: the country was genuinely opened, so the absence above is a
     // decision rather than a component that never mounted.
     expect(urls).toContain("/api/map/cities?country=AQ");
+  });
+
+  test("still emits the file for those countries, so the loader needs no special case", async () => {
+    // §6.6 D10 suppresses the region CONTROL, never the map. All 34 countries
+    // with one selectable unit are in the registry — `lib/countryDetail.test.ts`
+    // pins that every entry has a file and every file has an entry — so this
+    // loader asks for their geometry exactly as it asks for Peru's, and the
+    // gate lives where the affordance is drawn instead.
+    //
+    // A gate placed HERE would read as the tidier fix and would cost the
+    // Faroes their coastline to spare them a control they were never offered.
+    // §5.2 makes the map an enhancement over the list; it does not make it
+    // optional for 34 countries.
+    const single = [...COUNTRY_DETAIL].filter(([, detail]) => detail.count <= 1);
+    expect(single).toHaveLength(34);
+    for (const [code] of single) expect(hasDetailLevel(code), code).toBe(true);
+
+    render(<Harness country="FO" />);
+    await settle();
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain("/provinces/FO.json");
+    // And it reached a renderer: the country level draws the file it fetched,
+    // which is the half a fetch assertion on its own cannot see.
+    expect(screen.getByRole("group", { name: "Map of Faroe Islands" })).toBeInTheDocument();
   });
 
   test("does not refetch when the country has not changed", async () => {
