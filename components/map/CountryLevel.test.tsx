@@ -219,6 +219,21 @@ function markerX(container: HTMLElement, id: string): number {
   return Number(circleFor(container, id, "data-dot").getAttribute("cx"));
 }
 
+/**
+ * The same reading on the other axis.
+ *
+ * A sibling rather than a parameterised `marker(container, id, "cx" | "cy")`,
+ * so that every position assertion in this file names the axis it is about at
+ * its own call site instead of passing an attribute nobody reads twice.
+ *
+ * It exists because §10.1's airport mark is positioned on BOTH — its `x` and
+ * its `y` are each a scaled inset off the projected point — and a mark pinned
+ * on x alone is satisfied by drawing every diamond on the x = y diagonal.
+ */
+function markerY(container: HTMLElement, id: string): number {
+  return Number(circleFor(container, id, "data-dot").getAttribute("cy"));
+}
+
 /** One of a marker's circles, told apart by the attribute that names its job. */
 function circleFor(container: HTMLElement, id: string, attr: string): Element {
   const circle = container.querySelector(`[data-place="${id}"] circle[${attr}]`);
@@ -1874,6 +1889,14 @@ describe("CountryLevel airport layer", () => {
     // centre, which is the shape a raw length hides in — the centre itself is
     // where the projection put the airport and must not move at all.
     //
+    // BOTH axes and the rotation, because the mark's position is three values
+    // and any one of them alone leaves a hole. Pinned on x alone, `y={x -
+    // AIRPORT_MARK / k}` draws every diamond on the x = y diagonal and passes,
+    // which for this fixture puts Lima's airport 299 units up the frame from
+    // Lima. Pinned on x and y alone, a rotation that lost its origin swings the
+    // drawn square away about the viewBox corner while the attributes
+    // underneath it stay exactly where they were.
+    //
     // Drawn at BOTH framings, and deliberately: §6.5 filters cities to the
     // framed group through `cityProvince`, and nothing assigns an airport to a
     // province, so there is no honest filtered set to draw. It is also what
@@ -1881,17 +1904,42 @@ describe("CountryLevel airport layer", () => {
     const airports = [airportNear(LIMA, "LGE", 0, "large")];
     const centre = (container: HTMLElement) => {
       const [mark] = airportMarks(container);
-      return Number(mark.getAttribute("x")) + Number(mark.getAttribute("width")) / 2;
+      const mid = (corner: string, side: string) =>
+        Number(mark.getAttribute(corner)) + Number(mark.getAttribute(side)) / 2;
+      return { x: mid("x", "width"), y: mid("y", "height") };
     };
+    /**
+     * The rotation, read as the string it is.
+     *
+     * The only transform on this map the zoom neither scales nor divides, and
+     * the only one whose effect jsdom does not compute: it lays nothing out, so
+     * the `x`/`y` above are the pre-rotation corner however the rotation is
+     * written, and the attribute's own value is the only evidence there is that
+     * the diamond spins in place rather than about the frame's corner.
+     */
+    const spin = (container: HTMLElement) => airportMarks(container)[0].getAttribute("transform");
 
     const flat = renderLevel({ airports, showAirports: true });
     const before = centre(flat.container);
-    expect(before).toBeCloseTo(markerX(flat.container, "lima"), 9);
+    expect(before.x).toBeCloseTo(markerX(flat.container, "lima"), 9);
+    expect(before.y).toBeCloseTo(markerY(flat.container, "lima"), 9);
+    // Exact, not `toBeCloseTo`: the rotation's origin and the marker's own
+    // `cx`/`cy` are the same two projected numbers stringified twice, so the
+    // expected value can be spelled out — and every other origin, the dropped
+    // one included, is a different string.
+    const spun = `rotate(45 ${markerX(flat.container, "lima")} ${markerY(flat.container, "lima")})`;
+    expect(spin(flat.container)).toBe(spun);
     cleanup();
 
     const zoomed = renderLevel({ airports, showAirports: true, region: "PE-ISL" });
     expect(airportMarks(zoomed.container)).toHaveLength(1);
-    expect(centre(zoomed.container)).toBeCloseTo(before, 9);
+    expect(centre(zoomed.container).x).toBeCloseTo(before.x, 9);
+    expect(centre(zoomed.container).y).toBeCloseTo(before.y, 9);
+    // The zoom moves the mark by moving the group around it, so the point it
+    // spins about is the same number at both framings. Compared against the
+    // flat render's string rather than against a re-read dot, because Lima's
+    // marker is not drawn at this framing — §6.5 filters it out.
+    expect(spin(zoomed.container)).toBe(spun);
   });
 
   test("the card names the main airport whether or not the layer is on", () => {
