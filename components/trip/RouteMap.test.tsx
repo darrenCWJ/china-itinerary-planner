@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { DESTINATIONS } from "@/lib/data";
@@ -425,5 +425,61 @@ describe("the trip map draws the trip's own country", () => {
       screen.getByRole("group", { name: "Map of China segmented by region" })
     ).toBeInTheDocument();
     expect(requestedUrls()).toEqual(["/china-provinces.json"]);
+  });
+});
+
+/**
+ * §2.1 makes this surface a VIEW of the itinerary — "a map ⇄ list toggle inside
+ * Plan", not a sibling picker — and the component has always said so by passing
+ * `noop` for the toggle.
+ *
+ * A noop is not a mode. Plan 3 gave `CountryLevel`'s markers a keyboard model, a
+ * `role="button"` with `aria-pressed`, and a `role="dialog"` card whose primary
+ * button reads "Remove <name> from trip"; wired to a noop, all of that still
+ * renders and none of it does anything. The card is the sharp end: a user taps a
+ * stop on a page a shared link is one component away from reaching, is offered a
+ * destructive action by name, presses it, and the trip does not change.
+ *
+ * So the read-only mode is asserted from the outside, on the surface that has
+ * it: the markers claim nothing they cannot do, and the stop list under the map
+ * stays the spine it is everywhere else (§5.2).
+ */
+describe("the trip map is a view of the trip, not a picker", () => {
+  test("its markers do not announce themselves as toggles", async () => {
+    const { container } = renderPeru();
+    await settle();
+
+    const marker = container.querySelector('[data-place="G3941584"]')!;
+    // A marker that says it is a pressable toggle and does nothing is worse
+    // than one that says nothing at all — and one that is also a tab stop
+    // spends a keyboard user's Tab on it to prove it.
+    expect(marker.getAttribute("role")).toBeNull();
+    expect(marker.getAttribute("aria-pressed")).toBeNull();
+    expect(marker.getAttribute("aria-haspopup")).toBeNull();
+    expect(marker.getAttribute("tabindex")).toBeNull();
+
+    // One control for the stop, not two: the list chip below the map. The
+    // marker was the second, and it was the inert one.
+    expect(screen.getAllByRole("button", { name: /Cusco/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Cusco/ }).tagName).toBe("BUTTON");
+  });
+
+  test("tapping a stop offers no removal it cannot perform", async () => {
+    const { container } = renderPeru();
+    await settle();
+
+    const marker = container.querySelector('[data-place="G3941584"]')!;
+    fireEvent.click(marker);
+    fireEvent.keyDown(marker, { key: "Enter" });
+
+    // Neither modality opens §5.3.3's card here. Its primary button is named
+    // for the place and for the direction — "Remove Cusco from trip" — and on
+    // this surface there is nothing behind it.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove Cusco from trip/ })).toBeNull();
+    // The stop is still drawn and still named. Read-only is the map claiming
+    // less, not the map showing less.
+    expect(marker).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cusco/ })).toBeInTheDocument();
   });
 });

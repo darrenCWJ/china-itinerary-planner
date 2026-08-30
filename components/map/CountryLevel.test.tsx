@@ -612,3 +612,87 @@ describe("CountryLevel markers", () => {
     expect(markers(container).filter((el) => el.getAttribute("tabindex") === "0")).toHaveLength(1);
   });
 });
+
+/**
+ * The mode `RouteMap` needs and could not previously state.
+ *
+ * That surface is a VIEW of an itinerary (§2.1) and has always passed `noop`
+ * for the toggle. A noop is not a mode: every control §5.3 added still
+ * rendered, so a marker announced itself as a pressed toggle, took a tab stop
+ * to prove it, and opened a card whose primary button reads "Remove <name> from
+ * trip" — with nothing behind it.
+ *
+ * The fix is a mode rather than a check inside `onTogglePlace`, because the
+ * damage is in the ANNOUNCEMENT and not only in the callback: an inert
+ * `role="button"` is a promise the accessibility tree makes on the map's
+ * behalf. So read-only markers claim nothing — and the list beside them still
+ * reaches every place, which is what keeps §12.2 true on a surface where the
+ * map has stopped being operable at all.
+ */
+describe("CountryLevel read-only", () => {
+  test("its markers claim nothing they cannot do", () => {
+    const { container, props } = renderLevel({ readOnly: true });
+
+    const drawn = markers(container);
+    expect(drawn).toHaveLength(3);
+    for (const el of drawn) {
+      expect(el.getAttribute("role")).toBeNull();
+      expect(el.getAttribute("aria-pressed")).toBeNull();
+      expect(el.getAttribute("aria-haspopup")).toBeNull();
+      expect(el.getAttribute("aria-label")).toBeNull();
+      // No tab stop either: the marker layer costs one Tab in the picker
+      // because that Tab reaches something. Here it would reach a drawing.
+      expect(el.getAttribute("tabindex")).toBeNull();
+      // And the cursor tells the same story the roles now do.
+      expect(el.getAttribute("class")).toBeNull();
+    }
+
+    const [lima, cusco] = drawn;
+    fireEvent.click(cusco);
+    fireEvent.keyDown(lima, { key: "Enter" });
+    fireEvent.keyDown(lima, { key: "ArrowRight" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(props.onTogglePlace).not.toHaveBeenCalled();
+  });
+
+  test("the list beside it is still the whole spine", () => {
+    // §5.2 and §12.2 do not soften on a read-only surface. What changes is that
+    // the list is now the ONLY control per place rather than the second one —
+    // so it had better still be there, and still be a real button.
+    renderLevel({ readOnly: true });
+
+    for (const name of ["Lima", "Cusco", "Puerto Lejano"]) {
+      const controls = screen.getAllByRole("button", { name });
+      expect(controls).toHaveLength(1);
+      expect(controls[0].tagName).toBe("BUTTON");
+    }
+    expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
+  });
+
+  test("hover still reports, so the tooltip is unaffected", () => {
+    // Read-only removes the claims, not the map. `PlacePopup` is drawn by the
+    // caller from this callback and describes a place without offering to
+    // change anything, which is exactly what this mode allows.
+    const { container, props } = renderLevel({ readOnly: true });
+
+    const cusco = markers(container)[1];
+    fireEvent.mouseEnter(cusco, { clientX: 40, clientY: 50 });
+    expect(props.onHoverPlace).toHaveBeenCalledWith(CUSCO, expect.anything());
+    fireEvent.mouseLeave(cusco);
+    expect(props.onHoverPlace).toHaveBeenLastCalledWith(null, null);
+  });
+
+  test("the picker is untouched — markers stay operable by default", () => {
+    // The mode is opt-in, and `MapExplorer` opts out of nothing: a level with
+    // no `readOnly` prop is the picker Plan 3 built, card and all.
+    const { container, props } = renderLevel();
+    const [, cusco] = markers(container);
+
+    expect(cusco).toHaveAttribute("role", "button");
+    expect(cusco).toHaveAttribute("aria-haspopup", "dialog");
+    fireEvent.click(cusco);
+    expect(props.onTogglePlace).toHaveBeenCalledWith(CUSCO);
+    expect(screen.getByRole("dialog", { name: "Cusco" })).toBeInTheDocument();
+  });
+});

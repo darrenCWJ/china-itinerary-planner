@@ -23,11 +23,20 @@ import type { Destination, Season } from "@/lib/types";
  * out of the nav: "a map ⇄ list toggle *inside* Plan. It is a view of the
  * itinerary, not a sibling of it."
  *
- * Deliberately **read-only**. `CountryMap` is the picker from the wizard, where
- * tapping a place selects it; here there is nothing to select — the plan
- * already exists, and this is a view of it. So the toggle and hover callbacks
- * are inert and every place on the map is one of the trip's own stops, drawn in
- * day order.
+ * Deliberately **read-only**, and it now says so with a prop rather than with a
+ * `noop`. `CountryMap` is the picker from the wizard, where tapping a place
+ * selects it; here there is nothing to select — the plan already exists, and
+ * this is a view of it. Every place on the map is one of the trip's own stops,
+ * drawn in day order.
+ *
+ * The inert callback used to be the whole of that statement, and it stopped
+ * being enough the moment `CountryLevel` grew controls (§5.3): a marker
+ * announced itself as a pressed toggle, held a tab stop, and opened a card
+ * whose primary button reads "Remove <name> from trip" — all of it wired to
+ * the noop, on a surface a shared link is one component away from reaching.
+ * `readOnly` is what the level is actually built from now; `noop` remains only
+ * for the two branches that were always inert and have nothing to suppress —
+ * `ChinaLevel`, frozen by §9.5, and the stop list, which is §5.2's spine.
  *
  * Off-map stops never resolve to coordinates, and a curated destination without
  * coordinates cannot be drawn, so both simply do not appear — the day list
@@ -59,6 +68,13 @@ import type { Destination, Season } from "@/lib/types";
  * which is the same fallback a 500 gets.
  */
 
+/**
+ * The callback the branches that cannot be switched off still require.
+ *
+ * `readOnly` on the `CountryLevel` branch is what actually makes this surface a
+ * view; this is what `ChinaLevel` (§9.5: untouched) and the stop list get, and
+ * neither has ever offered a card. It is no longer standing in for a mode.
+ */
 const noop = () => {};
 
 /**
@@ -375,6 +391,10 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
         routeIds={routeIds}
         month={month}
         zoomRegion={null}
+        // A view of the plan, not a picker for one: the markers keep their
+        // dots, labels and hover and drop every control §5.3 gave them, so
+        // nothing here offers to change a trip it cannot change.
+        readOnly
         onZoomRegion={noop}
         onTogglePlace={noop}
         onHoverPlace={noop}

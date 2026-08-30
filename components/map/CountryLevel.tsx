@@ -67,6 +67,17 @@ import { SelectedPlaceCard } from "./SelectedPlaceCard";
  * threaded through `useMarkerSelection` exists for exactly one reason: focus
  * follows a keyboard activation into the card and comes back on dismiss, and
  * does not move for a pointer one.
+ *
+ * **`readOnly` is a mode, and it exists because a noop callback is not one.**
+ * `RouteMap` draws an itinerary that already exists (§2.1) and has always
+ * passed `noop` for the toggle. Every control above still rendered against
+ * it: a marker announcing `role="button"` and `aria-pressed`, holding a tab
+ * stop, opening a card whose primary button reads "Remove <name> from trip" —
+ * on a surface where none of it can change anything. The damage is in the
+ * ANNOUNCEMENT as much as in the dead callback, so the mode is what the
+ * markers are built from rather than a guard inside `activate`: read-only
+ * markers are a drawing of the plan, with no role, no tab stop and no card.
+ * Hover is untouched, because a tooltip describes without offering.
  */
 
 /** What this level reads off a unit's TopoJSON geometry. */
@@ -254,7 +265,7 @@ interface UnitShape {
   label: string | null;
 }
 
-/** Everything spread onto one marker's `<g>`. */
+/** Everything spread onto one marker's `<g>` in a level that can be planned in. */
 interface MarkerInteractionProps {
   ref: (node: SVGGElement | null) => void;
   role: "button";
@@ -269,10 +280,29 @@ interface MarkerInteractionProps {
   "aria-haspopup": "dialog";
   "aria-label": string;
   className: string;
+  onClick: () => void;
   onKeyDown: (event: React.KeyboardEvent) => void;
   onFocus: () => void;
   onBlur: () => void;
 }
+
+/**
+ * What a read-only marker gets instead: nothing.
+ *
+ * Not a subset with the role left on. Every field above is a claim — `role`
+ * that it can be pressed, `tabIndex` that it is worth a Tab, `aria-haspopup`
+ * that pressing it opens something, `aria-label` that it is a control with a
+ * name, `cursor-pointer` that a mouse has somewhere to go — and on a surface
+ * that toggles nothing, each of them is false. The place is still drawn, still
+ * labelled on the map, and still a real `<button>` in the list below (§5.2),
+ * which is where its one honest control lives.
+ *
+ * `Record<string, never>` rather than an empty interface so the spread is typed
+ * as adding nothing at all, and a field added here has to be argued for.
+ */
+type ReadOnlyMarkerProps = Record<string, never>;
+
+const READ_ONLY_MARKER: ReadOnlyMarkerProps = {};
 
 /**
  * Roving tabindex over the marker layer (§5.3.1), ported from
@@ -310,9 +340,18 @@ function useMarkerSelection(
    * which is a heuristic about how a click was synthesised rather than a fact
    * about which handler ran.
    */
-  onActivate: (place: MapPlace, viaKeyboard: boolean) => void
+  onActivate: (place: MapPlace, viaKeyboard: boolean) => void,
+  /**
+   * Whether the level can be planned in at all.
+   *
+   * The whole keyboard model hangs off this rather than off a check inside
+   * `onActivate`, because what a read-only marker must stop doing first is
+   * ANNOUNCING: an inert `role="button"` is a promise the accessibility tree
+   * makes on the map's behalf, and it is the one a user acts on.
+   */
+  interactive: boolean
 ): {
-  markerProps: (place: MapPlace, index: number) => MarkerInteractionProps;
+  markerProps: (place: MapPlace, index: number) => MarkerInteractionProps | ReadOnlyMarkerProps;
   focusedId: string | null;
   /** Put focus back on one marker — what a dismissed card returns it to. */
   refocus: (id: string) => void;
@@ -376,7 +415,11 @@ function useMarkerSelection(
   return {
     focusedId,
     refocus: (id: string) => nodeRefs.current.get(id)?.focus(),
-    markerProps: (place: MapPlace, index: number): MarkerInteractionProps => {
+    markerProps: (
+      place: MapPlace,
+      index: number
+    ): MarkerInteractionProps | ReadOnlyMarkerProps => {
+      if (!interactive) return READ_ONLY_MARKER;
       const isSelected = selected.includes(place.id);
       return {
         ref: (node: SVGGElement | null) => {
@@ -389,6 +432,11 @@ function useMarkerSelection(
         "aria-haspopup": "dialog",
         "aria-label": `${place.name}${isSelected ? " (selected)" : ""}`,
         className: "cursor-pointer",
+        // Here rather than on the `<g>` in the JSX, so that ONE decision — the
+        // `interactive` branch above — removes every way in. A click handler
+        // left behind by a level that had dropped its role would still open the
+        // card on a tap, which is the modality the defect was reported through.
+        onClick: () => onActivate(place, false),
         onKeyDown: (event: React.KeyboardEvent) => handleKeyDown(event, place, index),
         onFocus: () => {
           setActiveId(place.id);
@@ -411,6 +459,17 @@ export interface CountryLevelProps {
   selected: string[];
   month: number;
   routeIds: string[];
+  /**
+   * The level draws a plan rather than building one: no marker is a control,
+   * and tapping one opens nothing.
+   *
+   * Optional and interactive by default, because that is what every picker
+   * call site means and a flag on each of them would be noise. What it is NOT
+   * is inferred from `onTogglePlace` — a caller that passes a callback which
+   * does nothing (`RouteMap` did, for exactly this reason) still gets the full
+   * set of controls, all of them lying. The mode has to be stated.
+   */
+  readOnly?: boolean;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -423,6 +482,7 @@ export function CountryLevel({
   selected,
   month,
   routeIds,
+  readOnly = false,
   onTogglePlace,
   onHoverPlace,
 }: CountryLevelProps) {
@@ -565,13 +625,23 @@ export function CountryLevel({
    * rather than gating it — making the tap open a card the user then has to
    * confirm in would turn one interaction into two for every place added with
    * a mouse, which is most of them.
+   *
+   * Unreachable when `readOnly`: `useMarkerSelection` hands the markers no
+   * handler to call it from, so `card` stays null and `SelectedPlaceCard`
+   * never mounts. Gating here as well would put the mode in two places and
+   * leave the announced-but-dead controls in place, which was the bug.
    */
   const activate = (place: MapPlace, viaKeyboard: boolean) => {
     onTogglePlace(place);
     setCard({ id: place.id, viaKeyboard });
   };
 
-  const { markerProps, focusedId, refocus } = useMarkerSelection(places, selected, activate);
+  const { markerProps, focusedId, refocus } = useMarkerSelection(
+    places,
+    selected,
+    activate,
+    !readOnly
+  );
 
   const cardIndex = card === null ? -1 : places.findIndex((p) => p.id === card.id);
   const cardPlace = cardIndex >= 0 ? places[cardIndex] : null;
@@ -648,6 +718,11 @@ export function CountryLevel({
             twice — here and in the list — and that is the right trade now
             that both are operable: the list is the spine, and this layer adds
             exactly one stop to the tab order however many cities it draws.
+
+            "Now that both are operable" is the whole of it, and `readOnly` is
+            the case where only one of them is: the marker keeps its dot, its
+            label and its hover, and drops every attribute that claimed it was
+            a control.
           */}
           <g data-markers="">
             {places.map((place, index) => {
@@ -659,7 +734,6 @@ export function CountryLevel({
                   key={place.id}
                   data-place={place.id}
                   {...markerProps(place, index)}
-                  onClick={() => activate(place, false)}
                   onMouseEnter={(e) => reportHover(place, e)}
                   onMouseMove={(e) => reportHover(place, e)}
                   onMouseLeave={() => reportHover(null)}
