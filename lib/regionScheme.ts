@@ -130,12 +130,34 @@ export function regionSchemeFor(country: string, units: ProvinceUnit[]): RegionS
   return {
     kind,
     groups: curated
-      ? curated(selectable)
-      : selectable.map((unit) => ({
-          id: unit.id,
-          label: unitLabel(code, unit),
-          unitIds: [unit.id],
-        })),
+      ? // Curated groups keep the order their scheme gives them, which for
+        // China is `REGION_ORDER` — see `chinaGroups`. That order means
+        // something; the one below did not.
+        curated(selectable)
+      : selectable
+          .map((unit) => ({
+            id: unit.id,
+            label: unitLabel(code, unit),
+            unitIds: [unit.id],
+          }))
+          // Sorted, because `ProvinceFile.units` is `adm1_code` ascending —
+          // Natural Earth's internal numbering, which is not on the screen and
+          // never has been. This list is the ONLY way into the province level
+          // for the 212 countries that offer one, and 194 of the 211 outside
+          // China ship a file order that is not the order a reader looks in:
+          // Peru's begins Callao, Lambayeque, Piura, Tumbes.
+          //
+          // `localeCompare` and not `<`, because the names are not ASCII:
+          // Peru's Áncash belongs between Amazonas and Apurímac, and a
+          // code-unit comparison puts it after Ucayali with every other
+          // accented province. The country picker in `WorldMap` sorts its 235
+          // entries the same way, so the two lists read as one system.
+          //
+          // `sort` is stable (ES2019), so the pairs that tie — Natural Earth
+          // names two Peruvian units "Lima" — hold file order rather than
+          // swapping between renders. The array is this function's own, so the
+          // caller's `units` is not touched.
+          .sort((a, b) => a.label.localeCompare(b.label)),
   };
 }
 

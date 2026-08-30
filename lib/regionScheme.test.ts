@@ -44,10 +44,51 @@ describe("regionSchemeFor", () => {
     ]);
 
     expect(scheme.kind).toBe("admin1");
+    // Callao first though Cusco is first in the file — the branch sorts by
+    // label, and the test below is where that is pinned. Written in the sorted
+    // order here too, so this one cannot be read as file order surviving.
     expect(scheme.groups).toEqual([
-      { id: "PER-1", label: "Cusco Region", unitIds: ["PER-1"] },
       { id: "PER-2", label: "Callao Region", unitIds: ["PER-2"] },
+      { id: "PER-1", label: "Cusco Region", unitIds: ["PER-1"] },
     ]);
+  });
+
+  test("orders those groups by label, never by the code the file is sorted on", () => {
+    // `ProvinceFile.units` is `adm1_code` ascending — Natural Earth's own
+    // numbering, which no user has ever seen — and for the 212 countries with
+    // more than one selectable unit this list is the ONLY way into the province
+    // level. Ordered by that code, a reader looking for Cusco in Peru scans 26
+    // entries against a key that is not on the screen.
+    //
+    // Áncash is the second half of it: an English reader expects it between
+    // Amazonas and Apurímac, which is where `localeCompare` puts it. A
+    // code-unit sort puts it after Ucayali, with every other accented province
+    // in the country.
+    const scheme = regionSchemeFor("PE", [
+      unit("PER-3505", { name: "Callao", nameEn: "Callao" }),
+      unit("PER-571", { name: "Cusco", nameEn: "Cusco Departament" }),
+      unit("PER-577", { name: "Ancash", nameEn: "Áncash" }),
+      unit("PER-584", { name: "Amazonas", nameEn: "Amazonas" }),
+      unit("PER-569", { name: "Apurimac", nameEn: "Apurímac" }),
+    ]);
+
+    expect(scheme.groups.map((g) => g.label)).toEqual([
+      "Amazonas",
+      "Áncash",
+      "Apurímac",
+      "Callao",
+      "Cusco Departament",
+    ]);
+    // Each id travels with its own label rather than being sorted beside it,
+    // which is the mutation a labels-only assertion would let through.
+    expect(scheme.groups.map((g) => g.unitIds)).toEqual([
+      ["PER-584"],
+      ["PER-577"],
+      ["PER-569"],
+      ["PER-3505"],
+      ["PER-571"],
+    ]);
+    expect(scheme.groups.map((g) => g.id)).toEqual(scheme.groups.map((g) => g.unitIds[0]));
   });
 
   test("does not resolve a country code that is an Object property name", () => {
@@ -144,6 +185,81 @@ describe.skipIf(!hasAssets)("regionSchemeFor over the committed files", () => {
     ]);
   });
 
+  it("lists a real country's provinces alphabetically, file order and all", () => {
+    // Peru in full, because the defect only has a size at a real country's
+    // size. Its file order is `adm1_code` ascending and begins Callao,
+    // Lambayeque, Piura, Tumbes — an order with no reading at all.
+    const pe = readProvince("PE");
+    const groups = regionSchemeFor(pe.country, pe.units).groups;
+
+    expect(groups.map((g) => g.label)).toEqual([
+      "Amazonas",
+      "Áncash",
+      "Apurímac",
+      "Arequipa",
+      "Ayacucho",
+      "Cajamarca",
+      "Callao",
+      "Cusco Departament",
+      "Huancavelica",
+      "Huanuco",
+      "Ica",
+      "Junín",
+      "La Libertad",
+      "Lambayeque",
+      "Lima",
+      "Lima",
+      "Loreto",
+      "Madre de Dios",
+      "Moquegua",
+      "Pasco",
+      "Piura",
+      "Puno",
+      "San Martín",
+      "Tacna",
+      "Tumbes",
+      "Ucayali",
+    ]);
+
+    // Stated as a difference too: the assertion above would also pass on a
+    // country whose two orders happen to agree, and 17 of the 211 do.
+    const fileOrder = pe.units.filter((u) => u.selectable).map((u) => u.id);
+    expect(groups.map((g) => g.id)).not.toEqual(fileOrder);
+    expect([...groups.map((g) => g.id)].sort()).toEqual([...fileOrder].sort());
+
+    // Natural Earth names two of Peru's units "Lima" — the province and the
+    // department — so the comparator returns 0 for that pair. `sort` is stable,
+    // so they hold file order instead of swapping between two renders of one
+    // list.
+    expect(groups.filter((g) => g.label === "Lima").map((g) => g.id)).toEqual([
+      "PER-587",
+      "PER-591",
+    ]);
+  });
+
+  it("does the same for every other country that offers a province level", () => {
+    // The blast radius, and why sorting one branch is worth a test: 194 of the
+    // 211 non-China countries with a province level ship a file order that is
+    // not the order a reader would look in. Peru is not the exception.
+    const unsorted: string[] = [];
+    let differ = 0;
+    for (const entry of index?.countries ?? []) {
+      // China's groups are curated and ordered by REGION_ORDER — the test
+      // below holds that, and it is a different order on purpose.
+      if (entry.code === "CN") continue;
+      const file = readProvince(entry.code);
+      const labels = regionSchemeFor(file.country, file.units).groups.map((g) => g.label);
+      if (labels.length === 0) continue;
+      const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+      if (labels.join("\u0000") !== sorted.join("\u0000")) unsorted.push(entry.code);
+      const fileOrder = file.units.filter((u) => u.selectable).map((u) => unitLabel(entry.code, u));
+      if (fileOrder.join("\u0000") !== sorted.join("\u0000")) differ += 1;
+    }
+
+    expect(unsorted, `came back in some other order: ${unsorted.join(", ")}`).toEqual([]);
+    expect(differ).toBe(194);
+  });
+
   it("groups China's units into its seven curated regions", () => {
     // §6.4: the regions are a grouping ABOVE admin-1, not a replacement. The
     // seven group ids are the seven ChinaRegion strings by coincidence of
@@ -156,6 +272,14 @@ describe.skipIf(!hasAssets)("regionSchemeFor over the committed files", () => {
     expect(scheme.groups.map((g) => g.label)).toEqual(
       (Object.keys(REGION_META) as ChinaRegion[]).map((r) => REGION_META[r].label)
     );
+
+    // And NOT alphabetically, which is what the admin1 branch sorts its groups
+    // into. REGION_META's order is the order CountryMap already paints the
+    // region labels in, so a control that listed them A-Z — Central first —
+    // would read as a different set from the map beside it. The sort belongs to
+    // the branch whose input order is arbitrary, and to that branch only.
+    const labels = scheme.groups.map((g) => g.label);
+    expect(labels).not.toEqual([...labels].sort((a, b) => a.localeCompare(b)));
 
     // Every selectable unit lands in exactly one group, and nothing else does.
     // This is what goes red if the curated table ever drifts from the asset: a

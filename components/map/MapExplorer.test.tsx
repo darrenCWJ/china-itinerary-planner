@@ -1436,11 +1436,18 @@ describe("the province level's chrome", () => {
     // that shapes the outline without being a subdivision (§7.2), so it is
     // drawn and it is not a destination — offering it here would be the
     // Northern-Cyprus bug with a Peruvian name.
+    //
+    // In label order, and not the fixture's own order — which is Lima, Cuzco,
+    // Isla Lejana, standing in for the `adm1_code` ascending a real file ships.
+    // `lib/regionScheme.test.ts` holds the sort itself; what this pins is that
+    // it survives the trip into the control, and that "All of Peru" stays at
+    // the top of it, because it is the way out of the choice rather than one of
+    // the choices.
     expect([...regionControl().querySelectorAll("option")].map((o) => o.textContent)).toEqual([
       "All of Peru",
-      "Lima",
       "Cuzco",
       "Isla Lejana",
+      "Lima",
     ]);
     expect(markerNames(container).sort()).toEqual(["Cusco", "Lima"]);
     // C5's 44px minimum, which its sibling controls are each pinned to
