@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { NATIONAL_CROWD } from "@/lib/months";
+import { NATIONAL_CROWD, REGION_MONTHS } from "@/lib/months";
 import { PlacePopup } from "./PlacePopup";
 import type { MapPlace } from "./mapTypes";
 
@@ -160,5 +160,41 @@ describe("PlacePopup — whose crowd curve it shows", () => {
 
     show(place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" }), "CN", 2);
     expect(screen.getByTitle("Chinese New Year falls in this month")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The last consumer of `isChinaRegion` on this surface, and the only one with
+ * no coverage before Phase 4: `regionMonthClimate` is China-only data behind a
+ * NON-nullable return type, so a region label from outside the seven does not
+ * yield an empty row — it throws. The ternary at PlacePopup.tsx:40 is the whole
+ * guard, and Phase 4 widened what can reach it: the third map level identifies
+ * a region by `regionScheme.RegionId`, which for the other 245 countries is an
+ * admin-1 unit id.
+ */
+describe("PlacePopup — the climate row is China-only", () => {
+  test("reads October out of the region table for a Chinese place", () => {
+    const { container } = show(
+      place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" })
+    );
+
+    // The real row rather than a literal, for the reason the crowd test above
+    // uses NATIONAL_CROWD: a card printing one fixed range every month would
+    // satisfy a presence check.
+    const october = REGION_MONTHS.North[9];
+    expect(container.textContent).toContain(`${october.lo}°–${october.hi}°C typical`);
+  });
+
+  test("degrades to no climate row for a place outside China's seven", () => {
+    const { container } = show(
+      place({ id: "G3941584", name: "Cusco", province: "Cuzco Department", region: "Cuzco Department" }),
+      "PE"
+    );
+
+    expect(container.textContent).not.toContain("typical");
+    // Positive half: the fit dot beside where the climate would have gone is
+    // still rendered, so the absence above is a missing row and not a missing
+    // card. "No data" is FIT_LABELS.unknown — mapTypes.NEUTRAL_FIT.
+    expect(screen.getByText("No data")).toBeInTheDocument();
   });
 });
