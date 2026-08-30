@@ -4,9 +4,10 @@ import type { Topology } from "topojson-specification";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
+import type { RegionId } from "@/lib/regionScheme";
 import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
 import { CountryMap, hasCuratedTopology } from "./CountryMap";
-import { PE_ENTRY, PE_FILE } from "./countryFixture";
+import { PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
 import type { MapPlace } from "./mapTypes";
 
 /**
@@ -129,6 +130,37 @@ function peruvianShard(): MapPlace[] {
     })
   );
 }
+
+/**
+ * Where the reachability block's cities are committed to live, for the branch
+ * that frames the map on one of them.
+ *
+ * `cityProvince` is the ONLY thing that places a city in a province (§6.5): a
+ * marker's lon/lat decide where it is drawn, and this map decides which unit
+ * contains it. So the split below is data, not geography, and it is chosen to
+ * put all three of the level's outcomes into one render of the same 200 cities:
+ *
+ * - **120 in `PE-ISL`**, the framed unit, so the zoomed map draws them;
+ * - **60 in `PE-CUS`**, a real selectable unit that is not the framed one;
+ * - **20 in no unit at all** — the state 478 real cities are in, placed by
+ *   neither containment nor `a1c`.
+ *
+ * 80 cities are therefore off the map while the country is framed, and every
+ * one of them has to stay reachable through the list. That is the whole of
+ * §12.2 on this branch.
+ *
+ * `G1` is the single place the tap-target case renders, framed too: a marker
+ * that is correctly absent would turn that assertion into an empty loop, which
+ * passes and proves nothing.
+ */
+const ZOOMED_CITY_PROVINCE: Readonly<Record<string, string>> = {
+  G1: "PE-ISL",
+  ...Object.fromEntries(
+    peruvianShard().flatMap(({ id }, i) =>
+      i < 120 ? [[id, "PE-ISL"]] : i < 180 ? [[id, "PE-CUS"]] : []
+    )
+  ),
+};
 
 function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
   const props = {
@@ -346,14 +378,24 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
    * worldLevelShared.tsx's "indefensible for 235" — and this test is what
    * makes that decision survive a later PR that adds an outline.
    *
-   * Run once per DISPATCHER BRANCH, and that is the whole point of the shape
-   * below. When Plan 3 made `provinces: null` the default in `renderMap`, every
-   * case here quietly became the list-only fallback: the gate for a phase
-   * about drawing maps stopped rendering one, and deleting `CountryPlaceList`
-   * from `CountryLevel` left all of it green. The criterion is only proven
-   * once it has been proven for a country that HAS a map, so the branch with
-   * geometry is asserted here rather than left to `CountryLevel.test.tsx` —
-   * which is a different file, and not the one §12.2 names.
+   * Run once per RENDERING the country level can produce, and that is the
+   * whole point of the shape below. When Plan 3 made `provinces: null` the
+   * default in `renderMap`, every case here quietly became the list-only
+   * fallback: the gate for a phase about drawing maps stopped rendering one,
+   * and deleting `CountryPlaceList` from `CountryLevel` left all of it green.
+   * The criterion is only proven once it has been proven for a country that
+   * HAS a map, so the branch with geometry is asserted here rather than left
+   * to `CountryLevel.test.tsx` — which is a different file, and not the one
+   * §12.2 names.
+   *
+   * The first two are the dispatcher's; the third is the framing Phase 4 adds,
+   * and it is where the criterion has the most to say. A province zoom draws a
+   * SUBSET — §6.5 filters the markers to the cities `cityProvince` puts in the
+   * framed group — so on that rendering the list is not merely a second way to
+   * reach a place, it is the ONLY way to reach the 80 cities the map has just
+   * taken off screen. A level that filtered the list alongside the markers, or
+   * dropped it, would strand them; that is the mutation this branch exists to
+   * catch, and no amount of coverage on the unzoomed map would catch it.
    */
   const BRANCHES: {
     label: string;
@@ -361,12 +403,44 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
     projection: ProjectionEntry | null;
     /** What the branch must actually have rendered — see `renderCountry`. */
     hasMap: boolean;
+    /** The framing, and null for the whole country. `CountryMapProps.zoomRegion`. */
+    zoomRegion: RegionId | null;
+    /** Markers drawn for `peruvianShard()` — 200 places, filtered by the framing. */
+    markers: number;
   }[] = [
     // No geometry: the list IS the level. That is every country until its
     // province file arrives, and it is the case this block already covered.
-    { label: "a country with no map", provinces: null, projection: null, hasMap: false },
+    {
+      label: "a country with no map",
+      provinces: null,
+      projection: null,
+      hasMap: false,
+      zoomRegion: null,
+      markers: 0,
+    },
     // Geometry plus its §5.4 manifest entry: `CountryLevel`, markers and all.
-    { label: "a country with a map", provinces: PE_FILE, projection: PE_ENTRY, hasMap: true },
+    {
+      label: "a country with a map",
+      provinces: PE_FILE,
+      projection: PE_ENTRY,
+      hasMap: true,
+      zoomRegion: null,
+      markers: 200,
+    },
+    // The same map framed on one province. `PE-ISL` because it is the only
+    // unit of the three that MAGNIFIES — the two mainland units are 2° wide
+    // and 4° tall inside a 6°-by-4° frame, so latitude constrains their fit and
+    // `k` lands just under 1, which would let the tap-target assertion below
+    // pass without ever dividing by anything. The island reaches 3.46, and
+    // `CountryLevel.test.tsx` pins that number to the decimal.
+    {
+      label: "a country framed on one province",
+      provinces: peFileWith(ZOOMED_CITY_PROVINCE),
+      projection: PE_ENTRY,
+      hasMap: true,
+      zoomRegion: "PE-ISL",
+      markers: 120,
+    },
   ];
 
   /**
@@ -383,15 +457,55 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
     return [...container.querySelectorAll("button")];
   }
 
-  describe.each(BRANCHES)("$label", ({ provinces, projection, hasMap }) => {
+  /** Every marker the level actually drew, which a framing filters. */
+  function drawnMarkers(container: HTMLElement): Element[] {
+    return [...container.querySelectorAll("[data-markers] [data-place]")];
+  }
+
+  /**
+   * The magnification the level is drawing at: `scale(k)` off its one
+   * `[data-zoom]` group, and 1 where there is no map to carry one.
+   *
+   * Read from the DOM rather than recomputed, because it is the number the
+   * component divided its own radii by and the assertion below has to be in
+   * the same units. `k` round-trips exactly through `${k}` and `Number`, so
+   * `TAP_MIN_R_FALLBACK / k` here is bit-identical to the value the level put
+   * on the circle — which is what lets that comparison stay an inequality
+   * instead of an epsilon.
+   */
+  function zoomScale(container: HTMLElement): number {
+    const zoom = container.querySelector<SVGGElement>("[data-zoom]");
+    if (!zoom) return 1;
+    const k = Number(/scale\(([^)]+)\)/.exec(zoom.style.transform)?.[1]);
+    if (!Number.isFinite(k)) throw new Error(`no scale in "${zoom.style.transform}"`);
+    return k;
+  }
+
+  describe.each(BRANCHES)("$label", ({ provinces, projection, hasMap, zoomRegion, markers }) => {
     function renderCountry(places: MapPlace[]) {
-      const rendered = renderMap({ country: "PE", topology: null, provinces, projection, places });
+      const rendered = renderMap({
+        country: "PE",
+        topology: null,
+        provinces,
+        projection,
+        places,
+        zoomRegion,
+      });
       // Which branch was taken, asserted rather than assumed. A `provinces`
       // value that stopped parsing — or a dispatcher that stopped routing on
       // it — would drop this case silently back onto the list-only fallback
       // and pass every assertion below, which is precisely how the block lost
       // its coverage of the map in the first place.
       expect(screen.queryAllByRole("group", { name: "Map of Peru" })).toHaveLength(hasMap ? 1 : 0);
+      // And that the framing TOOK, which the group's name cannot say: it is
+      // "Map of Peru" zoomed or not. `RegionId` is `string`, so a group id
+      // that stopped resolving — a renamed unit, a scheme that no longer
+      // offers it, a country whose file moved on — is not a type error and not
+      // a crash. It is an identity transform, and this branch would quietly
+      // become a second copy of the one above it.
+      const scale = zoomScale(rendered.container);
+      if (zoomRegion === null) expect(scale).toBe(1);
+      else expect(scale).toBeGreaterThan(1);
       return rendered;
     }
 
@@ -416,9 +530,15 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       // merely duplicate a marker layer that was already tabbable: assert the
       // reachability without it and a level could satisfy §12.2 by giving 200
       // cities 200 tab stops, which the phase rejected.
-      const markers = [...container.querySelectorAll("[data-markers] [data-place]")];
-      expect(markers.filter((el) => el.getAttribute("tabindex") === "0").length)
+      const drawn = drawnMarkers(container);
+      expect(drawn.filter((el) => el.getAttribute("tabindex") === "0").length)
         .toBeLessThanOrEqual(1);
+
+      // How many of the 200 the MAP shows, which is the count the 200 above is
+      // measured against. On the framed branch it is 120: 60 cities sit in
+      // another unit and 20 in none, and the only thing that reaches those 80
+      // is the list this test just counted.
+      expect(drawn).toHaveLength(markers);
     });
 
     test("every place is reachable by filtering, without expanding anything", () => {
@@ -457,10 +577,22 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       // as literals in `CountryLevel.test.tsx`; what is claimed HERE is that a
       // marker on this branch gets the whole of it — a single place has no
       // neighbour, so `nonOverlappingRadii` caps nothing.
-      for (const marker of container.querySelectorAll("[data-markers] [data-place]")) {
+      //
+      // Over `k`, because the circle is drawn INSIDE the transform: the same
+      // 44 CSS px is 16.89 viewBox units unzoomed and 4.89 at the island's
+      // 3.46. Comparing against the unscaled token on the framed branch would
+      // fail a compliant marker, so the floor is the token in the units of
+      // this frame. A floor, not an equality — that the radius is exactly
+      // `tapTargetRadius(width) / k` is `CountryLevel.test.tsx`'s claim, and
+      // what §12.2 asks here is that no control on this branch opts out.
+      const floor = TAP_MIN_R_FALLBACK / zoomScale(container);
+      for (const marker of drawnMarkers(container)) {
         const hit = Number(marker.querySelector("circle[data-hit]")?.getAttribute("r"));
-        expect(hit).toBeGreaterThanOrEqual(TAP_MIN_R_FALLBACK);
+        expect(hit).toBeGreaterThanOrEqual(floor);
       }
+      // Not vacuously: a place the framing filters out draws no marker, and an
+      // empty loop is how this assertion would stop asserting anything.
+      expect(drawnMarkers(container)).toHaveLength(hasMap ? 1 : 0);
     });
   });
 });
