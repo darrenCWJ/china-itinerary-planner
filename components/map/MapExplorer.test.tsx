@@ -26,6 +26,11 @@ import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
  * exercises. `GlobeLevel.test.tsx` keeps its own richer, two-hemisphere
  * fixture for what it actually tests (rotation, clipping); this one only
  * needs to stay parseable.
+ *
+ * Wound south-west, north-west, north-east, south-east, the order
+ * `worldFixture.ts` documents and for the reason it gives: reversed, d3 reads
+ * each ring as the whole sphere minus the rectangle (`geoArea` 4π), which
+ * renders without error and fits the projection to the entire globe.
  */
 const WORLD_FIXTURE = {
   topology: {
@@ -33,16 +38,16 @@ const WORLD_FIXTURE = {
     arcs: [
       [
         [116, 39],
-        [120, 39],
-        [120, 43],
         [116, 43],
+        [120, 43],
+        [120, 39],
         [116, 39],
       ],
       [
         [136, 34],
-        [140, 34],
-        [140, 38],
         [136, 38],
+        [140, 38],
+        [140, 34],
         [136, 34],
       ],
     ],
@@ -66,22 +71,25 @@ const WORLD_FIXTURE = {
  * province of that region is in the topology, and only shows catalog markers
  * once a region is open — at country level it draws curated picks alone — so
  * the region a city test zooms into has to be drawable.
+ *
+ * Wound south-west, north-west, north-east, south-east, for the reason
+ * `worldFixture.ts` gives — see the note on `WORLD_FIXTURE` above.
  */
 const CHINA_FIXTURE = {
   type: "Topology",
   arcs: [
     [
       [116, 39.5],
-      [117, 39.5],
-      [117, 40.5],
       [116, 40.5],
+      [117, 40.5],
+      [117, 39.5],
       [116, 39.5],
     ],
     [
       [109, 29.5],
-      [115, 29.5],
-      [115, 33],
       [109, 33],
+      [115, 33],
+      [115, 29.5],
       [109, 29.5],
     ],
   ],
