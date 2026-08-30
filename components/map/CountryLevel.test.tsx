@@ -1,9 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { COUNTRY_DETAIL, detailFor } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
-import type { RegionId } from "@/lib/regionScheme";
+import { unitLabel, type RegionId } from "@/lib/regionScheme";
+import FO_PROVINCES from "@/public/provinces/FO.json";
 import {
   buildCountryView,
   CountryLevel,
@@ -121,6 +123,35 @@ const BO_FILE: ProvinceFile = parseProvinceTopology({
   cityProvince: { lima: "BO-LIM", cusco: "BO-XXX", isla: "BO-ISL" },
 });
 
+/**
+ * Peru with ONE selectable unit — §6.6 D10's shape, and 34 real countries'.
+ *
+ * The same four polygons under the same four ids: only `sel` moves, so any
+ * difference in what the level draws is the COUNT answering and can be nothing
+ * else. The country code stays "PE" throughout, and `provinces/index.json`
+ * puts 26 selectable units under it — which is the whole point: the gate is the
+ * geometry in hand, never the code on the envelope.
+ */
+const PE_ONE_UNIT: ProvinceFile = parseProvinceTopology({
+  country: "PE",
+  generatedAt: "2026-08-30T00:00:00.000Z",
+  idKey: "adm1_code",
+  topology: {
+    ...PE_TOPOLOGY,
+    objects: {
+      provinces: {
+        ...PE_TOPOLOGY.objects.provinces,
+        geometries: PE_TOPOLOGY.objects.provinces.geometries.map((geometry) =>
+          geometry.id === "PE-LIM"
+            ? geometry
+            : { ...geometry, properties: { ...geometry.properties, sel: 0 } }
+        ),
+      },
+    },
+  },
+  cityProvince: {},
+});
+
 function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
   const props = {
     country: "PE",
@@ -167,6 +198,16 @@ function hitR(container: HTMLElement, id: string): number {
 /** The visible dot's radius — §5.3.2 says this one does not change. */
 function dotR(container: HTMLElement, id: string): number {
   return Number(circleFor(container, id, "data-dot").getAttribute("r"));
+}
+
+/**
+ * The names the province layer paints onto the map, in draw order.
+ *
+ * `getByTitle` cannot see these — testing-library's selector is `svg > title`,
+ * a DIRECT child — so they are read off the paths that carry them.
+ */
+function unitTitles(container: HTMLElement): (string | null)[] {
+  return [...container.querySelectorAll("[data-units] title")].map((title) => title.textContent);
 }
 
 /** Every marker group, in the order they are drawn. */
@@ -222,13 +263,8 @@ describe("CountryLevel", () => {
     // CN's. Dropping the shape would change the country's coastline; offering
     // it would make it a subdivision.
     expect(container.querySelectorAll("[data-units] path")).toHaveLength(4);
-    // Named on hover, and only the three: `getByTitle` cannot see these —
-    // testing-library's selector is `svg > title`, a DIRECT child — so the
-    // titles are read off the paths that carry them.
-    const titles = [...container.querySelectorAll("[data-units] title")].map(
-      (title) => title.textContent
-    );
-    expect(titles).toEqual(["Lima", "Cuzco", "Isla Lejana"]);
+    // Named on hover, and only the three.
+    expect(unitTitles(container)).toEqual(["Lima", "Cuzco", "Isla Lejana"]);
   });
 
   test("projects through the manifest entry, not a per-render fit", () => {
@@ -856,34 +892,18 @@ describe("CountryLevel province zoom", () => {
     // because this level resolves a region through the SCHEME rather than
     // straight into `selectableFeatures`. A group is not always a unit (China's
     // are five provinces each), and a unit is not always a group.
-    const lone = parseProvinceTopology({
-      country: "PE",
-      generatedAt: "2026-08-30T00:00:00.000Z",
-      idKey: "adm1_code",
-      topology: {
-        ...PE_TOPOLOGY,
-        objects: {
-          provinces: {
-            ...PE_TOPOLOGY.objects.provinces,
-            geometries: PE_TOPOLOGY.objects.provinces.geometries.map((geometry) =>
-              geometry.id === "PE-LIM"
-                ? geometry
-                : { ...geometry, properties: { ...geometry.properties, sel: 0 } }
-            ),
-          },
-        },
-      },
-      cityProvince: {},
-    });
+    const { container } = renderLevel({ provinces: PE_ONE_UNIT, region: "PE-LIM" });
 
-    const { container } = renderLevel({ provinces: lone, region: "PE-LIM" });
-
-    // The unit is real, drawn and offered — so the identity transform below is
-    // the gate answering, not the geometry having gone missing.
-    const offered = [...container.querySelectorAll("[data-unit]")].map((el) =>
+    // The unit is real, drawn and MARKED — so the identity transform below is
+    // the gate answering, not the geometry having gone missing. The mark is
+    // §7.2's ("this polygon is a subdivision, not just territorial extent"),
+    // which stays true of a lone unit; what a lone unit is not is a place to
+    // zoom to, and that is decided through the scheme rather than through the
+    // mark.
+    const marked = [...container.querySelectorAll("[data-unit]")].map((el) =>
       el.getAttribute("data-unit")
     );
-    expect(offered).toEqual(["PE-LIM"]);
+    expect(marked).toEqual(["PE-LIM"]);
     expect(container.querySelector<SVGGElement>("[data-zoom]")!.style.transform).toBe(
       "translate(0px, 0px) scale(1)"
     );
@@ -1005,6 +1025,86 @@ describe("CountryLevel province zoom", () => {
     // And an unzoomed card anchors to the projection untouched, which is what
     // every render before this plan did.
     expect(paintedAt(centre, IDENTITY_TRANSFORM)).toEqual(centre);
+  });
+});
+
+/**
+ * §6.6 D10: where the province level would BE the country level, it is not
+ * offered.
+ *
+ * 34 of the 246 countries ship exactly one selectable unit, and for them an
+ * admin-1 layer is the national outline drawn a second time. `regionSchemeFor`
+ * already refuses to make a group out of a lone unit, so no zoom can be reached
+ * and no region control can be built out of one — what survives that refusal is
+ * the unit's NAME, which this level paints into a `<title>` on the polygon.
+ *
+ * The Faroes are why that is not cosmetic. `FRO-1443` is a single MultiPolygon
+ * spanning the whole archipelago — bbox −7.644..−6.276, 61.394..62.399, which is
+ * Suðuroy to Fugloy — and Natural Earth names it `Eysturoyar`, one island of
+ * eighteen. The file assigns Tórshavn to it, a city its own shard records under
+ * Streymoy. Titling that polygon tells a reader the Faroe Islands are Eysturoy.
+ * Monaco and Puerto Rico get the merely redundant version of the same label,
+ * and all 34 are treated alike: where the province layer has nothing to divide,
+ * it says nothing.
+ *
+ * The gate is the COUNT and never a list of codes, which is what the second
+ * test holds it to — one country code, two files, differing in nothing but how
+ * many of their units are `sel: 1`.
+ */
+describe("CountryLevel where L3 would be L2", () => {
+  /** The real Faroes, through the real parser. 7 KB, and the whole of D10. */
+  const FO_FILE: ProvinceFile = parseProvinceTopology(FO_PROVINCES, "FO");
+
+  test("offers no region control for the 34 countries with one selectable unit", () => {
+    // The registry is what says there are 34, and it says so by COUNT.
+    // `regionSchemeFor` reads the units while this reads the index; the two
+    // agree for all 246 committed files, and `lib/regionScheme.test.ts` pins it.
+    const single = [...COUNTRY_DETAIL].filter(([, detail]) => detail.count <= 1);
+    expect(single).toHaveLength(34);
+    expect(single.map(([code]) => code)).toContain("FO");
+
+    const lone = FO_FILE.units.filter((unit) => unit.selectable);
+    expect(lone).toHaveLength(1);
+    // The label exists and is deliberately withheld, so the absence below is a
+    // decision rather than a unit that happened to carry no name at all.
+    expect(unitLabel("FO", lone[0])).toBe("Eysturoy");
+
+    const { container } = renderLevel({
+      country: "FO",
+      provinces: FO_FILE,
+      projection: null,
+      places: [],
+    });
+
+    // Drawn, and every island of it: D10 suppresses the province LAYER, never
+    // the country's coastline. The map is the enhancement §5.2 promises.
+    expect(container.querySelectorAll("[data-units] path")).toHaveLength(1);
+    expect(container.querySelector("[data-outline]")).not.toBeNull();
+    // And unnamed, anywhere on the surface — not in a title, not in a control.
+    expect(unitTitles(container)).toEqual([]);
+    expect(container.innerHTML).not.toContain("Eysturoy");
+  });
+
+  test("gates on the index count, not on a list of country codes", () => {
+    // One country code, two files. A gate written as the 34 codes answers the
+    // same for both of these — and so does one written as
+    // `detailFor(country).count`, which reports on the COMMITTED Peru rather
+    // than on the geometry being drawn. Only a count taken from the units in
+    // hand tells them apart.
+    expect(PE_FILE.units.filter((unit) => unit.selectable)).toHaveLength(3);
+    expect(PE_ONE_UNIT.units.filter((unit) => unit.selectable)).toHaveLength(1);
+    expect(detailFor("PE")?.count).toBeGreaterThan(1);
+
+    const { container } = renderLevel();
+    expect(unitTitles(container)).toEqual(["Lima", "Cuzco", "Isla Lejana"]);
+    cleanup();
+
+    const lone = renderLevel({ provinces: PE_ONE_UNIT });
+    expect(unitTitles(lone.container)).toEqual([]);
+    // The same country, drawn the same way, saying less: four paths and one
+    // merged outline either way.
+    expect(lone.container.querySelectorAll("[data-units] path")).toHaveLength(4);
+    expect(lone.container.querySelector("[data-outline]")).not.toBeNull();
   });
 });
 
