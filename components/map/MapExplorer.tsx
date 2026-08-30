@@ -826,6 +826,12 @@ export function MapExplorer({
           month={month}
           zoomRegion={zoomRegion}
           routeIds={route?.order.map((p) => p.id) ?? []}
+          // The array this component has held since PR1 and spent on one thing
+          // — `suggestRoute`'s flight legs — reaching a second reader (§10.2).
+          // No new fetch and no new route: `/api/map/airports?country=XX` is
+          // already asked for above, and it is the request that keeps
+          // `lib/server/airports.ts` and its 876,823 B artifact on the server.
+          airports={airports}
           onZoomRegion={showRegion}
           onTogglePlace={togglePlace}
           onHoverPlace={(place, pos) =>

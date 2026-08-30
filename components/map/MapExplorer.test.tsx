@@ -1565,6 +1565,75 @@ describe("the province level's chrome", () => {
   });
 });
 
+/**
+ * §10.2's "Main airport" line, end to end.
+ *
+ * `MapExplorer` has fetched the open country's airports since PR1 and spent
+ * them on one thing — `suggestRoute`'s flight legs — so the array reached the
+ * route panel and nothing else. The three prop hops between it and
+ * `SelectedPlaceCard` carried no airport field, which is why this line could
+ * not exist until they did.
+ *
+ * Rendered here rather than only against `CountryLevel` because the level's own
+ * tests are handed the array directly: a `MapExplorer` that fetched the
+ * airports and then failed to pass them down would leave every one of them
+ * green and every real card blank.
+ */
+describe("the open country's airports on its map", () => {
+  /** Exactly 12 km north of the committed Cusco row, along its own meridian. */
+  const CUZ = {
+    iata: "CUZ",
+    icao: "SPZO",
+    name: "Alejandro Velasco Astete International Airport",
+    municipality: "Cusco",
+    country: "PE",
+    lat: -13.53188 + 12 / ((6371 * Math.PI) / 180),
+    lon: -71.96701,
+    size: "medium",
+  };
+
+  test("the country's airports reach the card its markers open", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (fetchMock = vi.fn((url: string) => {
+        const href = String(url);
+        if (href.startsWith("/api/map/airports")) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ airports: [CUZ] }) });
+        }
+        return defaultFetch(href);
+      }))
+    );
+
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+
+    // The country it asked for, not a global set: the route is per-country and
+    // the line has to be about the country whose map is open.
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain(
+      "/api/map/airports?country=PE"
+    );
+
+    fireEvent.click(container.querySelector('[data-place="G3941584"]')!);
+
+    expect(screen.getByRole("dialog", { name: "Cusco" }).textContent).toContain(
+      "Main airport: CUZ · 12 km"
+    );
+  });
+
+  test("a country whose airports never arrive still opens a card", async () => {
+    // The default answer table returns an empty array for every country, which
+    // is also what a failed fetch leaves behind (the effect clears first). The
+    // card is not gated on it.
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+
+    fireEvent.click(container.querySelector('[data-place="G3941584"]')!);
+
+    expect(screen.getByRole("dialog", { name: "Cusco" })).toBeInTheDocument();
+    expect(container.querySelector("[data-main-airport]")).toBeNull();
+  });
+});
+
 describe("fit lookups degrade instead of throwing on a foreign region label", () => {
   test("an unknown region label gets a neutral fit instead of throwing", () => {
     // bestSeasons: undefined is load-bearing — fitForPlace returns early when a

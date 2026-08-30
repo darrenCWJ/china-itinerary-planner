@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
+import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
 import { IDENTITY_TRANSFORM, ZOOM_FILL, type MapTransform } from "@/lib/mapTransform";
+import { MAIN_AIRPORT_LABEL, mainAirportFor } from "@/lib/mainAirport";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
@@ -141,6 +143,19 @@ const SELECTION_RING = 3.5;
  */
 const FOCUS_RING = SELECTION_RING + 2.5;
 const ROUTE_STROKE = 2;
+
+/**
+ * The empty airport array, as one module-level value rather than a `[]` literal
+ * in the destructure below.
+ *
+ * A default written `airports = []` allocates a new array on every render, so
+ * the memo that resolves the card's line would see a changed dependency every
+ * time the pointer crossed a marker — hover reports up to `MapExplorer`, which
+ * re-renders this level — and would re-scan the country's airports for a card
+ * that had not changed. `RouteMap` passes none at all, so this is the value the
+ * trip map renders against.
+ */
+const NO_AIRPORTS: Airport[] = [];
 
 /**
  * The smallest extent, in viewBox units, a unit is framed as though it had.
@@ -715,6 +730,27 @@ export interface CountryLevelProps {
    * set of controls, all of them lying. The mode has to be stated.
    */
   readOnly?: boolean;
+  /**
+   * The open country's airports, for §10.2's "Main airport" line on the card.
+   *
+   * The ARRAY, and never the artifact. `lib/server/airports.ts` carries no
+   * `server-only` guard, so importing it from this file would compile clean and
+   * silently ship `data/airports.json` — 876,823 B — to every visitor.
+   * `MapExplorer` already fetches the open country's rows from
+   * `/api/map/airports?country=XX` for the route estimator, and this is that
+   * same array reaching a second reader rather than a second fetch.
+   *
+   * An `Airport` is not a `MapPlace` and deliberately never becomes one. §10.1
+   * says airports are never selectable trip stops, so nothing here may flow
+   * into a place-shaped prop: this array's whole reach is the line of text
+   * below.
+   *
+   * Optional, because `RouteMap` is a second caller and loads none — and
+   * because a card with no airport line is the correct render for a country
+   * whose airports have not landed yet, which is every country for the first
+   * moment it is open.
+   */
+  airports?: Airport[];
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -729,6 +765,7 @@ export function CountryLevel({
   routeIds,
   region = null,
   readOnly = false,
+  airports = NO_AIRPORTS,
   onTogglePlace,
   onHoverPlace,
 }: CountryLevelProps) {
@@ -1056,6 +1093,25 @@ export function CountryLevel({
   const cardIndex = card === null ? -1 : places.findIndex((p) => p.id === card.id);
   const cardPlace = cardIndex >= 0 ? places[cardIndex] : null;
 
+  /**
+   * The one airport the open card names (§10.2), or null when there is none
+   * worth naming.
+   *
+   * Memoised because this level re-renders on every hover — `onHoverPlace`
+   * reports up to `MapExplorer`, which holds the tooltip's state — and the
+   * resolver is a linear scan over the whole country's airports. Nothing about
+   * that scan changes between two mouse positions over the same marker.
+   *
+   * Null covers both an empty array and a card whose place has no airport
+   * inside `DEFAULT_AIRPORT_RADIUS_KM`, and the render below treats them alike:
+   * no row at all. A place 600 km from the nearest runway is better described
+   * by silence than by that runway.
+   */
+  const mainAirport = useMemo(
+    () => (cardPlace === null ? null : mainAirportFor(airports, cardPlace)),
+    [airports, cardPlace]
+  );
+
   const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
   return (
@@ -1304,7 +1360,24 @@ export function CountryLevel({
               // somewhere else is not a request to be sent back to the map.
               if (heldFocus) refocus(cardPlace.id);
             }}
-          />
+          >
+            {/*
+              §10.2's line, into the slot Plan 3 reserved and named. "Main
+              airport" and never "Nearest": `nearestAirports` discounts distance
+              by size, and the discounts compose, so the airport this names can
+              be up to 30 km further out than the true nearest — which is the
+              right answer for a traveller and the wrong word for it.
+
+              Rendered only when there is one, because the wrapper is
+              `empty:hidden`: a row saying "no airport" would spend a line
+              telling a reader something they did not ask.
+            */}
+            {mainAirport && (
+              <p data-main-airport="">
+                {MAIN_AIRPORT_LABEL}: {mainAirport.iata} · {mainAirport.km} km
+              </p>
+            )}
+          </SelectedPlaceCard>
         )}
       </div>
 

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { Airport } from "@/lib/airports";
 import { COUNTRY_DETAIL, detailFor } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import {
@@ -1619,5 +1620,111 @@ describe("CountryLevel read-only", () => {
     fireEvent.click(cusco);
     expect(props.onTogglePlace).toHaveBeenCalledWith(CUSCO);
     expect(screen.getByRole("dialog", { name: "Cusco" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * §10.2's "Main airport" line — the first airport text attached to a place
+ * anywhere in the app.
+ *
+ * The line lands in the card's `children`, the slot `SelectedPlaceCard` has
+ * reserved and named since Plan 3, so nothing about the card changes to carry
+ * it. What changes is that the array `MapExplorer` has fetched since PR1 and
+ * spent only on the route estimator now reaches this level.
+ *
+ * `airports` is optional and NOT gated on §10.1's map-layer toggle. They are
+ * two features with one data source: the toggle is about marker clutter on the
+ * map, and this is a fact about the place whose card is open, which a reader
+ * who has never found the toggle still deserves.
+ */
+
+/** Degrees of latitude per km, for an airport placed along a place's meridian. */
+const KM_PER_DEGREE = (6371 * Math.PI) / 180;
+
+/**
+ * An airport exactly `km` due north of a place.
+ *
+ * Along the meridian, where the great-circle distance is exactly `R · dLat` —
+ * so "30 km away" is 30 km rather than 30-ish, and the number the card prints
+ * is pinned by the fixture instead of by whichever way `Math.round` fell.
+ */
+function airportNear(
+  place: MapPlace,
+  iata: string,
+  km: number,
+  size: Airport["size"] = "medium"
+): Airport {
+  return {
+    iata,
+    icao: null,
+    name: `${iata} Airport`,
+    municipality: place.name,
+    country: "PE",
+    lat: place.lat + km / KM_PER_DEGREE,
+    lon: place.lon,
+    size,
+  };
+}
+
+describe("CountryLevel main airport", () => {
+  test("the card shows the main airport for the selected place", () => {
+    // Two airports, one per city, and that is what makes the assertion about
+    // THIS place rather than about the array: a level that named the first
+    // entry it was handed would put Lima's airport on Cusco's card and would
+    // pass a one-airport fixture without a murmur.
+    const { container } = renderLevel({
+      airports: [airportNear(LIMA, "LIM", 12), airportNear(CUSCO, "CUZ", 30)],
+    });
+
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+
+    const card = screen.getByRole("dialog", { name: "Cusco" });
+    expect(card.textContent).toContain("Main airport: CUZ · 30 km");
+    expect(card.textContent).not.toContain("LIM");
+    // And it claims no proximity, because the ranking cannot promise any: a
+    // large airport wins from up to 30 km further out than a small one (D12,
+    // and `lib/mainAirport.test.ts` pins the boundary).
+    expect(card.textContent).not.toMatch(/near|close/i);
+  });
+
+  test("the card shows no airport line when the country has none", () => {
+    // `empty:hidden` on the facts wrapper means an empty `children` renders
+    // nothing at all — so a card with a blank row and a card with no row are
+    // the same pixels. Assert the ROW is absent, not that it is present and
+    // empty, or a level that rendered "Main airport: undefined · NaN km" into
+    // a hidden div would pass.
+    const { container } = renderLevel();
+
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+
+    expect(screen.getByRole("dialog", { name: "Cusco" })).toBeInTheDocument();
+    expect(container.querySelector("[data-main-airport]")).toBeNull();
+    expect(container.querySelector("[data-place-facts]")!.textContent).toBe("");
+  });
+
+  test("the line follows the card from one place to the next", () => {
+    // The card is keyed on its place and remounts when another marker is
+    // tapped, so a line computed once at open would survive the remount and
+    // describe the place the user just left.
+    const { container } = renderLevel({
+      airports: [airportNear(LIMA, "LIM", 12), airportNear(CUSCO, "CUZ", 30)],
+    });
+
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+    expect(container.querySelector("[data-main-airport]")!.textContent).toBe(
+      "Main airport: CUZ · 30 km"
+    );
+
+    fireEvent.click(container.querySelector('[data-place="lima"]')!);
+    expect(container.querySelector("[data-main-airport]")!.textContent).toBe(
+      "Main airport: LIM · 12 km"
+    );
+
+    // Puerto Lejano is 3,500 km out on the trimmed island and no airport in
+    // the array is within the serving radius of it, so its card carries no
+    // line — the same absence as an empty array, which is the point:
+    // `mainAirportFor` answers per place and not per country.
+    fireEvent.click(container.querySelector('[data-place="isla"]')!);
+    expect(container.querySelector("[data-main-airport]")).toBeNull();
   });
 });
