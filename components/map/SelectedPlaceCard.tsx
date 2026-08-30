@@ -56,7 +56,22 @@ export interface SelectedPlaceCardProps {
   month: number;
   /** Whether the place is in the plan — the toggle reflects it and flips it. */
   selected: boolean;
-  /** The marker's position, in viewBox units. */
+  /**
+   * Where the marker is DRAWN, in viewBox units.
+   *
+   * Drawn, not projected, and the distinction is the caller's to make. This
+   * card is an HTML sibling of the `<svg>` rather than a node inside it, so the
+   * province zoom's transform — which moves every marker, the units under them
+   * and the route between them — reaches none of it. A caller that is zoomed
+   * has to hand over the post-transform position (`CountryLevel`'s `paintedAt`
+   * is that arithmetic), because a card given the pre-transform one would hang
+   * where its marker used to be, by as much as the zoom moved it.
+   *
+   * The card cannot do that conversion for itself and should not be given the
+   * chance to: it would have to be told the SVG's transform to undo a decision
+   * the SVG had already made, and there would then be two places where a zoom
+   * is applied.
+   */
   anchor: { x: number; y: number };
   /**
    * Focus the card as it opens. Set only when the open came from the keyboard:
@@ -148,7 +163,16 @@ export function SelectedPlaceCard({
    *
    * `clamp` keeps the card on screen when the anchor is not: the §5.4 trim
    * leaves nine countries with markers outside the frame at negative x, and a
-   * card for one of them still has to be readable.
+   * card for one of them still has to be readable. It is also why the x axis
+   * has no test against a rendered card — jsdom's CSS parser drops a
+   * declaration it cannot compute, and `clamp()` is one, so `style.left` is
+   * absent from every render it produces. `CountryLevel.test.tsx` pins that
+   * axis where the number is computed instead.
+   *
+   * `anchor` is the marker's DRAWN position, which under a province zoom is
+   * not the position it was projected to — see the prop's own docblock. The
+   * percentages below are of the frame, and the frame is what the zoom moves
+   * the marker within.
    */
   const leftPct = (anchor.x / MAP_VIEW_W) * 100;
   const topPct = (anchor.y / MAP_VIEW_H) * 100;
