@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Topology } from "topojson-specification";
+import type { Airport } from "@/lib/airports";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
@@ -481,8 +482,41 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
     return k;
   }
 
+  /**
+   * Three airports over the shard's mainland, of which §10.1's layer draws two.
+   *
+   * `small` is in the fixture on purpose: the layer's allow-list is `large` and
+   * `medium`, so a set of three that draws two is what makes the count below a
+   * count of the layer rather than of the array it was handed.
+   */
+  const PERUVIAN_AIRPORTS: Airport[] = (
+    [
+      ["LIM", -77, -12, "large"],
+      ["CUZ", -75, -13, "medium"],
+      ["JAU", -74, -11, "small"],
+    ] as const
+  ).map(([iata, lon, lat, size]) => ({
+    iata,
+    icao: null,
+    name: `${iata} Airport`,
+    municipality: null,
+    country: "PE" as const,
+    lat,
+    lon,
+    size,
+  }));
+
+  /** Every mark §10.1's layer drew, which on a country with no map is none. */
+  function airportMarks(container: HTMLElement): Element[] {
+    return [...container.querySelectorAll("[data-airports] [data-airport]")];
+  }
+
   describe.each(BRANCHES)("$label", ({ provinces, projection, hasMap, zoomRegion, markers }) => {
-    function renderCountry(places: MapPlace[]) {
+    function renderCountry(
+      places: MapPlace[],
+      /** §10.1's layer, for the case below that runs the criterion with it on. */
+      over: Partial<Parameters<typeof CountryMap>[0]> = {}
+    ) {
       const rendered = renderMap({
         country: "PE",
         topology: null,
@@ -490,6 +524,7 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
         projection,
         places,
         zoomRegion,
+        ...over,
       });
       // Which branch was taken, asserted rather than assumed. A `provinces`
       // value that stopped parsing — or a dispatcher that stopped routing on
@@ -594,5 +629,83 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       // empty loop is how this assertion would stop asserting anything.
       expect(drawnMarkers(container)).toHaveLength(hasMap ? 1 : 0);
     });
+
+    /**
+     * §10.1's layer, run against the criterion the phase is gated on.
+     *
+     * The three cases above render with the layer off, which is its default and
+     * therefore the only state they will ever see — so on its own this block
+     * would go on passing while the layer added a control, a tab stop or a
+     * marker to every country in the app. What §12.2 asks is that the level not
+     * change how a place is reached; an airport is not a place, so the layer's
+     * correct effect on every count here is exactly zero, in both directions.
+     *
+     * Both directions, and that is not pedantry: the failure that matters is a
+     * layer drawn as `<g role="button">` — the shape §5.3.1 already uses for a
+     * marker, and the obvious way to make an airport clickable later — which
+     * ADDS reachable controls that lead nowhere. A layer that swallowed taps
+     * from the markers beneath it would subtract instead. Equality catches both
+     * and is what "decorative" means when written as an assertion.
+     *
+     * The explicit timeout is the cost of that: three renderings of a 200-city
+     * map where every neighbour in this block renders one, at ~700ms each with
+     * `getAllByRole` over ~400 controls as most of it. ~2s in isolation, and
+     * over vitest's 5s default under the full suite where 119 files share the
+     * box. Raised rather than trimmed: the equality between the three IS the
+     * deliverable, and a cheaper baseline would be a different claim.
+     */
+    test("the airport layer changes nothing the criterion counts", () => {
+      /** The criterion's own counts, taken over one full render. */
+      function counts(over: Partial<Parameters<typeof CountryMap>[0]>) {
+        const { container } = renderCountry(peruvianShard(), over);
+        // Expanded, so the count is of all 200 rather than of the caps.
+        for (const button of screen.queryAllByRole("button", { name: /^Show all/ })) {
+          fireEvent.click(button);
+        }
+        const measured = {
+          /** Every control a reader can reach, markers and chips alike. */
+          reachable: screen.getAllByRole("button").length,
+          /** §5.2's spine, by tag — the list a framing must never filter. */
+          chips: listChips(container).length,
+          cities: listChips(container).filter((el) => /^City \d+$/.test(el.textContent ?? ""))
+            .length,
+          markers: drawnMarkers(container).length,
+          /** Tab stops, which is the half of §12.2 a decoration could inflate. */
+          tabStops: container.querySelectorAll('[tabindex="0"]').length,
+          airports: airportMarks(container).length,
+        };
+        cleanup();
+        return measured;
+      }
+
+      // Three renderings, because the array and the layer are two things and
+      // the middle one is the state the app is actually in. `MapExplorer` has
+      // fetched `airports` since PR1 for the route estimator and now passes it
+      // for the card's line as well, so EVERY open country holds the array with
+      // the toggle off. A comparison of `none` against `on` alone would leave
+      // that state — the common one — asserted by nothing.
+      const none = counts({});
+      const held = counts({ airports: PERUVIAN_AIRPORTS });
+      const on = counts({ airports: PERUVIAN_AIRPORTS, showAirports: true });
+
+      for (const measured of [held, on]) {
+        expect(measured.reachable).toBe(none.reachable);
+        expect(measured.chips).toBe(none.chips);
+        expect(measured.cities).toBe(200);
+        expect(measured.markers).toBe(none.markers);
+        expect(measured.markers).toBe(markers);
+        expect(measured.tabStops).toBe(none.tabStops);
+      }
+      expect(none.cities).toBe(200);
+
+      // And not vacuously. Two renders that both drew no layer would satisfy
+      // every equality above while proving nothing, and that is a live risk
+      // rather than a theoretical one: `none` passes no array at all, so its
+      // count of marks is zero however the level behaves. The two claims that
+      // carry the weight are therefore about `held` and `on` — the layer draws
+      // when it is asked to, and only then.
+      expect(held.airports).toBe(0);
+      expect(on.airports).toBe(hasMap ? 2 : 0);
+    }, 30_000);
   });
 });
