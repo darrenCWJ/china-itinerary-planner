@@ -16,7 +16,6 @@ import { DESTINATIONS } from "@/lib/data";
 import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
-import type { ChinaRegion } from "@/lib/types";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { CountryMap, CURATED_COUNTRY, hasCuratedTopology } from "./CountryMap";
@@ -34,6 +33,7 @@ import { curatedPlaceNames } from "@/lib/curatedNames";
 import { foldPlaceName } from "@/lib/foldPlaceName";
 import { fetchProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { regionForProvinceText } from "@/lib/provinces";
+import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
 
 /**
  * The level coordinator (spec §6): world ⇄ country, sharing one shell, one
@@ -143,6 +143,21 @@ interface Props {
 
 const DEFAULT_MONTH = 10;
 
+/**
+ * The one step-up control, drawn at whichever rung the two machines are on.
+ *
+ * Extracted because there are now three of them — out of a region, out of a
+ * country, and back down from the world level — and they are the same control
+ * in three states rather than three controls that happen to look alike. A
+ * literal repeated three times is a place `min-h-[var(--tap-min)]` can go
+ * missing from one of them: C5's 44px minimum is asserted per control in
+ * `MapExplorer.test.tsx` precisely because each is the only way out of the
+ * state it appears in, and a shared constant is what keeps a fourth rung from
+ * being added without it.
+ */
+const STEP_UP_BUTTON =
+  "inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]";
+
 export function MapExplorer({
   selected,
   visited,
@@ -157,7 +172,25 @@ export function MapExplorer({
   onMonthPicked,
 }: Props) {
   const [month, setMonth] = useState(DEFAULT_MONTH);
-  const [zoomRegion, setZoomRegion] = useState<ChinaRegion | null>(null);
+  /**
+   * The region the country level is framed on, or null for the whole country.
+   *
+   * `RegionId` since Phase 4, and deliberately not `ChinaRegion`. This state
+   * is the one §6.1 names as the thing to widen, and widening the union it
+   * used to hold is what the whole plan exists to avoid: `tsconfig.json` does
+   * not set `noUncheckedIndexedAccess`, so a non-China key indexing
+   * `REGION_MONTHS` or `REGION_META` compiles clean and throws at render.
+   * `lib/regionScheme.ts` sets out the argument in full.
+   *
+   * A second machine beside `level`, not a third `MapLevel` member, and the
+   * two stay independent: `MapLevel` is owned by `DestinationStep` and is
+   * switched on in exactly one place, so a third member would buy no
+   * exhaustiveness and would leave the app with two level machines anyway.
+   * The one place the two meet is the step-up control in the header below,
+   * which reads both to know whether its rung is out of a region or out of a
+   * country — and writes only one of them.
+   */
+  const [zoomRegion, setZoomRegion] = useState<RegionId | null>(null);
   const [topology, setTopology] = useState<Topology | null>(null);
   /**
    * The open country's own admin-1 geometry, or null when it has none yet.
@@ -233,6 +266,82 @@ export function MapExplorer({
    * fetch. The first is true once; the second is true 246 times.
    */
   const hasDetail = hasDetailLevel(country);
+
+  /**
+   * The zoomable groups this country offers the chrome, and the one it is
+   * framed on (§6.4, §6.6).
+   *
+   * `regionSchemeFor` over the very file this component fetched and passes
+   * down, so the control and `CountryLevel`'s own scheme are the same pure
+   * function over the same input and cannot disagree about what a group is.
+   * Lifting the scheme into a prop would have been the other way to guarantee
+   * that and costs `CountryLevel` a required prop for a value it can derive;
+   * two memoised calls to one allocation-light function is the cheaper half of
+   * that trade.
+   *
+   * Empty for China, and not by a special case: China's geometry is the
+   * curated `Topology`, `provinces` is never fetched for it, and there are no
+   * units here to build a scheme from. China's region control is the map — its
+   * provinces have been zoom buttons since long before this — so the chrome's
+   * `<select>` would be a second control for the same choice. §6.6's gate
+   * arrives the same way for everyone else: a country with one selectable unit
+   * has no groups, so no control is drawn and no region id can match.
+   *
+   * `zoomedGroup` is what the chrome names rather than `zoomRegion` itself.
+   * `RegionId` is `string`, so a region left over from the country the user
+   * just left stays assignable and nothing would catch it — resolving through
+   * the groups makes a stale id read as "the whole country", which is what
+   * `CountryLevel` draws for it.
+   */
+  const groups = useMemo(
+    () => (provinces ? regionSchemeFor(countryCode, provinces.units).groups : []),
+    [countryCode, provinces]
+  );
+  const zoomedGroup = useMemo(
+    () => (zoomRegion ? (groups.find((group) => group.id === zoomRegion) ?? null) : null),
+    [groups, zoomRegion]
+  );
+
+  /**
+   * What the chrome calls the framing, or null when the whole country is
+   * drawn — and therefore also which rung the back control is on.
+   *
+   * China is named from `zoomRegion` itself rather than from a group, because
+   * China has no groups here: this component holds the curated `Topology` and
+   * never a province file, so the seven regions never reach `regionSchemeFor`
+   * on this side. "North China" is the heading pre-Phase-4 China rendered and
+   * §9.5 keeps it — it is a region OF a country, where the other 245's groups
+   * are named subdivisions and stand alone.
+   */
+  const zoomedName = hasCurated
+    ? zoomRegion
+      ? `${zoomRegion} China`
+      : null
+    : (zoomedGroup?.label ?? null);
+
+  /**
+   * The line under the map, saying what the markers currently are.
+   *
+   * China's two strings are the ones it has always rendered (§9.5) and they
+   * describe China's own behaviour: `ChinaLevel` draws curated picks alone
+   * until a region is open, so its country-level caption is an invitation to
+   * open one. `CountryLevel` draws every city it has from the start, so the
+   * other 245 have nothing to say at country level and say nothing — the
+   * caption is not a label for the map, it is an explanation of an absence.
+   *
+   * The absence a zoom creates is the one that needs explaining: §6.5 stops
+   * drawing every city outside the framed group, which reads as a country
+   * with fewer cities in it unless the caption names the framing and says
+   * where the rest went. §5.2's list is unfiltered underneath, and that is
+   * the sentence.
+   */
+  const caption = hasCurated
+    ? zoomRegion
+      ? "Click any marker to add it to your trip"
+      : "Markers show curated picks — zoom into a region for every city"
+    : zoomedGroup
+      ? `Showing ${zoomedGroup.label} — the list below still reaches every city`
+      : null;
 
   /**
    * Everything the open country's map needs: its admin-1 geometry — China's
@@ -522,6 +631,20 @@ export function MapExplorer({
     onLevelChange("country");
   };
 
+  /**
+   * Framing, and the hover that belonged to the framing before it.
+   *
+   * `hover` holds a `MapPlace` the zoom may have just stopped drawing (§6.5
+   * filters the markers to the framed group), so a popup left open would
+   * describe a city nothing on the map shows — the same reason the country
+   * effect clears it. Every writer of `zoomRegion` goes through here so no
+   * later one can forget.
+   */
+  const showRegion = (region: RegionId | null) => {
+    setZoomRegion(region);
+    setHover(null);
+  };
+
   // Returned before the China fetches are consulted: the world level draws from
   // its own asset, so a failed province topology must not blank it out.
   if (level === "world") {
@@ -541,7 +664,7 @@ export function MapExplorer({
           <button
             type="button"
             onClick={() => onLevelChange("country")}
-            className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+            className={STEP_UP_BUTTON}
           >
             ← Back to {countryLabel}
           </button>
@@ -598,27 +721,73 @@ export function MapExplorer({
   return (
     <div className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          {!hasCurated ? (
-            <h3 className="font-display text-lg font-bold">{countryLabel}</h3>
-          ) : zoomRegion ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {/*
+            The back path, level-aware because the two machines are separate
+            and only this control has to look at both: a region's step up is
+            the whole country, a country's step up is the world, and one rung
+            is offered at a time so the chain reads region → country → world.
+
+            `zoomedName` and not `zoomRegion` decides which rung this is. A
+            region id left over from another country resolves to no group, so
+            it reads as "the whole country" here exactly as it does in
+            `CountryLevel` — the two must agree, or the chrome would offer a
+            way out of a framing the map is not in.
+          */}
+          {zoomedName ? (
+            <>
+              <button type="button" onClick={() => showRegion(null)} className={STEP_UP_BUTTON}>
+                ← All {countryLabel}
+              </button>
+              <h3 className="font-display text-lg font-bold">{zoomedName}</h3>
+            </>
+          ) : (
             <>
               <button
                 type="button"
-                onClick={() => {
-                  setZoomRegion(null);
-                  setHover(null);
-                }}
-                className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]"
+                onClick={() => onLevelChange("world")}
+                className={STEP_UP_BUTTON}
               >
-                ← All China
+                ← All countries
               </button>
-              <h3 className="font-display text-lg font-bold">{zoomRegion} China</h3>
+              {/*
+                China's own line, unchanged: at country level `ChinaLevel`
+                draws curated picks over seven clickable regions, so the
+                heading is an instruction rather than a name. Every other
+                country draws all of its cities at once and has a `<select>`
+                beside it, so its heading is the country.
+              */}
+              <h3 className="font-display text-lg font-bold">
+                {hasCurated ? "Click a region to zoom in" : countryLabel}
+              </h3>
             </>
-          ) : (
-            <h3 className="font-display text-lg font-bold">
-              Click a region to zoom in
-            </h3>
+          )}
+          {/*
+            The other 245's region control (§6.1). A `<select>` rather than the
+            clickable polygons China has: `CountryLevel`'s units carry no
+            keyboard model, and giving 83 of Russia's oblasts one apiece is the
+            per-marker tab-stop budget §5.3.1 already rejected — where a native
+            select is one stop, one control and one thing a screen reader
+            already knows how to drive. It doubles as the sideways move China's
+            map has and its back button does not: from inside a province,
+            another province is one choice rather than out-then-in.
+          */}
+          {groups.length > 0 && (
+            <label className="flex items-center gap-2">
+              <span className="sr-only">Zoom to a province</span>
+              <select
+                value={zoomedGroup?.id ?? ""}
+                onChange={(event) => showRegion(event.target.value || null)}
+                className="min-h-[var(--tap-min)] rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-2 text-xs font-medium text-[var(--ink-2)]"
+              >
+                <option value="">All of {countryLabel}</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
         {/* The legend reads the marker colours, so it appears only where there
@@ -657,10 +826,7 @@ export function MapExplorer({
           month={month}
           zoomRegion={zoomRegion}
           routeIds={route?.order.map((p) => p.id) ?? []}
-          onZoomRegion={(r) => {
-            setZoomRegion(r);
-            setHover(null);
-          }}
+          onZoomRegion={showRegion}
           onTogglePlace={togglePlace}
           onHoverPlace={(place, pos) =>
             setHover(place && pos ? { place, pos } : null)
@@ -677,11 +843,9 @@ export function MapExplorer({
         )}
       </div>
 
-      {hasCurated && (
+      {caption && (
         <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
-          {zoomRegion
-            ? "Click any marker to add it to your trip"
-            : "Markers show curated picks — zoom into a region for every city"}
+          {caption}
         </p>
       )}
 

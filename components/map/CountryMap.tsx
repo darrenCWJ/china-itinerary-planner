@@ -7,6 +7,7 @@ import type { ProjectionEntry } from "@/lib/countryProjection";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
 import type { ProvinceFile } from "@/lib/provinceTopology";
+import type { RegionId } from "@/lib/regionScheme";
 import type { ChinaRegion } from "@/lib/types";
 import { CountryLevel } from "./CountryLevel";
 import { CountryPlaceList } from "./CountryPlaceList";
@@ -88,14 +89,25 @@ interface LevelProps {
   selected: string[];
   month: number;
   /**
-   * `ChinaRegion`, permanently — not a type PR3 widens. Judgement call J14:
-   * other countries have no regions to zoom into, so a wider type here would
-   * be a promise this level can't keep. Zooming into a region stays a
-   * China-only feature by design.
+   * The region either level is framed on, or null for the whole country.
+   *
+   * `RegionId`, and the judgement this reverses is worth naming: PR3's J14
+   * said `ChinaRegion` "permanently", because other countries had no regions
+   * to zoom into and a wider type would have been a promise the level could
+   * not keep. Phase 4 built the regions — `lib/regionScheme.ts` answers "what
+   * are this country's groups" for all 246 — so the promise is now kept and
+   * the narrow type is the thing that would be wrong.
+   *
+   * `RegionId` and NOT a widened `ChinaRegion`, which is the other way to
+   * write this and is unsafe: `tsconfig.json` does not set
+   * `noUncheckedIndexedAccess`, so a non-China key indexing `REGION_MONTHS` or
+   * `REGION_META` compiles clean and throws at render. The union below at
+   * `Object.keys(REGION_META) as ChinaRegion[]` is an unchecked assertion that
+   * would go on compiling and stop meaning anything.
    */
-  zoomRegion: ChinaRegion | null;
+  zoomRegion: RegionId | null;
   routeIds: string[];
-  onZoomRegion: (region: ChinaRegion | null) => void;
+  onZoomRegion: (region: RegionId | null) => void;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -155,6 +167,12 @@ export function CountryMap({
         selected={level.selected}
         month={level.month}
         routeIds={level.routeIds}
+        // The province level's framing, threaded rather than held here: the
+        // caller owns it because the chrome that changes it is the caller's,
+        // and because `ChinaLevel` beside this reads the same prop. One piece
+        // of state, two renderers, and neither of them able to disagree with
+        // the header about which region is open.
+        region={level.zoomRegion}
         readOnly={readOnly}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
