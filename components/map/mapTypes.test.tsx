@@ -1,8 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import type { Airport } from "@/lib/airports";
 import { REGION_MONTHS } from "@/lib/months";
 import { regionSchemeFor } from "@/lib/regionScheme";
 import type { ProvinceUnit } from "@/lib/provinceTopology";
-import { fitForRegion, isChinaRegion, NEUTRAL_FIT } from "./mapTypes";
+import type { CountryLevelProps } from "./CountryLevel";
+import type { CountryMapProps } from "./CountryMap";
+import { fitForRegion, isChinaRegion, NEUTRAL_FIT, type MapPlace } from "./mapTypes";
 
 /**
  * The guard between a region label and China's month table.
@@ -92,5 +95,120 @@ describe("isChinaRegion", () => {
       expect(isChinaRegion(group.id), group.id).toBe(true);
       expect(fitForRegion(group.id, 6), group.id).not.toBe(NEUTRAL_FIT);
     }
+  });
+});
+
+/**
+ * §10.1's other clause: "Airports are never selectable trip stops and the
+ * types must enforce it."
+ *
+ * A compile-time block on purpose. The runtime half already exists —
+ * `CountryLevel.test.tsx`'s "clicking an airport mark does not select
+ * anything" — and all it can prove is that the layer *as written* never calls
+ * `onTogglePlace`. It cannot prove that a later edit could not, and that is
+ * the failure the spec is worried about.
+ *
+ * Why the structural mismatch is not enough on its own: widening
+ * `MapPlace["kind"]` to `"curated" | "catalog" | "airport"` — the obvious way
+ * to draw the layer through the selection machinery that already exists — and
+ * running `npx tsc --noEmit` over the whole repo reports ZERO errors. That was
+ * measured before this block was written, not assumed. Every reader of `kind`
+ * is `=== "curated"` with an implicit else (`CountryLevel.tsx:401`,
+ * `CountryMap.tsx:290`, `PlacePopup.tsx:43`), so a third member changes no
+ * branch and `MapExplorer.togglePlace` starts adding airports to trips. The
+ * `kind` test below is the only line in the codebase that goes red for it.
+ *
+ * Each `@ts-expect-error` here is an assertion that reverses: it is satisfied
+ * while the line beneath it is illegal, and becomes an error in its own right
+ * — TS2578, unused directive — the moment that line becomes legal. `npx tsc
+ * --noEmit` is what runs them; `vitest` only checks the companions.
+ */
+describe("airports are never trip stops, and the compiler is what says so", () => {
+  /** Cusco's airport, in the shape `/api/map/airports?country=PE` returns. */
+  const CUZ: Airport = {
+    iata: "CUZ",
+    icao: "SPZO",
+    name: "Alejandro Velasco Astete International Airport",
+    municipality: "Cusco",
+    country: "PE",
+    lat: -13.5357,
+    lon: -71.9388,
+    size: "medium",
+  };
+
+  /** The city it serves — a real trip stop, and the thing it is not. */
+  const CUSCO: MapPlace = {
+    id: "Q5582",
+    kind: "catalog",
+    name: "Cusco",
+    localName: "Qosqo",
+    province: "Cusco",
+    region: "Cusco",
+    lat: -13.5167,
+    lon: -71.9789,
+    population: 428450,
+    level: "municipality",
+    attractionCount: 0,
+    blurb: null,
+  };
+
+  test("an Airport is not assignable to MapPlace", () => {
+    // @ts-expect-error — an Airport is missing nine of the twelve fields a
+    // MapPlace requires. It shares exactly three, `name`/`lat`/`lon`, which is
+    // everything a marker is drawn from and nothing a trip stop is made of.
+    const place: MapPlace = CUZ;
+
+    // The runtime cannot help here, which is the point: the forged place has
+    // no `kind` at all, so every `place.kind === "curated"` reader falls to its
+    // implicit else and quietly treats an airport as a catalog city. Nothing
+    // throws. The compiler is the only guard there is.
+    expect(place.kind).toBeUndefined();
+  });
+
+  test("togglePlace's parameter type rejects an airport", () => {
+    // `MapExplorer.togglePlace` is `(place: MapPlace) => void` and reaches both
+    // levels through this prop, which is where its parameter type is
+    // assertable from outside the component.
+    const onTogglePlace: CountryMapProps["onTogglePlace"] = vi.fn();
+
+    // @ts-expect-error — the array `MapExplorer` fetches for the estimator and
+    // the layer cannot be spent on a trip stop.
+    onTogglePlace(CUZ);
+
+    // And that call really happened. JS has no opinion about the argument, so
+    // "never a selectable trip stop" is a claim only the type system can make.
+    expect(onTogglePlace).toHaveBeenCalledWith(CUZ);
+
+    // The contravariant half, which pins `togglePlace` itself rather than one
+    // call to it: a handler written to take an Airport is not a place handler,
+    // so `togglePlace` cannot be rewritten into one and still be passed here.
+    // @ts-expect-error — parameter types are checked against the prop, strictly.
+    const wired: CountryLevelProps["onTogglePlace"] = (airport: Airport) => void airport.iata;
+
+    expect(typeof wired).toBe("function");
+  });
+
+  test("MapPlace.kind never gains an airport member", () => {
+    // @ts-expect-error — "airport" is not a place kind, and §10.1 says it must
+    // never become one. Widening the union is how this rule fails silently;
+    // see this block's header for the measurement that says so.
+    const kind: MapPlace["kind"] = "airport";
+
+    expect(kind).toBe("airport");
+  });
+
+  test("neither prop hop lets the two arrays cross", () => {
+    // `CountryLevel` takes both — `places` as controls, `airports` as
+    // decoration — and `CountryMap` threads them past each other. Each is
+    // refused as the other, which is what stops a copy-paste between the two
+    // `.map()`s from compiling.
+
+    // @ts-expect-error — airports are not places.
+    const places: CountryLevelProps["places"] = [CUZ];
+    // @ts-expect-error — and places are not airports.
+    const airports: CountryMapProps["airports"] = [CUSCO];
+
+    expect(places).toHaveLength(1);
+    expect(airports).toHaveLength(1);
   });
 });

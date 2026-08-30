@@ -778,6 +778,15 @@ export interface CountryLevelProps {
    * into a place-shaped prop: this array's whole reach is the line of text
    * below.
    *
+   * That rule is a compiler rule, and it is pinned in `mapTypes.test.tsx`
+   * ("airports are never trip stops, and the compiler is what says so") rather
+   * than here, because the way it fails is invisible from this file: widening
+   * `MapPlace["kind"]` with `"airport"` — the tempting way to draw this layer
+   * through the selection machinery that already exists — compiles the whole
+   * repo with ZERO errors, measured. Every reader of `kind` is `=== "curated"`
+   * with an implicit else, so no branch changes and `MapExplorer.togglePlace`
+   * simply starts accepting airports as trip stops.
+   *
    * Optional, because `RouteMap` is a second caller and loads none — and
    * because a card with no airport line is the correct render for a country
    * whose airports have not landed yet, which is every country for the first
