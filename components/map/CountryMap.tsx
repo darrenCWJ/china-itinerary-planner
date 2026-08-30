@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
+import type { Airport } from "@/lib/airports";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { provinceByAdcode, REGION_META } from "@/lib/provinces";
@@ -141,6 +142,19 @@ export interface CountryMapProps extends LevelProps {
    * silencing it would leave a trip's stops announced by nothing at all.
    */
   readOnly?: boolean;
+  /**
+   * The open country's airports, for §10.2's "Main airport" line on
+   * `CountryLevel`'s card.
+   *
+   * Here rather than on `LevelProps`, and for the reason `readOnly` above is:
+   * `LevelProps` is the shape BOTH levels are built from, and `ChinaLevel` has
+   * no card to put a line in. §9.5 pins China's rendered output byte for byte,
+   * so the frozen path gains nothing here — not even a prop it would ignore.
+   *
+   * Optional, because `RouteMap` is this component's second caller and fetches
+   * no airports at all.
+   */
+  airports?: Airport[];
 }
 
 export function CountryMap({
@@ -149,6 +163,7 @@ export function CountryMap({
   provinces,
   projection,
   readOnly = false,
+  airports,
   ...level
 }: CountryMapProps) {
   if (hasCuratedTopology(country)) {
@@ -174,6 +189,7 @@ export function CountryMap({
         // the header about which region is open.
         region={level.zoomRegion}
         readOnly={readOnly}
+        airports={airports}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
       />

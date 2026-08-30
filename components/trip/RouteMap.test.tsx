@@ -563,6 +563,23 @@ describe("the trip map is a view of the trip, not a picker", () => {
     expect(container.querySelector('[data-place="G3941584"]')).not.toBeNull();
   });
 
+  test("still renders with no airports of its own", async () => {
+    // The second `CountryMap` caller, and the reason §10.2's new prop is
+    // optional. `MapExplorer` fetches the open country's airports and threads
+    // them down; this surface fetches nothing of the kind and never will — a
+    // trip map is a drawing of a plan, and the "Main airport" line lives on a
+    // card `readOnly` does not open. A required prop would break it at the
+    // type level; one that arrived `undefined` would break it at the first
+    // read.
+    const { container } = renderPeru();
+    await settle();
+
+    expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
+    expect(container.querySelector('[data-place="G3941584"]')).not.toBeNull();
+    expect(container.querySelector("[data-main-airport]")).toBeNull();
+    expect(requestedUrls().some((url) => url.startsWith("/api/map/airports"))).toBe(false);
+  });
+
   test("passing null is deliberate and documented, not an unmigrated default", () => {
     // Read as text, because there is nothing else to read it with. `region`
     // defaults to null inside `CountryLevel`, so dropping the prop entirely
