@@ -155,6 +155,20 @@ export interface CountryMapProps extends LevelProps {
    * no airports at all.
    */
   airports?: Airport[];
+  /**
+   * Whether §10.1's airport layer is drawn over the country level's markers.
+   *
+   * Separate from `airports` above, and not inferred from it, because the
+   * array has two readers and only one of them is the layer: the card's "Main
+   * airport" line (§10.2) is a fact about the place a reader has just opened
+   * and is never gated on a map toggle. `MapExplorer` has passed `airports`
+   * since PR1 for the route estimator, so a layer that drew whenever it was
+   * handed an array would already be on everywhere with nothing to turn it off.
+   *
+   * Optional and off, because `RouteMap` is this component's second caller and
+   * has neither airports nor a control to toggle them with.
+   */
+  showAirports?: boolean;
 }
 
 export function CountryMap({
@@ -164,6 +178,7 @@ export function CountryMap({
   projection,
   readOnly = false,
   airports,
+  showAirports,
   ...level
 }: CountryMapProps) {
   if (hasCuratedTopology(country)) {
@@ -190,6 +205,7 @@ export function CountryMap({
         region={level.zoomRegion}
         readOnly={readOnly}
         airports={airports}
+        showAirports={showAirports}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
       />
