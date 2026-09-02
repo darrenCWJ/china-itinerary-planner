@@ -18,10 +18,10 @@ import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import { usePrefs } from "@/components/shell/PrefsProvider";
 import { useReducedMotion } from "@/lib/useReducedMotion";
-import { CountryMap, CURATED_COUNTRY, hasCuratedTopology } from "./CountryMap";
+import { CountryMap } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
-import { FIT_COLORS, FIT_LABELS, type MapPlace } from "./mapTypes";
+import { CLIMATE_COUNTRY, type MapPlace } from "./mapTypes";
 import {
   fetchCityEnrichment,
   fetchCityShard,
@@ -191,7 +191,6 @@ export function MapExplorer({
    * country — and writes only one of them.
    */
   const [zoomRegion, setZoomRegion] = useState<RegionId | null>(null);
-  const [topology, setTopology] = useState<Topology | null>(null);
   /**
    * The open country's own admin-1 geometry, or null when it has none yet.
    *
@@ -286,14 +285,7 @@ export function MapExplorer({
 
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
-  const hasCurated = hasCuratedTopology(country);
-  /**
-   * Two different questions, and the pair is why they have different names.
-   * `hasCurated` is "does China's hand-built asset describe this country",
-   * which decides the RENDERER; `hasDetail` is "did the build write this
-   * country an admin-1 file", which decides whether there is anything to
-   * fetch. The first is true once; the second is true 246 times.
-   */
+  /** Whether the build wrote this country an admin-1 file. True 246 times. */
   const hasDetail = hasDetailLevel(country);
 
   /**
@@ -342,11 +334,7 @@ export function MapExplorer({
    * §9.5 keeps it — it is a region OF a country, where the other 245's groups
    * are named subdivisions and stand alone.
    */
-  const zoomedName = hasCurated
-    ? zoomRegion
-      ? `${zoomRegion} China`
-      : null
-    : (zoomedGroup?.label ?? null);
+  const zoomedName = zoomedGroup?.label ?? null;
 
   /**
    * The line under the map, saying what the markers currently are.
@@ -364,11 +352,7 @@ export function MapExplorer({
    * where the rest went. §5.2's list is unfiltered underneath, and that is
    * the sentence.
    */
-  const caption = hasCurated
-    ? zoomRegion
-      ? "Click any marker to add it to your trip"
-      : "Markers show curated picks — zoom into a region for every city"
-    : zoomedGroup
+  const caption = zoomedGroup
       ? `Showing ${zoomedGroup.label} — the list below still reaches every city`
       : null;
 
@@ -391,7 +375,7 @@ export function MapExplorer({
    * appearing when its data lands, exactly as the region `<select>` above
    * already does.
    */
-  const canDrawAirports = !hasCurated && provinces !== null && airports.length > 0;
+  const canDrawAirports = provinces !== null && airports.length > 0;
 
   /**
    * Everything the open country's map needs: its admin-1 geometry — China's
@@ -413,12 +397,9 @@ export function MapExplorer({
    * the same reason the airports effect below clears first. Between a country
    * switch and the new data landing, the previous country's cities are wrong
    * answers, not stale ones, and its "unavailable" notice is a claim about a
-   * country the user has already left. `topology` is the one exception and
-   * needs no clear: it is read only under `hasCuratedTopology(country)`, both here
-   * and inside `CountryMap`, so China's geometry can never be drawn under
-   * anywhere else.
+   * country the user has already left.
    *
-   * `provinces` is NOT that exception and is cleared with the rest. It carries
+   * `provinces` is cleared with the rest. It carries
    * no country guard of its own — every country has one of these files — so
    * Peru's departments left in place across a switch would draw as Germany's
    * states, which is not a stale answer but a wrong one, and one that looks
@@ -435,28 +416,15 @@ export function MapExplorer({
     // so leaving it would keep a popup open over a place that no longer exists.
     setHover(null);
     Promise.all([
-      // The curated asset carries China's regions and China's nine-dash line,
-      // and §9.5 requires China's rendered output to be unchanged by PR4 — so
-      // China keeps fetching it, and keeps failing loudly when it 404s. Every
-      // other country is served by the leg below; nobody fetches both.
-      hasCurated
-        ? fetch("/china-provinces.json", { signal: controller.signal }).then((r) => {
-            if (!r.ok) throw new Error(`topology ${r.status}`);
-            return r.json() as Promise<Topology>;
-          })
-        : Promise.resolve(null),
-      // The other 245. Gated on the registry rather than tried-and-caught,
+      // All 246, China included. Gated on the registry rather than tried-and-caught,
       // because `provincePath` is well-formed for AQ, BV, HM and XD too and
       // the build wrote no file for any of them: without this, every map open
       // in one of those four spends a request on a guaranteed 404.
       //
-      // Swallows its own rejection, which the curated leg above does not. That
-      // is the §5.2 split, not an inconsistency: a country whose geometry is
-      // missing still lists every one of its cities, so routing that failure
-      // to `loadError` would replace a working list with a retry button. The
-      // curated leg has no such fallback — `ChinaLevel` IS China's list — so
-      // there the failure is the whole pane's.
-      hasDetail && !hasCurated
+      // Swallows its own rejection (§5.2): a country whose geometry is missing
+      // still lists every one of its cities, so routing that failure to
+      // `loadError` would replace a working list with a retry button.
+      hasDetail
         ? fetchProvinceTopology(countryCode, controller.signal).catch(() => null)
         : Promise.resolve(null),
       // The frame the geometry above is drawn in (§5.4). Swallows its own
@@ -465,7 +433,7 @@ export function MapExplorer({
       // to its own units, because the manifest and the code deploy
       // independently and a country whose entry has not been built yet must not
       // lose its map over it.
-      hasDetail && !hasCurated
+      hasDetail
         ? fetch(PROJECTION_PATH, { signal: controller.signal })
             .then((r) => {
               if (!r.ok) throw new Error(`projections ${r.status}`);
@@ -489,8 +457,8 @@ export function MapExplorer({
         () => ({}) as CityEnrichmentIndex
       ),
     ])
-      .then(([topo, provinceFile, manifest, catalogRes, shardRes, enrichment]) => {
-        // Five of the six legs swallow their own rejection, so an abort
+      .then(([provinceFile, manifest, catalogRes, shardRes, enrichment]) => {
+        // Four of the five legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -499,7 +467,6 @@ export function MapExplorer({
         // lands as an outage notice for a country whose request is still in
         // flight.
         if (controller.signal.aborted) return;
-        setTopology(topo);
         setProvinces(provinceFile);
         setProjection(manifest?.get(countryCode) ?? null);
         // A GeoNames row for a place a curated card already covers is a second
@@ -531,7 +498,7 @@ export function MapExplorer({
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [retryKey, hasCurated, hasDetail, countryCode]);
+  }, [retryKey, hasDetail, countryCode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -610,7 +577,7 @@ export function MapExplorer({
         // month-fit rather than the neutral one that guard exists to give.
         // Outside China the admin-1 name IS the region label.
         region:
-          countryCode === CURATED_COUNTRY
+          countryCode === CLIMATE_COUNTRY
             ? (regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central")
             : (c.province ?? ""),
         lat: c.lat,
@@ -768,16 +735,6 @@ export function MapExplorer({
     );
   }
 
-  // Only the detail level waits on an asset; the fallback has nothing to load.
-  if (hasCurated && !topology) {
-    return (
-      <div className="mt-5 animate-pulse rounded-xl border border-[var(--line-1)] bg-[var(--surf-1)] p-6">
-        <div className="h-[420px] rounded-lg bg-[var(--line-1)]/40" />
-        <p className="mt-3 text-center text-sm text-[var(--ink-2)]">Unfolding the map…</p>
-      </div>
-    );
-  }
-
   return (
     <div className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -818,7 +775,7 @@ export function MapExplorer({
                 beside it, so its heading is the country.
               */}
               <h3 className="font-display text-lg font-bold">
-                {hasCurated ? "Click a region to zoom in" : countryLabel}
+                {countryLabel}
               </h3>
             </>
           )}
@@ -850,22 +807,6 @@ export function MapExplorer({
             </label>
           )}
         </div>
-        {/* The legend reads the marker colours, so it appears only where there
-            are markers to read. */}
-        {hasCurated && (
-          <div className="flex flex-wrap items-center gap-2" aria-label="Map legend">
-            {(Object.keys(FIT_COLORS) as (keyof typeof FIT_COLORS)[]).map((fit) => (
-              <span key={fit} className="flex items-center gap-1 text-[11px] text-[var(--ink-2)]">
-                <span
-                  aria-hidden
-                  className="inline-block h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: FIT_COLORS[fit] }}
-                />
-                {FIT_LABELS[fit]}
-              </span>
-            ))}
-          </div>
-        )}
         {/*
           §10.1's layer toggle, in the slot the legend occupies for China —
           the two can never both be drawn, because a curated country has no
@@ -910,7 +851,6 @@ export function MapExplorer({
       <div ref={mapWrapRef} className="relative mt-3">
         <CountryMap
           country={country}
-          topology={topology}
           provinces={provinces}
           projection={projection}
           places={places}

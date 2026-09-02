@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
+import { provincePath } from "@/lib/provinceTopology";
 import { DESTINATIONS } from "@/lib/data";
 import type { DayPlan, TripPlan } from "@/lib/itinerary";
 import type { Destination } from "@/lib/types";
@@ -183,6 +184,63 @@ describe("routePlaces with resolved stops", () => {
  * what makes a wrong framing visible: §6.5 draws only the framed group's own
  * cities, and Cusco is assigned to neither half.
  */
+/**
+ * China's file in the shape the build writes it — `idKey: "adcode"`, Chinese
+ * `name`, no `name_en`, and the nine-dash envelope as a `sel: 0` unit.
+ *
+ * Small and inline for the reason `PE_PROVINCES` is: the real
+ * `public/provinces/CN.json` is 67 KB of geometry and nothing here reads a
+ * shape. What this fixture has to be faithful about is the ENVELOPE, because
+ * that is what changed — China used to be fetched as a bare TopoJSON from
+ * `/china-provinces.json` and is now parsed through the same reader as
+ * everyone else, which rejects a missing `idKey` or `sel`.
+ */
+const CN_PROVINCES = {
+  country: "CN",
+  generatedAt: "2026-08-30T00:00:00.000Z",
+  idKey: "adcode",
+  topology: {
+    type: "Topology",
+    arcs: [
+      [
+        [116, 39.5],
+        [116, 40.5],
+        [117, 40.5],
+        [117, 39.5],
+        [116, 39.5],
+      ],
+      [
+        [110, 10],
+        [110, 12],
+        [112, 12],
+        [112, 10],
+        [110, 10],
+      ],
+    ],
+    objects: {
+      provinces: {
+        type: "GeometryCollection",
+        geometries: [
+          {
+            type: "Polygon",
+            id: "110000",
+            arcs: [[0]],
+            properties: { name: "北京市", sel: 1 },
+          },
+          {
+            // The nine-dash envelope: drawn, never a subdivision (§7.2).
+            type: "Polygon",
+            id: "100000_JD",
+            arcs: [[1]],
+            properties: { name: "南海诸岛", sel: 0 },
+          },
+        ],
+      },
+    },
+  },
+  cityProvince: {},
+};
+
 const PE_PROVINCES = {
   country: "PE",
   generatedAt: "2026-08-30T00:00:00.000Z",
@@ -332,10 +390,6 @@ describe("the trip map draws the trip's own country", () => {
     const urls = requestedUrls();
     expect(urls).toContain("/provinces/PE.json");
     expect(urls).toContain(PROJECTION_PATH);
-    // Two different assets and both are wrong here: the curated topology is
-    // China's hand-built one, and `/provinces/CN.json` is the build's
-    // re-envelope of it.
-    expect(urls).not.toContain("/china-provinces.json");
     expect(urls).not.toContain("/provinces/CN.json");
   });
 
@@ -416,36 +470,20 @@ describe("the trip map draws the trip's own country", () => {
     expect(screen.queryByText(/None of this trip/)).not.toBeInTheDocument();
   });
 
-  test("a China trip still takes the curated asset and asks for nothing else", async () => {
-    // §9.5: China's rendered output is byte-identical across this phase. A
-    // wholly curated trip resolves nothing, so the only request this component
-    // makes is the one it always made.
+  test("a China trip takes the same province path as every other country", async () => {
+    // It used to take a path of its own — `/china-provinces.json`, the curated
+    // asset, fetched under a `hasCuratedTopology` branch that existed nowhere
+    // else. China now reads `/provinces/CN.json`, which §6.3 already specified
+    // as a re-envelope of those same shapes, through the same code as Peru.
+    //
+    // A wholly curated trip still resolves nothing, so the resolve endpoint is
+    // still not called: that half of the old assertion was never about China's
+    // renderer and is kept.
     stubFetch((url: string) =>
-      String(url) === "/china-provinces.json"
-          ? answer({
-              type: "Topology",
-              arcs: [
-                [
-                  [116, 39.5],
-                  [117, 39.5],
-                  [117, 40.5],
-                  [116, 40.5],
-                  [116, 39.5],
-                ],
-              ],
-              objects: {
-                provinces: {
-                  type: "GeometryCollection",
-                  geometries: [
-                    {
-                      type: "Polygon",
-                      arcs: [[0]],
-                      properties: { adcode: 110000, name: "北京市" },
-                    },
-                  ],
-                },
-              },
-            })
+      String(url) === provincePath("CN")
+        ? answer(CN_PROVINCES)
+        : String(url) === PROJECTION_PATH
+          ? answer({ generatedAt: "2026-01-01T00:00:00.000Z", countries: {} })
           : answer({}, 404)
     );
 
@@ -459,10 +497,10 @@ describe("the trip map draws the trip's own country", () => {
     );
     await settle();
 
-    expect(
-      screen.getByRole("group", { name: "Map of China segmented by region" })
-    ).toBeInTheDocument();
-    expect(requestedUrls()).toEqual(["/china-provinces.json"]);
+    const urls = requestedUrls();
+    expect(urls).toContain(provincePath("CN"));
+    expect(urls).not.toContain("/china-provinces.json");
+    expect(urls.some((u) => u.startsWith("/api/destinations/resolve"))).toBe(false);
   });
 });
 

@@ -82,13 +82,20 @@ describe("isChinaRegion", () => {
     }
   });
 
-  test("China's own group ids still are the seven — by value, not by type", () => {
-    // The other side of the same coin, and the reason `RegionId` may not be
-    // narrowed to `ChinaRegion` even though this passes: China's curated
-    // grouping yields the seven strings, so the chrome can hand one straight
-    // back to `REGION_MONTHS`. That is a coincidence of value which this pins,
-    // not a licence to narrow the type — `lib/chinaRegion.test.ts` holds the
-    // other half.
+  test("not even China's own group ids reach the climate table any more", () => {
+    // This used to assert the opposite, and the change is the point.
+    //
+    // China's groups were its seven curated regions, so their ids WERE the
+    // seven `ChinaRegion` strings and the chrome could hand one straight back
+    // to `REGION_MONTHS`. That was a coincidence of value, pinned here so
+    // nobody mistook it for a licence to narrow `RegionId` to `ChinaRegion`.
+    //
+    // China now takes the same admin-1 path as the other 245, so its group ids
+    // are GB/T 2260 adcodes and the coincidence is gone. `RegionId` stays
+    // `string` for the same reason as before — the ids come from a data file —
+    // but the hazard it guards against has moved from "a region id is a valid
+    // climate key" to "no region id is", which is the safer of the two and
+    // worth pinning in its own right.
     const china = regionSchemeFor("CN", [
       unit("110000", { name: "北京市", nameEn: null }),
       unit("310000", { name: "上海市", nameEn: null }),
@@ -96,11 +103,17 @@ describe("isChinaRegion", () => {
       unit("100000_JD", { name: "九段线", nameEn: null, selectable: false }),
     ]);
 
-    expect(china.kind).toBe("curated");
-    expect(china.groups.map((g) => g.id)).toEqual(["North", "East", "Southwest"]);
+    expect(china.kind).toBe("admin1");
+    expect(china.groups.map((g) => g.id)).toEqual(["110000", "310000", "510000"]);
     for (const group of china.groups) {
-      expect(isChinaRegion(group.id), group.id).toBe(true);
-      expect(fitForRegion(group.id, 6), group.id).not.toBe(NEUTRAL_FIT);
+      expect(isChinaRegion(group.id), group.id).toBe(false);
+      expect(fitForRegion(group.id, 6), group.id).toBe(NEUTRAL_FIT);
+    }
+
+    // The seven are still real, and still the climate key — they just are not
+    // map identifiers any more. `REGION_MONTHS` is untouched (§6.4).
+    for (const region of Object.keys(REGION_MONTHS)) {
+      expect(isChinaRegion(region), region).toBe(true);
     }
   });
 });

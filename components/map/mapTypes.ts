@@ -76,7 +76,7 @@ function regionFit(region: string, month: number): MonthFit {
  * second curated map would not arrive with a second climate table. Importing
  * it from `CountryMap` would also make these two modules circular.
  */
-const CLIMATE_COUNTRY = "CN";
+export const CLIMATE_COUNTRY = "CN";
 
 /**
  * Whether this place's `region` may be read as one of China's seven.

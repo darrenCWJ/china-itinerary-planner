@@ -117,8 +117,7 @@ export function unitLabel(country: string, unit: ProvinceUnit): string {
  */
 export function regionSchemeFor(country: string, units: ProvinceUnit[]): RegionScheme {
   const code = normalise(country);
-  const curated = CURATED.get(code) ?? null;
-  const kind: RegionScheme["kind"] = curated ? "curated" : "admin1";
+  const kind: RegionScheme["kind"] = "admin1";
 
   const selectable = units.filter((unit) => unit.selectable);
   // §6.6 D10, gated on the count and never on a list of country codes: at one
@@ -129,97 +128,31 @@ export function regionSchemeFor(country: string, units: ProvinceUnit[]): RegionS
 
   return {
     kind,
-    groups: curated
-      ? // Curated groups keep the order their scheme gives them, which for
-        // China is `REGION_ORDER` — see `chinaGroups`. That order means
-        // something; the one below did not.
-        curated(selectable)
-      : selectable
-          .map((unit) => ({
-            id: unit.id,
-            label: unitLabel(code, unit),
-            unitIds: [unit.id],
-          }))
-          // Sorted, because `ProvinceFile.units` is `adm1_code` ascending —
-          // Natural Earth's internal numbering, which is not on the screen and
-          // never has been. This list is the ONLY way into the province level
-          // for the 212 countries that offer one, and 194 of the 211 outside
-          // China ship a file order that is not the order a reader looks in:
-          // Peru's begins Callao, Lambayeque, Piura, Tumbes.
-          //
-          // `localeCompare` and not `<`, because the names are not ASCII:
-          // Peru's Áncash belongs between Amazonas and Apurímac, and a
-          // code-unit comparison puts it after Ucayali with every other
-          // accented province. The country picker in `WorldMap` sorts its 235
-          // entries the same way, so the two lists read as one system.
-          //
-          // `sort` is stable (ES2019), so the pairs that tie — Natural Earth
-          // names two Peruvian units "Lima" — hold file order rather than
-          // swapping between renders. The array is this function's own, so the
-          // caller's `units` is not touched.
-          .sort((a, b) => a.label.localeCompare(b.label)),
+    groups: selectable
+      .map((unit) => ({
+        id: unit.id,
+        label: unitLabel(code, unit),
+        unitIds: [unit.id],
+      }))
+      // Sorted, because `ProvinceFile.units` is `adm1_code` ascending —
+      // Natural Earth's internal numbering, which is not on the screen and
+      // never has been. This list is the ONLY way into the province level
+      // for the 212 countries that offer one, and 195 of them ship a file
+      // order that is not the order a reader looks in: Peru's begins Callao,
+      // Lambayeque, Piura, Tumbes.
+      //
+      // `localeCompare` and not `<`, because the names are not ASCII:
+      // Peru's Áncash belongs between Amazonas and Apurímac, and a
+      // code-unit comparison puts it after Ucayali with every other
+      // accented province. The country picker in `WorldMap` sorts its 235
+      // entries the same way, so the two lists read as one system.
+      //
+      // `sort` is stable (ES2019), so the pairs that tie — Natural Earth
+      // names two Peruvian units "Lima" — hold file order rather than
+      // swapping between renders. The array is this function's own, so the
+      // caller's `units` is not touched.
+      .sort((a, b) => a.label.localeCompare(b.label)),
   };
-}
-
-/**
- * Countries whose groups are an editorial layer above admin-1.
- *
- * A `Map` and not a `Record`, for the reason `ProvinceFile.cityProvince` is a
- * Map: on a plain object `CURATED["constructor"]` resolves to a function, so a
- * lookup that should miss reads as a hit. The key comes from a data file, and
- * `normalise` uppercasing it is a second line of defence rather than the only
- * one.
- */
-const CURATED: ReadonlyMap<string, (units: ProvinceUnit[]) => RegionGroup[]> = new Map([
-  ["CN", chinaGroups],
-]);
-
-/**
- * China's seven regions, as a grouping above its 31 selectable provinces.
- *
- * Declared as a typed array rather than read off `REGION_META` with
- * `Object.keys(…) as ChinaRegion[]`: that assertion is unchecked, so it would
- * keep compiling and keep yielding whatever the object happens to hold. Here
- * every member is checked against `ChinaRegion`, and the test asserting the
- * seven groups against `REGION_META`'s keys catches an omission.
- *
- * The order is `REGION_META`'s declaration order, which is the order
- * `CountryMap.tsx` already paints the region labels in — a region control that
- * listed them differently from the map would read as a different set.
- */
-const REGION_ORDER: readonly ChinaRegion[] = [
-  "North",
-  "Northeast",
-  "East",
-  "South",
-  "Southwest",
-  "Northwest",
-  "Central",
-];
-
-function chinaGroups(units: ProvinceUnit[]): RegionGroup[] {
-  const byRegion = new Map<ChinaRegion, string[]>();
-  for (const unit of units) {
-    const meta = curatedMeta(unit.id);
-    // A selectable unit the curated table has never heard of belongs to no
-    // region and is silently unreachable. Inventing a group for it would put a
-    // raw adcode beside the seven names; the test that every selectable unit
-    // lands in exactly one group is what makes the drift visible instead.
-    if (!meta) continue;
-    const existing = byRegion.get(meta.region);
-    if (existing) existing.push(unit.id);
-    else byRegion.set(meta.region, [unit.id]);
-  }
-
-  const groups: RegionGroup[] = [];
-  for (const region of REGION_ORDER) {
-    const unitIds = byRegion.get(region);
-    if (!unitIds || unitIds.length === 0) continue;
-    // `REGION_META[region]` is safe here and stays safe: `region` is a
-    // `ChinaRegion`, which is the record's key type and is not widening.
-    groups.push({ id: region, label: REGION_META[region].label, unitIds });
-  }
-  return groups;
 }
 
 /**

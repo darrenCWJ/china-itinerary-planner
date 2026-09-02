@@ -394,6 +394,27 @@ const CN_CATALOG = [
  * needs it to fail can stub a mismatch of its own.
  */
 function provinceFixture(code: string) {
+  // China gets a second unit because it HAS 31, and D10 suppresses the region
+  // control at one: a one-unit CN would hide the province picker China gained
+  // when it stopped rendering through `ChinaLevel`, which is the thing several
+  // cases below are about.
+  const extra =
+    code === "CN"
+      ? [
+          {
+            type: "Polygon",
+            id: "CN+01",
+            arcs: [[0]],
+            properties: {
+              name: "CN second unit",
+              name_en: "CN second unit",
+              iso_3166_2: "CN-2",
+              gn_a1_code: "CN.02",
+              sel: 1,
+            },
+          },
+        ]
+      : [];
   return {
     country: code,
     generatedAt: "2026-08-30T00:00:00.000Z",
@@ -429,6 +450,7 @@ function provinceFixture(code: string) {
                 sel: 1,
               },
             },
+            ...extra,
           ],
         },
       },
@@ -704,7 +726,7 @@ describe("MapExplorer", () => {
 
     await settle();
     expect(
-      screen.getByRole("group", { name: "Map of China segmented by region" })
+      screen.getByRole("group", { name: "Map of China" })
     ).toBeInTheDocument();
   });
 
@@ -746,7 +768,9 @@ describe("MapExplorer", () => {
     render(<Harness />);
 
     await settle();
-    fireEvent.click(screen.getByRole("button", { name: /Zoom into North China/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Zoom to a province" }), {
+      target: { value: "CN+01" },
+    });
 
     await settle();
     expect(screen.getByRole("button", { name: "← All China" })).toHaveClass(
@@ -780,7 +804,7 @@ describe("MapExplorer", () => {
     const { unmount } = render(<Harness prefs={flatPrefs} />);
 
     await settle();
-    screen.getByRole("group", { name: "Map of China segmented by region" });
+    screen.getByRole("group", { name: "Map of China" });
     expect(requested("/world-countries.json")).toBe(false);
     unmount();
 
@@ -1036,15 +1060,31 @@ describe("MapExplorer", () => {
    * the curated-name suppression and the duplicate filter all needed a CN
    * fixture before a mutation to any of them could fail anything.
    *
-   * `ChinaLevel` shows curated picks alone until a region is open, so each of
-   * these zooms into Central China first — where `CHINA_FIXTURE` draws Hubei
-   * and where every fixture city resolves.
+   * These used to zoom into Central China first, because `ChinaLevel` drew
+   * curated picks alone until a region was open. `CountryLevel` draws every
+   * city it has from the country level, so the zoom was scaffolding for a
+   * renderer that no longer exists and the merge is observable directly.
    */
-  async function openCentralChina() {
-    render(<Harness country="CN" />);
+  async function openChina() {
+    const rendered = render(<Harness country="CN" />);
     await settle();
-    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
-    await settle();
+    return rendered;
+  }
+
+  /**
+   * Markers named `name`, and never the list's chips.
+   *
+   * `getAllByRole("button", { name })` used to mean "markers" on this surface
+   * because `ChinaLevel` was the whole of it. `CountryLevel` renders
+   * `CountryPlaceList` beside the map (§5.2), and a chip is a button with the
+   * same accessible name — so the unscoped query now counts one place twice
+   * wherever the list happens to show it, which depends on `cityProvince` and
+   * the per-group cap rather than on anything the merge does.
+   */
+  function markersNamed(container: HTMLElement, name: string): Element[] {
+    return [
+      ...container.querySelectorAll(`[data-markers] [data-place][aria-label="${name}"]`),
+    ];
   }
 
   test("draws one marker for a city both legs answer with", async () => {
@@ -1053,7 +1093,7 @@ describe("MapExplorer", () => {
     // twice it is two `role="button"`s a screen reader reads as two cities, two
     // ids `togglePlace` resolves separately, and a plan that spends days in
     // Jingzhou twice with a 5 km leg between the copies.
-    await openCentralChina();
+    await openChina();
 
     expect(screen.getAllByRole("button", { name: "Jingzhou" })).toHaveLength(1);
   });
@@ -1064,8 +1104,6 @@ describe("MapExplorer", () => {
     // count and blurb the GeoNames row has none of.
     const onAddCatalog = vi.fn();
     render(<Harness country="CN" onAddCatalog={onAddCatalog} />);
-    await settle();
-    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
     await settle();
 
     fireEvent.click(screen.getByRole("button", { name: "Jingzhou" }));
@@ -1089,9 +1127,9 @@ describe("MapExplorer", () => {
     // from the map. In the committed data 32 of the 51 shard rows that share a
     // folded name with a catalog city are distinct places like these, the
     // widest being the two Yushus at 2,852 km.
-    await openCentralChina();
+    const { container } = await openChina();
 
-    expect(screen.getAllByRole("button", { name: "Heshan" })).toHaveLength(2);
+    expect(markersNamed(container, "Heshan")).toHaveLength(2);
   });
 
   test("draws a catalog city the shard has no row for", async () => {
@@ -1099,7 +1137,7 @@ describe("MapExplorer", () => {
     // dropping the catalog spread loses it — and every other test in this file
     // answers that endpoint with an empty list, which is what made the spread
     // deletable without failing anything.
-    await openCentralChina();
+    await openChina();
 
     expect(screen.getByRole("button", { name: "Wuhan" })).toBeInTheDocument();
   });
@@ -1111,17 +1149,15 @@ describe("MapExplorer", () => {
     // under the same aria-label. Enshi is asserted in the same test because a
     // shard leg deleted outright would otherwise pass this on its own.
     const onToggleSelect = vi.fn();
-    render(<Harness country="CN" onToggleSelect={onToggleSelect} />);
-    await settle();
-    fireEvent.click(screen.getByRole("button", { name: /Zoom into Central China/ }));
+    const { container } = render(<Harness country="CN" onToggleSelect={onToggleSelect} />);
     await settle();
 
-    expect(screen.getAllByRole("button", { name: "Zhangjiajie" })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Enshi" })).toBeInTheDocument();
+    expect(markersNamed(container, "Zhangjiajie")).toHaveLength(1);
+    expect(markersNamed(container, "Enshi")).toHaveLength(1);
 
     // And the one that survived is the curated card, which reports through
     // `onToggleSelect`; a catalog marker would have gone to `onAddCatalog`.
-    fireEvent.click(screen.getByRole("button", { name: "Zhangjiajie" }));
+    fireEvent.click(markersNamed(container, "Zhangjiajie")[0] as Element);
     expect(onToggleSelect).toHaveBeenCalledWith("zhangjiajie");
   });
 
@@ -1341,24 +1377,24 @@ describe("the open country's province file", () => {
     expect(screen.queryByText(/city list is unavailable/)).not.toBeInTheDocument();
   });
 
-  test("China still fetches the curated asset and renders identically", async () => {
+  test("China fetches its province file and manifest, like every other country", async () => {
+    // The inversion of what this used to assert. China's geometry came from
+    // `/china-provinces.json` and from nothing else, and fetching
+    // `/provinces/CN.json` was called out here as "68 KB for a map that never
+    // draws it". That file is now the map: §6.3 always specified it as a
+    // re-envelope of the same curated shapes, and China reads it through the
+    // same code as Peru.
     render(<Harness country="CN" />);
     await settle();
 
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-    expect(urls).toContain(CHINA_TOPOLOGY_PATH);
-    // §9.5: China's geometry comes from the curated asset and only from it.
-    // `/provinces/CN.json` re-envelopes the same shapes, so fetching it too
-    // would be 68 KB for a map that never draws it — and would be the first
-    // step towards drawing China from geometry that is not byte-identical.
-    expect(urls).not.toContain("/provinces/CN.json");
-    // Nor the manifest: `ChinaLevel` fits itself to the curated provinces, and
-    // §5.4 frames the merged 10m outlines China does not draw.
-    expect(urls).not.toContain(PROJECTION_PATH);
-    expect(
-      screen.getByRole("group", { name: "Map of China segmented by region" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Zoom into North China/ })).toBeInTheDocument();
+    expect(urls).toContain("/provinces/CN.json");
+    // And the manifest, which China used to skip because `ChinaLevel` fitted
+    // itself to the curated provinces.
+    expect(urls).toContain(PROJECTION_PATH);
+    // The asset that renderer read is not fetched by anyone any more.
+    expect(urls).not.toContain("/china-provinces.json");
+    expect(screen.getByRole("group", { name: "Map of China" })).toBeInTheDocument();
   });
 });
 
@@ -1524,45 +1560,26 @@ describe("the province level's chrome", () => {
     ).toBeInTheDocument();
   });
 
-  test("China's chrome is unchanged", async () => {
+  test("China gets the same chrome as everyone else", async () => {
+    // This used to assert the opposite, under the name "China's chrome is
+    // unchanged": no `<select>`, a "Click a region to zoom in" heading, and a
+    // caption explaining that markers were curated picks until a region was
+    // opened. All three were `ChinaLevel`'s, and all three are gone.
+    //
+    // What China gains is what it was missing: `regionSchemeFor` is now asked
+    // about it, so it has a province control — and the heading is its own name,
+    // because the map no longer needs an instruction to be usable.
     render(<Harness country="CN" />);
     await settle();
 
-    // China's region control is the map itself — every province is a zoom
-    // button — so the `<select>` the other 245 get would be a second control
-    // for the same choice. `regionSchemeFor` is never even asked: this
-    // component fetches China's curated asset, not a province file, so it
-    // holds no units to build a scheme from.
-    expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Click a region to zoom in" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Zoom to a province" })).toBeInTheDocument();
+    // Two of them: the country heading and `CountryPlaceList`'s own. Either
+    // way the point is that neither is "Click a region to zoom in".
+    expect(screen.getAllByRole("heading", { name: "China" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "Click a region to zoom in" })).toBeNull();
     expect(
-      screen.getByText("Markers show curated picks — zoom into a region for every city")
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Zoom into North China/ }));
-    await settle();
-
-    // §9.5's chrome half: the strings, the heading and the back control are
-    // the ones pre-Phase-4 China rendered, down to "North China" being the
-    // region name and the country name rather than the group label the other
-    // 245 now show.
-    expect(screen.getByRole("button", { name: "← All China" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "North China" })).toBeInTheDocument();
-    expect(screen.getByText("Click any marker to add it to your trip")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "← All China" }));
-    await settle();
-    expect(screen.getByRole("heading", { name: "Click a region to zoom in" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Zoom into North China/ })).toBeInTheDocument();
-
-    // The one thing China does GAIN, stated rather than left for a reader to
-    // discover: the country-level rung of the back path, which every one of
-    // the 246 gets and none of them had. It is the level machine's control,
-    // not a region affordance — China's region chrome above is byte-for-byte
-    // what pre-Phase-4 China rendered — and it is offered here, out of the
-    // whole country, exactly as it is for Peru.
-    expect(screen.getByRole("button", { name: "← All countries" })).toBeInTheDocument();
+      screen.queryByText("Markers show curated picks — zoom into a region for every city")
+    ).toBeNull();
   });
 });
 
@@ -1786,8 +1803,11 @@ describe("the airport layer's toggle", () => {
     // beside it already refuses to be, and the reduced-motion branch withdraws
     // the globe button for the same reason rather than leaving it lying.
     const CASES: { label: string; country: string; rows: unknown[] }[] = [
-      // China renders `ChinaLevel`, which has no layer and no `showAirports`.
-      { label: "China, whose level draws no layer", country: "CN", rows: PE_AIRPORTS },
+      // China used to head this list — `ChinaLevel` had no layer and no
+      // `showAirports`, and `canDrawAirports` was gated on `!hasCurated`. It
+      // renders `CountryLevel` now, so it has a layer like everyone else and
+      // the case below asserts that instead.
+      //
       // The array is empty for the first moment of every country, and forever
       // for one with no rows of its own.
       { label: "a country whose airports have not landed", country: "PE", rows: [] },
