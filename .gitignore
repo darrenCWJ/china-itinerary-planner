@@ -38,3 +38,10 @@ yarn-error.log*
 
 # agent scratch: SDD ledgers, task briefs, review packages, generated schema dumps
 /.superpowers/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.auth/

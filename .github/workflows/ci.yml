@@ -28,3 +28,48 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
+
+  # A separate job from `test`, deliberately: a browser download and a Next
+  # build are minutes of work that the unit gate should not wait behind, and a
+  # flaky browser must not be able to redden the suite that has never been
+  # flaky on CI.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The npm cache does not cover ~/.cache/ms-playwright, so without this
+      # every run re-downloads the browser. Keyed on the resolved Playwright
+      # version rather than on the lockfile hash, because that is what decides
+      # which browser build is wanted.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # `--with-deps` pulls the system libraries the browser needs on
+      # ubuntu-latest. Still run on a cache hit, because the cache restores the
+      # browser binaries and not the apt packages beside them.
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          # Not a secret. It signs sessions in a throwaway SQLite file that
+          # exists for the length of one job, and the same value is committed
+          # in playwright.config.ts. It has to be >= 24 chars and must not be
+          # one of the placeholders lib/authSecret.ts rejects.
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
