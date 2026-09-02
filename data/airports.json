@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-29T13:52:22.020Z",
+ "generatedAt": "2026-09-02T12:49:20.777Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -29153,6 +29153,16 @@
    "size": "large"
   },
   {
+   "iata": "RJL",
+   "icao": "LERJ",
+   "name": "Logroño-Agoncillo Airport",
+   "municipality": "Logroño",
+   "country": "ES",
+   "lat": 42.460953,
+   "lon": -2.322235,
+   "size": "medium"
+  },
+  {
    "iata": "RJM",
    "icao": "WASN",
    "name": "Marinda Airport",
@@ -38938,9 +38948,9 @@
    "name": "John C. Munro Hamilton International Airport",
    "municipality": "Hamilton",
    "country": "CA",
-   "lat": 43.17348,
-   "lon": -79.931185,
-   "size": "medium"
+   "lat": 43.171308,
+   "lon": -79.929416,
+   "size": "large"
   },
   {
    "iata": "YHO",
