@@ -140,6 +140,9 @@ function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlac
     kind: "curated",
     localName: null,
     province: null,
+    // Every place in the China baseline is Chinese; that is the fixture's whole
+    // point, and it is what makes their `region` labels readable as the seven.
+    country: "CN",
     region: "East",
     lat: 31.2,
     lon: 121.5,

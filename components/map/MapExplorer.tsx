@@ -573,6 +573,10 @@ export function MapExplorer({
             name: d.name,
             localName: d.localName,
             province: null,
+            // The destination's own country, not the open one. A curated place
+            // is only ever drawn on its own country's map today, but `region`
+            // is only readable against the country it belongs to.
+            country: d.country,
             region: d.region,
             lat: at.lat,
             lon: at.lon,
@@ -594,6 +598,12 @@ export function MapExplorer({
         name: c.name,
         localName: c.localName,
         province: c.province,
+        // Every city in this list came out of the open country's shard, so the
+        // open country IS its country. Carried on the place because `region`
+        // below cannot be read without it: outside China the admin-1 name is
+        // the region label, and some of those names ARE China's — Botswana's
+        // Central District spells the same as China's Central. See `isChinaPlace`.
+        country: countryCode,
         // `regionForProvinceText` is a China-only keyword table and its
         // `?? "Central"` fallback is one of China's own seven — which
         // `isChinaRegion` then accepts, handing a Peruvian city a Chinese

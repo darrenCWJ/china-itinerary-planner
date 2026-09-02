@@ -5,7 +5,14 @@ import { regionSchemeFor } from "@/lib/regionScheme";
 import type { ProvinceUnit } from "@/lib/provinceTopology";
 import type { CountryLevelProps } from "./CountryLevel";
 import type { CountryMapProps } from "./CountryMap";
-import { fitForRegion, isChinaRegion, NEUTRAL_FIT, type MapPlace } from "./mapTypes";
+import {
+  fitForPlace,
+  fitForRegion,
+  isChinaRegion,
+  NEUTRAL_FIT,
+  originLineFor,
+  type MapPlace,
+} from "./mapTypes";
 
 /**
  * The guard between a region label and China's month table.
@@ -98,6 +105,123 @@ describe("isChinaRegion", () => {
   });
 });
 
+/** A catalog city in the shape `MapExplorer` builds one. */
+const city = (over: Partial<MapPlace> & Pick<MapPlace, "id" | "name" | "country">): MapPlace => ({
+  kind: "catalog",
+  localName: null,
+  province: null,
+  region: "",
+  lat: 0,
+  lon: 0,
+  population: null,
+  level: "prefecture",
+  attractionCount: 0,
+  blurb: null,
+  ...over,
+});
+
+/**
+ * The half of the guard `isChinaRegion` structurally cannot cover.
+ *
+ * `isChinaRegion` answers "is this string one of China's seven region names?"
+ * — correctly, and every test above pins that. What it cannot answer is "is
+ * this place in China?", and its callers were reading it as though it did.
+ * `MapPlace.region` is overloaded: one of China's seven for CN, and the raw
+ * admin-1 name for the other 245 countries. Those two name spaces overlap.
+ *
+ * Not hypothetically. Measured over the committed shards at the time this was
+ * written: **122 non-CN rows** carry an admin-1 name that is literally one of
+ * China's seven — Botswana 47 ("Central"), Cameroon 31, Iceland 26, Ghana 14,
+ * Fiji 4. Every one of them rendered Chongqing's month fit and, on the popup,
+ * Chongqing's actual temperatures.
+ *
+ * The tests above could not catch it because every label they try is one that
+ * does not collide ("Cuzco Department", "Kansai", "north", `PER-1`). A
+ * colliding label is the whole defect, so these use real ones.
+ */
+describe("a place outside China cannot read China's climate", () => {
+  test("an admin-1 name colliding with one of China's seven gets no China fit", () => {
+    const serowe = city({
+      id: "G933778",
+      name: "Serowe",
+      country: "BW",
+      province: "Central",
+      region: "Central",
+      lat: -22.38,
+      lon: 26.71,
+      population: 47_000,
+    });
+
+    // The label really does collide — this is not a strawman.
+    expect(isChinaRegion(serowe.region)).toBe(true);
+    // And Serowe still gets nothing, because Botswana is not China.
+    expect(fitForPlace(serowe, 6)).toBe(NEUTRAL_FIT);
+  });
+
+  test("every colliding (country, label) pair in the shipped data is checked", () => {
+    // Every distinct pair measured over `public/cities/*.json`, not a sample:
+    // a fix that special-cases one label leaves the rest red. Counts are the
+    // rows affected, and they sum to the 122 in the block comment above.
+    const leaky: ReadonlyArray<readonly [string, string, number]> = [
+      ["BW", "Central", 47],
+      ["CM", "East", 12],
+      ["CM", "North", 10],
+      ["CM", "South", 9],
+      ["FJ", "Central", 4],
+      ["GH", "Central", 14],
+      ["IS", "South", 9],
+      ["IS", "East", 8],
+      ["IS", "Northeast", 6],
+      ["IS", "Northwest", 3],
+    ];
+    expect(leaky.reduce((n, [, , rows]) => n + rows, 0)).toBe(122);
+
+    for (const [country, region] of leaky) {
+      // Each label must really be one of China's seven, or the row below
+      // would pass for the wrong reason and this test would rot into a
+      // tautology the first time someone mistypes a province name.
+      expect(isChinaRegion(region), `${region} must collide to be worth testing`).toBe(true);
+      const place = city({ id: `X${country}${region}`, name: "Somewhere", country, region });
+      expect(fitForPlace(place, 6), `${country}/${region}`).toBe(NEUTRAL_FIT);
+    }
+  });
+
+  test("China's own catalog cities still resolve a real month fit", () => {
+    // The other side: the guard must not have been closed by making it always
+    // say no. A Chinese city with one of the seven still reads its row.
+    for (const region of Object.keys(REGION_MONTHS)) {
+      const place = city({ id: `G${region}`, name: "Somewhere", country: "CN", region });
+      expect(fitForPlace(place, 6), region).not.toBe(NEUTRAL_FIT);
+    }
+  });
+
+  test("the origin line does not place a Botswana district inside China", () => {
+    // `originLineFor` reads the same guard to build "<region> China". It is
+    // reached only when `province` is null, which is every curated place.
+    const curated = city({
+      id: "D-serowe",
+      name: "Serowe",
+      country: "BW",
+      kind: "curated",
+      level: "curated",
+      province: null,
+      region: "Central",
+    });
+    expect(originLineFor(curated)).toBe("Central");
+
+    const beijing = city({
+      id: "D-beijing",
+      name: "Beijing",
+      country: "CN",
+      kind: "curated",
+      level: "curated",
+      province: null,
+      region: "North",
+    });
+    expect(originLineFor(beijing)).toBe("North China");
+  });
+});
+
 /**
  * §10.1's other clause: "Airports are never selectable trip stops and the
  * types must enforce it."
@@ -143,6 +267,7 @@ describe("airports are never trip stops, and the compiler is what says so", () =
     name: "Cusco",
     localName: "Qosqo",
     province: "Cusco",
+    country: "PE",
     region: "Cusco",
     lat: -13.5167,
     lon: -71.9789,

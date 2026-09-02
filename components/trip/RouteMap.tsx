@@ -163,6 +163,7 @@ export function routePlaces(plan: TripPlan, resolved: readonly Destination[] = [
       name: destination.name,
       localName: destination.localName,
       province: null,
+      country: destination.country,
       region: destination.region,
       lat: at.lat,
       lon: at.lon,

@@ -9,6 +9,17 @@ export interface MapPlace {
   /** Name in the local language; renamed from `chineseName` for all-countries. */
   localName: string | null;
   province: string | null;
+  /**
+   * ISO 3166-1 alpha-2, and the only thing that makes `region` readable.
+   *
+   * `region` is overloaded — one of China's seven for CN, the raw admin-1 name
+   * for the other 245 — and those two name spaces overlap: 122 committed
+   * catalog rows outside China carry an admin-1 name that is literally one of
+   * China's seven (Botswana's Central District, Cameroon, Iceland, Ghana,
+   * Fiji). Without this field `isChinaRegion(place.region)` says yes to all of
+   * them, and they render Chongqing's climate. See `isChinaPlace`.
+   */
+  country: string;
   /** A region label meaningful inside this place's own country — see Destination.region. */
   region: string;
   lat: number;
@@ -56,6 +67,30 @@ function regionFit(region: string, month: number): MonthFit {
   return REGION_MONTHS[region][month - 1].fit;
 }
 
+/**
+ * The one country whose region labels index `REGION_MONTHS`.
+ *
+ * Deliberately not `CountryMap.CURATED_COUNTRY`, which is also "CN": that one
+ * says which country ships a curated topology asset, this one says whose month
+ * table `lib/months.ts` holds. They coincide today and are free to diverge — a
+ * second curated map would not arrive with a second climate table. Importing
+ * it from `CountryMap` would also make these two modules circular.
+ */
+const CLIMATE_COUNTRY = "CN";
+
+/**
+ * Whether this place's `region` may be read as one of China's seven.
+ *
+ * `isChinaRegion` alone cannot answer this. It asks "is this string one of
+ * China's seven region names?", which is true of Botswana's Central District,
+ * Cameroon's South, and Iceland's Northeast — 122 committed rows in all. The
+ * question every China-only read actually needs answered is "is this place in
+ * China?", and only the country can answer it.
+ */
+export function isChinaPlace(place: MapPlace): boolean {
+  return place.country === CLIMATE_COUNTRY && isChinaRegion(place.region);
+}
+
 export function fitForPlace(place: MapPlace, month: number): MonthFit {
   if (place.bestSeasons) {
     return monthFitForSeasons(
@@ -63,7 +98,7 @@ export function fitForPlace(place: MapPlace, month: number): MonthFit {
       month
     );
   }
-  return regionFit(place.region, month);
+  return isChinaPlace(place) ? regionFit(place.region, month) : NEUTRAL_FIT;
 }
 
 export function fitForRegion(region: string, month: number): MonthFit {
@@ -130,7 +165,7 @@ export const FIT_FILL_OPACITY: Record<MonthFit, number> = {
  */
 export function originLineFor(place: MapPlace): string {
   const origin =
-    place.province ?? (isChinaRegion(place.region) ? `${place.region} China` : place.region);
+    place.province ?? (isChinaPlace(place) ? `${place.region} China` : place.region);
   return [origin, place.level === "curated" ? "" : place.level]
     .filter((part) => part !== "")
     .join(" · ");

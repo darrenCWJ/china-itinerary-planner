@@ -123,6 +123,7 @@ const A_CATALOG_PLACE: MapPlace = {
   name: "Some City",
   localName: null,
   province: "Some Province",
+  country: "CN",
   region: "East",
   lat: 30,
   lon: 120,
