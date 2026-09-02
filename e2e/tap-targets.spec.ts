@@ -69,13 +69,36 @@ test("map markers are widened targets, never smaller than their own dot", async 
   expect(ratios.length).toBeGreaterThan(0);
   expect(ratios[ratios.length - 1]).toBeGreaterThan(1);
 
-  // NOT asserted here: that no two hit circles overlap anywhere on the map.
-  // Measured, and they do — 96 overlapping pairs in the first 120 markers of
-  // China at country level. `CountryLevel.test.tsx` proves the cap holds for a
-  // PAIR, and it does; what does not follow, and is not implemented, is that
-  // it holds across 1,081 markers, where a third marker can sit inside a gap
-  // two others already sized themselves against. Left as a finding rather than
-  // silently weakened into an assertion that passes.
+  // No hit circle reaches further into a neighbour than the DOT already does.
+  //
+  // This started as a report that hit targets overlap — 715 overlapping pairs
+  // in a 400-marker sample of China at country level, which they do. Measuring
+  // the dots as well is what corrected it: the same 715 pairs, and ZERO hit
+  // overlaps that are not also dot overlaps. `nonOverlappingRadii` is exact by
+  // construction (each point takes half its own nearest gap, so any pair sums
+  // to at most their distance), and the crowding is the 1,079 drawn dots
+  // themselves, at a median radius of 1.7 CSS px on a phone.
+  //
+  // So this asserts the property that is actually guaranteed, and it is the
+  // one worth guarding: the tap target may be as ambiguous as the picture, and
+  // never more so. It would catch a regression in either the cap or the
+  // `Math.max(r, …)` floor that raises a target back up to its dot.
+  const overreaching: string[] = [];
+  const sample = boxes.slice(0, 200);
+  for (let i = 0; i < sample.length; i += 1) {
+    for (let j = i + 1; j < sample.length; j += 1) {
+      const a = sample[i];
+      const b = sample[j];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const hitOverlap = d < (a.w + b.w) / 2 - 0.5;
+      const dotOverlap = d < (a.dot + b.dot) / 2 - 0.5;
+      if (hitOverlap && !dotOverlap) overreaching.push(`${i}/${j} gap ${d.toFixed(1)}`);
+    }
+  }
+  expect(
+    overreaching.slice(0, 5),
+    `${overreaching.length} hit targets reach past their own dot into a neighbour`
+  ).toEqual([]);
 });
 
 test("the place list is a real 44px target, since it is what makes the map conform", async ({
@@ -104,10 +127,12 @@ test("the place list is a real 44px target, since it is what makes the map confo
   expect(short, `list chips under ${TAP_MIN_PX}px: ${short.join(", ")}`).toEqual([]);
 });
 
-test("every button in the map's chrome is a real 44px target", async ({ page }) => {
-  // Swept rather than named, because the one this found was a control no test
-  // had thought to name: the map/cards toggle, 24px, with `aria-pressed` fully
-  // asserted in jsdom and its height asserted nowhere.
+test("every visible button on the planning page is a real 44px target", async ({ page }) => {
+  // Swept over the whole page rather than named, because every control this
+  // found was one no test had thought to name: the map/cards toggle at 24px,
+  // the wizard's "← Back" at 38px, "Build my plan →" at 36px and the step rail
+  // at 32px. All of them had their behaviour asserted in jsdom and their size
+  // asserted nowhere, because jsdom has no size to assert.
   await openTheMap(page);
 
   const undersized = await page.evaluate((min) => {
@@ -117,14 +142,10 @@ test("every button in the map's chrome is a real 44px target", async ({ page }) 
       // Skip what is not on screen, and the list chips (covered above).
       if (box.width === 0 || box.height === 0) continue;
       if (el.closest("section[role='group']")) continue;
-      // Scoped to the map panel. The wizard's own chrome around it has
-      // undersized controls of its own — measured at 393px: "← Back" 38px,
-      // "Build my plan →" 36px, the step rail's "Destinations" 32px — and they
-      // are a pre-existing failure of the same criterion on a different
-      // surface, not something the map owns. Widening this sweep to the page
-      // would mean fixing them here, silently, in a change about the map.
-      if (!el.closest("[data-map-panel]")) continue;
-      if (box.height < min) out.push(`${(el.textContent ?? "?").trim().slice(0, 30)} ${box.height}px`);
+      if (box.height < min) {
+        const label = (el.getAttribute("aria-label") ?? el.textContent ?? "?").trim().slice(0, 28);
+        out.push(`${label} ${box.height}px [${el.className.slice(0, 60)}]`);
+      }
     }
     return out;
   }, TAP_MIN_PX);

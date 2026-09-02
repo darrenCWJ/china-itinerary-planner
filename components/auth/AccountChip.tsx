@@ -55,7 +55,7 @@ export function AccountChip() {
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Account menu for ${session.user.name}`}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-ink)] font-semibold text-[var(--paper)]">
+        className="flex h-[var(--tap-min)] w-[var(--tap-min)] items-center justify-center rounded-full bg-[var(--accent-ink)] font-semibold text-[var(--paper)]">
         {initial}
       </button>
       {open && (
