@@ -237,16 +237,15 @@ describe.skipIf(!hasAssets)("regionSchemeFor over the committed files", () => {
     ]);
   });
 
-  it("does the same for every other country that offers a province level", () => {
-    // The blast radius, and why sorting one branch is worth a test: 194 of the
-    // 211 non-China countries with a province level ship a file order that is
-    // not the order a reader would look in. Peru is not the exception.
+  it("does the same for every country that offers a province level, China included", () => {
+    // The blast radius, and why sorting is worth a test: 195 of the 212
+    // countries with a province level ship a file order that is not the order a
+    // reader would look in. Peru is not the exception, and neither is China —
+    // its adcode order runs Beijing, Tianjin, Hebei, Shanxi, which is GB/T 2260
+    // numbering rather than anything a reader scans.
     const unsorted: string[] = [];
     let differ = 0;
     for (const entry of index?.countries ?? []) {
-      // China's groups are curated and ordered by REGION_ORDER — the test
-      // below holds that, and it is a different order on purpose.
-      if (entry.code === "CN") continue;
       const file = readProvince(entry.code);
       const labels = regionSchemeFor(file.country, file.units).groups.map((g) => g.label);
       if (labels.length === 0) continue;
@@ -257,46 +256,49 @@ describe.skipIf(!hasAssets)("regionSchemeFor over the committed files", () => {
     }
 
     expect(unsorted, `came back in some other order: ${unsorted.join(", ")}`).toEqual([]);
-    expect(differ).toBe(194);
+    expect(differ).toBe(195);
   });
 
-  it("groups China's units into its seven curated regions", () => {
-    // §6.4: the regions are a grouping ABOVE admin-1, not a replacement. The
-    // seven group ids are the seven ChinaRegion strings by coincidence of
-    // value; RegionId stays `string` so the coincidence cannot narrow the type.
+  it("gives China the same province groups as every other country", () => {
+    // China used to be the one country whose groups were an editorial layer —
+    // seven curated regions instead of admin-1 units. It is not any more: the
+    // app is a worldwide planner, and a country that answers to a different
+    // control than the other 245 is a country the reader has to learn twice.
+    //
+    // The seven regions are NOT gone. They survive where §6.4 puts them and
+    // where they carry meaning: `REGION_MONTHS`, keyed by region, is neither
+    // re-keyed nor re-derived, and `mapTypes.isChinaPlace` still reads a
+    // Chinese city's region label off it. What changed is that they stopped
+    // being the map's zoom level.
     const cn = readProvince("CN");
     const scheme = regionSchemeFor(cn.country, cn.units);
 
-    expect(scheme.kind).toBe("curated");
-    expect(scheme.groups.map((g) => g.id)).toEqual(Object.keys(REGION_META));
-    expect(scheme.groups.map((g) => g.label)).toEqual(
-      (Object.keys(REGION_META) as ChinaRegion[]).map((r) => REGION_META[r].label)
-    );
+    expect(scheme.kind).toBe("admin1");
 
-    // And NOT alphabetically, which is what the admin1 branch sorts its groups
-    // into. REGION_META's order is the order CountryMap already paints the
-    // region labels in, so a control that listed them A-Z — Central first —
-    // would read as a different set from the map beside it. The sort belongs to
-    // the branch whose input order is arbitrary, and to that branch only.
+    const selectable = cn.units.filter((u) => u.selectable);
+    expect(scheme.groups).toHaveLength(selectable.length);
+    // One unit per group, which is what "L3 is uniformly admin-1" means: a
+    // group that named several provinces would frame their union, and framing
+    // a whole region is the behaviour this replaced.
+    for (const group of scheme.groups) {
+      expect(group.unitIds, group.id).toHaveLength(1);
+    }
+
+    // Labelled in English off `lib/provinces.ts`, not with the endonym, and
+    // sorted like everyone else's — see the label test above.
     const labels = scheme.groups.map((g) => g.label);
-    expect(labels).not.toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+    expect(labels).toContain("Beijing");
+    expect(labels).toContain("Tibet");
+    expect(labels.some((l) => /[一-鿿]/.test(l)), labels.join(", ")).toBe(false);
 
-    // Every selectable unit lands in exactly one group, and nothing else does.
-    // This is what goes red if the curated table ever drifts from the asset: a
-    // province in no group is a province the user cannot reach.
+    // Every selectable unit is reachable, and nothing else is.
     const placed = scheme.groups.flatMap((g) => g.unitIds);
     expect(new Set(placed).size).toBe(placed.length);
-    expect([...placed].sort()).toEqual(
-      cn.units
-        .filter((u) => u.selectable)
-        .map((u) => u.id)
-        .sort()
-    );
+    expect([...placed].sort()).toEqual(selectable.map((u) => u.id).sort());
 
-    const byId = new Map(scheme.groups.map((g) => [g.id, g.unitIds]));
-    expect(byId.get("East")).toContain("310000");
-    expect(byId.get("Southwest")).toContain("540000");
-    // Taiwan, Hong Kong, Macau and the nine-dash envelope are all sel:0.
+    // Taiwan, Hong Kong, Macau and the nine-dash envelope are all sel:0 — they
+    // shape the outline without being a subdivision anyone can travel to.
     expect(placed).not.toContain("710000");
     expect(placed).not.toContain("100000_JD");
   });

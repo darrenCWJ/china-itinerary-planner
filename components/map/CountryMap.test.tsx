@@ -1,90 +1,29 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Topology } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
 import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
-import { CountryMap, hasCuratedTopology } from "./CountryMap";
-import { PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
+import { CountryMap } from "./CountryMap";
+import { CN_FILE, PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
 import type { MapPlace } from "./mapTypes";
 
 /**
- * The China level is a verbatim move out of `ChinaMap`, so what is asserted
- * here is the behaviour that must survive the rename — provinces are zoom
- * controls, markers are keyboard-operable, zooming filters them — plus the two
- * things the rename adds: which country gets the detail level, and what a
- * country without one renders instead.
+ * What the dispatcher routes where, and what a country with no geometry gets
+ * instead of a map.
+ *
+ * This file used to open with a China fixture and a `describe("CountryMap —
+ * China")` block, because China had a renderer of its own. It does not any
+ * more — it takes the `CountryLevel` branch over `public/provinces/CN.json`
+ * like the other 245 — so the dispatch is now two-way and the China-specific
+ * assertions moved out: rendering to `CountryLevel.test.tsx`, the card output
+ * that genuinely did not change to `chinaBaseline.test.tsx`.
  *
  * Projection output, tint and label placement are visual and are not asserted.
- * The fixture is two provinces and a nine-dash feature rather than the real
- * 1.2MB asset, so the expected set of controls is something the test states.
  */
 
-/**
- * Absolute (untransformed) TopoJSON: one closed ring per province, wound
- * south-west, north-west, north-east, south-east.
- *
- * That is the order `worldFixture.ts` documents, and load-bearing for the
- * reason it gives: d3 reads a ring spherically, so the other winding makes each
- * province *the whole globe minus the rectangle* (`geoArea` 4π against 2.3e-4).
- * It renders without error and drags `buildFitProjection` onto the entire
- * sphere, so nothing asserted below would catch it — but any assertion this
- * file later grows about a path, a fit, a projected marker or a zoom transform
- * would be measuring an inverted world.
- */
-const CHINA_FIXTURE = {
-  type: "Topology",
-  arcs: [
-    [
-      [116, 39.5],
-      [116, 40.5],
-      [117, 40.5],
-      [117, 39.5],
-      [116, 39.5],
-    ],
-    [
-      [121, 31],
-      [121, 32],
-      [122, 32],
-      [122, 31],
-      [121, 31],
-    ],
-    [
-      [110, 10],
-      [110, 12],
-      [112, 12],
-      [112, 10],
-      [110, 10],
-    ],
-  ],
-  objects: {
-    provinces: {
-      type: "GeometryCollection",
-      geometries: [
-        {
-          type: "Polygon",
-          arcs: [[0]],
-          properties: { adcode: 110000, name: "北京市" },
-        },
-        {
-          type: "Polygon",
-          arcs: [[1]],
-          properties: { adcode: 310000, name: "上海市" },
-        },
-        // No province owns adcode 0 — this is the nine-dash line, which the
-        // level draws but never treats as a region.
-        {
-          type: "Polygon",
-          arcs: [[2]],
-          properties: { adcode: 0, name: "南海诸岛" },
-        },
-      ],
-    },
-  },
-} as unknown as Topology;
 
 function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlace {
   return {
@@ -169,12 +108,9 @@ const ZOOMED_CITY_PROVINCE: Readonly<Record<string, string>> = {
 function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
   const props = {
     country: "CN",
-    topology: CHINA_FIXTURE,
-    // The dispatcher's other two branches, both off by DEFAULT and neither of
-    // them therefore off everywhere: these cases are about China's renderer
-    // and about the list a country with no geometry gets, and the reachability
-    // block at the foot of this file passes a real province file so §12.2 is
-    // proven against the level that draws one too.
+    // Off by DEFAULT, so these cases exercise the list a country with no
+    // geometry gets. The reachability block at the foot of this file passes a
+    // real province file, so §12.2 is proven against the level that draws one.
     provinces: null,
     projection: null,
     places: [SHANGHAI, BEIJING],
@@ -192,103 +128,68 @@ function renderMap(over: Partial<Parameters<typeof CountryMap>[0]> = {}) {
 
 afterEach(cleanup);
 
-describe("hasCuratedTopology", () => {
-  test("is China only, however the code is cased or padded", () => {
-    expect(hasCuratedTopology("CN")).toBe(true);
-    expect(hasCuratedTopology(" cn ")).toBe(true);
-    expect(hasCuratedTopology("JP")).toBe(false);
-    expect(hasCuratedTopology("")).toBe(false);
+/**
+ * §5.3.2, on the country it was written for and never applied to.
+ *
+ * "Transparent hit circles sized to `--tap-min` behind each marker. Visual
+ * radius stays 4.5–9 (`radiusFor`, `CountryMap.tsx`)" — and `radiusFor` was
+ * `ChinaLevel`'s function, so the clause named China's renderer by name. The
+ * fix shipped to `CountryLevel` and never reached it: China's markers stayed
+ * 4.5–9 viewBox units with no hit circle at all, about 4 CSS px on a 390 px
+ * phone against a required 44, in the one country the app is named after and
+ * the exact defect §2.1 says the phase exists to remove.
+ *
+ * It was invisible because the §12.2 gate below hardcodes `country: "PE"`, so
+ * the only renderer it could observe was the one that had already been fixed.
+ *
+ * China has no renderer of its own any more, so it inherits the targets rather
+ * than needing a second copy of the fix. This is what stops a China branch
+ * being reintroduced without one.
+ */
+describe("CountryMap — China is not a special case", () => {
+  test("routes China through CountryLevel over its own province file", () => {
+    const { container } = renderMap({ country: "CN", provinces: CN_FILE, projection: PE_ENTRY });
+
+    // `CountryLevel`'s own group name, and the marker/unit attributes only it
+    // emits. `ChinaLevel` announced itself as "Map of China segmented by
+    // region" and drew no `data-unit`.
+    expect(screen.getByRole("group", { name: "Map of China" })).toBeInTheDocument();
+    expect(container.querySelector("[data-units]")).not.toBeNull();
   });
 
-  test("is a narrower question than whether the country has a detail level", () => {
-    // The predicate this dispatcher used to ask was both questions at once,
-    // and PR4 pulled them apart: the registry now says Japan has admin-1
-    // geometry, while only China has the curated asset `ChinaLevel` draws.
-    // Swapping this call site for the registry's answer — the obvious-looking
-    // edit — would route Japan into China's renderer, so it is pinned here
-    // rather than left to the two assertions further down that would catch it
-    // by accident.
-    expect(hasDetailLevel("JP")).toBe(true);
-    expect(hasCuratedTopology("JP")).toBe(false);
-  });
-});
+  test("gives China's markers the same --tap-min hit target as everyone else", () => {
+    const { container } = renderMap({
+      country: "CN",
+      provinces: CN_FILE,
+      projection: PE_ENTRY,
+      places: [place({ id: "cusco", name: "Beijing", kind: "catalog", level: "prefecture" })],
+    });
 
-describe("CountryMap — China", () => {
-  test("exposes the map as a group, so its controls survive in the a11y tree", () => {
-    renderMap();
-
-    // `role="img"` makes every descendant presentational, which drops the
-    // province zoom buttons and every place toggle out of the accessibility
-    // tree — while `tabIndex={0}` keeps them focusable, so a keyboard user
-    // lands on controls a screen reader announces as nothing. WorldMap's own
-    // docblock rejects exactly this pattern and uses a group.
-    //
-    // Asserted on the container's role rather than through the buttons,
-    // because testing-library does not implement ARIA's presentational-children
-    // rule: the assertions below find the buttons either way. The browser is
-    // where this bites, so the role is the honest thing to pin.
-    expect(screen.getByRole("group", { name: "Map of China segmented by region" })).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: /Map of China/ })).toBeNull();
+    const markers = [...container.querySelectorAll("[data-markers] [data-place]")];
+    // Not vacuously — an empty loop is how this assertion would stop asserting.
+    expect(markers).toHaveLength(1);
+    for (const marker of markers) {
+      const hit = marker.querySelector("circle[data-hit]");
+      expect(hit, "every marker carries a transparent hit circle").not.toBeNull();
+      expect(Number(hit?.getAttribute("r"))).toBeGreaterThanOrEqual(TAP_MIN_R_FALLBACK);
+    }
   });
 
-  test("makes every province a zoom control and reports the region clicked", () => {
-    const { props } = renderMap();
+  test("labels China's provinces in English, off the curated table", () => {
+    // The one thing China's file really does differ in: `name_en` is null on
+    // every unit, so a shared `unitLabel` that did not fall back would put
+    // 北京市 in an otherwise English control.
+    const { container } = renderMap({ country: "CN", provinces: CN_FILE, projection: PE_ENTRY });
 
-    const north = screen.getByRole("button", { name: "Zoom into North China (Beijing)" });
-    expect(screen.getByRole("button", { name: "Zoom into East China (Shanghai)" })).toBeInTheDocument();
-
-    fireEvent.click(north);
-    expect(props.onZoomRegion).toHaveBeenCalledWith("North");
-  });
-
-  test("stops offering the zoom once a region is open", () => {
-    const { props } = renderMap({ zoomRegion: "East" });
-
-    expect(
-      screen.queryByRole("button", { name: "Zoom into North China (Beijing)" })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("group", { name: "Map of East China with selectable places" })
-    ).toBeInTheDocument();
-    expect(props.onZoomRegion).not.toHaveBeenCalled();
-  });
-
-  test("adds a place from the keyboard, and Space does not scroll the page", () => {
-    const { props } = renderMap();
-
-    const marker = screen.getByRole("button", { name: "Shanghai" });
-    fireEvent.keyDown(marker, { key: "Enter" });
-    expect(props.onTogglePlace).toHaveBeenCalledWith(SHANGHAI);
-
-    // fireEvent returns false when the handler called preventDefault, which is
-    // what stops Space paging the map away under the user.
-    expect(fireEvent.keyDown(marker, { key: " " })).toBe(false);
-    expect(props.onTogglePlace).toHaveBeenCalledTimes(2);
-  });
-
-  test("marks a selected place and shows only the open region's places", () => {
-    renderMap({ zoomRegion: "East", selected: ["shanghai"] });
-
-    expect(screen.getByRole("button", { name: "Shanghai (selected)" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
-    // Beijing is in North: zooming East takes it off the map entirely.
-    expect(screen.queryByRole("button", { name: "Beijing" })).not.toBeInTheDocument();
-  });
-
-  test("draws nothing while the topology is still loading", () => {
-    const { container } = renderMap({ topology: null });
-
-    // The caller owns the loading state; a fallback here would claim China has
-    // no map at all.
-    expect(container).toBeEmptyDOMElement();
+    const titles = [...container.querySelectorAll("[data-units] title")].map((t) => t.textContent);
+    expect(titles).toContain("Beijing");
+    expect(titles.some((t) => /[一-鿿]/.test(t ?? ""))).toBe(false);
   });
 });
 
-describe("CountryMap — countries with no curated topology", () => {
+describe("CountryMap — countries with no province file", () => {
   test("names the country and points at search instead of drawing a map", () => {
-    renderMap({ country: "JP", topology: null, places: [] });
+    renderMap({ country: "JP", places: [] });
 
     expect(screen.getByText("Japan")).toBeInTheDocument();
     expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
@@ -299,7 +200,6 @@ describe("CountryMap — countries with no curated topology", () => {
     const kyoto = place({ id: "kyoto", name: "Kyoto", lat: 35, lon: 135.7 });
     const { props } = renderMap({
       country: "JP",
-      topology: null,
       places: [kyoto],
       selected: ["kyoto"],
     });
@@ -311,19 +211,13 @@ describe("CountryMap — countries with no curated topology", () => {
     expect(props.onTogglePlace).toHaveBeenCalledWith(kyoto);
   });
 
-  test("ignores a China topology handed to another country", () => {
-    renderMap({ country: "JP", places: [] });
-
-    expect(screen.queryByRole("group")).not.toBeInTheDocument();
-    expect(screen.getByText(/No map for Japan yet/)).toBeInTheDocument();
-  });
 });
 
 describe("CountryPlaceList — a country with a full shard", () => {
   test("groups a full shard by province and reaches every city", () => {
     // Before this, the list rendered places.slice(0, 60) — which for 150 of
     // 246 countries hid most of the shard, 690 of Peru's 750 among them.
-    renderMap({ country: "PE", topology: null, places: peruvianShard() });
+    renderMap({ country: "PE", places: peruvianShard() });
 
     expect(screen.getByRole("group", { name: "Lima" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Cuzco" })).toBeInTheDocument();
@@ -342,7 +236,7 @@ describe("CountryPlaceList — a country with a full shard", () => {
       place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" }),
       place({ id: "G2", name: "Cusco", kind: "catalog", province: "Cuzco" }),
     ];
-    renderMap({ country: "PE", topology: null, places });
+    renderMap({ country: "PE", places });
 
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "cus" } });
 
@@ -352,8 +246,7 @@ describe("CountryPlaceList — a country with a full shard", () => {
 
   test("says so when a filter matches nothing, rather than rendering blank", () => {
     renderMap({
-      country: "PE", topology: null,
-      places: [place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" })],
+      country: "PE",      places: [place({ id: "G1", name: "Lima", kind: "catalog", province: "Lima" })],
     });
 
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "zzz" } });
@@ -364,7 +257,6 @@ describe("CountryPlaceList — a country with a full shard", () => {
   test("says nothing about a remainder when everything fits", () => {
     renderMap({
       country: "PE",
-      topology: null,
       places: [place({ id: "G1", name: "Lima", kind: "catalog" })],
     });
 
@@ -522,7 +414,6 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
     ) {
       const rendered = renderMap({
         country: "PE",
-        topology: null,
         provinces,
         projection,
         places,

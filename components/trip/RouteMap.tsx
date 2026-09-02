@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Topology } from "topojson-specification";
-import { CountryMap, hasCuratedTopology } from "@/components/map/CountryMap";
+import { CountryMap } from "@/components/map/CountryMap";
 import type { MapPlace } from "@/components/map/mapTypes";
 import { getCountry } from "@/lib/countries";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
@@ -271,24 +271,7 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
   const places = useMemo(() => routePlaces(plan, resolved), [plan, resolved]);
   const routeIds = useMemo(() => places.map((p) => p.id), [places]);
 
-  const hasCurated = hasCuratedTopology(country);
-  const [topology, setTopology] = useState<Topology | null>(null);
   const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!hasCurated) return;
-    const controller = new AbortController();
-    fetch("/china-provinces.json", { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`topology ${r.status}`);
-        return r.json() as Promise<Topology>;
-      })
-      .then(setTopology)
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
-  }, [hasCurated]);
 
   const { code: countryCode } = getCountry(country);
   /**
@@ -297,11 +280,10 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
    * and XD too and the build wrote no file for any of them, so without this
    * every trip to one of those four spends a request on a guaranteed 404.
    *
-   * `!hasCurated` because China's geometry is the curated asset and only the
-   * curated asset (§9.5) — `/provinces/CN.json` re-envelopes the same shapes
-   * and nothing here would draw it.
+   * China included: it reads `/provinces/CN.json` like every other country
+   * now that the curated renderer is gone.
    */
-  const wantsProvinces = !hasCurated && hasDetailLevel(country);
+  const wantsProvinces = hasDetailLevel(country);
   const [provinces, setProvinces] = useState<ProvinceFile | null>(null);
   const [projection, setProjection] = useState<ProjectionEntry | null>(null);
 
@@ -364,22 +346,11 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
     );
   }
 
-  if (hasCurated && topology === null) {
-    return (
-      <p
-        role="status"
-        className="rounded-xl border border-dashed border-[var(--line-1)] bg-[var(--paper)] p-8 text-center text-sm text-[var(--ink-2)]"
-      >
-        {failed ? "Couldn't load the map — the Days view has the itinerary." : "Loading the map…"}
-      </p>
-    );
-  }
 
   return (
     <div className="rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-3">
       <CountryMap
         country={country}
-        topology={topology}
         // Null while the file is in flight and null after it failed — the same
         // thing here, deliberately, because the fallback for both is the stop
         // list rather than a spinner or an error (§5.2).

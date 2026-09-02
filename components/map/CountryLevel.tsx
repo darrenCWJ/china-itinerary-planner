@@ -12,7 +12,7 @@ import { IDENTITY_TRANSFORM, ZOOM_FILL, type MapTransform } from "@/lib/mapTrans
 import { MAIN_AIRPORT_LABEL, mainAirportFor } from "@/lib/mainAirport";
 import { MAP_VIEW_PAD } from "@/lib/mapView";
 import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
-import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
+import { regionSchemeFor, unitLabel, type RegionId } from "@/lib/regionScheme";
 import { CountryPlaceList } from "./CountryPlaceList";
 import {
   buildFitProjection,
@@ -519,10 +519,16 @@ export function buildCountryView(
       id,
       d,
       selectable,
-      // Endonym first, English second, and the id only when a source carries
-      // neither — `KI-X02~` has a null name and would otherwise render a
-      // `<title>` with nothing in it.
-      label: unit ? (unit.nameEn ?? unit.name ?? unit.id) : null,
+      // `unitLabel` and not the precedence inlined, which is what this was:
+      // `unit.nameEn ?? unit.name ?? unit.id`. That is the same order for 245
+      // countries and wrong for the 246th — every CN unit has `nameEn: null`,
+      // so it fell straight to the endonym and put 北京市 in the tooltip while
+      // the picker beside it, which does call `unitLabel`, said "Beijing".
+      //
+      // Invisible until China started rendering here: it had a renderer of its
+      // own, and this branch never saw a file whose English names live in a
+      // separate table. One function, so the two controls cannot disagree.
+      label: unit ? unitLabel(provinces.country, unit) : null,
     });
     // Indexed off the same `selectable` the path above was drawn with, inside
     // the same `if (!d) continue`, so the zoomable set cannot drift from the

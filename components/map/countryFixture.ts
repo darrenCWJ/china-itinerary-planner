@@ -188,3 +188,44 @@ export const PE_ENTRY: ProjectionEntry = {
   // carries it, and never read by the renderer.
   scale: 8021.4062,
 };
+
+/**
+ * China in the envelope the build writes it — `idKey: "adcode"`, GB/T 2260 ids,
+ * Chinese `name` and no `name_en`, and the nine-dash line as a `sel: 0` unit.
+ *
+ * China used to need no fixture like this, because it did not go through
+ * `parseProvinceTopology` at all: it was fetched as a bare TopoJSON and drawn
+ * by a renderer of its own. It takes the same path as Peru now, and the two
+ * things that differ about its file are exactly the two this pins — the id
+ * scheme, which `cityProvince` joins on, and the missing English name, which
+ * `unitLabel` resolves from `lib/provinces.ts` instead.
+ *
+ * The geometry is Peru's, deliberately: nothing that reads this fixture asserts
+ * a shape, and a second hand-wound ring is a second chance to wind it inside
+ * out (see `PE_TOPOLOGY`'s note).
+ */
+export const CN_FILE: ProvinceFile = parseProvinceTopology({
+  country: "CN",
+  generatedAt: "2026-08-30T00:00:00.000Z",
+  idKey: "adcode",
+  topology: {
+    ...PE_TOPOLOGY,
+    objects: {
+      provinces: {
+        type: "GeometryCollection",
+        geometries: (
+          PE_TOPOLOGY.objects.provinces as { geometries: Record<string, unknown>[] }
+        ).geometries.map((geometry, i) => ({
+          ...geometry,
+          id: ["110000", "310000", "510000", "100000_JD"][i] ?? `9${i}0000`,
+          properties: {
+            name: ["北京市", "上海市", "四川省", "南海诸岛"][i] ?? `unit ${i}`,
+            // No `name_en`: the curated table is what supplies it for China.
+            sel: i === 3 ? 0 : 1,
+          },
+        })),
+      },
+    },
+  },
+  cityProvince: { cusco: "110000", G1: "110000" },
+});

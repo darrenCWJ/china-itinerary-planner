@@ -90,29 +90,30 @@ const level = {
  */
 const phase4 = { provinces: null, projection: null };
 
-describe("China's rendered output — §9.5", () => {
-  test("the country level is byte-identical to pre-Phase-4", () => {
-    const markup = settledMarkup(
-      <CountryMap country="CN" topology={CHINA_FIXTURE} zoomRegion={null} {...phase4} {...level} />
-    );
-
-    expect(markup).toBe(CHINA_BASELINE_MARKUP.country);
-  });
-
-  test("an opened region is byte-identical to pre-Phase-4", () => {
-    // The zoomed branch is a separate baseline because `k` is no longer 1
-    // there: every stroke width, radius, dash length and font size is divided
-    // by it, the dimmed provinces take a different stroke token, and the
-    // region labels and the nine-dash line drop out. A regression that touched
-    // only the scale-invariance discipline would leave the country render
-    // above untouched.
-    const markup = settledMarkup(
-      <CountryMap country="CN" topology={CHINA_FIXTURE} zoomRegion="East" {...phase4} {...level} />
-    );
-
-    expect(markup).toBe(CHINA_BASELINE_MARKUP.region);
-  });
-
+/**
+ * China's card output, still pinned byte for byte.
+ *
+ * This file used to hold four baselines. Two of them — the country level and an
+ * opened region — rendered `ChinaLevel`, the second map renderer China alone
+ * had, and they existed to enforce §9.5: "China's rendered output is
+ * byte-identical before and after Phase 4."
+ *
+ * That requirement was deliberately retired. China now renders through
+ * `CountryLevel` over `public/provinces/CN.json` like the other 245 countries,
+ * because a worldwide planner in which one country answers to a different
+ * control is a planner the reader has to learn twice — and because both of the
+ * affordances China was missing (the province picker and the airport layer)
+ * were gated on `!hasCurated`. `CountryMap.test.tsx` holds the routing now, and
+ * `CountryLevel.test.tsx` holds the rendering.
+ *
+ * The two popup baselines below are NOT part of that retirement and are kept
+ * verbatim. `PlacePopup` was never China-specific and did not change: the seven
+ * regions still key `REGION_MONTHS` (§6.4 keeps them "preserved verbatim"), so
+ * "North China", the climate row, the crowd dots and the holiday glyph are all
+ * still claims this app makes about a Chinese place, and a regression in any of
+ * them would still be a regression.
+ */
+describe("China's card output", () => {
   test("a curated place's popup is byte-identical to pre-Phase-4", () => {
     // Phase 4 lifted this component's `originLine` into `mapTypes` so §5.3.3's
     // card could make the same claim. The extraction is meant to be behaviour
