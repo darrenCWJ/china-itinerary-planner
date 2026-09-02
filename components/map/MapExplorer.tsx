@@ -736,7 +736,13 @@ export function MapExplorer({
   }
 
   return (
-    <div className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5">
+    <div
+      // A stable scope for the end-to-end tap-target sweep, which has to be
+      // able to say "every control the MAP owns" without also sweeping the
+      // wizard chrome around it.
+      data-map-panel=""
+      className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           {/*

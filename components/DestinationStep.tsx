@@ -275,7 +275,16 @@ export function DestinationStep({
                 type="button"
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
-                className={`px-3.5 py-1 text-xs font-medium transition-colors ${
+                // `inline-flex items-center` and not just `min-h`: the height
+                // has to come with a way to centre the label inside it, or the
+                // control grows to 44px with its text pinned to the top.
+                //
+                // Measured at 393px in Playwright before this was added: 24px
+                // tall against WCAG 2.2 AA 2.5.8's 44. Every unit test on this
+                // surface asserts `aria-pressed` and none asserts a size,
+                // because jsdom computes no layout — so the only thing that
+                // could ever have caught it is a browser.
+                className={`inline-flex min-h-[var(--tap-min)] items-center px-3.5 py-1 text-xs font-medium transition-colors ${
                   view === v ? "bg-[var(--accent-ink)] text-[var(--paper)]" : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--line-1)]"
                 }`}
               >
