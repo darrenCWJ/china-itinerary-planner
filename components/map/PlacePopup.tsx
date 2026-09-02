@@ -7,6 +7,7 @@ import {
   FIT_LABELS,
   fitForPlace,
   formatPopulation,
+  isChinaPlace,
   isChinaRegion,
   originLineFor,
   type MapPlace,
@@ -37,7 +38,15 @@ export function PlacePopup({ place, month, position, containerWidth, country }: 
   // regionMonthClimate is China-only data (see lib/months.ts); a place from
   // outside China's seven regions has no row to read, so this degrades to no
   // climate line instead of throwing.
-  const climate = isChinaRegion(place.region) ? regionMonthClimate(place.region, month) : null;
+  //
+  // Keyed off the place's own country, not the open one, and not off the
+  // region label alone: Botswana's Central District is spelled exactly like
+  // one of China's seven, and reading the label by itself put Chongqing's
+  // temperatures on a Botswanan city. See `isChinaPlace`.
+  const climate =
+    isChinaPlace(place) && isChinaRegion(place.region)
+      ? regionMonthClimate(place.region, month)
+      : null;
   const season = profile.seasonOfMonth(month);
   const seasonNote = place.seasonNotes?.[season];
   const highlight = place.kind === "curated" ? highlightFor(place.id, month) : undefined;

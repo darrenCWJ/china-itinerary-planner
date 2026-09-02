@@ -91,6 +91,9 @@ function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlac
     kind: "curated",
     localName: null,
     province: null,
+    // "CN" because the default `region` below is one of China's seven — the
+    // pair has to be coherent now that `fitForPlace` reads both.
+    country: "CN",
     region: "East",
     lat: 31.2,
     lon: 121.5,

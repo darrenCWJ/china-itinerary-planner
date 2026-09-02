@@ -16,11 +16,19 @@ import type { MapPlace } from "./mapTypes";
  * " China".
  */
 
+/**
+ * Defaults to Peru — the opposite of `show`'s CN default below, and
+ * deliberately. `country` is the place's OWN country and is what unlocks its
+ * region label; `show`'s is the country being planned. The two are independent
+ * (a route map draws stops from several countries at once), so every Chinese
+ * fixture here states `country: "CN"` rather than inheriting it.
+ */
 function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlace {
   return {
     kind: "catalog",
     localName: null,
     province: null,
+    country: "PE",
     region: "",
     lat: -13.53188,
     lon: -71.96701,
@@ -62,6 +70,9 @@ describe("PlacePopup — where it says a place is", () => {
         name: "Beijing",
         kind: "curated",
         level: "curated",
+        // Spelled out now that the place's own country is what unlocks its
+        // region label — Botswana's Central District is spelled like China's.
+        country: "CN",
         region: "North",
       })
     );
@@ -96,6 +107,7 @@ describe("PlacePopup — where it says a place is", () => {
         id: "Q57947",
         name: "Nantong",
         province: "Jiangsu",
+        country: "CN",
         region: "East",
       })
     );
@@ -128,7 +140,17 @@ describe("PlacePopup — whose crowd curve it shows", () => {
   const cusco = { id: "G3941584", name: "Cusco", province: "Cuzco Department", region: "Cuzco Department" };
 
   test("a Chinese place still shows China's crowd dots and October's band glyph", () => {
-    const { container } = show(place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" }), "CN");
+    const { container } = show(
+      place({
+        id: "beijing",
+        name: "Beijing",
+        kind: "curated",
+        level: "curated",
+        country: "CN",
+        region: "North",
+      }),
+      "CN"
+    );
 
     // October's real value from the curated curve, not a constant — a card
     // rendering the same figure every month would pass a presence check.
@@ -158,7 +180,18 @@ describe("PlacePopup — whose crowd curve it shows", () => {
     expect(screen.queryByTitle(/Chinese New Year/)).not.toBeInTheDocument();
     cleanup();
 
-    show(place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" }), "CN", 2);
+    show(
+      place({
+        id: "beijing",
+        name: "Beijing",
+        kind: "curated",
+        level: "curated",
+        country: "CN",
+        region: "North",
+      }),
+      "CN",
+      2
+    );
     expect(screen.getByTitle("Chinese New Year falls in this month")).toBeInTheDocument();
   });
 });
@@ -175,7 +208,14 @@ describe("PlacePopup — whose crowd curve it shows", () => {
 describe("PlacePopup — the climate row is China-only", () => {
   test("reads October out of the region table for a Chinese place", () => {
     const { container } = show(
-      place({ id: "beijing", name: "Beijing", kind: "curated", level: "curated", region: "North" })
+      place({
+        id: "beijing",
+        name: "Beijing",
+        kind: "curated",
+        level: "curated",
+        country: "CN",
+        region: "North",
+      })
     );
 
     // The real row rather than a literal, for the reason the crowd test above

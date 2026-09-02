@@ -9,6 +9,7 @@ function place(name: string, province: string | null): MapPlace {
     name,
     localName: null,
     province,
+    country: "CN",
     region: "East",
     lat: 0,
     lon: 0,

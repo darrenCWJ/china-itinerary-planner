@@ -70,6 +70,7 @@ function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlac
     kind: "catalog",
     localName: null,
     province: null,
+    country: "PE",
     region: "",
     lat: -12,
     lon: -76,
