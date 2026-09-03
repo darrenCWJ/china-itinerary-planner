@@ -14,7 +14,10 @@ export interface AirportPick {
 
 interface Props {
   label: string;
-  /** The current code, or null for none. Shown as the field's text until the user types. */
+  /**
+   * The current code, or null for none. Drives the text until the user
+   * types; a new code from the parent replaces it.
+   */
   value: string | null;
   /** Fires on every change: null while the text names no airport. */
   onChange: (pick: AirportPick | null) => void;
@@ -31,31 +34,62 @@ interface Props {
  * `AirportInput` yields display text — "Name (LIM)" — because tickets store
  * free text. A gateway is a CODE, so this wrapper owns the text and reports
  * the code behind it: the picked airport's, or, when allowed, a bare typed
- * one. Editing the text after a pick drops the pick, because the text no
- * longer says what was picked.
+ * one.
+ *
+ * The report is re-derived from the text on every change; a list pick is the
+ * only path that carries an `airport`. So editing the text after a pick
+ * drops the pick by construction — there is no separate "was this picked"
+ * flag that could fall out of sync with what the text actually says. (A list
+ * pick does deliver one transient `onChange(null)` immediately before the
+ * pick — from `AirportInput`'s own `onChange` of the display string, fired
+ * in the same event as the pick itself. Harmless for a parent that only sets
+ * state; worth knowing for one that does work per call.)
  */
 export function AirportPicker({ label, value, onChange, allowBareCode = false, placeholder }: Props) {
   const [text, setText] = useState(value ?? "");
-  const [pickedText, setPickedText] = useState<string | null>(null);
+  // Mirrors `value` so the block below can tell "the parent just changed
+  // value" apart from "report() just moved `reported` ahead of value, and
+  // the parent's own re-render (which would bring value back level with it)
+  // just hasn't happened yet". report() runs from an event handler, so its
+  // setReported is visible to the very next render — comparing `value`
+  // straight against `reported` there would treat that ordinary lag as if
+  // the parent had authored a change, and stomp the text mid-edit.
+  const [prevValue, setPrevValue] = useState(value);
+  // The code this picker last reported upward, or was last handed. When
+  // `value` transitions to something other than what was reported, the
+  // parent is the author of the change (an async load, a reverted save) and
+  // the text follows it; when the transition merely lands on what was
+  // reported, the user's text stays.
+  const [reported, setReported] = useState<string | null>(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    if (value !== reported) {
+      setReported(value);
+      setText(value ?? "");
+    }
+  }
+
+  const report = (pick: AirportPick | null) => {
+    setReported(pick?.iata ?? null);
+    onChange(pick);
+  };
 
   const onText = (next: string) => {
     setText(next);
-    if (pickedText !== null && next !== pickedText) setPickedText(null);
     const code = next.trim().toUpperCase();
     if (code === "") {
-      onChange(null);
+      report(null);
       return;
     }
     if (allowBareCode && IATA_CODE.test(code)) {
-      onChange({ iata: code, airport: null });
+      report({ iata: code, airport: null });
       return;
     }
-    onChange(null);
+    report(null);
   };
 
   const onPick = (airport: Airport) => {
-    setPickedText(`${airport.name} (${airport.iata})`);
-    onChange({ iata: airport.iata, airport });
+    report({ iata: airport.iata, airport });
   };
 
   return (
