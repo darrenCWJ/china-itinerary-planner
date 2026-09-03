@@ -10,6 +10,7 @@ import { getCountryProfile, isCurrencyResearched } from "./countryProfile";
 import { GENERAL_TIPS } from "./itinerary";
 import { HOLIDAY_BANDS, NATIONAL_CROWD, REGION_MONTHS } from "./months";
 import { TRANSPORT } from "./route";
+import type { ChinaRegion } from "./types";
 
 describe("China profile", () => {
   const cn = getCountryProfile("CN");
@@ -34,9 +35,13 @@ describe("China profile", () => {
   });
 
   test("climate rows come from the region table", () => {
-    const east = cn.climateFor("East");
-    expect(east).toHaveLength(12);
-    expect(east).toEqual(REGION_MONTHS.East);
+    // All seven of China's own regions, not East alone — East was the only
+    // one pinned before this widened, and the other six were unchecked.
+    for (const region of Object.keys(REGION_MONTHS) as ChinaRegion[]) {
+      const rows = cn.climateFor(region);
+      expect(rows).toHaveLength(12);
+      expect(rows).toEqual(REGION_MONTHS[region]);
+    }
   });
 
   test("an unknown region degrades to null instead of throwing", () => {

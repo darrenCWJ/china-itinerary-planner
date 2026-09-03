@@ -18,6 +18,7 @@ import {
   type ClimateKnobs,
   type DerivedFit,
 } from "./climateModel";
+import { getCountryBaseProfile } from "./countryBaseProfile";
 import { REGION_MONTHS, type MonthFit } from "./months";
 import type { ChinaRegion } from "./types";
 
@@ -398,6 +399,84 @@ describe("shape", () => {
     const before = [...lima.row];
     for (const m of MONTHS) monthFit(lima.row, lima.elev, m);
     expect(lima.row).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contract requirements — spec §9.4. Two of the table's four are pinned
+// elsewhere already (total/hasOwnProperty and 12-rows-or-null, both in
+// countryProfile.test.ts) and are not repeated here. These two are the ones
+// the spec says must be written fresh, not ported from anywhere.
+// ---------------------------------------------------------------------------
+
+describe("contract requirements — spec §9.4", () => {
+  test("returns fresh objects per call", () => {
+    // The curated side. Implemented at countryBaseProfile.ts's chinaClimate
+    // (`rows.map((row) => ({ ...row }))`, around line 191) but nothing
+    // proved it before this test — the existing mutation test at
+    // countryProfile.test.ts:52-63 covers only crowdByMonth and tips.
+    // Mutate what one call hands back, in both the object and the array
+    // sense, and prove a second call — and the shared curated table itself —
+    // are untouched.
+    const east = getCountryBaseProfile("CN").climateFor("East");
+    expect(east).not.toBeNull();
+    if (east === null) return; // narrows for TS; the assertion above already failed the test if so
+    east[0].lo = 99;
+    east.push({ lo: 1, hi: 1, fit: "great" });
+    expect(getCountryBaseProfile("CN").climateFor("East")).toEqual(REGION_MONTHS.East);
+    expect(REGION_MONTHS.East[0].lo).not.toBe(99);
+    expect(REGION_MONTHS.East).toHaveLength(12);
+
+    // The derived side: the same claim about climateMonth. Every field it
+    // returns is copied out of the row by value already, so mutating the
+    // returned object cannot reach back into the row's own numbers — this
+    // guards against a future cache that hands back one shared object
+    // instead of building a fresh one per call.
+    const lima = city("lima");
+    const before = [...lima.row];
+    const jan = climateMonth(lima.row, JAN);
+    jan.lo = 99;
+    jan.hi = 99;
+    jan.td = 99;
+    expect(climateMonth(lima.row, JAN)).toEqual({ lo: 20, hi: 24, precip: 4, cloud: 63, td: 16 });
+    expect(lima.row).toEqual(before);
+  });
+
+  test("every temperature is an integer", () => {
+    // The curated half. Every REGION_MONTHS cell is already a hand-typed
+    // integer literal (lib/months.ts), so this is GREEN ON DAY ONE — it is
+    // not proving a bug fix, it is a regression guard: nothing before this
+    // test asserted it anywhere.
+    for (const region of Object.keys(REGION_MONTHS) as ChinaRegion[]) {
+      for (const row of REGION_MONTHS[region]) {
+        expect(Number.isInteger(row.lo)).toBe(true);
+        expect(Number.isInteger(row.hi)).toBe(true);
+      }
+    }
+
+    // The derived half, where this test earns its keep. penaltyOf applies
+    // fix 4's elevation warming and fix 2's dew-point correction — both real
+    // floats (Kunming's elevation warming alone is +2.5 °C) — but neither
+    // must leak into what climateMonth hands back, because PlacePopup.tsx:101
+    // interpolates `{climate.lo}°–{climate.hi}°C` with no formatting: a float
+    // would render as "8.437°". Checked against every fixture city and
+    // month, including several with real elevation (Kunming 1892 m, Cusco
+    // 3312 m, Dunhuang 1142 m) where a leaked correction would show up as a
+    // non-integer or a value that no longer matches the stored row.
+    for (const c of CITIES) {
+      for (const m of MONTHS) {
+        const month = climateMonth(c.row, m);
+        expect(Number.isInteger(month.lo)).toBe(true);
+        expect(Number.isInteger(month.hi)).toBe(true);
+        expect(Number.isInteger(month.td)).toBe(true);
+        // Equal to the row's own stored ints (layout per data/climate-anchors
+        // .json: block 0 is lo, block 1 is hi, January at index 0 of each) —
+        // proves climateMonth reads the row raw rather than through penaltyOf's
+        // corrected `high`/`dewPoint` locals.
+        expect(month.lo).toBe(c.row[m]);
+        expect(month.hi).toBe(c.row[12 + m]);
+      }
+    }
   });
 });
 
