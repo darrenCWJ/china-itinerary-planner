@@ -52,7 +52,10 @@ const LONG_NAME_NO_MUNICIPALITY: Airport = {
  * The component is controlled, so a bare render would never show typed text.
  * This holds the value the way TicketForm does.
  */
-function Harness({ onValue }: { onValue?: (v: string) => void } = {}) {
+function Harness({
+  onValue,
+  onPick,
+}: { onValue?: (v: string) => void; onPick?: (airport: Airport) => void } = {}) {
   const [value, setValue] = useState("");
   return (
     <AirportInput
@@ -62,6 +65,7 @@ function Harness({ onValue }: { onValue?: (v: string) => void } = {}) {
         setValue(v);
         onValue?.(v);
       }}
+      onPick={onPick}
     />
   );
 }
@@ -221,6 +225,16 @@ describe("AirportInput", () => {
     // cannot close the list first.
     fireEvent.mouseDown(screen.getByRole("option", { name: /Jinan Yaoqiang/ }));
     expect(onValue).toHaveBeenLastCalledWith("Jinan Yaoqiang International Airport (TNA)");
+  });
+
+  test("reports the picked airport itself, for callers that want the code", async () => {
+    const onPick = vi.fn();
+    render(<Harness onPick={onPick} />);
+    type("Jinan");
+    await pastDebounce();
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Jinan Yaoqiang/ }));
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick.mock.calls[0][0]).toMatchObject({ iata: "TNA" });
   });
 
   test("closes the list after a pick rather than re-querying the new value", async () => {
