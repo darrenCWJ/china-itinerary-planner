@@ -182,6 +182,22 @@ function integerOrNull(raw) {
 }
 
 /**
+ * GeoNames' no-data value for `dem`. SRTM has no coverage above 60° of
+ * latitude or over water, and GeoNames writes -9999 there rather than leaving
+ * the column blank — measured 2026-09-03 on 300 committed rows (HK 48, NO 41,
+ * FI 17, CV 12, HN 10, IS 10, FM 9, GL 9), every one of them a coastal or
+ * high-latitude town sitting "ten kilometres below sea level". It is not an
+ * elevation, and the lapse-rate correction climate work needs would read it
+ * as one and warm those towns by tens of degrees. Null, like a blank cell.
+ */
+export const GEONAMES_NO_DATA_ELEVATION = -9999;
+
+function elevationOrNull(raw) {
+  const value = integerOrNull(raw);
+  return value === GEONAMES_NO_DATA_ELEVATION ? null : value;
+}
+
+/**
  * Every usable row of cities500.txt, as the record the rest of the build uses.
  *
  * A ragged line aborts — the dump has a fixed 19-column shape and a line that
@@ -233,8 +249,10 @@ export function parseGeoNamesRows(text) {
       // GeoNames leaves column 15 blank for most rows and carries a modelled
       // value in `dem`; the climate bias correction needs *an* elevation far
       // more than it needs a surveyed one. Null rather than 0 — sea level is
-      // a real elevation, and 0 would put a Himalayan town at the coast.
-      elevation: integerOrNull(f[COL.elevation]) ?? integerOrNull(f[COL.dem]),
+      // a real elevation, and 0 would put a Himalayan town at the coast. And
+      // null rather than -9999, GeoNames' own no-data marker — see
+      // `GEONAMES_NO_DATA_ELEVATION`.
+      elevation: elevationOrNull(f[COL.elevation]) ?? elevationOrNull(f[COL.dem]),
       timezone: f[COL.timezone].trim(),
     });
   }
@@ -827,6 +845,34 @@ function writeFileAtomic(path, content) {
   }
 }
 
+/**
+ * The entries of `shardDir` that are stale shards and nothing else: a regular
+ * file naming a country this run did not write, `index.json` excepted because
+ * the run rewrites it next.
+ *
+ * FILES ONLY, and that is the reason this is its own function rather than
+ * three lines in `run`. `rmSync(path, { force: true })` on a directory throws
+ * `ERR_FS_EISDIR` — `force` forgives a missing path, not a directory — so the
+ * sweep used to be one subdirectory away from ending the nightly refresh at
+ * its last step, after every shard had already been written. `enrich/`
+ * survived only because it was excluded by NAME; the first unnamed directory
+ * under public/cities/ would have killed the run, which is why Phase 4 put
+ * `public/provinces/` beside this directory instead of inside it. Verified on
+ * Node 24 before this was written. A directory is never a shard, so it is
+ * never stale, whatever it is called.
+ *
+ * @param {string} shardDir
+ * @param {Iterable<string>} writtenCountries
+ * @returns {string[]} file names, sorted so the log order is stable
+ */
+export function staleShardFiles(shardDir, writtenCountries) {
+  const wanted = new Set([...writtenCountries].map((code) => `${code}.json`));
+  return readdirSync(shardDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name !== 'index.json' && !wanted.has(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function readJson(path) {
   if (!existsSync(path)) return null;
   try {
@@ -1052,14 +1098,12 @@ export async function run({
 
   // Stale shards from a country that vanished. `assertSane` refuses to let a
   // country disappear, so this only ever cleans up after an aborted run — but
-  // an orphan file under public/ is a URL the client can still fetch.
-  const wanted = new Set([...shards.keys()].map((code) => `${code}.json`));
-  for (const entry of readdirSync(shardDir)) {
-    if (entry === 'index.json' || entry === 'enrich') continue;
-    if (!wanted.has(entry)) {
-      rmSync(join(shardDir, entry), { force: true });
-      console.log(`  removed stale shard ${entry}`);
-    }
+  // an orphan file under public/ is a URL the client can still fetch. Files
+  // only: `enrich/`, and any directory a later phase puts here, is not a
+  // shard and must not reach `rmSync` — see `staleShardFiles`.
+  for (const entry of staleShardFiles(shardDir, shards.keys())) {
+    rmSync(join(shardDir, entry), { force: true });
+    console.log(`  removed stale shard ${entry}`);
   }
 
   // All three index files go through `stampedPayload`, exactly as the 246

@@ -259,6 +259,16 @@ describe("parseGeoNamesRows", () => {
     expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "high" })}\n`)[0].elevation).toBeNull();
   });
 
+  test("reads GeoNames' -9999 no-data elevation as null, in either column", () => {
+    // SRTM has no coverage above 60° or over water, and GeoNames writes -9999
+    // there rather than leaving `dem` blank. 300 committed rows carried it
+    // (HK 48, NO 41, FI 17, IS 10, GL 9 ...) as if those towns sat ten
+    // kilometres below sea level — a value a lapse-rate correction would have
+    // read as an elevation. Blank-equivalent, so the fallback still applies.
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "-9999" })}\n`)[0].elevation).toBeNull();
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "-9999", 16: "1608" })}\n`)[0].elevation).toBe(1608);
+  });
+
   test("keeps the raw admin-1 code beside the row", () => {
     // Pinned here because the next task joins a city to a polygon on this
     // code, and the resolved NAME is what the build currently keeps.
@@ -1400,11 +1410,12 @@ describe("main()'s ordering", () => {
 // reaches disk and Vercel deploys the commit.
 // ---------------------------------------------------------------------------
 
-import { mkdtempSync, renameSync, rmSync as rmSyncReal, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync as rmSyncReal, writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
 import { afterEach, vi } from "vitest";
-import { run } from "./ingest-cities.mjs";
+import { run, staleShardFiles } from "./ingest-cities.mjs";
 
 /**
  * `vi.spyOn` cannot touch `node:fs` directly here — Vitest's ESM module
@@ -1477,5 +1488,31 @@ describe("run() aborts before any write primitive fires when assertSane rejects 
     ).rejects.toThrow(/countries produced a shard, expected 246/);
     expect(writeMock).not.toHaveBeenCalled();
     expect(renameMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("staleShardFiles — the sweep that runs after every shard has been written", () => {
+  test("names stale shard files and never a directory, whatever it is called", async () => {
+    // `rmSync(dir, { force: true })` throws ERR_FS_EISDIR — `force` forgives a
+    // missing path, not a directory — so a directory reaching the sweep ended
+    // the nightly refresh at its final step, after every shard was on disk.
+    // `enrich/` was safe only by NAME; `climate/` here stands for the first
+    // directory nobody thought to name.
+    const dir = mkdtempSync(pathJoin(tmpdir(), "ingest-cities-sweep-test-"));
+    try {
+      // `writeFileSync` is a no-op spy in this file (see the mock above), so
+      // the fixture files go through fs/promises, which the mock does not touch.
+      await writeFile(pathJoin(dir, "PE.json"), "{}");
+      await writeFile(pathJoin(dir, "ZZ.json"), "{}");
+      await writeFile(pathJoin(dir, "index.json"), "{}");
+      mkdirSync(pathJoin(dir, "enrich"));
+      mkdirSync(pathJoin(dir, "climate"));
+      expect(staleShardFiles(dir, ["PE"])).toEqual(["ZZ.json"]);
+      // And the positive control: with nothing written, both files are stale
+      // and both directories still are not.
+      expect(staleShardFiles(dir, [])).toEqual(["PE.json", "ZZ.json"]);
+    } finally {
+      rmSyncReal(dir, { recursive: true, force: true });
+    }
   });
 });
