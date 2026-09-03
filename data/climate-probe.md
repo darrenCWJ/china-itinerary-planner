@@ -4,7 +4,9 @@
 - Licence: CC0 1.0 — CHELSA V2.1 climatologies 1981–2010, DOI 10.16904/envidat.228
 - Probed: 2026-09-03T16:04:39.646Z, `node scripts/probe-chelsa.mjs`, Node v24.14.1
 - Catalog: the 246 committed shards under `public/cities/`, **58,757 cities**
-- Downloaded: **January only**, four variables, 520,135,601 B
+- Downloaded: **January only**, four variables, 520,135,601 B (`tasmin`
+  115,680,174 B, `tasmax` 114,438,763 B, `pr` 229,542,124 B, `clt`
+  60,474,540 B)
 
 Every number below came out of that run. Where one contradicts the design spec
 (§9.1–§9.3) the contradiction is stated and the measured figure is the one
@@ -153,10 +155,16 @@ bbox S..N       -90.00013889 .. 83.99986042       -90.02499999 .. 89.99992800
 
 Three consequences for the real build:
 
-- **It must carry each file's own transform.** The two grids are registered
-  differently — `clt` has 14,401 columns for a 14,400-cell world, a half-cell
-  overhang consistent with node registration — so a single shared
-  lon/lat-to-pixel mapping would put cloud cover in the wrong cell.
+- **It must carry each file's own transform.** `GTRasterTypeGeoKey` is **1
+  (PixelIsArea)** on both `tasmin` and `clt` — read directly from the cached
+  rasters, not assumed — so neither grid is node/point registered. The
+  origin tag is the outer edge of pixel (0,0) on both, and
+  `floor((lon − originX) / resX)` is the correct pixel index with **no
+  half-cell correction**. `clt` still has 14,401 columns for a 14,400-cell
+  world, but that extra column is a full-cell overhang in the west (the bbox
+  row below shows the same pattern in the south, and a flush edge in the
+  east), not a registration difference. The two grids still need separate
+  transforms, because their origins and resolutions differ.
 - **Neither bbox is the round number, and they are off by different amounts.**
   The 1 km grid is offset by about 1.4 × 10⁻⁴ ° (roughly half an arc-second,
   ~15 m at the equator) from −180/+84 on every edge — outside it in the west
@@ -208,8 +216,11 @@ layout:
 So the gzip figure is instead built from real values with real entropy: shards
 holding only January's 3 (or 4) measured values per city, minus the cost of a
 shard holding the id keys alone, times twelve. That treats the twelve months as
-*independent* columns, which real months are not, so it is an **upper bound** —
-the real artifact will compress better.
+*independent* columns, which real months are not — and the same run shows the
+direction of that error: per-column marginal gzip cost *falls* as columns are
+added (55,320 B for each of the first three columns, 52,930 B for the fourth),
+so multiplying the first column's cost by twelve is an **upper bound** — the
+real artifact, with its real month-to-month correlation, will compress better.
 
 ### The numbers
 
@@ -231,8 +242,10 @@ the same countries and can be read against each other.
 | shards over the 700,000 B raw tripwire | **0 of 246** | **0 of 246** |
 
 The cloud block costs **+2,108,760 B raw and +635,160 B gzip** across all 246
-shards — +30.7% raw, +28.7% gzip — measured from real cloud values, so this
-delta does not inherit the January bias at all.
+shards — +30.7% raw, +28.7% gzip — measured from January's real cloud values.
+Cloud is bounded 0–100 and renders at one or two characters in essentially
+every month, so the January bias that affects `lo`/`hi`/`precip` is
+negligible for this column, not absent.
 
 **The budget is on gzipped bytes, and the biggest file is not the worst one.**
 Indonesia writes the most raw bytes (126,852 B at 48 ints) but compresses well;
@@ -275,8 +288,9 @@ not depend on the January assumption.
 
 §9.3 claims 7.32 MB raw / 2.16 MB gzipped, largest VN 97,941 B, median
 13,648 B, 0 of 246 over cap. Measured at 36 ints: 6.87 MB raw, 2.21 MB gzip
-bound, largest **ID** 99,852 B, median 12,879 B, 0 over cap. Within 6–10% on
-every figure and identical in conclusion — so §9.3's size table is sound even
+bound, largest **ID** 99,852 B, median 12,879 B, 0 over cap. That is a
+divergence of 6.1% on raw, 2.3% on gzip, 5.6% on median and 2.0% on largest —
+small, and identical in conclusion — so §9.3's size table is sound even
 though §9.1's description of the files is not.
 
 The one place it names the wrong country is the largest shard. VN measures
