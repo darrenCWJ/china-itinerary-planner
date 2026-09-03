@@ -5,6 +5,7 @@ import {
   AddJournalSchema,
   AddSettlementSchema,
   CurrencySettingsSchema,
+  GatewaysSchema,
   PlanOpSchema,
   PrefsSchema,
   TripInputSchema,
@@ -414,5 +415,55 @@ describe("PlanOpSchema — a timing pair is never half, on any op", () => {
     expect(ok({ ...base, title: "Renamed" })).toBe(true);
     expect(ok({ ...base, startMinutes: 540, durationMinutes: 60 })).toBe(true);
     expect(ok({ ...base, startMinutes: null, durationMinutes: null })).toBe(true);
+  });
+});
+
+describe("TripInputSchema gateways", () => {
+  const base = {
+    destinationIds: ["beijing"],
+    days: 3,
+    season: "spring",
+    adults: 2,
+    kids: 0,
+    interests: [],
+  };
+
+  test("carries a gateway through, uppercased, instead of stripping it", () => {
+    // The schemas.ts:330-332 scar: an unlisted key is dropped and the route's
+    // own 200 then overwrites the client's value with the server's guess.
+    const ok = TripInputSchema.safeParse({ ...base, arrivalAirport: " lim ", departureAirport: "CUZ" });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data.arrivalAirport).toBe("LIM");
+    expect(ok.success && ok.data.departureAirport).toBe("CUZ");
+  });
+
+  test("keeps absent absent and null null — they are different states", () => {
+    const absent = TripInputSchema.safeParse(base);
+    expect(absent.success && "arrivalAirport" in absent.data).toBe(false);
+    const cleared = TripInputSchema.safeParse({ ...base, arrivalAirport: null });
+    expect(cleared.success && cleared.data.arrivalAirport).toBeNull();
+  });
+
+  test("rejects anything that is not a three-letter code", () => {
+    expect(TripInputSchema.safeParse({ ...base, arrivalAirport: "LIMA" }).success).toBe(false);
+    expect(TripInputSchema.safeParse({ ...base, departureAirport: "L1M" }).success).toBe(false);
+    expect(TripInputSchema.safeParse({ ...base, arrivalAirport: "" }).success).toBe(false);
+  });
+});
+
+describe("GatewaysSchema", () => {
+  test("requires both keys, so a save can never half-apply", () => {
+    expect(GatewaysSchema.safeParse({ arrivalAirport: "LIM" }).success).toBe(false);
+    expect(GatewaysSchema.safeParse({}).success).toBe(false);
+  });
+
+  test("accepts null as a clear and normalises codes", () => {
+    const ok = GatewaysSchema.safeParse({ arrivalAirport: "lim", departureAirport: null });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data).toEqual({ arrivalAirport: "LIM", departureAirport: null });
+  });
+
+  test("rejects a malformed code", () => {
+    expect(GatewaysSchema.safeParse({ arrivalAirport: "LIMA", departureAirport: null }).success).toBe(false);
   });
 });

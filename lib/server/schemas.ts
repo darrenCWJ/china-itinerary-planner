@@ -22,6 +22,13 @@ const CountryCodeSchema = z
   .toUpperCase()
   .regex(/^[A-Z]{2}$/, "ISO alpha-2 country code");
 
+/** A gateway airport, as the IATA code data/airports.json keys on. */
+const IataSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, "3-letter IATA airport code");
+
 export const TripInputSchema = z.object({
   destinationIds: z.array(z.string().min(1).max(60)).min(1).max(8),
   days: z.number().int().min(1).max(21),
@@ -33,6 +40,12 @@ export const TripInputSchema = z.object({
   // each trip rather than through a bulk rewrite: updateTripData carries no
   // version guard, so a migration pass could clobber a concurrent member edit.
   country: CountryCodeSchema.default("CN"),
+  // Listed explicitly because unknown keys are stripped: without these two the
+  // create route would accept a gateway, drop it, and stamp its own guess in
+  // its place. Optional AND nullable — absent, null and a code are three
+  // states (spec §10.3), and the create route fills only the first.
+  arrivalAirport: IataSchema.nullable().optional(),
+  departureAirport: IataSchema.nullable().optional(),
 });
 
 const MemberNameSchema = z.string().trim().min(1).max(30);
@@ -313,6 +326,15 @@ export const CurrencySettingsSchema = z.object({
   // route would accept a pivot, drop it, and store rates whose meaning no
   // longer matches what the client sent.
   pivot: CurrencyCodeSchema.optional(),
+});
+
+/**
+ * PUT /api/trips/:id/gateways. Both keys required — null clears, a code sets —
+ * so a save can never half-apply and leave one side stale.
+ */
+export const GatewaysSchema = z.object({
+  arrivalAirport: IataSchema.nullable(),
+  departureAirport: IataSchema.nullable(),
 });
 
 /**
