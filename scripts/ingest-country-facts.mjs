@@ -998,6 +998,24 @@ export const CURATED_FACTS = {
   /** P498 yields PLN and PLZ, the pre-1995 zloty: still ISO-shaped, still truthy. */
   PL: { currencyCode: 'PLN', currencyName: 'złoty' },
   /**
+   * PL's shape again, and it arrived overnight. P38 yields BAM and BAD, the
+   * 1992-1998 Bosnia and Herzegovina dinar: a QuickStatements batch on
+   * 2026-08-31 (Q225, batches 51009-51023) added the dinar with start- and
+   * end-time qualifiers but at NormalRank, the same rank as the convertible
+   * mark, so `wdt:` returns both and `pickCurrency` sees two ISO-shaped codes
+   * and withholds. Measured 2026-09-03 by the shipping queries, BA only:
+   * every other field answers as before and `factCount` goes 9 -> 7, over
+   * `COUNTRY_FIELD_LOSS_GRACE`. That reddened the nightly refresh on 08-31,
+   * 09-01 and 09-02 and withheld the city catalog with it, because a failed
+   * run writes nothing and so loses the same two fields every night after.
+   *
+   * A RESTORATION, not an editorial call: BAM / "convertible mark" is the
+   * pair the committed artifact already carries, and it is the currency a
+   * traveller is quoted in. The day upstream ranks the mark Preferred or
+   * drops the dinar, this row goes stale and the run asks for it back out.
+   */
+  BA: { currencyCode: 'BAM', currencyName: 'convertible mark' },
+  /**
    * P38 yields thirteen currencies. Measured 2026-08-27 by the shipping
    * query, they are EUR, CNY,
    * GBP, USD, JPY, AUD, ZWG, ZAR, ZWN, ZWR, ZWL, INR and ZWD — four of them
