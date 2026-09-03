@@ -25,6 +25,12 @@ const PRIMARY =
  *
  * Codes, not names, on purpose: the strip is browser-side and has no airport
  * array to resolve a name from, and a code is what a boarding pass says.
+ *
+ * The strip itself prints. Which airports a trip flies into and out of is
+ * precisely the sort of line a traveller wants on the page they carry, so
+ * `print:hidden` sits on the two things that cannot be acted on from paper —
+ * the "Edit gateways" button and the editor it opens — rather than on the
+ * section that would take the fact down with them.
  */
 export function GatewaysStrip({ gateways, onSave }: Props) {
   const [editing, setEditing] = useState(false);
@@ -72,57 +78,69 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
     <section
       data-testid="gateways"
       aria-label="Gateway airports"
-      className="rounded-lg border border-dashed border-[var(--line-1)] bg-[var(--paper)] px-4 py-2 text-sm text-[var(--ink-2)] print:hidden"
+      className="rounded-lg border border-dashed border-[var(--line-1)] bg-[var(--paper)] px-4 py-2 text-sm text-[var(--ink-2)]"
     >
       {editing && onSave ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-40 flex-1">
-            <AirportPicker
-              label="Arrive at"
-              value={draft.arrival}
-              onChange={(pick, text) => {
-                setDraft((d) => ({ ...d, arrival: pick?.iata ?? null }));
-                setDangling((f) => ({ ...f, arrival: pick === null && text.trim() !== "" }));
-              }}
-              allowBareCode
-              placeholder="Lima or LIM"
-            />
-          </div>
-          <div className="min-w-40 flex-1">
-            <AirportPicker
-              label="Depart from"
-              value={draft.departure}
-              onChange={(pick, text) => {
-                setDraft((d) => ({ ...d, departure: pick?.iata ?? null }));
-                setDangling((f) => ({ ...f, departure: pick === null && text.trim() !== "" }));
-              }}
-              allowBareCode
-              placeholder="Cusco or CUZ"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving || blocked}
-              className={PRIMARY}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button type="button" onClick={() => setEditing(false)} className={BUTTON}>
-              Cancel
-            </button>
+        // The one part of the strip that has no business on paper: a printed
+        // plan wants the line of fact above, not the controls that edit it.
+        <div className="print:hidden">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-40 flex-1">
+              <AirportPicker
+                label="Arrive at"
+                value={draft.arrival}
+                onChange={(pick, text) => {
+                  setDraft((d) => ({ ...d, arrival: pick?.iata ?? null }));
+                  setDangling((f) => ({ ...f, arrival: pick === null && text.trim() !== "" }));
+                }}
+                allowBareCode
+                placeholder="Airport name or code"
+              />
+            </div>
+            <div className="min-w-40 flex-1">
+              <AirportPicker
+                label="Depart from"
+                value={draft.departure}
+                onChange={(pick, text) => {
+                  setDraft((d) => ({ ...d, departure: pick?.iata ?? null }));
+                  setDangling((f) => ({ ...f, departure: pick === null && text.trim() !== "" }));
+                }}
+                allowBareCode
+                placeholder="Airport name or code"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving || blocked}
+                className={PRIMARY}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                disabled={saving}
+                className={BUTTON}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
           {blocked && (
-            <p className="w-full text-xs text-[var(--ink-2)]">
+            <p className="mt-2 text-xs text-[var(--ink-2)]">
               Pick an airport from the list, or type its 3-letter code.
             </p>
           )}
-          {error && (
-            <p role="status" className="w-full text-xs text-[var(--seal)]">
-              {error}
-            </p>
-          )}
+          {/*
+            Always mounted, empty when there is nothing to say: a live region
+            announces what changes *inside* it, so one that only appears along
+            with its own text gives the screen reader nothing to notice.
+          */}
+          <p role="status" className="mt-1 text-xs text-[var(--seal)]">
+            {error}
+          </p>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,7 +151,10 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
                 Fly in via <span className="font-mono font-semibold text-[var(--ink-0)]">{gateways.arrival}</span>
               </>
             ) : (
-              "No arrival airport"
+              // "not set", not "no airport": a legacy row that predates these
+              // fields renders through this branch too, and it has not said
+              // there is no airport — nobody has said anything yet.
+              "Arrival airport not set"
             )}
             {" · "}
             {gateways.departure ? (
@@ -141,11 +162,11 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
                 out via <span className="font-mono font-semibold text-[var(--ink-0)]">{gateways.departure}</span>
               </>
             ) : (
-              "no departure airport"
+              "departure not set"
             )}
           </p>
           {onSave && (
-            <button type="button" onClick={open} className={BUTTON}>
+            <button type="button" onClick={open} className={`${BUTTON} print:hidden`}>
               Edit gateways
             </button>
           )}

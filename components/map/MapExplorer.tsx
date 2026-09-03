@@ -922,16 +922,26 @@ export function MapExplorer({
             <h4 className="text-sm font-bold">
               Suggested route · {route.totalKm.toLocaleString()} km
               {arrival?.airport && (
-                <span className="ml-2 font-normal text-[var(--ink-2)]">starts near {arrival.iata}</span>
+                // The separator is inside the span, not a margin: a margin is
+                // invisible to a screen reader, which reads the heading as one
+                // string and heard "…24 kmstarts near PVG".
+                <span className="font-normal text-[var(--ink-2)]">
+                  {" · starts near "}
+                  {arrival.iata}
+                </span>
               )}
             </h4>
             {onArrivalChange && (
-              <div className="w-48">
+              // A picked value is a whole airport name — "Jorge Chávez
+              // International Airport (LIM)" — so a fixed 12rem truncated
+              // every one of them. Full width on a phone, wider than the old
+              // box once there is room for it.
+              <div className="w-full sm:w-64">
                 <AirportPicker
                   label="Flying into"
                   value={arrival?.iata ?? null}
                   onChange={onArrivalChange}
-                  placeholder="Lima or LIM"
+                  placeholder="Airport name or code"
                 />
               </div>
             )}
@@ -943,7 +953,17 @@ export function MapExplorer({
               Apply this order
             </button>
           </div>
-          <ol aria-label="Suggested route" className="mt-2 flex flex-wrap items-center gap-1 text-sm">
+          {/*
+            `role="list"` beside the label, redundant as it looks: Tailwind's
+            preflight sets `list-style: none` on every ol, and Safari/VoiceOver
+            drop a list's implicit role when it has no marker — so without this
+            the labelled list is announced as a plain group of items.
+          */}
+          <ol
+            role="list"
+            aria-label="Suggested route"
+            className="mt-2 flex flex-wrap items-center gap-1 text-sm"
+          >
             {route.order.map((p, i) => {
               const leg = i > 0 ? route.legs[i - 1] : null;
               return (
