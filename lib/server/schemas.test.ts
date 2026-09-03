@@ -429,8 +429,11 @@ describe("TripInputSchema gateways", () => {
   };
 
   test("carries a gateway through, uppercased, instead of stripping it", () => {
-    // The schemas.ts:330-332 scar: an unlisted key is dropped and the route's
-    // own 200 then overwrites the client's value with the server's guess.
+    // The scar the PrefsSchema `worldView` comment records — "Listed
+    // explicitly because unknown keys are stripped": an unlisted key is
+    // dropped and the route's own 200 then overwrites the client's value with
+    // the server's guess. Cited by that comment's words rather than by line
+    // number, which the next edit above it moves.
     const ok = TripInputSchema.safeParse({ ...base, arrivalAirport: " lim ", departureAirport: "CUZ" });
     expect(ok.success).toBe(true);
     expect(ok.success && ok.data.arrivalAirport).toBe("LIM");
