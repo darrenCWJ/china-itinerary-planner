@@ -160,6 +160,21 @@ describe("pixelFor", () => {
     expect(pixelFor(Number.POSITIVE_INFINITY, 0, KM_GRID)).toBeNull();
     expect(pixelFor(0, Number.NEGATIVE_INFINITY, KM_GRID)).toBeNull();
   });
+
+  test("refuses a grid whose resolution is not positive, rather than nulling every city", () => {
+    // geotiff's getResolution() reports resY NEGATIVE for a north-up raster
+    // (see the Grid typedef in the module) and nothing enforces the sign
+    // before it reaches here. A sign-flipped resY does not fail loudly: the
+    // division below still produces a number for every coordinate, so it
+    // would silently return null for every city south of the origin — the
+    // whole catalog — while every downstream shape and budget gate kept
+    // passing. That is a caller bug, the same category `tupleFor` throws on
+    // for a wrong-length column, not a coordinate genuinely off the raster
+    // (that case is covered above, by `pixelFor(180, 0, KM_GRID)` returning
+    // null, and is not repeated here).
+    expect(() => pixelFor(0, 0, { ...KM_GRID, resY: -KM_GRID.resY })).toThrow(/resY/);
+    expect(() => pixelFor(0, 0, { ...KM_GRID, resX: 0 })).toThrow(/resX/);
+  });
 });
 
 // ---------------------------------------------------------------------------
