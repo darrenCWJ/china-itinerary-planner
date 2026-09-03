@@ -1,0 +1,700 @@
+{
+  "generatedAt": "2026-09-03T17:28:11.519Z",
+  "generatedBy": "scripts/sample-climate-anchors.mjs",
+  "node": "v24.14.1",
+  "source": "CHELSA V2.1 climatologies 1981-2010, CC0 1.0, DOI 10.16904/envidat.228",
+  "cache": "C:\\Users\\msn-f\\AppData\\Local\\Temp\\cip-chelsa",
+  "layout": "60 ints: [12 lo C, 12 hi C, 12 precip mm/month, 12 cloud %, 12 td C], January at index 0 of every block; td is the UNCORRECTED Magnus dew point",
+  "anchorElevationSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+  "rasters": [
+    {
+      "file": "CHELSA_tasmin_01_1981-2010_V.2.1.tif",
+      "bytes": 115680174,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_02_1981-2010_V.2.1.tif",
+      "bytes": 116918430,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_03_1981-2010_V.2.1.tif",
+      "bytes": 119329570,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_04_1981-2010_V.2.1.tif",
+      "bytes": 122549685,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_05_1981-2010_V.2.1.tif",
+      "bytes": 124117454,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_06_1981-2010_V.2.1.tif",
+      "bytes": 125743962,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_07_1981-2010_V.2.1.tif",
+      "bytes": 126751137,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_08_1981-2010_V.2.1.tif",
+      "bytes": 126409029,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_09_1981-2010_V.2.1.tif",
+      "bytes": 125478053,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_10_1981-2010_V.2.1.tif",
+      "bytes": 121498068,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_11_1981-2010_V.2.1.tif",
+      "bytes": 116727325,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmin_12_1981-2010_V.2.1.tif",
+      "bytes": 115457083,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_01_1981-2010_V.2.1.tif",
+      "bytes": 114438763,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_02_1981-2010_V.2.1.tif",
+      "bytes": 115827949,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_03_1981-2010_V.2.1.tif",
+      "bytes": 118772147,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_04_1981-2010_V.2.1.tif",
+      "bytes": 122282594,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_05_1981-2010_V.2.1.tif",
+      "bytes": 124421929,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_06_1981-2010_V.2.1.tif",
+      "bytes": 126590418,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_07_1981-2010_V.2.1.tif",
+      "bytes": 127491220,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_08_1981-2010_V.2.1.tif",
+      "bytes": 126901244,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_09_1981-2010_V.2.1.tif",
+      "bytes": 124978922,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_10_1981-2010_V.2.1.tif",
+      "bytes": 120015100,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_11_1981-2010_V.2.1.tif",
+      "bytes": 114759628,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_tasmax_12_1981-2010_V.2.1.tif",
+      "bytes": 113651870,
+      "scale": 0.1,
+      "offset": -273.15,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_01_1981-2010_V.2.1.tif",
+      "bytes": 229542124,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_02_1981-2010_V.2.1.tif",
+      "bytes": 224895015,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_03_1981-2010_V.2.1.tif",
+      "bytes": 234280039,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_04_1981-2010_V.2.1.tif",
+      "bytes": 235132463,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_05_1981-2010_V.2.1.tif",
+      "bytes": 241241410,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_06_1981-2010_V.2.1.tif",
+      "bytes": 246124078,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_07_1981-2010_V.2.1.tif",
+      "bytes": 254066086,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_08_1981-2010_V.2.1.tif",
+      "bytes": 253789043,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_09_1981-2010_V.2.1.tif",
+      "bytes": 248000949,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_10_1981-2010_V.2.1.tif",
+      "bytes": 245078695,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_11_1981-2010_V.2.1.tif",
+      "bytes": 234444654,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_pr_12_1981-2010_V.2.1.tif",
+      "bytes": 230925850,
+      "scale": 0.1,
+      "offset": 0,
+      "nodata": -2147483647
+    },
+    {
+      "file": "CHELSA_clt_01_1981-2010_V.2.1.tif",
+      "bytes": 60474540,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_02_1981-2010_V.2.1.tif",
+      "bytes": 60491595,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_03_1981-2010_V.2.1.tif",
+      "bytes": 59797508,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_04_1981-2010_V.2.1.tif",
+      "bytes": 59152138,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_05_1981-2010_V.2.1.tif",
+      "bytes": 58709346,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_06_1981-2010_V.2.1.tif",
+      "bytes": 58503286,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_07_1981-2010_V.2.1.tif",
+      "bytes": 58643793,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_08_1981-2010_V.2.1.tif",
+      "bytes": 58682917,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_09_1981-2010_V.2.1.tif",
+      "bytes": 58813595,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_10_1981-2010_V.2.1.tif",
+      "bytes": 59267806,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_11_1981-2010_V.2.1.tif",
+      "bytes": 59963969,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_clt_12_1981-2010_V.2.1.tif",
+      "bytes": 60234876,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_01_1981-2010_V.2.1.tif",
+      "bytes": 361353211,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_02_1981-2010_V.2.1.tif",
+      "bytes": 356128713,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_03_1981-2010_V.2.1.tif",
+      "bytes": 349777652,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_04_1981-2010_V.2.1.tif",
+      "bytes": 345785148,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_05_1981-2010_V.2.1.tif",
+      "bytes": 339483068,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_06_1981-2010_V.2.1.tif",
+      "bytes": 338731943,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_07_1981-2010_V.2.1.tif",
+      "bytes": 341834246,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_08_1981-2010_V.2.1.tif",
+      "bytes": 338973973,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_09_1981-2010_V.2.1.tif",
+      "bytes": 333450775,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_10_1981-2010_V.2.1.tif",
+      "bytes": 339385466,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_11_1981-2010_V.2.1.tif",
+      "bytes": 352238556,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    },
+    {
+      "file": "CHELSA_hurs_12_1981-2010_V.2.1.tif",
+      "bytes": 359419458,
+      "scale": 0.01,
+      "offset": 0,
+      "nodata": 65535
+    }
+  ],
+  "hurs": {
+    "geometry": {
+      "width": 43200,
+      "height": 20880,
+      "originX": -180.00013888885002,
+      "originY": 83.99986041515001,
+      "resX": 0.0083333333,
+      "resY": 0.0083333333
+    },
+    "bitsPerSample": [16],
+    "sampleFormat": [1],
+    "declaredNodata": 65535,
+    "scale": 0.01,
+    "offset": 0,
+    "sweptRows": {
+      "cells": 9849600,
+      "rawMin": 2296,
+      "rawMax": 10000,
+      "cellsAtDeclaredNodata": 0
+    },
+    "sweptRowsPct": {
+      "min": 22.96,
+      "max": 100
+    },
+    "cityPct": {
+      "min": 34.99,
+      "max": 73.25
+    }
+  },
+  "cities": [
+    {
+      "key": "shanghai",
+      "name": "Shanghai",
+      "role": "tuning",
+      "region": "East",
+      "id": "Q8686",
+      "lat": 31.2325,
+      "lon": 121.469166666,
+      "elev": 4,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [1, 2, 6, 11, 17, 21, 25, 25, 21, 16, 10, 3, 8, 10, 13, 19, 24, 27, 31, 30, 27, 22, 17, 11, 79, 79, 119, 107, 120, 230, 192, 235, 144, 79, 75, 50, 43, 47, 51, 51, 49, 56, 51, 40, 37, 35, 37, 34, -3, -1, 2, 8, 13, 17, 21, 21, 16, 11, 5, -1]
+    },
+    {
+      "key": "xian",
+      "name": "Xi'an",
+      "role": "tuning",
+      "region": "Northwest",
+      "id": "Q5826",
+      "lat": 34.261111111,
+      "lon": 108.942222222,
+      "elev": 405,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [-4, -1, 3, 9, 15, 20, 22, 21, 16, 10, 3, -2, 7, 10, 16, 22, 27, 31, 32, 30, 25, 20, 14, 8, 8, 13, 28, 41, 66, 74, 114, 115, 110, 61, 23, 8, 30, 37, 43, 43, 47, 42, 39, 36, 43, 41, 32, 27, -7, -4, 0, 6, 11, 15, 18, 17, 12, 6, 0, -6]
+    },
+    {
+      "key": "dunhuang",
+      "name": "Dunhuang",
+      "role": "tuning",
+      "region": "Northwest",
+      "id": "Q319114",
+      "lat": 40.141111111,
+      "lon": 94.663888888,
+      "elev": 1142,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [-11, -7, -1, 5, 11, 17, 20, 18, 12, 4, -4, -10, -1, 5, 13, 21, 27, 32, 34, 33, 27, 18, 8, 0, 1, 1, 2, 3, 5, 7, 10, 6, 3, 1, 2, 1, 27, 31, 33, 32, 34, 32, 22, 19, 19, 19, 22, 26, -15, -12, -7, -2, 3, 8, 11, 10, 4, -2, -9, -14]
+    },
+    {
+      "key": "wuhan",
+      "name": "Wuhan",
+      "role": "tuning",
+      "region": "Central",
+      "id": "Q11746",
+      "lat": 30.595,
+      "lon": 114.2975,
+      "elev": 37,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [1, 3, 7, 13, 19, 23, 26, 25, 21, 15, 8, 2, 9, 11, 15, 22, 26, 29, 32, 32, 28, 23, 16, 11, 62, 79, 110, 159, 189, 264, 260, 141, 85, 100, 71, 35, 42, 48, 53, 50, 48, 51, 52, 40, 36, 39, 37, 35, -3, -1, 3, 9, 14, 18, 21, 21, 16, 10, 4, -2]
+    },
+    {
+      "key": "beijing",
+      "name": "Beijing",
+      "role": "holdout",
+      "region": "North",
+      "id": "Q956",
+      "lat": 39.90403,
+      "lon": 116.407526,
+      "elev": 44,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [-9, -6, -1, 7, 14, 20, 22, 21, 15, 7, -2, -7, 2, 6, 13, 21, 28, 32, 32, 30, 26, 20, 10, 3, 3, 5, 10, 26, 38, 78, 172, 146, 50, 24, 10, 3, 19, 24, 29, 30, 35, 40, 39, 35, 30, 25, 20, 18, -14, -11, -6, 2, 9, 15, 18, 17, 11, 3, -6, -12]
+    },
+    {
+      "key": "harbin",
+      "name": "Harbin",
+      "role": "holdout",
+      "region": "Northeast",
+      "id": "Q42956",
+      "lat": 45.75,
+      "lon": 126.633333333,
+      "elev": 150,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [-25, -20, -9, 1, 9, 15, 19, 17, 10, 1, -10, -20, -13, -7, 2, 13, 20, 26, 27, 26, 20, 11, -1, -10, 4, 4, 12, 21, 42, 92, 151, 126, 55, 23, 11, 6, 27, 29, 33, 37, 39, 40, 43, 38, 30, 27, 28, 27, -24, -20, -12, -3, 4, 11, 15, 13, 7, -2, -13, -21]
+    },
+    {
+      "key": "guangzhou",
+      "name": "Guangzhou",
+      "role": "holdout",
+      "region": "South",
+      "id": "Q16572",
+      "lat": 23.13,
+      "lon": 113.26,
+      "elev": 21,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [10, 12, 15, 20, 23, 25, 26, 25, 24, 20, 15, 11, 18, 19, 23, 26, 29, 31, 32, 32, 30, 28, 24, 20, 51, 83, 113, 215, 317, 366, 279, 269, 217, 81, 45, 33, 46, 60, 63, 59, 57, 63, 52, 49, 38, 27, 28, 31, 6, 8, 12, 16, 19, 21, 22, 22, 19, 15, 10, 6]
+    },
+    {
+      "key": "chengdu",
+      "name": "Chengdu",
+      "role": "holdout",
+      "region": "Southwest",
+      "id": "Q30002",
+      "lat": 30.66,
+      "lon": 104.063333333,
+      "elev": 500,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [2, 4, 8, 13, 17, 20, 22, 22, 18, 14, 9, 4, 9, 12, 16, 22, 27, 29, 30, 29, 25, 20, 16, 11, 9, 13, 24, 51, 89, 128, 248, 247, 133, 39, 15, 7, 47, 51, 51, 52, 52, 54, 53, 49, 54, 57, 49, 46, -1, 1, 4, 9, 13, 16, 18, 18, 14, 10, 5, 0]
+    },
+    {
+      "key": "kunming",
+      "name": "Kunming",
+      "role": "holdout",
+      "region": "Southwest",
+      "id": "Q182852",
+      "lat": 25.043333333,
+      "lon": 102.706111111,
+      "elev": 1892,
+      "elevSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
+      "row": [5, 6, 9, 12, 15, 16, 17, 16, 15, 12, 8, 5, 14, 17, 21, 24, 24, 23, 23, 23, 21, 19, 16, 14, 16, 15, 19, 26, 89, 161, 189, 171, 109, 76, 36, 15, 22, 18, 19, 21, 34, 61, 64, 53, 46, 41, 31, 27, 1, 3, 5, 8, 10, 13, 13, 13, 11, 9, 5, 2]
+    },
+    {
+      "key": "lima",
+      "name": "Lima",
+      "role": "symptom",
+      "region": null,
+      "id": "G3936456",
+      "lat": -12.04318,
+      "lon": -77.02824,
+      "elev": 152,
+      "elevSource": "public/cities/PE.json",
+      "why": "fix 1: garúa cloud with ~3 mm/month year-round",
+      "row": [20, 21, 21, 19, 17, 16, 15, 15, 15, 15, 17, 18, 24, 25, 25, 23, 21, 19, 18, 18, 19, 20, 21, 22, 4, 5, 5, 3, 2, 2, 3, 4, 3, 2, 3, 3, 63, 64, 63, 47, 33, 36, 36, 34, 36, 44, 51, 57, 16, 17, 17, 15, 14, 12, 11, 11, 11, 12, 13, 15]
+    },
+    {
+      "key": "tokyo",
+      "name": "Tokyo",
+      "role": "symptom",
+      "region": null,
+      "id": "G1850147",
+      "lat": 35.6895,
+      "lon": 139.69171,
+      "elev": 44,
+      "elevSource": "public/cities/JP.json",
+      "why": "fix 2: hurs biased low, July read great",
+      "row": [0, 0, 4, 9, 14, 18, 22, 23, 20, 14, 8, 3, 8, 8, 12, 17, 21, 24, 28, 29, 26, 20, 15, 11, 50, 55, 110, 124, 135, 166, 155, 170, 216, 195, 91, 50, 27, 33, 43, 45, 52, 61, 53, 40, 46, 42, 36, 26, -5, -4, 0, 5, 10, 14, 18, 19, 16, 9, 4, -2]
+    },
+    {
+      "key": "nairobi",
+      "name": "Nairobi",
+      "role": "symptom",
+      "region": null,
+      "id": "G184745",
+      "lat": -1.28333,
+      "lon": 36.81667,
+      "elev": 1684,
+      "elevSource": "public/cities/KE.json",
+      "why": "fix 3: two rain maxima, Apr and Nov",
+      "row": [14, 14, 15, 15, 15, 13, 12, 12, 12, 14, 14, 14, 25, 26, 26, 24, 23, 22, 21, 22, 24, 24, 23, 24, 53, 41, 84, 191, 130, 26, 20, 18, 24, 62, 118, 84, 32, 31, 36, 49, 45, 52, 56, 53, 36, 41, 52, 39, 11, 11, 12, 13, 12, 10, 9, 9, 9, 11, 12, 12]
+    },
+    {
+      "key": "mombasa",
+      "name": "Mombasa",
+      "role": "symptom",
+      "region": null,
+      "id": "G186301",
+      "lat": -4.05466,
+      "lon": 39.66359,
+      "elev": 20,
+      "elevSource": "public/cities/KE.json",
+      "why": "fix 3: second Kenyan cycle, coastal",
+      "row": [25, 25, 25, 25, 24, 23, 22, 22, 23, 23, 24, 25, 31, 32, 31, 29, 28, 27, 26, 26, 27, 28, 29, 30, 26, 12, 52, 172, 253, 117, 80, 70, 54, 110, 94, 71, 24, 25, 26, 35, 32, 31, 29, 26, 17, 22, 23, 22, 20, 20, 20, 20, 19, 17, 17, 17, 17, 18, 19, 20]
+    },
+    {
+      "key": "kisumu",
+      "name": "Kisumu",
+      "role": "symptom",
+      "region": null,
+      "id": "G191245",
+      "lat": -0.10221,
+      "lon": 34.76171,
+      "elev": 1174,
+      "elevSource": "public/cities/KE.json",
+      "why": "fix 3: third Kenyan cycle, lakeside",
+      "row": [19, 20, 20, 20, 20, 19, 19, 19, 19, 19, 19, 19, 27, 28, 28, 27, 26, 26, 26, 26, 27, 27, 26, 27, 90, 83, 158, 217, 174, 104, 94, 122, 132, 124, 135, 98, 30, 33, 41, 57, 44, 34, 34, 34, 34, 50, 53, 35, 15, 15, 15, 15, 15, 14, 14, 14, 14, 15, 15, 15]
+    },
+    {
+      "key": "cusco",
+      "name": "Cusco",
+      "role": "symptom",
+      "region": null,
+      "id": "G3941584",
+      "lat": -13.53188,
+      "lon": -71.96701,
+      "elev": 3312,
+      "elevSource": "public/cities/PE.json",
+      "why": "fix 4: 3,312 m, Jun-Aug must be reachable as great",
+      "row": [8, 8, 7, 7, 6, 4, 4, 5, 6, 7, 8, 8, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 15, 199, 162, 142, 48, 9, 7, 7, 10, 20, 57, 83, 136, 67, 64, 63, 48, 28, 22, 19, 21, 31, 49, 60, 65, 4, 4, 4, 4, 2, 1, 1, 2, 3, 4, 4, 4]
+    },
+    {
+      "key": "iquitos",
+      "name": "Iquitos",
+      "role": "symptom",
+      "region": null,
+      "id": "G3696183",
+      "lat": -3.74814,
+      "lon": -73.2529,
+      "elev": 107,
+      "elevSource": "public/cities/PE.json",
+      "why": "fix 2/3: hurs 72% vs ~85% observed; ~330 mm/month",
+      "row": [24, 24, 24, 24, 23, 23, 22, 23, 23, 24, 24, 24, 30, 29, 29, 29, 28, 28, 28, 29, 29, 30, 29, 29, 285, 279, 307, 332, 321, 256, 185, 194, 247, 255, 285, 329, 61, 66, 68, 66, 56, 48, 43, 41, 50, 58, 62, 61, 21, 21, 21, 21, 20, 20, 20, 20, 21, 21, 21, 21]
+    },
+    {
+      "key": "oslo",
+      "name": "Oslo",
+      "role": "symptom",
+      "region": null,
+      "id": "G3143244",
+      "lat": 59.91273,
+      "lon": 10.74609,
+      "elev": 26,
+      "elevSource": "public/cities/NO.json",
+      "why": "Norway January is never great",
+      "row": [-8, -7, -4, 1, 6, 11, 14, 13, 9, 4, 0, -6, -3, -1, 3, 9, 16, 19, 22, 20, 15, 9, 3, -1, 68, 49, 60, 53, 60, 77, 90, 101, 89, 108, 100, 66, 50, 48, 48, 43, 36, 37, 35, 38, 42, 51, 56, 52, -10, -9, -6, -2, 3, 7, 9, 9, 5, 1, -4, -8]
+    },
+    {
+      "key": "bergen",
+      "name": "Bergen",
+      "role": "symptom",
+      "region": null,
+      "id": "G3161732",
+      "lat": 60.39299,
+      "lon": 5.32415,
+      "elev": 20,
+      "elevSource": "public/cities/NO.json",
+      "why": "Norway January is never great",
+      "row": [-2, -2, -1, 2, 6, 9, 11, 11, 9, 5, 1, -1, 2, 3, 5, 8, 13, 15, 17, 17, 14, 10, 5, 2, 278, 212, 213, 143, 123, 146, 175, 228, 284, 316, 290, 276, 56, 53, 54, 46, 39, 41, 44, 46, 48, 52, 53, 54, -6, -6, -4, -1, 2, 5, 8, 8, 5, 1, -3, -5]
+    },
+    {
+      "key": "tromso",
+      "name": "Tromsø",
+      "role": "symptom",
+      "region": null,
+      "id": "G3133895",
+      "lat": 69.6489,
+      "lon": 18.95508,
+      "elev": null,
+      "elevSource": "public/cities/NO.json",
+      "why": "Norway January is never great; elev is null",
+      "row": [-12, -11, -9, -4, 2, 7, 10, 9, 5, -1, -8, -11, -6, -6, -3, 2, 8, 12, 16, 14, 10, 3, -3, -5, 178, 152, 129, 117, 93, 93, 138, 146, 195, 216, 166, 190, 55, 53, 49, 48, 48, 51, 53, 51, 52, 55, 53, 53, -15, -14, -12, -7, -2, 3, 6, 5, 1, -4, -11, -14]
+    }
+  ]
+}
