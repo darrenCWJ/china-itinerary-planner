@@ -87,8 +87,11 @@ const MAGNUS_C = 243.04;
  *
  * `resY` is a POSITIVE degrees-per-row, i.e. a magnitude. geotiff's
  * `getResolution()` reports it negative for a north-up image (y increases
- * southward while latitude decreases), so whoever builds this object takes the
- * absolute value and `pixelFor` counts rows downward from `originY` itself.
+ * southward while latitude decreases), so whoever builds this object must take
+ * the absolute value before `pixelFor` counts rows downward from `originY`
+ * itself. `pixelFor` THROWS if `resX`/`resY`/`width`/`height` is not finite
+ * and positive, or if `originX`/`originY` is not finite, rather than silently
+ * nulling out every city on the wrong side of an unenforced sign.
  *
  * @typedef {object} Grid
  * @property {number} width   columns
@@ -114,12 +117,36 @@ const MAGNUS_C = 243.04;
  * probe found 0 of 58,757 cities outside either grid, so it should never fire
  * — but +84 is a real edge on the 1 km grid and the catalog grows.
  *
+ * A malformed `grid` is a different wrong from a coordinate off the raster:
+ * it is the caller's bug, not a gap in the data — the same distinction
+ * `tupleFor` draws when it throws on a wrong-length column instead of
+ * returning null. So this throws instead of nulling when `resX`, `resY`,
+ * `width` or `height` is not finite and positive, or when `originX` or
+ * `originY` is not finite. The concrete case that motivates it: geotiff's
+ * `getResolution()` reports `resY` NEGATIVE for a north-up raster (see the
+ * `Grid` typedef above), and a grid built without correcting that sign would
+ * otherwise return null for every city south of the origin — the whole
+ * catalog — while every downstream shape and budget gate kept passing.
+ *
  * @param {number} lon
  * @param {number} lat
  * @param {Grid} grid
  * @returns {{ x: number, y: number } | null}
+ * @throws {Error} if `grid` has a non-finite/non-positive resolution or size,
+ *   or a non-finite origin
  */
 export function pixelFor(lon, lat, grid) {
+  for (const field of ['resX', 'resY', 'width', 'height']) {
+    if (!Number.isFinite(grid[field]) || grid[field] <= 0) {
+      throw new Error(`pixelFor expects grid.${field} to be a finite positive number, got ${grid[field]}`);
+    }
+  }
+  for (const field of ['originX', 'originY']) {
+    if (!Number.isFinite(grid[field])) {
+      throw new Error(`pixelFor expects grid.${field} to be a finite number, got ${grid[field]}`);
+    }
+  }
+
   const x = Math.floor((lon - grid.originX) / grid.resX);
   const y = Math.floor((grid.originY - lat) / grid.resY);
   // An index has to be an index. `Math.floor` of a finite number always is,
