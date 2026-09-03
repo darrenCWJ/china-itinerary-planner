@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { TripGateways } from "@/lib/tripGateways";
 import { AirportPicker } from "./AirportPicker";
 
@@ -53,6 +53,28 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
    */
   const [dangling, setDangling] = useState({ arrival: false, departure: false });
   const blocked = dangling.arrival || dangling.departure;
+  const hintId = useId();
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Set by the two ways out of the editor, so the effect below can tell "the
+   * member just closed it" from "it was never open". Focus goes back to the
+   * button that opened it: Save and Cancel unmount themselves, and a browser
+   * drops focus on <body> when the focused element goes — the same hand-off
+   * SelectedPlaceCard makes on the map. Opening is the mirror image: the
+   * button that was pressed unmounts, and the arrival field takes focus via
+   * `autoFocus` as it mounts.
+   */
+  const returnFocusRef = useRef(false);
+  useEffect(() => {
+    if (editing || !returnFocusRef.current) return;
+    returnFocusRef.current = false;
+    editButtonRef.current?.focus();
+  }, [editing]);
+
+  const close = () => {
+    returnFocusRef.current = true;
+    setEditing(false);
+  };
 
   const open = () => {
     setDraft(gateways);
@@ -71,7 +93,7 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
       setError(err);
       return;
     }
-    setEditing(false);
+    close();
   };
 
   return (
@@ -89,6 +111,7 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
               <AirportPicker
                 label="Arrive at"
                 value={draft.arrival}
+                autoFocus
                 onChange={(pick, text) => {
                   setDraft((d) => ({ ...d, arrival: pick?.iata ?? null }));
                   setDangling((f) => ({ ...f, arrival: pick === null && text.trim() !== "" }));
@@ -114,13 +137,14 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
                 type="button"
                 onClick={() => void save()}
                 disabled={saving || blocked}
+                aria-describedby={blocked ? hintId : undefined}
                 className={PRIMARY}
               >
                 {saving ? "Saving…" : "Save"}
               </button>
               <button
                 type="button"
-                onClick={() => setEditing(false)}
+                onClick={close}
                 disabled={saving}
                 className={BUTTON}
               >
@@ -129,7 +153,7 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
             </div>
           </div>
           {blocked && (
-            <p className="mt-2 text-xs text-[var(--ink-2)]">
+            <p id={hintId} className="mt-2 text-xs text-[var(--ink-2)]">
               Pick an airport from the list, or type its 3-letter code.
             </p>
           )}
@@ -166,7 +190,7 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
             )}
           </p>
           {onSave && (
-            <button type="button" onClick={open} className={`${BUTTON} print:hidden`}>
+            <button ref={editButtonRef} type="button" onClick={open} className={`${BUTTON} print:hidden`}>
               Edit gateways
             </button>
           )}

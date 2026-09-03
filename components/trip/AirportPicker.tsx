@@ -36,6 +36,8 @@ interface Props {
    */
   allowBareCode?: boolean;
   placeholder?: string;
+  /** Passed through to the field: focus it on mount. */
+  autoFocus?: boolean;
 }
 
 /**
@@ -54,7 +56,14 @@ interface Props {
  * that only sets state, since both calls land in one batch and the pick is
  * the last word; worth knowing for one that does work per call.)
  */
-export function AirportPicker({ label, value, onChange, allowBareCode = false, placeholder }: Props) {
+export function AirportPicker({
+  label,
+  value,
+  onChange,
+  allowBareCode = false,
+  placeholder,
+  autoFocus,
+}: Props) {
   const [text, setText] = useState(value ?? "");
   // The text as of the latest change, for the one reader that runs in the
   // same event as the change that set it: `AirportInput.pick` fires its
@@ -109,6 +118,13 @@ export function AirportPicker({ label, value, onChange, allowBareCode = false, p
   };
 
   return (
-    <AirportInput label={label} value={text} onChange={onText} onPick={onPick} placeholder={placeholder} />
+    <AirportInput
+      label={label}
+      value={text}
+      onChange={onText}
+      onPick={onPick}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+    />
   );
 }
