@@ -428,10 +428,16 @@ recommendation:
 Consequences for the build, all of them consequences of "60 positional ints
 with no per-month absence marker":
 
-- A city with a single missing month cannot be written at all — there is no way
-  to say "March has no cloud" — so `tupleFor` returns null for the whole city
-  and the ingest skips it. On this release that path is dead (0 of 58,757
-  cities on nodata), which is why the sentinel assertion above matters.
+- A city with a single unwritable month cannot be written at all — there is no
+  way to say "March has no cloud" — so `tupleFor` returns null for the whole
+  city and the ingest skips it. "Unwritable" is a declared nodata OR any value
+  that is not finite, because `JSON.stringify` turns NaN and Infinity into
+  `null` and a null inside a positional int tuple is the one shape this layout
+  cannot express. The derived `td` is checked the same way and separately:
+  `hurs` at exactly 0 sends `Math.log` to −Infinity from inputs that are
+  themselves finite, and `hurs` is the one variable the probe never sampled, so
+  its real range is still unknown. On this release the nodata path is dead
+  (0 of 58,757 cities), which is why the sentinel assertion above matters.
 - A column that is not twelve months long is a bug in the caller, not a gap in
   the data, and throws rather than returning null. Writing a short tuple would
   corrupt every index after it.
