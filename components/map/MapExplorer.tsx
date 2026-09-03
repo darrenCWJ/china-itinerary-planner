@@ -17,6 +17,7 @@ import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit, MapCity } from "@/lib/tripShared";
 import { usePrefs } from "@/components/shell/PrefsProvider";
+import { AirportPicker, type AirportPick } from "@/components/trip/AirportPicker";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { CountryMap } from "./CountryMap";
 import { MonthTimeline } from "./MonthTimeline";
@@ -139,6 +140,14 @@ interface Props {
   onRemoveCatalog: (qid: string) => void;
   onReorder: (ids: string[]) => void;
   onMonthPicked?: (month: number) => void;
+  /**
+   * The arrival gateway the traveller chose in the wizard (spec §10.3, D3).
+   * Anchors the suggested route only when it carries an airport — a bare
+   * typed code has no coordinates to anchor on. Optional: RouteMap and the
+   * tests that predate gateways render without it.
+   */
+  arrival?: AirportPick | null;
+  onArrivalChange?: (pick: AirportPick | null) => void;
 }
 
 const DEFAULT_MONTH = 10;
@@ -170,6 +179,8 @@ export function MapExplorer({
   onRemoveCatalog,
   onReorder,
   onMonthPicked,
+  arrival = null,
+  onArrivalChange,
 }: Props) {
   const [month, setMonth] = useState(DEFAULT_MONTH);
   /**
@@ -608,11 +619,15 @@ export function MapExplorer({
       if (p) routePlaces.push({ id: p.id, name: p.name, lat: p.lat, lon: p.lon });
       else missing++;
     }
+    const start = arrival?.airport ? { lat: arrival.airport.lat, lon: arrival.airport.lon } : undefined;
     return {
-      route: routePlaces.length >= 2 ? suggestRoute(routePlaces, airports, transport) : null,
+      route:
+        routePlaces.length >= 2
+          ? suggestRoute(routePlaces, airports, transport, start ? { start } : {})
+          : null,
       unresolvedCount: missing,
     };
-  }, [selected, placeById, airports, transport]);
+  }, [selected, placeById, airports, transport, arrival]);
 
   const togglePlace = (place: MapPlace) => {
     setHover(null);
@@ -903,19 +918,32 @@ export function MapExplorer({
 
       {route && (
         <div className="mt-4 rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)]/60 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-end justify-between gap-2">
             <h4 className="text-sm font-bold">
               Suggested route · {route.totalKm.toLocaleString()} km
+              {arrival?.airport && (
+                <span className="ml-2 font-normal text-[var(--ink-2)]">starts near {arrival.iata}</span>
+              )}
             </h4>
+            {onArrivalChange && (
+              <div className="w-48">
+                <AirportPicker
+                  label="Flying into"
+                  value={arrival?.iata ?? null}
+                  onChange={onArrivalChange}
+                  placeholder="Lima or LIM"
+                />
+              </div>
+            )}
             <button
               type="button"
               onClick={applyRouteOrder}
-              className="rounded-lg bg-[var(--accent-ink)] px-3 py-1 text-xs font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
+              className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg bg-[var(--accent-ink)] px-3 text-xs font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
             >
               Apply this order
             </button>
           </div>
-          <ol className="mt-2 flex flex-wrap items-center gap-1 text-sm">
+          <ol aria-label="Suggested route" className="mt-2 flex flex-wrap items-center gap-1 text-sm">
             {route.order.map((p, i) => {
               const leg = i > 0 ? route.legs[i - 1] : null;
               return (

@@ -1,7 +1,8 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
+import type { AirportPick } from "@/components/trip/AirportPicker";
 import { COUNTRY_DETAIL, hasDetailLevel } from "@/lib/countryDetail";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
@@ -655,8 +656,11 @@ function Harness({
   country = "CN",
   level = "country",
   prefs,
+  selected = [],
   onAddCatalog = () => {},
   onToggleSelect = () => {},
+  arrival = null,
+  onArrivalChange,
 }: {
   country?: string;
   level?: MapLevel;
@@ -668,9 +672,13 @@ function Harness({
    * is the "no explicit choice" case these tests need too.
    */
   prefs?: UserPrefs;
+  selected?: string[];
   onAddCatalog?: (hit: unknown) => void;
   /** Curated markers report through this one; catalog markers never do. */
   onToggleSelect?: (id: string) => void;
+  /** Task 9: the wizard's arrival gateway, and the callback the route panel's picker reports to. */
+  arrival?: AirportPick | null;
+  onArrivalChange?: (pick: AirportPick | null) => void;
 }) {
   const [activeCountry, setCountry] = useState(country);
   const [activeLevel, setLevel] = useState<MapLevel>(level);
@@ -683,7 +691,7 @@ function Harness({
   return (
     <PrefsProvider>
       <MapExplorer
-        selected={[]}
+        selected={selected}
         visited={[]}
         country={activeCountry}
         level={activeLevel}
@@ -693,9 +701,29 @@ function Harness({
         onAddCatalog={onAddCatalog}
         onRemoveCatalog={() => {}}
         onReorder={() => {}}
+        arrival={arrival}
+        onArrivalChange={onArrivalChange}
       />
     </PrefsProvider>
   );
+}
+
+/**
+ * Mounts `Harness` and flushes its mount effects — this file's own
+ * `render` + `settle()` pair, named for the tests below that only vary
+ * `selected`/`country`/`arrival`/`onArrivalChange` and want the mount and
+ * flush in one call. Returns what `render` returns, `unmount` included, so a
+ * test that needs a second render of its own can tear the first down first.
+ */
+async function renderExplorer(props: {
+  selected?: string[];
+  country?: string;
+  arrival?: AirportPick | null;
+  onArrivalChange?: (pick: AirportPick | null) => void;
+}): Promise<ReturnType<typeof render>> {
+  const result = render(<Harness {...props} />);
+  await settle();
+  return result;
 }
 
 describe("MapExplorer", () => {
@@ -1869,5 +1897,64 @@ describe("fit lookups degrade instead of throwing on a foreign region label", ()
 
   test("fitForRegion degrades on a label outside China's seven", () => {
     expect(fitForRegion("Kansai", 4)).toBe("unknown");
+  });
+});
+
+describe("the arrival gateway anchors the suggested route (spec §10.3, D3)", () => {
+  /** Shanghai Hongqiao, at the artifact's coordinates. */
+  const SHA = {
+    iata: "SHA",
+    icao: "ZSSS",
+    name: "Shanghai Hongqiao International Airport",
+    municipality: "Shanghai",
+    country: "CN",
+    lat: 31.198104,
+    lon: 121.33426,
+    size: "large" as const,
+  };
+
+  test("without an arrival, Beijing leads; anchored at Hongqiao, Shanghai does", async () => {
+    // Beijing and Shanghai alone have exactly two tours, and the unanchored
+    // search picks the lower id: "beijing". The anchor has to flip it.
+    const unanchored = await renderExplorer({ selected: ["beijing", "shanghai"], country: "CN" });
+    const first = () => within(screen.getByRole("list", { name: /suggested route/i })).getAllByRole("listitem")[0];
+    expect(first()).toHaveTextContent("1. Beijing");
+    unanchored.unmount();
+
+    await renderExplorer({
+      selected: ["beijing", "shanghai"],
+      country: "CN",
+      arrival: { iata: "SHA", airport: SHA },
+    });
+    expect(first()).toHaveTextContent("1. Shanghai");
+    expect(screen.getByText(/starts near SHA/i)).toBeInTheDocument();
+  });
+
+  test("a bare code with no airport behind it does not anchor", async () => {
+    await renderExplorer({
+      selected: ["beijing", "shanghai"],
+      country: "CN",
+      arrival: { iata: "SHA", airport: null },
+    });
+    const first = within(screen.getByRole("list", { name: /suggested route/i })).getAllByRole("listitem")[0];
+    expect(first).toHaveTextContent("1. Beijing");
+  });
+
+  test("the picker in the route panel reports the traveller's choice upward", async () => {
+    const onArrivalChange = vi.fn();
+    // Seeded with a real code, not the field's default empty string: React's
+    // input value tracker treats a "change" to the value already on the node
+    // as no change at all and never calls onChange, so clearing from "" would
+    // (falsely) pass this test even with the wiring broken — the same reason
+    // AirportPicker.test.tsx's own "clearing the text is none" starts from
+    // value="LIM" rather than null.
+    await renderExplorer({
+      selected: ["beijing", "shanghai"],
+      country: "CN",
+      arrival: { iata: "SHA", airport: null },
+      onArrivalChange,
+    });
+    fireEvent.change(screen.getByLabelText("Flying into"), { target: { value: "" } });
+    expect(onArrivalChange).toHaveBeenLastCalledWith(null);
   });
 });

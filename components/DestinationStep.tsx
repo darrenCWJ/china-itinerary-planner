@@ -5,6 +5,7 @@ import { MapExplorer, type MapLevel } from "@/components/map/MapExplorer";
 import { FeasibilityCounter } from "@/components/plan/FeasibilityCounter";
 import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { PlaceSearch, type PickedPlace } from "@/components/plan/PlaceSearch";
+import type { AirportPick } from "@/components/trip/AirportPicker";
 import { getCountry } from "@/lib/countries";
 import { DESTINATIONS } from "@/lib/data";
 import type { FeasibilityPlace } from "@/lib/feasibility";
@@ -30,6 +31,9 @@ interface Props {
   /** A hand-typed place with no coordinates (spec §3.2.7). */
   onAddOffMap: (name: string) => void;
   offMap: readonly Destination[];
+  /** Task 9: the wizard's arrival gateway, threaded down to the route panel's picker. */
+  arrival?: AirportPick | null;
+  onArrivalChange?: (pick: AirportPick | null) => void;
 }
 
 export function DestinationStep({
@@ -47,6 +51,8 @@ export function DestinationStep({
   onCountryChange,
   onAddOffMap,
   offMap,
+  arrival,
+  onArrivalChange,
 }: Props) {
   const [view, setView] = useState<"map" | "cards">("map");
   const [region, setRegion] = useState("All");
@@ -358,6 +364,8 @@ export function DestinationStep({
           onRemoveCatalog={onRemoveCatalog}
           onReorder={onReorder}
           onMonthPicked={onMonthPicked}
+          arrival={arrival}
+          onArrivalChange={onArrivalChange}
         />
       )}
 
