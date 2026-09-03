@@ -3,7 +3,7 @@
   "generatedBy": "scripts/sample-climate-anchors.mjs",
   "node": "v24.14.1",
   "source": "CHELSA V2.1 climatologies 1981-2010, CC0 1.0, DOI 10.16904/envidat.228",
-  "cache": "C:\\Users\\msn-f\\AppData\\Local\\Temp\\cip-chelsa",
+  "cache": "CIP_CHELSA_CACHE, else os.tmpdir()/cip-chelsa",
   "layout": "60 ints: [12 lo C, 12 hi C, 12 precip mm/month, 12 cloud %, 12 td C], January at index 0 of every block; td is the UNCORRECTED Magnus dew point",
   "anchorElevationSource": "Wikipedia city infobox, Elevation, read 2026-09-04",
   "rasters": [

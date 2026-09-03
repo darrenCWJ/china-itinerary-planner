@@ -25,8 +25,8 @@ import type { ChinaRegion } from "./types";
  * The fit model is tested against `data/climate-anchors.json`: real CHELSA
  * rows for spec §9.5's nine China anchors and for the symptom cities §9.4's
  * four fixes are named after, sampled by `scripts/sample-climate-anchors.mjs`
- * from the cached rasters. Sixteen KB of fixture, so these tests never touch
- * `public/` or a raster.
+ * from the cached rasters. Nineteen cities, about 21 KB of fixture, so these
+ * tests never touch `public/` or a raster.
  *
  * Each of the seven brief tests is named by the SYMPTOM that proves its fix,
  * and each also asserts the counterfactual — the same city with the fix
@@ -62,7 +62,7 @@ interface FixtureCity {
 
 const ROLES = new Set(["tuning", "holdout", "symptom"]);
 
-/** The fixture, validated once: sixteen-plus rows of exactly 60 integers. */
+/** The fixture, validated once: nineteen rows of exactly 60 integers. */
 const CITIES: FixtureCity[] = fixture.cities.map((city) => {
   if (!ROLES.has(city.role)) throw new Error(`${city.key}: unknown role ${city.role}`);
   if (city.row.length !== 60 || !city.row.every((v) => Number.isSafeInteger(v))) {
@@ -102,23 +102,29 @@ describe("fix 1 — cloud cover", () => {
    * CLEAREST of the year — and the same inversion holds along the whole
    * coast (Callao 39 vs 58, Trujillo 23 vs 55, Ica 12 vs 55; only Arica in
    * Chile shows winter cloud). The probe that vouched for fix 1 sampled
-   * January alone. On this data no monotone function of the five inputs can
-   * mark Lima's winter down without marking Cusco's dry season down harder,
-   * because Lima's winter is warmer, drier and clearer than Cusco's June on
-   * every input.
+   * January alone.
+   *
+   * And once cloud points the wrong way, nothing else in the stored row
+   * separates the season. The T−td depression is 5–6 °C in EVERY month of
+   * Lima's year (Jun–Sep 5.5–6.0, Jan–Mar 6.0) and the diurnal range 3–5 °C
+   * in every month; both are flat. The one signal left is a daily high of
+   * 18–19 °C in Jun–Sep — and that reads `great` on the very scale this
+   * model is fitted to, where `REGION_MONTHS.North` April (lo 7, hi 20) is
+   * `great`. So no monotone function of the five stored inputs marks Lima's
+   * winter down at all; it is not that Cusco gets in the way.
    *
    * So the cloud term is in the model — it is what separates Wuhan's grey
    * March from its clear November, and Nairobi's overcast July — but Lima
-   * does not prove it. These two are `test.fails`: they assert what the
-   * spec expects, and they go red the day the data or the model makes it
-   * true, so whoever changes either has to flip them deliberately.
+   * does not prove it. ONE `test.fails` stands for both of the brief's Lima
+   * names, "fix 1 — Lima is not great in all twelve months" (kept as the
+   * test's name) and "Lima's winter is not great" (what the body asserts).
+   * The winter is the specific claim worth tripping on: the all-twelve
+   * variant could go green for the wrong reason, because the inverted cloud
+   * already penalises Lima's SUMMER. It is a tripwire — it asserts what the
+   * spec expects and goes red the day the data or the model makes it true,
+   * so whoever changes either has to flip it deliberately.
    */
   test.fails("fix 1 — Lima is not great in all twelve months", () => {
-    const lima = city("lima");
-    expect(MONTHS.map((m) => fitOf(lima, m))).not.toEqual(MONTHS.map(() => "great"));
-  });
-
-  test.fails("Lima's winter is not great", () => {
     const lima = city("lima");
     for (const m of [JUN, JUL, AUG, SEP]) expect(fitOf(lima, m)).not.toBe("great");
   });
@@ -246,13 +252,26 @@ describe("fix 4 — elevation-dependent temperature correction", () => {
     const cusco = city("cusco");
     expect(cusco.elev).toBe(3312);
     for (const m of [JUN, JUL, AUG]) expect(fitOf(cusco, m)).toBe("great");
-    // The counterfactual, two ways: no elevation at all, and the correction
-    // as a global offset — which §9.5 measured making holdout WORSE, and
-    // which is why the correction is elevation-dependent.
+    // The counterfactual is "no correction", reached two ways: no elevation
+    // on the call, and every elevation knob zeroed. Neither is a global
+    // offset — §9.5's +1.94 °C everywhere would leave these three months
+    // great (0.74 / 0.74 / 0.56); what it damages is the lowlands, which is
+    // how it made China agreement worse (35 → 29 of 48).
     expect([JUN, JUL, AUG].map((m) => monthFit(cusco.row, null, m))).toContain("ok");
     const flat: ClimateKnobs = { ...KNOBS, elevWarmFromM: 0, elevWarmPerKmC: 0, elevWarmMaxC: 0 };
     expect([JUN, JUL, AUG].map((m) => fitOf(cusco, m, flat))).toContain("ok");
+    // So the dependence itself belongs here, under the brief's name: a
+    // lowland row is warmed by nothing at all — at sea level and at the
+    // 500 m knee — while Cusco's is warmed. (The rest of the profile, growth
+    // and cap, is pinned by "the correction is zero in the lowlands, grows
+    // with height, and is capped" below; this is the offset/dependence
+    // distinction only.)
+    expect(elevationWarming(0)).toBe(0);
+    expect(elevationWarming(500)).toBe(0);
     expect(elevationWarming(cusco.elev)).toBeGreaterThan(0);
+    // And on a row, not just the scalar: Cusco's own row placed at sea level
+    // scores exactly as a row with no elevation, every month and every term.
+    for (const m of MONTHS) expect(penaltyOf(cusco.row, 0, m)).toEqual(penaltyOf(cusco.row, null, m));
   });
 
   test("fix 4 does not apply a 30 C correction to a -9999 elevation", () => {
