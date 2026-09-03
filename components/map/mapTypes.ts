@@ -132,10 +132,13 @@ export interface DerivedClimate {
  *      would let a caller hand in a closure that fetches, memoises or
  *      otherwise does work at render time. The rule this seam exists to obey
  *      is that the fit resolution stays *synchronous over rows already in
- *      hand* — `lib/countryFacts.test.ts` walks value imports and fails the
- *      build if a client component reaches a data artifact, so the rows have
- *      to arrive by `fetch`, from the component, and be passed down. Inert
- *      data cannot break that rule; a callback can.
+ *      hand*. `lib/countryFacts.test.ts` is not what enforces that here —
+ *      its walk targets one artifact, `lib/countryFacts.ts`, checked for
+ *      reachability from a fixed nine-module `MUST_STAY_CHEAP` list, and
+ *      `components/map/mapTypes.ts` is not on it, so that test is silent
+ *      about this file. The rule stands on the design alone: rows have to
+ *      arrive by `fetch`, from the component, and be passed down already in
+ *      hand. Inert data cannot break that; a callback can.
  *   3. **`Readonly`.** The join belongs to the caller, which memoises it
  *      across renders; nothing here may mutate it.
  */
@@ -159,9 +162,25 @@ export type DerivedClimateIndex = ReadonlyMap<string, DerivedClimate>;
  * `MapPlace.region`'s docblock are known to pass from five other countries.
  * That is safe here only because the entries are the caller's own: a caller
  * that is rendering Botswana can only ever have put Botswana's regions in it.
- * The corollary is a rule for the caller — **do not build one of these for
- * China** — and it is why the *place* branch is gated on the country instead
- * (see `fitForPlace`), where the country is actually available.
+ *
+ * **The corollary is not "do not build one of these for China" — that framing
+ * is wrong.** Nothing about `DerivedRegionFits` is unsafe *for China
+ * specifically*; what is unsafe is keying it, or calling `fitForRegion`, with
+ * the wrong string. The rule is: **key it by `RegionGroup.id`, never by
+ * `MapPlace.region`.** `RegionGroup.id` (`lib/regionScheme.ts`) is the
+ * Natural Earth `adm1_code` the third map level actually zooms on —
+ * `"BWA-1191"`, `"PER-1"` — while `MapPlace.region` is the human-readable
+ * admin-1 name, and for Botswana that name is literally `"Central"`. A caller
+ * that keyed this lookup, or called `fitForRegion`, with `place.region` would
+ * hit `isChinaRegion("Central") === true` above and render Chongqing's table
+ * for a Botswana region — the same leak `MapPlace.region` was fixed for once
+ * already, at the place level, in commit 1407502. `RegionGroup.id` cannot
+ * collide that way: measured over every committed file in `public/provinces/`,
+ * 0 of the 4,592 admin-1 unit ids equal any of China's seven region names,
+ * which is what makes keying by `RegionGroup.id` safe today. It is also why
+ * the *place* branch is gated on the country instead (see `fitForPlace`),
+ * where the country is actually available and this id question does not
+ * arise the same way.
  */
 export type DerivedRegionFits = ReadonlyMap<string, MonthFit>;
 
