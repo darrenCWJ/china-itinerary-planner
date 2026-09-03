@@ -62,6 +62,7 @@ searchable catalog of **every city in China**, not just the highlights.
 | `/api/trips/:id/settlements` (+`/:settlementId`) | POST · DELETE | Repayments (members only) |
 | `/api/trips/:id/journal` (+`/:entryId`) | POST · PATCH/DELETE | Journal (edits author-only) |
 | `/api/trips/:id/currency` | PUT | Home currency + conversion rates |
+| `/api/trips/:id/gateways` | PUT | Arrival and departure airports, IATA or null (members only; never rebuilds the plan) |
 | `/api/trips/:id/photos` (+`/:photoId`) | POST · GET | Photo upload/serve (writable hosts) |
 
 All inputs are validated with Zod; trip state lives in SQLite (`data/app.db`).
