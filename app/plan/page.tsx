@@ -5,6 +5,7 @@ import { DestinationStep } from "@/components/DestinationStep";
 import { DetailsStep } from "@/components/DetailsStep";
 import { GeoNamesCredit } from "@/components/plan/GeoNamesCredit";
 import { PlanStep } from "@/components/PlanStep";
+import type { AirportPick } from "@/components/trip/AirportPicker";
 import { mergeCatalogHit, shouldFetchEnrichment } from "@/lib/catalogExtras";
 import { DESTINATIONS } from "@/lib/data";
 import { resolveTripSeason } from "@/lib/tripSeason";
@@ -20,6 +21,12 @@ export default function PlanPage() {
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [visited, setVisited] = useState<string[]>([]);
+  /**
+   * The arrival gateway chosen on the destinations map (spec §10.3, D3).
+   * Sent to the create route as `arrivalAirport` only when set, so an
+   * untouched trip keeps the server's own stamped default (Task 5).
+   */
+  const [arrival, setArrival] = useState<AirportPick | null>(null);
   const [season, setSeason] = useState<Season>("autumn");
   /**
    * The month the user picked on the destinations map, when they picked one.
@@ -304,8 +311,9 @@ export default function PlanPage() {
       kids,
       interests,
       country: tripCountry,
+      ...(arrival ? { arrivalAirport: arrival.iata } : {}),
     }),
-    [selected, days, season, adults, kids, interests, tripCountry]
+    [selected, days, season, adults, kids, interests, tripCountry, arrival]
   );
 
   const canNext = canAdvance(step, { selectedCount: selected.length, days });
@@ -321,6 +329,7 @@ export default function PlanPage() {
     setOffMap([]);
     setCountry("CN");
     setPickedIn({});
+    setArrival(null);
   };
 
   return (
@@ -431,6 +440,8 @@ export default function PlanPage() {
               setMonth(m);
               setSeason(resolveTripSeason(season, m, tripCountry));
             }}
+            arrival={arrival}
+            onArrivalChange={setArrival}
           />
         )}
         {step === 2 && (
