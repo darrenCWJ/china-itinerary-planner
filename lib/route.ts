@@ -292,16 +292,30 @@ function nearestNeighbourFrom(start: LocatedPlace, places: LocatedPlace[]): Loca
   return order;
 }
 
+export interface RouteOptions {
+  /**
+   * Anchor the tour here: the first stop is the located place nearest this
+   * point and the rest is nearest-neighbour from it. Meant for the arrival
+   * gateway (spec §10.3, D3), and set only when the traveller has chosen one —
+   * absent, the order-independent search below runs unchanged, which is what
+   * keeps every pre-existing route test green without an edit.
+   */
+  start?: LatLon;
+}
+
 /**
  * Suggest a visiting order for the selected places: nearest-neighbour tours
  * from every possible start, keeping the shortest (ties broken by id order,
- * so results are deterministic). This is deliberately a pure function — the
- * seam where an AI-powered planner can slot in later with the same shape.
+ * so results are deterministic) — or, when `options.start` is given, one
+ * tour anchored at the place nearest it. This is deliberately a pure
+ * function — the seam where an AI-powered planner can slot in later with the
+ * same shape.
  */
 export function suggestRoute(
   places: RoutePlace[],
   airports: readonly Airport[] = [],
-  transport: TransportProfile = TRANSPORT
+  transport: TransportProfile = TRANSPORT,
+  options: RouteOptions = {}
 ): RouteSuggestion {
   if (places.length < 2) {
     return { order: [...places], legs: [], totalKm: 0, notes: [] };
@@ -315,13 +329,29 @@ export function suggestRoute(
   const unlocated = sorted.filter((p) => !isLocated(p));
 
   let best: LocatedPlace[] | null = null;
-  let bestDist = Infinity;
-  for (const start of located) {
-    const tour = nearestNeighbourFrom(start, located);
-    const dist = tourDistance(tour);
-    if (dist < bestDist - 1e-9) {
-      bestDist = dist;
-      best = tour;
+  if (options.start && located.length > 0) {
+    // Anchored: one tour, from the place nearest the gateway. `located` is
+    // id-sorted, so a tie on distance resolves to the lower id, exactly as the
+    // unanchored search below resolves its ties.
+    let first = located[0];
+    let firstDist = haversineKm(options.start, first);
+    for (const candidate of located) {
+      const d = haversineKm(options.start, candidate);
+      if (d < firstDist - 1e-9) {
+        first = candidate;
+        firstDist = d;
+      }
+    }
+    best = nearestNeighbourFrom(first, located);
+  } else {
+    let bestDist = Infinity;
+    for (const start of located) {
+      const tour = nearestNeighbourFrom(start, located);
+      const dist = tourDistance(tour);
+      if (dist < bestDist - 1e-9) {
+        bestDist = dist;
+        best = tour;
+      }
     }
   }
 
