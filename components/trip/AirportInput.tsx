@@ -26,6 +26,12 @@ interface Props {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /**
+   * The airport behind a pick, for callers that want a CODE rather than the
+   * display string `onChange` receives. Fired after `onChange`, only on a
+   * list pick — free typing never reaches it.
+   */
+  onPick?: (airport: Airport) => void;
   placeholder?: string;
   maxLength?: number;
   className?: string;
@@ -67,6 +73,7 @@ export function AirportInput({
   label,
   value,
   onChange,
+  onPick,
   placeholder,
   // Mirrors the ticket schema's own cap on `from`/`to` (lib/server/schemas.ts:
   // `z.string().trim().max(60)`). Kept as a prop, read by displayValue below,
@@ -150,6 +157,7 @@ export function AirportInput({
     setHits([]);
     setActive(0);
     onChange(next);
+    onPick?.(hit);
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
