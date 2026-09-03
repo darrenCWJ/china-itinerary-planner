@@ -42,15 +42,16 @@ export function cityEnrichmentPath(country: string): string {
 /**
  * GeoNames' no-data marker for a modelled elevation: SRTM has no coverage
  * above 60° of latitude or over water, and GeoNames writes -9999 there rather
- * than leaving the column blank. The ingest nulls it at the source, but 300
- * committed rows (Norway, Finland, Iceland, Greenland, Hong Kong ...) still
- * carry it until the nightly refresh rewrites their shards, and a lapse-rate
- * correction that read it as an elevation would warm those towns by tens of
- * degrees. Mirrors `GEONAMES_NO_DATA_ELEVATION` in the ingest — a literal
- * here rather than an import, because this module is browser-side and the
- * ingest is not.
+ * than leaving the column blank. The ingest nulls it at the source, but shards
+ * written before 2026-09-03 carry it (300 rows: Norway, Finland, Iceland,
+ * Greenland, Hong Kong ...) and a browser cache can serve one for a day after
+ * the nightly refresh rewrites it, so the read boundary nulls it too. A
+ * lapse-rate correction that read it as an elevation would warm those towns
+ * by tens of degrees. Mirrors the ingest's `GEONAMES_NO_DATA_ELEVATION` — a
+ * literal here rather than an import, because this module is browser-side and
+ * the ingest is not; scripts/ingest-cities.test.ts asserts the two are equal.
  */
-const GEONAMES_NO_DATA_ELEVATION = -9999;
+export const GEONAMES_NO_DATA_ELEVATION = -9999;
 
 /** The nine-field record `scripts/ingest-cities.mjs` emits. */
 export interface CityShardRow {

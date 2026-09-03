@@ -463,7 +463,7 @@ export function pickName(rows) {
  * into an alphabetic field. Then, if more than one survives, WITHHOLD — which
  * is what stops PL's `PLN`/`PLZ` pair, the pre-1995 zloty being still
  * ISO-shaped and still truthy, from resolving by coin flip. `CURATED_FACTS`
- * supplies a hand-verified answer for the five that matter.
+ * supplies a hand-verified answer for the six that matter.
  *
  * The name is taken verbatim (whitespace-collapsed) and a blank one withholds
  * the pair: "Prices are in (PEN)" is not a sentence, and the honest-gap rule

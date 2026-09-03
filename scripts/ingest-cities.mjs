@@ -856,10 +856,10 @@ function writeFileAtomic(path, content) {
  * sweep used to be one subdirectory away from ending the nightly refresh at
  * its last step, after every shard had already been written. `enrich/`
  * survived only because it was excluded by NAME; the first unnamed directory
- * under public/cities/ would have killed the run, which is why Phase 4 put
- * `public/provinces/` beside this directory instead of inside it. Verified on
- * Node 24 before this was written. A directory is never a shard, so it is
- * never stale, whatever it is called.
+ * under public/cities/ would have killed the run — and a reason
+ * `public/provinces/` must stay beside this directory rather than inside it.
+ * Verified on Node 24 before this was written. A directory is never a shard,
+ * so it is never stale, whatever it is called.
  *
  * @param {string} shardDir
  * @param {Iterable<string>} writtenCountries

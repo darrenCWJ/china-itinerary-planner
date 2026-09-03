@@ -506,9 +506,9 @@ describe("parseCityShard — the two Phase 4 fields", () => {
     // Below sea level is real — the Dead Sea shore is about -430 m — so the
     // guard is finiteness, not positivity.
     expect(shardWith({ elev: -8 }).cities[0].elev).toBe(-8);
-    // GeoNames' no-data marker. The ingest nulls it at the source now, but 300
-    // committed rows still carry it until the nightly refresh rewrites their
-    // shards, and the read boundary is what stands between them and a climate
+    // GeoNames' no-data marker. The ingest nulls it at the source now, but a
+    // shard written before 2026-09-03, or a cached copy of one, still carries
+    // it, and the read boundary is what stands between it and a climate
     // correction that would read -9999 m as an elevation.
     expect(shardWith({ elev: -9999 }).cities[0].elev).toBeNull();
     expect(shardWith({ elev: null }).cities[0].elev).toBeNull();

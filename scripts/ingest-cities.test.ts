@@ -1,6 +1,12 @@
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, test } from "vitest";
-import { parseAdmin1Codes, parseGeoNamesRows, readZipMember } from "./ingest-cities.mjs";
+import { GEONAMES_NO_DATA_ELEVATION as READER_NO_DATA_ELEVATION } from "../lib/cityShard";
+import {
+  GEONAMES_NO_DATA_ELEVATION,
+  parseAdmin1Codes,
+  parseGeoNamesRows,
+  readZipMember,
+} from "./ingest-cities.mjs";
 
 /**
  * Covers every pure function standing between GeoNames' nightly dump and a
@@ -265,8 +271,16 @@ describe("parseGeoNamesRows", () => {
     // (HK 48, NO 41, FI 17, IS 10, GL 9 ...) as if those towns sat ten
     // kilometres below sea level — a value a lapse-rate correction would have
     // read as an elevation. Blank-equivalent, so the fallback still applies.
-    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "-9999" })}\n`)[0].elevation).toBeNull();
-    expect(parseGeoNamesRows(`${tsvRow({ 15: "-9999", 16: "1608" })}\n`)[0].elevation).toBe(1608);
+    const sentinel = String(GEONAMES_NO_DATA_ELEVATION);
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: sentinel })}\n`)[0].elevation).toBeNull();
+    expect(parseGeoNamesRows(`${tsvRow({ 15: sentinel, 16: "1608" })}\n`)[0].elevation).toBe(1608);
+  });
+
+  test("the browser-side reader nulls the same marker the ingest does", () => {
+    // lib/cityShard.ts cannot import this script (it is browser-side), so it
+    // carries its own literal. This is what keeps the two from drifting.
+    expect(READER_NO_DATA_ELEVATION).toBe(GEONAMES_NO_DATA_ELEVATION);
+    expect(GEONAMES_NO_DATA_ELEVATION).toBe(-9999);
   });
 
   test("keeps the raw admin-1 code beside the row", () => {

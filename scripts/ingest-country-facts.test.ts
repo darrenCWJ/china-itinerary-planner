@@ -1614,7 +1614,14 @@ describe("buildReport", () => {
 
 const FILLER_POOL = (() => {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const named = new Set(["BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW", "QZ"]);
+  // Every code `healthyFeed` adds by name, so no country is added twice. AZ,
+  // BA and BE are the curated rows that are not currencies: left out of this
+  // set they were ALSO drawn as fillers, and the filler's clean calling code
+  // beside the curated loop's second one made `pickCallingCode` withhold — a
+  // shape that matched nothing measured upstream.
+  const named = new Set([
+    "AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW", "QZ",
+  ]);
   const codes: string[] = [];
   for (const a of alphabet) for (const b of alphabet) if (!named.has(a + b)) codes.push(a + b);
   return codes;
@@ -2142,7 +2149,7 @@ vi.mock("node:fs", async (importOriginal) => {
 
 type Feed = Record<string, Row[] | "throw">;
 
-const NAMED_CODES = ["BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW"];
+const NAMED_CODES = ["AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW"];
 const FILLERS = FILLER_POOL.slice(0, EXPECTED_COUNTRIES - NAMED_CODES.length);
 
 interface CountrySpec {
@@ -2499,6 +2506,8 @@ describe("run() — the positive control", () => {
     expect(countries.PL.currencyCode).toBe("PLN");
     expect(countries.ZW.currencyCode).toBe("USD");
     expect(countries.MO.currencyCode).toBe("MOP");
+    // The 2026-08-31 dinar, added beside the convertible mark at the same rank.
+    expect(countries.BA.currencyCode).toBe("BAM");
   });
 
   test("Guinea's meta-item is dropped end to end and French survives, which the reader could not do", async () => {
