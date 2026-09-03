@@ -80,8 +80,10 @@ export default defineConfig({
       // spec: without it this project also picks up `wall.spec.ts`, which
       // exists to test the signed-out redirect and cannot pass while holding a
       // session — it fails as a timeout, which reads like a broken app.
+      // gateways.spec.ts creates trips through the API with the saved
+      // session, so it belongs to the signed-in project too.
       name: "chromium",
-      testMatch: /map\.spec\.ts/,
+      testMatch: /(map|gateways)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/user.json" },
       dependencies: ["setup"],
     },
