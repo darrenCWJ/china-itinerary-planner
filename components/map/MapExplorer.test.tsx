@@ -1953,10 +1953,11 @@ describe("the arrival gateway anchors the suggested route (spec §10.3, D3)", ()
     const onArrivalChange = vi.fn();
     // Seeded with a real code, not the field's default empty string: React's
     // input value tracker treats a "change" to the value already on the node
-    // as no change at all and never calls onChange, so clearing from "" would
-    // (falsely) pass this test even with the wiring broken — the same reason
-    // AirportPicker.test.tsx's own "clearing the text is none" starts from
-    // value="LIM" rather than null.
+    // as no change at all and never fires onChange, so clearing from "" would
+    // dispatch nothing and the assertion would fail with zero calls. The seed
+    // makes the clear a real transition, so what this test measures is the
+    // wiring rather than jsdom — the same reason AirportPicker.test.tsx's own
+    // "clearing the text is none" starts from value="LIM" rather than null.
     await renderExplorer({
       selected: ["beijing", "shanghai"],
       country: "CN",

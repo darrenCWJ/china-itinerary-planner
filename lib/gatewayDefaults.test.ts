@@ -48,7 +48,8 @@ describe("defaultGateways", () => {
   test("a trip with no located stop, or no airport in range, gets none", () => {
     expect(defaultGateways([offMap], AIRPORTS)).toEqual({ arrivalAirport: null, departureAirport: null });
     expect(defaultGateways([lima, cusco], [])).toEqual({ arrivalAirport: null, departureAirport: null });
-    // Ushuaia is ~3,000 km from every fixture airport, past DEFAULT_AIRPORT_RADIUS_KM.
+    // Ushuaia is ~4,700 km from every fixture airport (4,599 to CUZ, 4,819 to
+    // LIM), far past DEFAULT_AIRPORT_RADIUS_KM.
     expect(defaultGateways([{ lat: -54.8, lon: -68.3 }], AIRPORTS).arrivalAirport).toBeNull();
   });
 });

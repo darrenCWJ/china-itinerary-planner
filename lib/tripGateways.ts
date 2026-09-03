@@ -55,6 +55,14 @@ export function withGateways(data: TripData, gateways: TripGateways): TripData {
  * "unchanged", never "cleared" — `null` is how a client clears — so a rebuild
  * cannot silently drop the airports a member set. Absent on both sides stays
  * absent: a legacy row is not reclassified by being rebuilt.
+ *
+ * A rebuild carries the old codes rather than re-stamping fresh ones from the
+ * new plan, deliberately. Nothing records whether a code was the server's
+ * guess or a member's choice, so re-stamping would have to overwrite both —
+ * and overwriting a member's choice is the worse of the two mistakes. The
+ * price is that a default can go stale: change the first or last stop and the
+ * gateway still names the old one's airport. That is visible in the strip,
+ * one edit away from correct, and accepted.
  */
 export function carryGateways(next: TripInput, previous: TripInput): TripInput {
   const carried: TripInput = { ...next };
