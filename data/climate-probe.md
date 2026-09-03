@@ -379,9 +379,11 @@ fits inside 200 MB. Nothing needs streaming, and nothing needs the 1.8 GB a
 whole-raster decode would take.
 
 Disk: the rasters must be cached outside the repo — this working copy sits in a
-OneDrive-synced folder. `scripts/probe-chelsa.mjs` uses `CIP_CHELSA_CACHE` if
-set and the OS temp directory otherwise, and skips any file already present at
-the advertised byte size.
+OneDrive-synced folder. The rule the probe established and
+`scripts/ingest-climate.mjs` inherited is `CIP_CHELSA_CACHE` if set and the OS
+temp directory otherwise, skipping any file already present at the advertised
+byte size. (The probe itself was deleted in Task 6, once the real ingest
+existed; everything above is its record.)
 
 ## Layout decision (after Task 1)
 

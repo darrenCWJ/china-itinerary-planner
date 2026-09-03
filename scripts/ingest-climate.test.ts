@@ -343,3 +343,314 @@ describe("tupleFor", () => {
     expect(() => tupleFor(samplesOf({ hurs: [...months(70), 70] }))).toThrow(/12 months/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The build half
+// ---------------------------------------------------------------------------
+
+import {
+  assembleRows,
+  assertBudget,
+  assertCityParity,
+  assertRowShape,
+  assertSampleHealth,
+  assertShardCoverage,
+  bucketByRow,
+  climatePayload,
+  indexPayload,
+} from "./ingest-climate.mjs";
+import { GZIP_BUDGET, RAW_TRIPWIRE } from "./build-provinces.mjs";
+
+describe("bucketByRow", () => {
+  /** Three cities that share row 0, plus one on the equator. */
+  const cities = [
+    { id: "G1", lat: KM_GRID.originY - 0.5 * KM_GRID.resY, lon: KM_GRID.originX + 0.5 * KM_GRID.resX },
+    { id: "G2", lat: 0, lon: 0 },
+    { id: "G3", lat: KM_GRID.originY - 0.5 * KM_GRID.resY, lon: KM_GRID.originX + 10.5 * KM_GRID.resX },
+    { id: "G4", lat: KM_GRID.originY - 0.5 * KM_GRID.resY, lon: KM_GRID.originX + 3.5 * KM_GRID.resX },
+  ];
+
+  test("groups every city by the row it lands on, not by the city", () => {
+    // The row is the unit because these rasters are stripped with
+    // RowsPerStrip 1 — not the 512x512 COG tiles spec 9.1 describes. A
+    // city-by-city read would decode the same dense rows hundreds of times;
+    // one read per touched row decodes each exactly once.
+    const { rows, byRow } = bucketByRow(cities, KM_GRID);
+    expect(rows).toEqual([0, 10079]);
+    expect(byRow.get(0)!.map((e) => e.i)).toEqual([0, 2, 3]);
+    expect(byRow.get(0)!.map((e) => e.x)).toEqual([0, 10, 3]);
+    expect(byRow.get(10079)!).toEqual([{ i: 1, x: 21600 }]);
+  });
+
+  test("returns the rows ascending, so the reads walk the file forwards", () => {
+    // Insertion order here is row 0, 10079, 0, 0 — so a Map's own iteration
+    // order is not sorted and this has to sort explicitly. Unsorted, the
+    // reads would seek back and forth across 115 MB.
+    const { rows } = bucketByRow(cities, KM_GRID);
+    expect(rows).toEqual([...rows].sort((a, b) => a - b));
+  });
+
+  test("collects cities off the raster rather than throwing on the first", () => {
+    // "Off the raster" is a property of the catalog, so it belongs in a gate
+    // with a count beside it: the build fails on the total and the operator
+    // sees how many. The probe found 0 of 58,757 outside either grid, but +84
+    // is a real edge on the 1 km grid and the catalog grows.
+    const arctic = [{ id: "G5", lat: 88, lon: 0 }, { id: "G6", lat: 0, lon: 0 }];
+    const km = bucketByRow(arctic, KM_GRID);
+    expect(km.offRaster).toEqual([0]);
+    expect(km.rows).toEqual([10079]);
+
+    // The same city is ON `clt`, which reaches the pole. Two grids, two
+    // answers — which is why the buckets are computed once per VARIABLE and
+    // not once for the run.
+    expect(bucketByRow(arctic, CLT_GRID).offRaster).toEqual([]);
+  });
+});
+
+describe("assembleRows", () => {
+  /** Twelve months per variable for two cities, as the sampler stores them. */
+  const store = (hole?: { field: string; month: number; city: number }) => {
+    const out: Record<string, Float64Array[]> = {};
+    for (const [field, value] of Object.entries({ tasmin: 10, tasmax: 20, pr: 50, clt: 40, hurs: 70 })) {
+      out[field] = Array.from({ length: 12 }, (_, m) =>
+        new Float64Array([
+          hole && hole.field === field && hole.month === m && hole.city === 0 ? Number.NaN : value,
+          hole && hole.field === field && hole.month === m && hole.city === 1 ? Number.NaN : value + 1,
+        ]),
+      );
+    }
+    return out;
+  };
+
+  test("keys the rows by city id, in catalog order", () => {
+    const { rows, skipped } = assembleRows([{ id: "G1" }, { id: "G2" }], store());
+    expect([...rows.keys()]).toEqual(["G1", "G2"]);
+    expect(rows.get("G1")).toHaveLength(60);
+    expect(rows.get("G1")![0]).toBe(10);
+    expect(rows.get("G2")![0]).toBe(11);
+    expect(skipped).toEqual([]);
+  });
+
+  test("turns the sampler's NaN back into the null tupleFor's contract names", () => {
+    // A Float64Array cannot hold null, so the sampler stores NaN where
+    // `decodeSample` returned one. Handing that NaN straight on would work by
+    // accident — `tupleFor` refuses non-finite values too — but it would mean
+    // two encodings of absence and only one of them documented.
+    const { rows, skipped } = assembleRows([{ id: "G1" }], store({ field: "clt", month: 2, city: 0 }));
+    expect(rows.size).toBe(0);
+    expect(skipped).toEqual([{ id: "G1" }]);
+  });
+
+  test("drops only the city that cannot be written, not its neighbours", () => {
+    // 60 positional integers carry no per-month absence marker, so one
+    // unwritable month sinks the whole city — but exactly that city.
+    const { rows, skipped } = assembleRows(
+      [{ id: "G1" }, { id: "G2" }],
+      store({ field: "pr", month: 5, city: 1 }),
+    );
+    expect([...rows.keys()]).toEqual(["G1"]);
+    expect(skipped.map((c) => c.id)).toEqual(["G2"]);
+  });
+});
+
+describe("climatePayload", () => {
+  const rows = { G1: Array.from({ length: 60 }, (_, i) => i) };
+  const now = "2026-09-04T00:00:00.000Z";
+
+  test("writes the envelope the loader reads, in that order", () => {
+    const payload = climatePayload("PE", rows, null, now);
+    expect(Object.keys(payload)).toEqual(["country", "generatedAt", "source", "cities"]);
+    expect(payload.country).toBe("PE");
+    expect(payload.source).toMatch(/CHELSA V2\.1/);
+    expect(payload.cities).toBe(rows);
+  });
+
+  test("stamps generatedAt on a first build", () => {
+    expect(climatePayload("PE", rows, null, now).generatedAt).toBe(now);
+  });
+
+  test("keeps the previous timestamp when the rows are unchanged", () => {
+    // 246 files whose only difference is a timestamp is 246 diffs of noise,
+    // and it hides the one file that really did change.
+    const before = climatePayload("PE", rows, null, "2026-01-01T00:00:00.000Z");
+    expect(climatePayload("PE", rows, before, now).generatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  test("restamps when a single integer of a single month moves", () => {
+    const before = climatePayload("PE", rows, null, "2026-01-01T00:00:00.000Z");
+    const nudged = { G1: rows.G1.map((v, i) => (i === 37 ? v + 1 : v)) };
+    expect(climatePayload("PE", nudged, before, now).generatedAt).toBe(now);
+  });
+
+  test("restamps when a city is added", () => {
+    // The row SET is the artifact. A country that gained a city has changed
+    // even though every row it already had is identical.
+    const before = climatePayload("PE", rows, null, "2026-01-01T00:00:00.000Z");
+    expect(climatePayload("PE", { ...rows, G2: rows.G1 }, before, now).generatedAt).toBe(now);
+  });
+
+  test("compares the rows only, never the envelope", () => {
+    // If the comparison included generatedAt it could never match, and the
+    // guard would be dead code that looks alive.
+    const before = { ...climatePayload("PE", rows, null, now), source: "something else" };
+    expect(climatePayload("PE", rows, before, "2026-12-31T00:00:00.000Z").generatedAt).toBe(now);
+  });
+});
+
+describe("indexPayload", () => {
+  const countries = [{ code: "AD", count: 20 }, { code: "PE", count: 750 }];
+  const now = "2026-09-04T00:00:00.000Z";
+
+  test("keeps the previous timestamp when the listing is unchanged", () => {
+    // The one place this build departs from build-provinces.mjs, which stamps
+    // its index unconditionally. That is safe for a hand-run script, because
+    // someone is looking at the diff. Spec 9.2 gives this artifact a
+    // workflow_dispatch over decadal normals, so most runs change nothing at
+    // all — and an unchanged run has to produce a byte-identical tree, or
+    // every dispatch commits one line of pure noise in the one file a
+    // reviewer opens first.
+    const before = indexPayload(countries, null, "2026-01-01T00:00:00.000Z");
+    expect(before.generatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(indexPayload(countries, before, now).generatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  test("restamps when a country's city count changes", () => {
+    const before = indexPayload(countries, null, "2026-01-01T00:00:00.000Z");
+    const grown = [{ code: "AD", count: 21 }, { code: "PE", count: 750 }];
+    expect(indexPayload(grown, before, now).generatedAt).toBe(now);
+  });
+
+  test("restamps when a country appears or disappears", () => {
+    const before = indexPayload(countries, null, "2026-01-01T00:00:00.000Z");
+    expect(indexPayload(countries.slice(0, 1), before, now).generatedAt).toBe(now);
+  });
+});
+
+describe("assertShardCoverage", () => {
+  test("passes when the two sets are the same", () => {
+    expect(() => assertShardCoverage(new Set(["PE", "NO"]), new Set(["NO", "PE"]))).not.toThrow();
+  });
+
+  test("names every country that has a city shard and no climate shard", () => {
+    // A country the picker can open with no climate file renders a map with
+    // no climate at all, silently, because every other gate still passes.
+    expect(() => assertShardCoverage(new Set(["PE"]), new Set(["NO", "PE", "KE"]))).toThrow(/KE, NO/);
+  });
+
+  test("names climate shards for countries that have no cities", () => {
+    // Two-way, unlike build-provinces.mjs's one-way coverage gate: a province
+    // file for a country with no cities is harmless geometry, but a climate
+    // file for one is a file whose every key joins to nothing.
+    expect(() => assertShardCoverage(new Set(["PE", "XX"]), new Set(["PE"]))).toThrow(/no city shard: XX/);
+  });
+
+  test("a swap keeps the count identical and still fails", () => {
+    // Which is why this is an identity check and not a count.
+    expect(() => assertShardCoverage(new Set(["PE", "XX"]), new Set(["PE", "NO"]))).toThrow();
+  });
+});
+
+describe("assertSampleHealth", () => {
+  // The three ways the sample itself can be wrong. All three are zero on this
+  // CHELSA release and none is guaranteed by the format, so all three are
+  // gates — a city off the raster, a city on a sentinel and a city with one
+  // unwritable month all end the same way: the city is simply absent, and
+  // every remaining gate still passes.
+  test("passes when all three counts are zero", () => {
+    expect(() => assertSampleHealth(0, 0, [])).not.toThrow();
+  });
+
+  test("fails on a city outside the grid", () => {
+    expect(() => assertSampleHealth(3, 0, [])).toThrow(/3 city-raster pair\(s\) fall outside the grid/);
+  });
+
+  test("fails on a sample that landed on the declared sentinel", () => {
+    expect(() => assertSampleHealth(0, 7, [])).toThrow(/7 sample\(s\) landed on a file's declared nodata/);
+  });
+
+  test("names the cities it would otherwise have dropped in silence", () => {
+    // A count tells an operator a gate fired; the names tell them what broke.
+    expect(() => assertSampleHealth(0, 0, [{ id: "G1", name: "Lima" }]))
+      .toThrow(/1 city\/cities have no writable row \(e\.g\. G1 Lima\)/);
+  });
+
+  test("reports the off-raster count before the others", () => {
+    // Order matters only in that the first one to fire should be the most
+    // specific diagnosis; a city off the raster explains its own null.
+    expect(() => assertSampleHealth(1, 1, [{ id: "G1", name: "Lima" }])).toThrow(/outside the grid/);
+  });
+});
+
+describe("assertCityParity", () => {
+  test("passes when the ids agree", () => {
+    expect(() => assertCityParity(["G1", "G2"], new Set(["G2", "G1"]))).not.toThrow();
+  });
+
+  test("fails on a catalogued city with no row", () => {
+    // The artifact is joined on the city id, and `elev` is read from the city
+    // row beside it, so a gap here is a city that renders with no climate.
+    expect(() => assertCityParity(["G1"], new Set(["G1", "G2"]))).toThrow(/no row: 1 \(e\.g\. G2\)/);
+  });
+
+  test("fails on a row for a city the catalog does not carry", () => {
+    expect(() => assertCityParity(["G1", "G9"], new Set(["G1"])))
+      .toThrow(/uncatalogued cities: 1 \(e\.g\. G9\)/);
+  });
+
+  test("fails on a city written into two shards, which a Set would hide", () => {
+    // The failure this is really written for: the catalog is one flat array
+    // sliced per country by offset and length, and an overlapping slice writes
+    // some city twice and another not at all. Taking a Set of the written ids
+    // before comparing would make an overlap compare equal.
+    expect(() => assertCityParity(["G1", "G2", "G1"], new Set(["G1", "G2"])))
+      .toThrow(/more than one shard: 1 \(e\.g\. G1\)/);
+    // And the same input through a Set is exactly what would have passed.
+    expect(() => assertCityParity(new Set(["G1", "G2", "G1"]), new Set(["G1", "G2"]))).not.toThrow();
+  });
+});
+
+describe("assertRowShape", () => {
+  const row = Array.from({ length: 60 }, () => 1);
+
+  test("passes a row of exactly sixty integers", () => {
+    expect(() => assertRowShape(new Map([["G1", row]]))).not.toThrow();
+  });
+
+  test("refuses a short row, which would shift every index after it", () => {
+    // A positional tuple carries no field names: one short row and index 36
+    // stops meaning cloud. `JSON.parse` accepts it happily.
+    expect(() => assertRowShape(new Map([["G1", row.slice(0, 59)]]))).toThrow(/G1: row is 59 long/);
+  });
+
+  test("refuses a non-integer, which JSON.stringify would write as a decimal", () => {
+    expect(() => assertRowShape(new Map([["G1", row.map((v, i) => (i === 12 ? 1.5 : v))]])))
+      .toThrow(/G1: row\[12\] is 1\.5/);
+  });
+});
+
+describe("assertBudget", () => {
+  test("measures against build-provinces.mjs's own two numbers", () => {
+    // Imported rather than restated, so there is one number to change. The
+    // gzip budget is the binding one — it measures what crosses the wire —
+    // and both are inclusive: a shard exactly at the limit passes.
+    expect(GZIP_BUDGET).toBe(150_000);
+    expect(RAW_TRIPWIRE).toBe(700_000);
+    expect(() => assertBudget([{ code: "CO", raw: RAW_TRIPWIRE, gzip: GZIP_BUDGET }])).not.toThrow();
+    expect(() => assertBudget([{ code: "CO", raw: 1000, gzip: GZIP_BUDGET + 1 }])).toThrow(/gzip budget/);
+    expect(() => assertBudget([{ code: "CO", raw: RAW_TRIPWIRE + 1, gzip: 1000 }])).toThrow(/raw tripwire/);
+  });
+
+  test("names every offender, not the first", () => {
+    expect(() => assertBudget([
+      { code: "PE", raw: 1000, gzip: 400 },
+      { code: "ID", raw: 1000, gzip: 200_000 },
+      { code: "CO", raw: 1000, gzip: 160_000 },
+    ])).toThrow(/CO 160000[\s\S]*ID 200000/);
+  });
+
+  test("catches a shard that gzips well and is still pathological to parse", () => {
+    // The two limits answer different questions: one is what a reader pays
+    // for over the wire, the other is what their browser pays to parse it.
+    expect(() => assertBudget([{ code: "ID", raw: 900_000, gzip: 40_000 }])).toThrow(/raw tripwire/);
+  });
+});
