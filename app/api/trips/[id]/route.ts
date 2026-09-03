@@ -4,6 +4,7 @@ import { guestTripView } from "@/lib/redactTrip";
 import { buildTripData } from "@/lib/server/planService";
 import { requireMember, tripAccessFromRequest } from "@/lib/server/authz";
 import { UpdateTripSchema } from "@/lib/server/schemas";
+import { carryGateways } from "@/lib/tripGateways";
 import {
   clearScheduleChecks,
   DB_UNAVAILABLE,
@@ -69,7 +70,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     tripName: parsed.data.tripName ?? existing.data.tripName,
     startDate:
       parsed.data.startDate !== undefined ? parsed.data.startDate : existing.data.startDate,
-    input: parsed.data.input ?? existing.data.input,
+    // A rebuild sends a whole TripInput; one written before the gateway fields
+    // existed omits them, and absent means "unchanged", never "cleared".
+    input: parsed.data.input
+      ? carryGateways(parsed.data.input, existing.data.input)
+      : existing.data.input,
   });
   if (data.plan.days.length === 0) {
     return NextResponse.json(
