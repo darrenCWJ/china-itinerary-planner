@@ -88,4 +88,44 @@ describe("GatewaysStrip", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByTestId("gateways")).toHaveTextContent("Fly in via LIM");
   });
+
+  describe("focus (reviewer finding: the editor swaps the focused element out from under the keyboard)", () => {
+    // "Edit gateways" unmounts the button that was just activated, and Save or
+    // Cancel unmount the button that was just pressed. Without the component
+    // placing focus itself, the browser drops it on <body> both times, and a
+    // keyboard or screen-reader user has to find the page again from the top.
+    test("opening the editor moves focus to the arrival field", () => {
+      render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={async () => null} />);
+      fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+      expect(screen.getByLabelText("Arrive at")).toHaveFocus();
+    });
+
+    test("cancelling returns focus to the Edit button", () => {
+      render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={async () => null} />);
+      fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+      fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+      expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus();
+    });
+
+    test("a successful save returns focus to the Edit button", async () => {
+      render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={async () => null} />);
+      fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus());
+    });
+  });
+
+  test("a blocked Save is described by the hint that explains it", () => {
+    // A disabled button is skipped by Tab in most browsers and read without a
+    // reason by a screen reader; linking the hint gives it one.
+    render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={async () => null} />);
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "Jorge" } });
+    expect(screen.getByRole("button", { name: /save/i })).toHaveAccessibleDescription(
+      /pick an airport from the list/i
+    );
+
+    fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "LIM" } });
+    expect(screen.getByRole("button", { name: /save/i })).not.toHaveAttribute("aria-describedby");
+  });
 });

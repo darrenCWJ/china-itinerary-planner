@@ -222,6 +222,24 @@ describe("AirportInput", () => {
       expect(input).toHaveAttribute("aria-expanded", "false");
       expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     });
+
+    test("a field focused on mount waits for an edit before it searches", async () => {
+      // The gateway editor focuses its arrival field the moment it opens, so
+      // the field is both prefilled AND focused on mount. Focus alone must not
+      // turn the prefilled code into a query: the traveller has typed nothing,
+      // and a list opening under a field they have not touched is the same
+      // surprise the unfocused case above guards against.
+      const { rerender } = render(<AirportInput label="From" value="Beijing" autoFocus onChange={() => {}} />);
+      expect(screen.getByLabelText("From")).toHaveFocus();
+
+      await pastDebounce();
+      expect(fetch).not.toHaveBeenCalled();
+
+      // The first edit searches exactly as it does on a field focused by hand.
+      rerender(<AirportInput label="From" value="Beijing C" autoFocus onChange={() => {}} />);
+      await pastDebounce();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("offers matching airports once the query is long enough", async () => {

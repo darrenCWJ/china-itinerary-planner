@@ -32,6 +32,11 @@ interface Props {
    * list pick — free typing never reaches it.
    */
   onPick?: (airport: Airport) => void;
+  /**
+   * Focus the field on mount. The mount value is not searched — see
+   * `actedOnRef` below — so a prefilled, focused field waits for an edit.
+   */
+  autoFocus?: boolean;
   placeholder?: string;
   maxLength?: number;
   className?: string;
@@ -74,6 +79,7 @@ export function AirportInput({
   value,
   onChange,
   onPick,
+  autoFocus,
   placeholder,
   // Mirrors the ticket schema's own cap on `from`/`to` (lib/server/schemas.ts:
   // `z.string().trim().max(60)`). Kept as a prop, read by displayValue below,
@@ -110,8 +116,20 @@ export function AirportInput({
    * when the answer lands (a blur inside the request's own flight).
    */
   const isFocusedRef = useRef(false);
+  /**
+   * The value the effect below last acted on, seeded with the mount value so
+   * the mount run is a no-op. Mounting is not an edit: the gateway editor
+   * focuses its arrival field as it opens, and without this the prefilled
+   * code would be searched and its list opened under a field the traveller
+   * has not touched — the focus gate alone cannot tell that apart from a
+   * field they clicked into, since both are focused. A StrictMode re-run of
+   * the effect in development sees the same value and skips the same way.
+   */
+  const actedOnRef = useRef(value);
 
   useEffect(() => {
+    if (value === actedOnRef.current) return;
+    actedOnRef.current = value;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (lastPickedValueRef.current !== null && value === lastPickedValueRef.current) {
       lastPickedValueRef.current = null;
@@ -222,6 +240,7 @@ export function AirportInput({
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? optionId(activeIndex) : undefined}
           autoComplete="off"
+          autoFocus={autoFocus}
           value={value}
           maxLength={maxLength}
           placeholder={placeholder}
