@@ -138,6 +138,14 @@ copy the pooled connection string → Vercel project → Settings →
 Environment Variables → add `DATABASE_URL` → redeploy. Tables are created
 automatically on first use.
 
+**Keep the functions next to the database.** `vercel.json` pins the
+serverless functions to `bom1` (Mumbai), the same AWS region as the Supabase
+project (`ap-south-1`). Left at Vercel's default they ran in `iad1`
+(Washington DC), so every database round trip crossed the planet: a cold
+instance runs 22 schema statements before its first query, and the first
+`/api/auth/get-session` after idle measured 6–7 s against 0.35 s warm. If
+the database ever moves, move the region with it.
+
 ### Environment variables
 
 | Variable | Effect |
