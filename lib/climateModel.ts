@@ -54,9 +54,14 @@ import type { ChinaRegion } from "./types";
  *    34–36% and Jan–Mar at 63–64% — the inverse of the sky over the city —
  *    and the inversion runs the length of the Peruvian coast (Trujillo 23 vs
  *    55, Ica 12 vs 55). The probe that vouched for fix 1 sampled January
- *    alone. On this data Lima's winter is warmer, drier and clearer than
- *    Cusco's June on every input, so no monotone model marks one down
- *    without the other. The two Lima tests are `test.fails` and say so.
+ *    alone. Once cloud points the wrong way nothing else in the stored row
+ *    separates Lima's season: the T−td depression is 5–6 °C in every month
+ *    of its year and the diurnal range 3–5 °C, both flat, and the one signal
+ *    left — a daily high of 18–19 °C in Jun–Sep — reads `great` on the very
+ *    scale this model is fitted to (`lib/months.ts`, North April, lo 7 /
+ *    hi 20, is `great`). So no honest monotone function of these five inputs
+ *    marks Lima's winter down at all. One `test.fails` keeps the brief's
+ *    name and says so.
  * 2. **Humidity bias correction**, in dew-point space, at read time. `hurs`
  *    runs low in humid climates (Iquitos 72% vs ~85% observed); the artifact
  *    carries the UNCORRECTED dew point so this can be retuned without a
@@ -99,7 +104,15 @@ import type { ChinaRegion } from "./types";
  *     Dunhuang; Wuhan). The four holdout regions (North, Northeast, South,
  *     Southwest — 48 cells; Beijing, Harbin, Guangzhou, Chengdu and
  *     Kunming) were not scored, printed or inspected until the knobs were
- *     frozen; the sampling script does not even print their rows.
+ *     frozen; the sampling script does not even print their rows. With one
+ *     disclosed exception: before tuning began, the holdout pin in
+ *     `lib/climateModel.test.ts` still held a `-1` placeholder, and its
+ *     failure message printed the UNTUNED holdout aggregate once —
+ *     `expected 26 to be -1`, the 26/48 recorded below. That is one scalar
+ *     of a model nobody had tuned yet: it names no cell, no region and no
+ *     direction, so it cannot say which knob to move or which way, and it
+ *     cannot have steered the 30/48 that follows. The test was skipped from
+ *     that moment until the knobs were frozen.
  *   - Method: coordinate descent over a coarse grid, 60 random restarts,
  *     objective in order: no symptom-city test violated (those cities are
  *     not holdout), exact agreement, within-one agreement, fewest knobs
@@ -234,6 +247,8 @@ export const FIRST_GUESS_KNOBS: ClimateKnobs = Object.freeze({
   rainSpanMm: 100,
   cloudKneePct: 60,
   cloudSpanPct: 20,
+  // 500 m is also Chengdu's hard-coded elevation exactly, and Chengdu is a
+  // HOLDOUT anchor: a re-tune that moves this knee moves a holdout cell.
   elevWarmFromM: 500,
   elevWarmPerKmC: 1.8,
   elevWarmMaxC: 4,

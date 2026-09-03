@@ -13,7 +13,7 @@
  * GeoNames ids and none of the nine is in it, so the key spaces do not meet.
  * This script bridges them the only way they can be bridged — by sampling the
  * anchors' coordinates directly — and commits the result so the model's tests
- * run in milliseconds against sixteen rows rather than against 10 GB of
+ * run in milliseconds against nineteen rows rather than against 10 GB of
  * rasters nobody else has cached.
  *
  * It downloads nothing. Every raster must already be in `CIP_CHELSA_CACHE`
@@ -38,6 +38,14 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CITY_DIR = join(REPO_ROOT, 'public', 'cities');
 const OUT_PATH = join(REPO_ROOT, 'data', 'climate-anchors.json');
 const CACHE_DIR = process.env.CIP_CHELSA_CACHE || join(tmpdir(), 'cip-chelsa');
+
+/**
+ * What goes in the committed fixture's `cache` field. The RESOLVED
+ * `CACHE_DIR` must not: it is one machine's absolute path (a home directory,
+ * a username), it changes the artifact for every person who regenerates it,
+ * and it tells a reader nothing the rule does not.
+ */
+const CACHE_DESCRIPTION = 'CIP_CHELSA_CACHE, else os.tmpdir()/cip-chelsa';
 
 const SOURCE = 'CHELSA V2.1 climatologies 1981-2010, CC0 1.0, DOI 10.16904/envidat.228';
 
@@ -362,7 +370,7 @@ async function main() {
     generatedBy: 'scripts/sample-climate-anchors.mjs',
     node: process.version,
     source: SOURCE,
-    cache: CACHE_DIR,
+    cache: CACHE_DESCRIPTION,
     layout: '60 ints: [12 lo C, 12 hi C, 12 precip mm/month, 12 cloud %, 12 td C], January at index 0 of every block; td is the UNCORRECTED Magnus dew point',
     anchorElevationSource: ANCHOR_ELEVATION_SOURCE,
     rasters,
