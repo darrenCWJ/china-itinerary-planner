@@ -99,6 +99,13 @@ describe("PlanTab — the builder's queue survives a view change", () => {
   });
 });
 
+describe("PlanTab — gateways", () => {
+  test("shows the gateways strip above the view switch when the trip has them", () => {
+    renderTab(vi.fn(async () => null), { gateways: { arrival: "LIM", departure: "CUZ" } });
+    expect(screen.getByTestId("gateways")).toHaveTextContent("Fly in via LIM");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // T28 — the gap note. Surface 2 of 3.
 // ---------------------------------------------------------------------------

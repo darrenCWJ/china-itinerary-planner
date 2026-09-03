@@ -9,9 +9,11 @@ import type { TripPlan } from "@/lib/itinerary";
 import { travelEmoji } from "@/lib/meta";
 import type { PlanOp } from "@/lib/planOps";
 import { dayDate, sortTickets, ticketOnDate } from "@/lib/tickets";
+import type { TripGateways } from "@/lib/tripGateways";
 import type { Ticket, TripPayload } from "@/lib/tripShared";
 import type { Activity, Season } from "@/lib/types";
 import { DayCard } from "./DayCard";
+import { GatewaysStrip } from "./GatewaysStrip";
 import { RouteMap } from "./RouteMap";
 
 /**
@@ -44,6 +46,10 @@ interface Props {
   /** The accessor's forced-apply counter — see useDayBuilder's payload effect. */
   forcedAt?: number;
   mutate?: (url: string, init: RequestInit) => Promise<string | null>;
+  /** The trip's gateway airports (spec §10.3). Absent only in tests that predate them. */
+  gateways?: TripGateways;
+  /** Members only; guests get the strip read-only. */
+  onSaveGateways?: (gateways: TripGateways) => Promise<string | null>;
 }
 
 /**
@@ -70,6 +76,8 @@ export function PlanTab({
   payload,
   forcedAt = 0,
   mutate,
+  gateways,
+  onSaveGateways,
 }: Props) {
   /**
    * The honesty surface, resolved from the trip's country at render and never
@@ -147,6 +155,7 @@ export function PlanTab({
 
   return (
     <div className="mt-5 space-y-5">
+      {gateways && <GatewaysStrip gateways={gateways} onSave={onSaveGateways} />}
       <div
         role="group"
         aria-label="Switch between the day list, the route map and the day builder"

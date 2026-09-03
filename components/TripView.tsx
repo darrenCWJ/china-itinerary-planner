@@ -23,6 +23,7 @@ import { forgetMyTrip } from "@/lib/myTrips";
 import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
 import { getCountry } from "@/lib/countries";
+import { tripGateways, type TripGateways } from "@/lib/tripGateways";
 import { tripCountry, tripCurrency, type GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
 
@@ -106,6 +107,11 @@ export function TripView({ tripId }: { tripId: string }) {
     mutate(`/api/trips/${tripId}/settlements/${settlementId}`, { method: "DELETE" });
   const saveCurrency = (home: string | null, rates: Record<string, number>) =>
     mutate(`/api/trips/${tripId}/currency`, jsonInit("PUT", { home, rates }));
+  const saveGateways = (gateways: TripGateways) =>
+    mutate(
+      `/api/trips/${tripId}/gateways`,
+      jsonInit("PUT", { arrivalAirport: gateways.arrival, departureAirport: gateways.departure })
+    );
   const addJournal = (entry: JournalDraft) =>
     mutate(`/api/trips/${tripId}/journal`, jsonInit("POST", { entry }));
   const updateJournal = (entryId: string, entry: Partial<JournalDraft>) =>
@@ -289,6 +295,8 @@ export function TripView({ tripId }: { tripId: string }) {
           payload={payload}
           forcedAt={forcedAt}
           mutate={mutate}
+          gateways={tripGateways(data)}
+          onSaveGateways={isMember ? saveGateways : undefined}
         />
       )}
 
