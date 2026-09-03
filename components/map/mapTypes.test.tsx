@@ -430,6 +430,37 @@ describe("the derived branch sits below curated China", () => {
       expect(fitForPlace(forged, JUNE, climate), hostile).toBe(NEUTRAL_FIT);
     }
   });
+
+  test("a month outside 1-12 throws on the derived branch, same as the curated one", () => {
+    // Pinned because it is a real behaviour change: before this branch
+    // existed, a non-China place returned NEUTRAL_FIT for any month,
+    // including a nonsense one — nothing on this path could throw. Now
+    // `month - 1` reaches `climateModel.ts`'s `assertMonth`, which throws for
+    // anything outside 0..11. Not caught here on purpose: Task 8's loader is
+    // the boundary meant to keep a malformed call out of production, not this
+    // function.
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    const climate: DerivedClimateIndex = new Map([[cusco.id, anchor("cusco")]]);
+
+    expect(() => fitForPlace(cusco, 0, climate)).toThrow(/month/i);
+    expect(() => fitForPlace(cusco, 13, climate)).toThrow(/month/i);
+  });
+
+  test("a malformed derived row throws rather than resolving to unknown", () => {
+    // Same reasoning as the month case: `monthFit` throws on a row that is
+    // not exactly 60 safe integers (`climateModel.ts`'s `assertRow`), a
+    // documented behaviour change from the old always-NEUTRAL_FIT path. Left
+    // to throw rather than caught here: parsing the artifact is Task 8's
+    // `lib/climateShard.ts`'s job, and swallowing a malformed row behind a
+    // grey NEUTRAL_FIT pin would hide a real bug instead of surfacing it.
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    const truncated = anchor("cusco");
+    const climate: DerivedClimateIndex = new Map([
+      [cusco.id, { row: truncated.row.slice(0, 59), elev: truncated.elev }],
+    ]);
+
+    expect(() => fitForPlace(cusco, JUNE, climate)).toThrow(/row|60/i);
+  });
 });
 
 /**
