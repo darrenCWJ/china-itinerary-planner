@@ -1203,6 +1203,15 @@ const CURATED_UPSTREAM: Record<
       ["PLZ", "Polish zloty"],
     ],
   },
+  // Bosnia's measured P38 answer, 2026-09-03: the 1992-1998 dinar arrived on
+  // 2026-08-31 at the same rank as the convertible mark, so `wdt:` returns both
+  // and the withhold is PL's shape exactly. It reddened three nightly runs.
+  BA: {
+    currency: [
+      ["BAD", "Bosnia and Herzegovina dinar"],
+      ["BAM", "convertible mark"],
+    ],
+  },
   ZW: {
     currency: [
       ["ZWL", "Zimbabwean dollar"],
@@ -1286,8 +1295,8 @@ describe("CURATED_FACTS", () => {
     }
   });
 
-  test("the shipped rows are exactly the five currencies, the one voltage and the two languages", () => {
-    expect(Object.keys(CURATED_FACTS).sort()).toEqual(["AZ", "BE", "FR", "MO", "NL", "PL", "ZW"]);
+  test("the shipped rows are exactly the six currencies, the one voltage and the two languages", () => {
+    expect(Object.keys(CURATED_FACTS).sort()).toEqual(["AZ", "BA", "BE", "FR", "MO", "NL", "PL", "ZW"]);
     expect(CURATED_FACTS.FR.voltageV).toBe(230);
     // The two rescued by hand from the territorial-scope rule, VALUE and all.
     // Belgium's constitutional trio, and Azerbaijan's single state language
