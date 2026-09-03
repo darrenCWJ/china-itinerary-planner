@@ -382,3 +382,56 @@ Disk: the rasters must be cached outside the repo — this working copy sits in 
 OneDrive-synced folder. `scripts/probe-chelsa.mjs` uses `CIP_CHELSA_CACHE` if
 set and the OS temp directory otherwise, and skips any file already present at
 the advertised byte size.
+
+## Layout decision (after Task 1)
+
+**60 ints, not 48.** Recorded here rather than in the plan because this is the
+document later tasks read.
+
+The artifact tuple is 60 positional integers, five blocks of twelve,
+**calendar-indexed with January at index 0 in every block**:
+
+```
+[ 0..11]  lo      °C          tasmin
+[12..23]  hi      °C          tasmax
+[24..35]  precip  mm/month    pr
+[36..47]  cloud   %           clt
+[48..59]  td      °C          derived
+```
+
+`lo` is `tasmin` and `hi` is `tasmax`. Every element is `Math.round`ed, so a
+consumer that treats the tuple as integers is right. `seasonIn` is never
+applied to this index: the rows come out of CHELSA calendar-ordered, as the ten
+sampled cities above show, and nothing in the write path flips a hemisphere.
+
+`td` is the dew point, from the standard August–Roche–Magnus form —
+`γ = ln(RH/100) + bT/(c+T)`, `Td = cγ/(b−γ)`, with `b = 17.625` and
+`c = 243.04` °C — taken on `T = (lo + hi) / 2` using the UNROUNDED decoded
+temperatures and the raw monthly mean relative humidity from `hurs`, then
+rounded. The humidity **bias** correction (spec §9.4 fix 2) is deliberately not
+applied at ingest; it lives in the fit model at read time, where it can be
+retuned without re-running an hour-long, 6.2 GB build.
+
+Three reasons for the fifth block, against this document's own 48-int
+recommendation:
+
+- §9.4's mugginess term needs a dew point, and the section above already noted
+  that `hurs` is the fifth variable §9.1 leaves out of its variables row.
+- §13 forbids shipping the raw field it comes from: v1 ships the correction,
+  not `hurs`.
+- The cost was measured, not guessed at, by proxy: `clt` is the same shape of
+  column and cost +28.7% gzipped, and the extrapolation above puts the worst
+  shard at roughly 55,000 B against the 150,000 B cap — **under 40% of
+  budget**. Task 6 must re-measure this from the real twelve months rather than
+  trust the extrapolation, because `hurs` was never sampled.
+
+Consequences for the build, all of them consequences of "60 positional ints
+with no per-month absence marker":
+
+- A city with a single missing month cannot be written at all — there is no way
+  to say "March has no cloud" — so `tupleFor` returns null for the whole city
+  and the ingest skips it. On this release that path is dead (0 of 58,757
+  cities on nodata), which is why the sentinel assertion above matters.
+- A column that is not twelve months long is a bug in the caller, not a gap in
+  the data, and throws rather than returning null. Writing a short tuple would
+  corrupt every index after it.
