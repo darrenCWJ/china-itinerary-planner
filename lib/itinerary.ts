@@ -15,6 +15,15 @@ export interface TripInput {
    * carry it — read it through `tripCountry`, never directly.
    */
   country?: CountryCode;
+  /**
+   * The airports the trip flies into and out of, as IATA codes (spec §10.3).
+   * Three states, all real: absent (a trip saved before the field existed, or
+   * a client that never sent one), `null` (explicitly none — overland, or no
+   * airport worth naming), and a code. The create route fills absent only.
+   * Read through `tripGateways`, never directly; never write `undefined`.
+   */
+  arrivalAirport?: string | null;
+  departureAirport?: string | null;
 }
 
 export type ItemKind = "activity" | "travel" | "arrival" | "departure" | "free" | "custom";
