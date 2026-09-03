@@ -109,11 +109,10 @@ const MAGNUS_C = 243.04;
  * grid and is silently wrong here: it moves every city up to half a cell
  * north-west, which is nothing at 1 km and a real error near a coast on `clt`.
  *
- * The bounds check is what keeps a city off the wrong row rather than off the
- * raster. `x` wrapping past `width` would otherwise read a pixel one row down,
- * and a negative `y` would read from the end of the buffer. The probe found 0
- * of 58,757 cities outside either grid, so this should never fire — but +84 is
- * a real edge and the catalog grows.
+ * The bounds check is what makes "off the raster" an answer distinct from "on
+ * it" rather than an index the caller has no way to recognise as wrong. The
+ * probe found 0 of 58,757 cities outside either grid, so it should never fire
+ * — but +84 is a real edge on the 1 km grid and the catalog grows.
  *
  * @param {number} lon
  * @param {number} lat
