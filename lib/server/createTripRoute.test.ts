@@ -20,7 +20,10 @@ vi.mock("@/lib/server/catalog", () => ({
   resolveDestinations: (ids: string[]) =>
     ids.map((id) => DESTINATIONS.find((d) => d.id === id)).filter((d) => d !== undefined),
 }));
-vi.mock("@/lib/server/airports", () => ({ allAirports: () => AIRPORTS }));
+vi.mock("@/lib/server/airports", () => ({
+  allAirports: () => AIRPORTS,
+  findAirport: (iata: string) => AIRPORTS.find((a) => a.iata === iata) ?? null,
+}));
 
 const airport = (over: Partial<Airport> & Pick<Airport, "iata" | "lat" | "lon">): Airport => ({
   icao: null,
@@ -90,6 +93,17 @@ describe("POST /api/trips stamps the gateways (spec §10.3)", () => {
     await POST(request({ tripName: "Autumn", input: { ...input, departureAirport: null } }));
     expect(storedInput().arrivalAirport).toBe("PEK");
     expect(storedInput().departureAirport).toBeNull();
+  });
+
+  test("a code the artifact does not have is refused, not quietly stamped over", async () => {
+    // The same refusal /gateways gives, in the same words. Without it the two
+    // doors disagreed: a typo was accepted here and rejected there, so the
+    // trip was created carrying a code that could never be edited to anything
+    // — every later save of the OTHER side would be refused for it too.
+    const res = await POST(request({ tripName: "Autumn", input: { ...input, arrivalAirport: "ZZZ" } }));
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: "Unknown airport code ZZZ" });
+    expect(createTrip).not.toHaveBeenCalled();
   });
 
   test("the departure is the plan's last stop, not the selection's", async () => {

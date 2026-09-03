@@ -201,8 +201,13 @@ export function AirportInput({
     }
   };
 
+  // `min-h`, not a height: an input centres its own value vertically, so the
+  // bar is met without the inline-flex wrapper a label or button needs. It
+  // measured 34px before — under the 44px WCAG target, and the three gateway
+  // fields are the smallest thing on their rows. Lifts the ticket form's
+  // from/to fields with them, which wanted it too.
   const inputClass =
-    "mt-1 w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]";
+    "mt-1 min-h-[var(--tap-min)] w-full rounded-lg border border-[var(--line-1)] bg-[var(--paper)] px-3 py-1.5 text-sm text-[var(--ink-0)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)]";
 
   return (
     <div className="relative">

@@ -13,9 +13,12 @@ describe("GatewaysStrip", () => {
   });
 
   test("says when a side has none, rather than leaving a blank", () => {
+    // "not set" rather than "no airport": this branch also renders a legacy
+    // row that predates the fields, which has not claimed there is no
+    // airport — it has said nothing at all.
     render(<GatewaysStrip gateways={{ arrival: null, departure: null }} />);
-    expect(screen.getByTestId("gateways")).toHaveTextContent(/no arrival airport/i);
-    expect(screen.getByTestId("gateways")).toHaveTextContent(/no departure airport/i);
+    expect(screen.getByTestId("gateways")).toHaveTextContent(/arrival airport not set/i);
+    expect(screen.getByTestId("gateways")).toHaveTextContent(/departure not set/i);
   });
 
   test("offers no editing without a save handler — guests read, members write", () => {
