@@ -1,3 +1,4 @@
+import { monthFit } from "@/lib/climateModel";
 import { monthFitForSeasons, REGION_MONTHS, type MonthFit } from "@/lib/months";
 import type { ChinaRegion, Season } from "@/lib/types";
 
@@ -34,7 +35,11 @@ export interface MapPlace {
   seasonNotes?: Partial<Record<Season, string>>;
 }
 
-/** What a place outside China's month table gets: no claim either way. */
+/**
+ * What a place no source can speak for gets: no claim either way. Outside
+ * China's month table, and — since the fit resolution gained a derived branch
+ * below it — with no derived row for it either.
+ */
 export const NEUTRAL_FIT: MonthFit = "unknown";
 
 /**
@@ -91,18 +96,141 @@ export function isChinaPlace(place: MapPlace): boolean {
   return place.country === CLIMATE_COUNTRY && isChinaRegion(place.region);
 }
 
-export function fitForPlace(place: MapPlace, month: number): MonthFit {
+/**
+ * One city's derived climate, as the caller already holds it.
+ *
+ * The two halves come from two different artifacts and neither is on
+ * `MapPlace`, which is why this is a pair and not a bare row:
+ *
+ *   - `row` is `public/climate/<CC>.json`'s positional tuple — `[12 lo, 12 hi,
+ *     12 precip, 12 cloud, 12 td]`, calendar-indexed, January at index 0 of
+ *     every block (spec §9.4).
+ *   - `elev` is `public/cities/<CC>.json`'s `CityShardRow.elev`, metres or
+ *     null. The climate artifact does not carry it and `MapPlace` has no
+ *     elevation field, but the model's fix 4 — the lapse-rate correction —
+ *     reads it, and it is worth a whole band: Cusco's June is `great` at
+ *     3,312 m and `ok` without.
+ */
+export interface DerivedClimate {
+  row: readonly number[];
+  elev: number | null;
+}
+
+/**
+ * `MapPlace.id` → that city's derived climate. `undefined` means "no row",
+ * which resolves to `NEUTRAL_FIT` — never a fabricated verdict.
+ *
+ * A `ReadonlyMap`, deliberately, on three counts:
+ *
+ *   1. **A `Record` is not safe here.** The keys are city ids out of a fetched
+ *      artifact, and on a plain object `lookup["constructor"]` resolves to
+ *      something through the prototype chain. This module already carries that
+ *      hazard once — `isChinaRegion` is a `hasOwnProperty` check and not `in`
+ *      for exactly this reason — and a `Map` closes it by construction rather
+ *      than by remembering to guard every read.
+ *   2. **Not a function.** A `(id: string) => DerivedClimate | undefined`
+ *      would let a caller hand in a closure that fetches, memoises or
+ *      otherwise does work at render time. The rule this seam exists to obey
+ *      is that the fit resolution stays *synchronous over rows already in
+ *      hand* — `lib/countryFacts.test.ts` walks value imports and fails the
+ *      build if a client component reaches a data artifact, so the rows have
+ *      to arrive by `fetch`, from the component, and be passed down. Inert
+ *      data cannot break that rule; a callback can.
+ *   3. **`Readonly`.** The join belongs to the caller, which memoises it
+ *      across renders; nothing here may mutate it.
+ */
+export type DerivedClimateIndex = ReadonlyMap<string, DerivedClimate>;
+
+/**
+ * A region id → the verdict for the month being asked about, for regions
+ * outside China's seven.
+ *
+ * The seam, not the aggregation. HOW a region's cities collapse into one
+ * verdict — mean penalty, modal band, population weighting — is Plan 6's
+ * decision; this type only says that the answer arrives already computed, so
+ * `fitForRegion` stays synchronous and holds no opinion.
+ *
+ * Keyed by `regionScheme.RegionId`, which is `string` because the ids come out
+ * of a data file. Same `ReadonlyMap` reasoning as `DerivedClimateIndex`.
+ *
+ * **It cannot enforce §9.5 by itself, and it does not try.** `fitForRegion`
+ * receives a region id and nothing else — no country — so the China check in
+ * front of this lookup is the string test, which the seven admin-1 names in
+ * `MapPlace.region`'s docblock are known to pass from five other countries.
+ * That is safe here only because the entries are the caller's own: a caller
+ * that is rendering Botswana can only ever have put Botswana's regions in it.
+ * The corollary is a rule for the caller — **do not build one of these for
+ * China** — and it is why the *place* branch is gated on the country instead
+ * (see `fitForPlace`), where the country is actually available.
+ */
+export type DerivedRegionFits = ReadonlyMap<string, MonthFit>;
+
+/**
+ * Spec §9.5's resolution order: curated `bestSeasons` → curated
+ * `REGION_MONTHS` → derived worldwide → `unknown`.
+ *
+ * **Why the derived branch is here and not in `regionFit`.** §9.4 places it in
+ * `regionFit` and §9.5's last paragraph explicitly forbids placing it in
+ * `fitForPlace`; the two cannot both be honoured, because `regionFit` receives
+ * a region label and a month and the derived artifact is keyed **per city**.
+ * `fitForPlace` is the only one of the pair that holds a `MapPlace`, so it is
+ * the only one that knows which city — and the only one that can be given a
+ * row to read. §9.5's *reason* survives the move intact: what it is protecting
+ * is that curated China wins, and putting the branch below the China step
+ * gives that by construction rather than by ordering luck.
+ *
+ * **Why the China step is gated on `place.country` and not `isChinaPlace`.**
+ * `isChinaPlace` also requires the region to be one of China's seven, and
+ * measured over `public/cities/CN.json` **not one of its 412 rows satisfies
+ * that** — their admin-1 names are "Sichuan", "Guangdong", "Beijing". Gating
+ * on it would drop every Chinese catalog city through to the derived branch
+ * the day a CN climate shard ships, which is exactly the regression §9.5's
+ * success test ("China's rendered output is byte-identical") exists to catch.
+ * On the country, a China place never reaches the derived branch at all and a
+ * derived row for a Chinese city is simply ignored. A Chinese place outside
+ * the seven keeps the `NEUTRAL_FIT` it has today.
+ *
+ * A month outside 1–12 throws, on the derived branch as on the curated one:
+ * `REGION_MONTHS[region][12]` is `undefined` and `.fit` on it is a TypeError,
+ * so that has always been this function's contract, and the derived branch
+ * inherits it rather than adding a second rule. `monthFit` likewise throws on
+ * a malformed row — parsing the artifact is the loader's job (Plan 5 Task 8),
+ * and swallowing it here would hide a real bug behind a grey pin.
+ */
+export function fitForPlace(
+  place: MapPlace,
+  month: number,
+  climate?: DerivedClimateIndex
+): MonthFit {
   if (place.bestSeasons) {
     return monthFitForSeasons(
       { bestSeasons: place.bestSeasons, avoidSeasons: place.avoidSeasons },
       month
     );
   }
-  return isChinaPlace(place) ? regionFit(place.region, month) : NEUTRAL_FIT;
+  if (place.country === CLIMATE_COUNTRY) return regionFit(place.region, month);
+  const derived = climate?.get(place.id);
+  // `month` is 1-based here and the model is calendar-indexed from 0 (§9.4).
+  return derived === undefined ? NEUTRAL_FIT : monthFit(derived.row, derived.elev, month - 1);
 }
 
-export function fitForRegion(region: string, month: number): MonthFit {
-  return regionFit(region, month);
+/**
+ * The same order one level up, for a region tint rather than a pin.
+ *
+ * China's seven are answered by `regionFit` exactly as before. Everything else
+ * gets the caller's aggregate if it has one and `NEUTRAL_FIT` if it does not —
+ * the lookup adds a source of verdicts, never a default. `isChinaRegion` is
+ * asked directly rather than inferred from `regionFit` returning `NEUTRAL_FIT`,
+ * so that a curated cell that ever *did* read `unknown` could not fall through
+ * to a derived one.
+ */
+export function fitForRegion(
+  region: string,
+  month: number,
+  derived?: DerivedRegionFits
+): MonthFit {
+  if (isChinaRegion(region)) return regionFit(region, month);
+  return derived?.get(region) ?? NEUTRAL_FIT;
 }
 
 /**

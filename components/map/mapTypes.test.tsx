@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
-import { REGION_MONTHS } from "@/lib/months";
+import { monthFit } from "@/lib/climateModel";
+import { REGION_MONTHS, type MonthFit } from "@/lib/months";
 import { regionSchemeFor } from "@/lib/regionScheme";
 import type { ProvinceUnit } from "@/lib/provinceTopology";
 import type { CountryLevelProps } from "./CountryLevel";
@@ -11,6 +13,9 @@ import {
   isChinaRegion,
   NEUTRAL_FIT,
   originLineFor,
+  type DerivedClimate,
+  type DerivedClimateIndex,
+  type DerivedRegionFits,
   type MapPlace,
 } from "./mapTypes";
 
@@ -30,6 +35,17 @@ import {
  * run. The module under test is components-local, so lib/ is not its home
  * either.
  */
+
+/**
+ * The month every fit assertion below is read at, in `fitForPlace`'s own
+ * 1-based numbering. `lib/climateModel.ts` is 0-based (January at 0, spec
+ * §9.4), so a derived expectation is `monthFit(row, elev, JUNE - 1)` — the one
+ * conversion the derived branch has to get right.
+ */
+const JUNE = 6;
+
+/** Every key that resolves through a plain object's prototype chain. */
+const HOSTILE_KEYS = ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"];
 
 /** A unit in the shape `parseProvinceTopology` hands out. */
 const unit = (id: string, over: Partial<ProvinceUnit> = {}): ProvinceUnit => ({
@@ -66,20 +82,68 @@ describe("isChinaRegion", () => {
     }
   });
 
-  test("no L3 region id from another country is mistaken for one of China's seven", () => {
-    // Phase 4's new exposure. `regionSchemeFor` group ids reach `zoomRegion`,
-    // and `RegionId` is `string`, so nothing in the type system keeps a
-    // Peruvian unit id away from the China tables — this does.
+  test("a hostile region id still resolves to unknown", () => {
+    // The same hazard one step further down. `fitForRegion` now consults a
+    // caller-supplied lookup after the China check fails, so there is a second
+    // table a hostile id could resolve against — and the reason it cannot is
+    // the reason that lookup is a `ReadonlyMap` and not a `Record`.
+    const derived: DerivedRegionFits = new Map([["PE-CUS", "great"]]);
+    const asRecord: Record<string, MonthFit> = { "PE-CUS": "great" };
+
+    for (const hostile of HOSTILE_KEYS) {
+      // The hazard is real: a plain object answers every one of these.
+      expect(asRecord[hostile], hostile).toBeDefined();
+      // A Map answers none, so the branch below it is never entered.
+      expect(derived.get(hostile), hostile).toBeUndefined();
+      expect(fitForRegion(hostile, JUNE, derived), hostile).toBe(NEUTRAL_FIT);
+    }
+
+    // And the lookup really does resolve a key it holds, or the five rows
+    // above pass because the parameter is ignored rather than because it is
+    // safe.
+    expect(fitForRegion("PE-CUS", JUNE, derived)).toBe("great");
+  });
+
+  test("a Peruvian L3 group id no longer forces NEUTRAL_FIT when a derived row exists", () => {
+    // The rewrite of Plan 4's merge gate, which asserted that a Peruvian group
+    // id resolves to NEUTRAL_FIT — written against exactly this change, and
+    // for a property that has NOT gone away. Both halves are pinned here.
+    //
+    // Phase 4's exposure is unchanged: `regionSchemeFor` group ids reach
+    // `zoomRegion`, and `RegionId` is `string`, so nothing in the type system
+    // keeps a Peruvian unit id away from the China tables. What changes is
+    // only what happens after the China check says no — `unknown` if the
+    // caller passed nothing, the caller's verdict if it passed one. A Peruvian
+    // id never indexes `REGION_MONTHS` either way.
     const peru = regionSchemeFor("PE", [
       unit("PER-1"),
       unit("PER-2", { name: "Callao", nameEn: "Callao Region" }),
     ]);
 
     expect(peru.groups.length).toBeGreaterThan(0);
+
+    // Half one, Plan 4's property, byte for byte: no lookup, no fit, and not
+    // one of China's seven.
     for (const group of peru.groups) {
       expect(isChinaRegion(group.id), group.id).toBe(false);
       expect(fitForRegion(group.id, 6), group.id).toBe(NEUTRAL_FIT);
     }
+
+    // Half two, the new seam. HOW Plan 6 aggregates a region's cities into one
+    // verdict is its decision; all this pins is that a verdict handed in is
+    // handed back, and that being answerable did not make the id Chinese.
+    const bands: MonthFit[] = ["great", "ok", "poor", "avoid"];
+    const derived: DerivedRegionFits = new Map(
+      peru.groups.map((group, i) => [group.id, bands[i % bands.length]])
+    );
+    for (const group of peru.groups) {
+      expect(isChinaRegion(group.id), group.id).toBe(false);
+      expect(fitForRegion(group.id, JUNE, derived), group.id).toBe(derived.get(group.id));
+    }
+
+    // A group id the lookup does not hold is still `unknown`: the seam adds a
+    // source of verdicts, not a default.
+    expect(fitForRegion("PER-404", JUNE, derived)).toBe(NEUTRAL_FIT);
   });
 
   test("not even China's own group ids reach the climate table any more", () => {
@@ -134,6 +198,21 @@ const city = (over: Partial<MapPlace> & Pick<MapPlace, "id" | "name" | "country"
 });
 
 /**
+ * One city's derived climate, out of the real fixture.
+ *
+ * `data/climate-anchors.json` is `scripts/sample-climate-anchors.mjs`'s
+ * CHELSA sample — the same 19 rows `lib/climateModel.test.ts` is calibrated
+ * against. Real rows rather than a stub, so every derived verdict below is
+ * `lib/climateModel.ts`'s and not a value invented to agree with the
+ * assertion next to it.
+ */
+function anchor(key: string): DerivedClimate {
+  const found = fixture.cities.find((c) => c.key === key);
+  if (!found) throw new Error(`data/climate-anchors.json has no city "${key}"`);
+  return { row: found.row, elev: found.elev };
+}
+
+/**
  * The half of the guard `isChinaRegion` structurally cannot cover.
  *
  * `isChinaRegion` answers "is this string one of China's seven region names?"
@@ -169,6 +248,13 @@ describe("a place outside China cannot read China's climate", () => {
     expect(isChinaRegion(serowe.region)).toBe(true);
     // And Serowe still gets nothing, because Botswana is not China.
     expect(fitForPlace(serowe, 6)).toBe(NEUTRAL_FIT);
+
+    // With a derived row it stops getting nothing — and what it gets is its
+    // own row's verdict, never Chongqing's. The two differ, which is what
+    // makes this row an assertion rather than a coincidence.
+    const climate: DerivedClimateIndex = new Map([[serowe.id, anchor("cusco")]]);
+    expect(REGION_MONTHS.Central[JUNE - 1].fit).toBe("ok");
+    expect(fitForPlace(serowe, JUNE, climate)).toBe("great");
   });
 
   test("every colliding (country, label) pair in the shipped data is checked", () => {
@@ -232,6 +318,117 @@ describe("a place outside China cannot read China's climate", () => {
       region: "North",
     });
     expect(originLineFor(beijing)).toBe("North China");
+  });
+});
+
+/**
+ * §9.5's resolution order, and where its one contradiction was resolved.
+ *
+ * The full order is: curated `bestSeasons` → curated `REGION_MONTHS` →
+ * derived worldwide → `unknown`. §9.4 puts the derived step in `regionFit`
+ * and §9.5's last paragraph forbids `fitForPlace`; `regionFit` receives
+ * neither a country code nor a city id, and the artifact is keyed per city,
+ * so §9.4's instruction cannot be carried out as written. The branch went
+ * into `fitForPlace` — the only one of the two that holds a `MapPlace`, and
+ * therefore the only one that knows which city — placed BELOW the China step,
+ * which is what keeps §9.5's "China stays authoritative" true.
+ *
+ * Nothing here fetches. The lookup is a `ReadonlyMap` the caller has already
+ * joined from the two artifacts it fetched, and `mapTypes.ts` reads it
+ * synchronously.
+ */
+describe("the derived branch sits below curated China", () => {
+  test("curated China still wins over any derived row", () => {
+    const beijing = city({ id: "Q956", name: "Beijing", country: "CN", region: "North" });
+    const row = anchor("beijing");
+    const climate: DerivedClimateIndex = new Map([[beijing.id, row]]);
+
+    // Armed both ways: the row is really in the lookup, and the model really
+    // would return something else for it. Without these two the assertion
+    // below passes whether the branch is ordered correctly or missing.
+    expect(climate.get(beijing.id)).toBeDefined();
+    expect(monthFit(row.row, row.elev, JUNE - 1)).toBe("great");
+    expect(REGION_MONTHS.North[JUNE - 1].fit).toBe("ok");
+    expect(fitForPlace(beijing, JUNE, climate)).toBe("ok");
+
+    // The region half of the same rule: a China region id is answered by
+    // `REGION_MONTHS` and never by the region lookup.
+    const regions: DerivedRegionFits = new Map([["North", "avoid"]]);
+    expect(regions.get("North")).toBe("avoid");
+    expect(fitForRegion("North", JUNE, regions)).toBe("ok");
+
+    // And step 1 still precedes both — a curated place's own seasons are read
+    // before either table is consulted.
+    const curated = city({
+      id: "D-beijing",
+      name: "Beijing",
+      country: "CN",
+      kind: "curated",
+      level: "curated",
+      region: "North",
+      bestSeasons: ["autumn"],
+      avoidSeasons: ["summer"],
+    });
+    expect(fitForPlace(curated, JUNE, new Map([[curated.id, row]]))).toBe("avoid");
+  });
+
+  test("no Chinese catalog city reaches the derived branch, not just the seven", () => {
+    // Why the China step is gated on `place.country` and not on
+    // `isChinaPlace`. Measured over `public/cities/CN.json`: not one of its
+    // 412 rows carries an admin-1 name that is one of China's seven — they
+    // are "Sichuan", "Guangdong", "Beijing" — so `isChinaPlace` is false for
+    // every Chinese catalog city on the map. Gate the derived branch on it
+    // and all 412 change colour the day Plan 6 ships a CN climate shard,
+    // which is precisely the regression §9.5's success test exists to catch.
+    const mianyang = city({
+      id: "G1800627",
+      name: "Mianyang",
+      country: "CN",
+      province: "Sichuan",
+      region: "Sichuan",
+    });
+    // Chengdu's anchor row, 90 km away, standing in for the artifact Task 6
+    // builds; the identity is Mianyang's real shard row.
+    const climate: DerivedClimateIndex = new Map([[mianyang.id, anchor("chengdu")]]);
+
+    expect(isChinaRegion(mianyang.region)).toBe(false);
+    expect(climate.get(mianyang.id)).toBeDefined();
+    expect(fitForPlace(mianyang, JUNE, climate)).toBe(NEUTRAL_FIT);
+  });
+
+  test("the lookup carries an elevation, not just a row", () => {
+    // `MapPlace` has no elevation field and the model's fix 4 — the
+    // lapse-rate correction — cannot run without one, which is why the
+    // lookup's value is `{ row, elev }` and not the row alone. Not a
+    // formality: Cusco sits at 3,312 m and the correction is worth a whole
+    // band in June.
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    const climate = anchor("cusco");
+    expect(climate.elev).toBe(3312);
+
+    const withElevation: DerivedClimateIndex = new Map([[cusco.id, climate]]);
+    const without: DerivedClimateIndex = new Map([[cusco.id, { row: climate.row, elev: null }]]);
+    expect(fitForPlace(cusco, JUNE, withElevation)).toBe("great");
+    expect(fitForPlace(cusco, JUNE, without)).toBe("ok");
+  });
+
+  test("an id the lookup does not hold still resolves to unknown", () => {
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+
+    // No lookup at all — every caller in the tree today, and every call until
+    // Plan 6 wires one in.
+    expect(fitForPlace(cusco, JUNE)).toBe(NEUTRAL_FIT);
+    // A lookup that holds some other city.
+    expect(fitForPlace(cusco, JUNE, new Map([["G3936456", anchor("lima")]]))).toBe(NEUTRAL_FIT);
+
+    // And an id that would resolve against a plain object, for the same
+    // reason `fitForRegion`'s does not: `.get` cannot walk a prototype chain.
+    const climate: DerivedClimateIndex = new Map([[cusco.id, anchor("cusco")]]);
+    for (const hostile of HOSTILE_KEYS) {
+      const forged = city({ id: hostile, name: "Nowhere", country: "PE", region: "Cusco" });
+      expect(climate.get(forged.id), hostile).toBeUndefined();
+      expect(fitForPlace(forged, JUNE, climate), hostile).toBe(NEUTRAL_FIT);
+    }
   });
 });
 
