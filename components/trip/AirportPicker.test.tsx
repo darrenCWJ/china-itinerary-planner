@@ -62,20 +62,36 @@ describe("AirportPicker", () => {
     const strict = vi.fn();
     const { unmount } = render(<AirportPicker label="Arrive at" value={null} onChange={strict} />);
     fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "aqp" } });
-    expect(strict).toHaveBeenLastCalledWith(null);
+    expect(strict).toHaveBeenLastCalledWith(null, "aqp");
     unmount();
 
     const lenient = vi.fn();
     render(<AirportPicker label="Arrive at" value={null} onChange={lenient} allowBareCode />);
     fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "aqp" } });
-    expect(lenient).toHaveBeenLastCalledWith({ iata: "AQP", airport: null });
+    expect(lenient).toHaveBeenLastCalledWith({ iata: "AQP", airport: null }, "aqp");
   });
 
   test("clearing the text is none", () => {
     const onChange = vi.fn();
     render(<AirportPicker label="Arrive at" value="LIM" onChange={onChange} allowBareCode />);
     fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "" } });
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, "");
+  });
+
+  test("reports the raw text beside the pick, so a caller can tell empty from unrecognised", () => {
+    // Both report a null pick, and a parent that sees only the null cannot
+    // tell them apart: one is a traveller clearing the field, the other is a
+    // traveller halfway through typing a name. GatewaysStrip needs the
+    // difference — it refuses to save the second (spec §10.3).
+    const onChange = vi.fn();
+    render(<AirportPicker label="Arrive at" value="LIM" onChange={onChange} allowBareCode />);
+    const field = screen.getByLabelText("Arrive at");
+
+    fireEvent.change(field, { target: { value: "Jorge" } });
+    expect(onChange).toHaveBeenLastCalledWith(null, "Jorge");
+
+    fireEvent.change(field, { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith(null, "");
   });
 
   test("a list pick carries the whole airport, and editing the text afterwards drops it", async () => {
@@ -87,11 +103,14 @@ describe("AirportPicker", () => {
     fireEvent.change(field, { target: { value: "lima" } });
     await pastDebounce();
     fireEvent.mouseDown(screen.getByRole("option", { name: /Jorge Chávez/ }));
-    expect(onChange).toHaveBeenLastCalledWith({ iata: "LIM", airport: LIM });
+    expect(onChange).toHaveBeenLastCalledWith(
+      { iata: "LIM", airport: LIM },
+      "Jorge Chávez International Airport (LIM)"
+    );
     expect(field).toHaveValue("Jorge Chávez International Airport (LIM)");
 
     fireEvent.change(field, { target: { value: "Jorge" } });
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, "Jorge");
   });
 
   test("drives a list pick from the keyboard", async () => {
@@ -106,7 +125,10 @@ describe("AirportPicker", () => {
     fireEvent.change(field, { target: { value: "lima" } });
     await pastDebounce();
     fireEvent.keyDown(field, { key: "Enter" });
-    expect(onChange).toHaveBeenLastCalledWith({ iata: "LIM", airport: LIM });
+    expect(onChange).toHaveBeenLastCalledWith(
+      { iata: "LIM", airport: LIM },
+      "Jorge Chávez International Airport (LIM)"
+    );
   });
 
   test("follows the parent when it hands over a new code, but not when it echoes the report", async () => {
@@ -119,7 +141,7 @@ describe("AirportPicker", () => {
     expect(screen.getByLabelText("Arrive at")).toHaveValue("LIM");
     // The user types a bare code and the parent echoes it back: the text must not jump.
     fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "aqp" } });
-    expect(onChange).toHaveBeenLastCalledWith({ iata: "AQP", airport: null });
+    expect(onChange).toHaveBeenLastCalledWith({ iata: "AQP", airport: null }, "aqp");
     rerender(<AirportPicker label="Arrive at" value="AQP" onChange={onChange} allowBareCode />);
     expect(screen.getByLabelText("Arrive at")).toHaveValue("aqp");
     // A reverted save: the parent puts the old code back.
@@ -136,9 +158,12 @@ describe("AirportPicker", () => {
     fireEvent.change(field, { target: { value: "lima" } });
     await pastDebounce();
     fireEvent.mouseDown(screen.getByRole("option", { name: /Jorge Chávez/ }));
-    expect(onChange).toHaveBeenLastCalledWith({ iata: "LIM", airport: LIM });
+    expect(onChange).toHaveBeenLastCalledWith(
+      { iata: "LIM", airport: LIM },
+      "Jorge Chávez International Airport (LIM)"
+    );
 
     fireEvent.change(field, { target: { value: "cuz" } });
-    expect(onChange).toHaveBeenLastCalledWith({ iata: "CUZ", airport: null });
+    expect(onChange).toHaveBeenLastCalledWith({ iata: "CUZ", airport: null }, "cuz");
   });
 });

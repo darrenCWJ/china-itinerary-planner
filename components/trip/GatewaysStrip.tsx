@@ -31,15 +31,32 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
   const [draft, setDraft] = useState<TripGateways>(gateways);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Per side: the field holds text that names no airport.
+   *
+   * The picker reports `null` for "Jorge Chávez" exactly as it does for an
+   * empty field, and saving that null would store "no arrival airport" —
+   * dropping a code the trip already had, for a member whose only mistake was
+   * tapping Save before picking from the list. Since the tap itself blurs the
+   * field and closes the list, that is a very easy mistake to make and an
+   * invisible one to notice.
+   *
+   * A list pick cannot strand this flag: the transient `onChange(null, text)`
+   * that precedes it is fired in the same event as the pick, so both updates
+   * land in one batch and the pick's `false` is the last word.
+   */
+  const [dangling, setDangling] = useState({ arrival: false, departure: false });
+  const blocked = dangling.arrival || dangling.departure;
 
   const open = () => {
     setDraft(gateways);
+    setDangling({ arrival: false, departure: false });
     setError(null);
     setEditing(true);
   };
 
   const save = async () => {
-    if (!onSave || saving) return;
+    if (!onSave || saving || blocked) return;
     setSaving(true);
     setError(null);
     const err = await onSave(draft);
@@ -63,7 +80,10 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
             <AirportPicker
               label="Arrive at"
               value={draft.arrival}
-              onChange={(pick) => setDraft((d) => ({ ...d, arrival: pick?.iata ?? null }))}
+              onChange={(pick, text) => {
+                setDraft((d) => ({ ...d, arrival: pick?.iata ?? null }));
+                setDangling((f) => ({ ...f, arrival: pick === null && text.trim() !== "" }));
+              }}
               allowBareCode
               placeholder="Lima or LIM"
             />
@@ -72,19 +92,32 @@ export function GatewaysStrip({ gateways, onSave }: Props) {
             <AirportPicker
               label="Depart from"
               value={draft.departure}
-              onChange={(pick) => setDraft((d) => ({ ...d, departure: pick?.iata ?? null }))}
+              onChange={(pick, text) => {
+                setDraft((d) => ({ ...d, departure: pick?.iata ?? null }));
+                setDangling((f) => ({ ...f, departure: pick === null && text.trim() !== "" }));
+              }}
               allowBareCode
               placeholder="Cusco or CUZ"
             />
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => void save()} disabled={saving} className={PRIMARY}>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || blocked}
+              className={PRIMARY}
+            >
               {saving ? "Saving…" : "Save"}
             </button>
             <button type="button" onClick={() => setEditing(false)} className={BUTTON}>
               Cancel
             </button>
           </div>
+          {blocked && (
+            <p className="w-full text-xs text-[var(--ink-2)]">
+              Pick an airport from the list, or type its 3-letter code.
+            </p>
+          )}
           {error && (
             <p role="status" className="w-full text-xs text-[var(--seal)]">
               {error}

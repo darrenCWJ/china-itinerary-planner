@@ -1964,6 +1964,10 @@ describe("the arrival gateway anchors the suggested route (spec §10.3, D3)", ()
       onArrivalChange,
     });
     fireEvent.change(screen.getByLabelText("Flying into"), { target: { value: "" } });
-    expect(onArrivalChange).toHaveBeenLastCalledWith(null);
+    // Two arguments now: the pick, and the raw text behind it. The wizard
+    // ignores the second (its handler takes one parameter), but the report is
+    // the same one GatewaysStrip reads to tell "cleared" from "typed
+    // something that is not an airport".
+    expect(onArrivalChange).toHaveBeenLastCalledWith(null, "");
   });
 });
