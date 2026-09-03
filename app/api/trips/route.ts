@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureCatalogLoaded } from "@/lib/server/catalog";
+import { applyDefaultGateways, defaultGateways } from "@/lib/gatewayDefaults";
+import { allAirports } from "@/lib/server/airports";
+import { ensureCatalogLoaded, resolveDestinations } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
 import { getSessionUser } from "@/lib/server/session";
@@ -43,17 +45,32 @@ export async function POST(req: NextRequest) {
   // a northern-hemisphere table is not trusted when the month is available.
   const season = resolveTripSeason(input.season, month, input.country);
   await ensureCatalogLoaded();
-  const data = buildTripData({
+  const built = buildTripData({
     tripName,
     startDate: startDate ?? null,
     input: { ...input, season },
   });
-  if (data.plan.days.length === 0) {
+  if (built.plan.days.length === 0) {
     return NextResponse.json(
       { error: "No plannable destinations in the selection" },
       { status: 400 }
     );
   }
+  // Spec §10.3: stamp the gateways the traveller did not name, from the
+  // PLAN's first and last stops — the plan's, not the selection's, because
+  // buildItinerary drops destinations beyond the day count. Stamped after the
+  // build and never read by it: the plan is a draft the members own, and a
+  // gateway edited later (through /gateways) must not leave a stale code baked
+  // into day one's copy. allAirports(), not the country's rows, so a border
+  // city gets its real gateway.
+  const days = built.plan.days;
+  const stops = [days[0], days[days.length - 1]].map(
+    (day) => resolveDestinations([day.destinationId])[0] ?? { lat: null, lon: null }
+  );
+  const data = {
+    ...built,
+    input: applyDefaultGateways(built.input, defaultGateways(stops, allAirports())),
+  };
 
   const creatorName = user.name.trim().slice(0, 30) || user.email.split("@")[0].slice(0, 30);
   const { id, joinCode } = await createTrip(data, creatorName);
