@@ -390,3 +390,50 @@ describe("suggestRoute with airports", () => {
     expect(suggestRoute([beijing, urumqi], []).notes).toEqual(suggestRoute([beijing, urumqi]).notes);
   });
 });
+
+describe("suggestRoute anchored at a gateway (spec §10.3, D3)", () => {
+  const lima: RoutePlace = { id: "lima", name: "Lima", lat: -12.0464, lon: -77.0428 };
+  const cusco: RoutePlace = { id: "cusco", name: "Cusco", lat: -13.5319, lon: -71.9675 };
+  const arequipa: RoutePlace = { id: "arequipa", name: "Arequipa", lat: -16.409, lon: -71.5375 };
+  /** Jorge Chávez (LIM) and Alejandro Velasco Astete (CUZ). */
+  const LIM = { lat: -12.0219, lon: -77.1143 };
+  const CUZ = { lat: -13.5357, lon: -71.9388 };
+
+  test("unanchored, the tie between the two shortest tours goes to the lower id", () => {
+    // The control: Lima→Cusco→Arequipa and its reverse are both ~910 km, and
+    // the search keeps the first it meets in id order. The anchor below has to
+    // CHANGE this answer to be worth anything.
+    expect(suggestRoute([lima, cusco, arequipa]).order[0].id).toBe("arequipa");
+  });
+
+  test("starts at the place nearest the start point", () => {
+    expect(suggestRoute([arequipa, cusco, lima], [], TRANSPORT, { start: LIM }).order[0].id).toBe("lima");
+    expect(suggestRoute([arequipa, cusco, lima], [], TRANSPORT, { start: CUZ }).order[0].id).toBe("cusco");
+  });
+
+  test("the rest of the tour is nearest-neighbour from that start", () => {
+    const { order, legs, totalKm } = suggestRoute([arequipa, cusco, lima], [], TRANSPORT, { start: LIM });
+    expect(order.map((p) => p.id)).toEqual(["lima", "cusco", "arequipa"]);
+    expect(legs).toHaveLength(2);
+    expect(totalKm).toBeGreaterThan(850);
+    expect(totalKm).toBeLessThan(1000);
+  });
+
+  test("an empty options object is the unanchored search, exactly", () => {
+    expect(suggestRoute([arequipa, cusco, lima], [], TRANSPORT, {})).toEqual(
+      suggestRoute([arequipa, cusco, lima])
+    );
+  });
+
+  test("off-map places still go last, in id order, under an anchor", () => {
+    const { order } = suggestRoute([village, lima, cusco], [], TRANSPORT, { start: CUZ });
+    expect(order.map((p) => p.id)).toEqual(["cusco", "lima", "village"]);
+  });
+
+  test("an anchor with nothing located leaves the id order alone", () => {
+    const other: RoutePlace = { id: "aunt", name: "Aunt's place", lat: null, lon: null };
+    const { order, legs } = suggestRoute([village, other], [], TRANSPORT, { start: LIM });
+    expect(order.map((p) => p.id)).toEqual(["aunt", "village"]);
+    expect(legs.every((l) => l.kind === "unknown")).toBe(true);
+  });
+});
