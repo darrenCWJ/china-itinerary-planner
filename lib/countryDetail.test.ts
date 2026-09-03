@@ -122,8 +122,13 @@ describe.skipIf(!hasAssets)("the committed index", () => {
   test("a country with no province file has none", () => {
     // Natural Earth's admin-0 carries these; its admin-1 does not, so they are
     // countries the picker can reach and this registry must refuse. AQ, BV and
-    // HM have no subdivisions to draw; XD is Natural Earth's UN neutral zone.
-    for (const code of ["AQ", "BV", "HM", "XD"]) {
+    // HM have no subdivisions to draw, and UM is the fourth code
+    // `lib/countries.ts` names (`UNINGESTED_NAMES`) that ships neither a city
+    // shard nor a province file. XD used to stand in UM's place — Natural
+    // Earth's UN neutral zone — but nothing in the app knows that code, so its
+    // three assertions could only ever pass, for a reason unrelated to the
+    // registry.
+    for (const code of ["AQ", "BV", "HM", "UM"]) {
       expect(existsSync(join(PROVINCES_DIR, `${code}.json`)), `${code}.json`).toBe(false);
       expect(hasDetailLevel(code), code).toBe(false);
       expect(detailFor(code), code).toBeNull();
