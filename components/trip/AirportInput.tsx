@@ -98,12 +98,16 @@ export function AirportInput({
   const lastPickedValueRef = useRef<string | null>(null);
   /**
    * Whether the field currently has focus. Read (never rendered) so the
-   * debounced fetch below can tell a value change the user is actively
-   * typing apart from one that landed on an unfocused field — a prefilled
-   * `value` on mount (editing a saved ticket) is the latter, and opening the
-   * list under a field nobody focused would float it over the row beneath
-   * with nothing — no outside-click handler, blur already gone — able to
-   * close it again.
+   * effect below can tell a value change the user is actively typing apart
+   * from one that landed on an unfocused field — a prefilled `value` on
+   * mount (editing a saved ticket, opening the gateway editor) is the
+   * latter, and opening the list under a field nobody focused would float it
+   * over the row beneath with nothing — no outside-click handler, blur
+   * already gone — able to close it again.
+   *
+   * Read twice, because focus can be lost at two different moments: once
+   * before the request is scheduled at all (nothing to search for), and again
+   * when the answer lands (a blur inside the request's own flight).
    */
   const isFocusedRef = useRef(false);
 
@@ -117,20 +121,32 @@ export function AirportInput({
       setHits([]);
       return;
     }
+    // Nothing to search for on a field nobody focused. The list is gated on
+    // focus at the far end too, so such a request could only ever have thrown
+    // its answer away — and a prefilled field is the common case, not the odd
+    // one: editing a saved ticket mounts two of these with text in them, and
+    // "Edit gateways" mounts two more, each of which used to fire a request
+    // the traveller could not see the result of.
+    if (!isFocusedRef.current) return;
     const controller = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/airports/search?q=${encodeURIComponent(value.trim())}`, {
           signal: controller.signal,
         });
-        const json: { results: Airport[] } = await res.json();
-        setHits(json.results);
+        // Shape-checked rather than trusted: the annotation is a claim about
+        // a JSON body this component did not build, and a body without
+        // `results` (an error page, a stubbed endpoint) would otherwise put
+        // `undefined` into `hits` and throw on the very next `hits.length`.
+        const json = (await res.json()) as { results?: Airport[] } | null;
+        const results = Array.isArray(json?.results) ? json.results : [];
+        setHits(results);
         // Gated on focus, not just "results arrived": a blur that lands after
         // this timer already started the fetch (the window between the debounce
         // firing and the response resolving) still lands here with the field no
         // longer focused, and opening the list at that point would be exactly
         // the reopen-after-blur race this field exists to avoid.
-        if (isFocusedRef.current) setOpen(json.results.length > 0);
+        if (isFocusedRef.current) setOpen(results.length > 0);
       } catch {
         if (!controller.signal.aborted) {
           setHits([]);

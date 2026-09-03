@@ -169,20 +169,39 @@ describe("AirportInput", () => {
   describe("focus lifecycle (reviewer finding: opens on a field nobody focused)", () => {
     test("mounting with a prefilled value that matches airports does not open the list", async () => {
       // Editing a saved ticket prefills `from`/`to` on mount (TicketsTab's
-      // `toFields`). The query effect still runs — the debounce below is what
-      // proves the fetch actually happened — but nobody focused this field, so
-      // the list must never open under it.
+      // `toFields`), and "Edit gateways" prefills both of its fields the
+      // moment it opens. Nobody focused them, so the search must not even
+      // fire: the only thing its answer could do is open a list under a field
+      // with no focus to blur and no outside-click handler to close it, so the
+      // request was pure waste (two of them, on every gateway edit).
       render(<AirportInput label="From" value="Beijing" onChange={() => {}} />);
 
-      // The last two assertions are assertions of absence, so they would hold
+      // All three assertions are assertions of absence, so they would hold
       // just as well against a response this test had simply not waited for.
-      // Draining is what makes them mean "the results came back and the list
-      // stayed shut" rather than "nothing has happened yet".
+      // Draining is what makes them mean "the debounce came due and nothing
+      // happened" rather than "nothing has happened yet".
+      await pastDebounce();
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    test("a focused field with a prefilled value does fetch", async () => {
+      // The gate is on focus, not on being prefilled. The same saved ticket,
+      // once the traveller clicks into the field and edits it, must suggest
+      // exactly as an empty field does — otherwise the gate above would have
+      // quietly turned every prefilled field into a plain text box.
+      const { rerender } = render(<AirportInput label="From" value="Beijing" onChange={() => {}} />);
+      fireEvent.focus(screen.getByLabelText("From"));
+      // `value` is what the effect watches, so the request rides on the edit
+      // rather than on the focus: focusing alone changes nothing to search for.
+      rerender(<AirportInput label="From" value="Beijing C" onChange={() => {}} />);
+
       await pastDebounce();
 
       expect(fetch).toHaveBeenCalledTimes(1);
-      expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "false");
-      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("From")).toHaveAttribute("aria-expanded", "true");
     });
 
     test("blurring during the debounce window does not reopen the list afterwards", async () => {

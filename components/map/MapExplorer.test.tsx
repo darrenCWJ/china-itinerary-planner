@@ -504,6 +504,15 @@ function defaultFetch(url: string) {
   if (href === PROJECTION_PATH) {
     return Promise.resolve({ ok: true, status: 200, json: async () => PROJECTION_FIXTURE });
   }
+  // Not a map asset at all: the route panel's arrival picker is an
+  // AirportInput, and any test that seeds an arrival code hands it a
+  // prefilled field. Answered explicitly so it can never fall through to the
+  // world fixture at the end of the chain — that body has no `results`, and a
+  // picker reading `undefined.length` fails whichever test happened to still
+  // be mounted when the debounce came due, not the one that caused it.
+  if (href.startsWith("/api/airports/search")) {
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ results: [] }) });
+  }
   const province = PROVINCE_FILE.exec(href);
   const body = province
     ? provinceFixture(province[1])
