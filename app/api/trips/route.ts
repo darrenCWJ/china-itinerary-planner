@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyDefaultGateways, defaultGateways } from "@/lib/gatewayDefaults";
-import { allAirports, findAirport } from "@/lib/server/airports";
+import { allAirports } from "@/lib/server/airports";
+import { refuseUnknownGateways } from "@/lib/server/gatewayGuard";
 import { ensureCatalogLoaded, resolveDestinations } from "@/lib/server/catalog";
 import { buildTripData } from "@/lib/server/planService";
 import { CreateTripSchema } from "@/lib/server/schemas";
@@ -41,17 +42,10 @@ export async function POST(req: NextRequest) {
   }
 
   const { tripName, startDate, input, month } = parsed.data;
-  // The same check /gateways makes, in the same words, for the same reason:
-  // the editor suggests real airports but stays a text field, so a typo
-  // arrives as a well-formed unknown code, and a gateway nothing can draw or
-  // name is not worth storing. Without it the two doors disagreed — a code
-  // accepted at create could never afterwards be edited, because /gateways
-  // sends both sides and would refuse the trip's own stored value.
-  for (const code of [input.arrivalAirport, input.departureAirport]) {
-    if (code != null && findAirport(code) === null) {
-      return NextResponse.json({ error: `Unknown airport code ${code}` }, { status: 400 });
-    }
-  }
+  // The same check the rebuild and /gateways make — see refuseUnknownGateways
+  // for why the three doors have to agree.
+  const refused = refuseUnknownGateways([input.arrivalAirport, input.departureAirport]);
+  if (refused) return refused;
   // Spec §5.2: the month is the fact; the season the client derived from it with
   // a northern-hemisphere table is not trusted when the month is available.
   const season = resolveTripSeason(input.season, month, input.country);
