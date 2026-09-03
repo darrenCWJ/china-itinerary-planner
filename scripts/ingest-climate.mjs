@@ -123,6 +123,11 @@ const MAGNUS_C = 243.04;
 export function pixelFor(lon, lat, grid) {
   const x = Math.floor((lon - grid.originX) / grid.resX);
   const y = Math.floor((grid.originY - lat) / grid.resY);
+  // An index has to be an index. `Math.floor` of a finite number always is,
+  // so this only rejects NaN and ±Infinity — which the range check below
+  // cannot, because every comparison against NaN is false and a NaN pixel
+  // would sail through it and read `undefined` out of the raster.
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
   if (x < 0 || x >= grid.width) return null;
   if (y < 0 || y >= grid.height) return null;
   return { x, y };
@@ -243,11 +248,12 @@ function dewPointC(tempC, relativeHumidityPct) {
  * Layout and field order are in the `SAMPLE_FIELDS` docblock. `lo` is `tasmin`
  * and `hi` is `tasmax`; the fifth block is derived, not sampled.
  *
- * A single missing month sinks the whole city, because 60 positional integers
- * carry no per-month absence marker — there is no way to write "March has no
- * cloud", and a tuple that quietly substituted something would be indis-
- * tinguishable from a measurement. The probe found 0 of 58,757 cities on
- * nodata, so this should never fire; that is a property of this CHELSA
+ * A single unwritable month sinks the whole city, because 60 positional
+ * integers carry no per-month absence marker — there is no way to write "March
+ * has no cloud", and a tuple that quietly substituted something would be
+ * indistinguishable from a measurement. That covers both a `decodeSample` null
+ * and any value that is not finite. The probe found 0 of 58,757 cities on
+ * nodata, so the first should never fire; that is a property of this CHELSA
  * release, not of the format.
  *
  * A column that is not twelve months throws instead, because that is a bug in
@@ -267,16 +273,27 @@ export function tupleFor(samples) {
     }
     return column;
   });
-  if (columns.some((column) => column.some((value) => value === null))) return null;
+  // Absence and unusability are the same answer here. A month that is not a
+  // finite number cannot be written any more than a null can: NaN and
+  // ±Infinity round to themselves and `JSON.stringify` writes both as `null`,
+  // which puts a null in the middle of a positional int tuple — the one shape
+  // this layout cannot express, and one nothing downstream would flag.
+  const unusable = (value) => value === null || !Number.isFinite(value);
+  if (columns.some((column) => column.some(unusable))) return null;
 
   const [lo, hi, precip, cloud, humidity] = columns;
   const tuple = new Array(TUPLE_LENGTH);
   for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+    // The dew point is derived, so it needs the same check again on the way
+    // out: `hurs` at exactly 0 sends `Math.log` to -Infinity and the whole
+    // expression to NaN, from finite inputs that passed the sweep above.
+    const td = dewPointC((lo[m] + hi[m]) / 2, humidity[m]);
+    if (unusable(td)) return null;
     tuple[m] = asInt(lo[m]);
     tuple[MONTHS_PER_YEAR + m] = asInt(hi[m]);
     tuple[2 * MONTHS_PER_YEAR + m] = asInt(precip[m]);
     tuple[3 * MONTHS_PER_YEAR + m] = asInt(cloud[m]);
-    tuple[4 * MONTHS_PER_YEAR + m] = asInt(dewPointC((lo[m] + hi[m]) / 2, humidity[m]));
+    tuple[4 * MONTHS_PER_YEAR + m] = asInt(td);
   }
   return tuple;
 }

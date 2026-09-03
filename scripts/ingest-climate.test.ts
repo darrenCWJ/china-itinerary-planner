@@ -148,6 +148,18 @@ describe("pixelFor", () => {
     // free but the check must not be so eager it rejects it.
     expect(pixelFor(15.64689, 78.22334, KM_GRID)).toEqual({ x: 23477, y: 693 });
   });
+
+  test("returns null for a coordinate that is not a number", () => {
+    // Every comparison against NaN is false, so a NaN coordinate passes BOTH
+    // range checks and yields {x: NaN, y: NaN} — a pixel that is not a pixel,
+    // which then reads `undefined` out of the raster and turns into a `null`
+    // in the middle of an int tuple. The range check cannot catch this; only
+    // asking whether the index is an index can.
+    expect(pixelFor(Number.NaN, 0, KM_GRID)).toBeNull();
+    expect(pixelFor(0, Number.NaN, KM_GRID)).toBeNull();
+    expect(pixelFor(Number.POSITIVE_INFINITY, 0, KM_GRID)).toBeNull();
+    expect(pixelFor(0, Number.NEGATIVE_INFINITY, KM_GRID)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -280,7 +292,7 @@ describe("tupleFor", () => {
     expect(fromMean).toBe(dewPointFor(25, 60));
   });
 
-  test("returns null for the whole city when any month is missing", () => {
+  test("returns null for the whole city when any month is missing or unusable", () => {
     // The artifact is 60 positional ints with no per-month absence marker, so
     // there is no way to write "March has no cloud". A city that cannot be
     // sampled completely is not written at all. The probe found 0 of 58,757
@@ -292,6 +304,20 @@ describe("tupleFor", () => {
       holed[field] = holed[field].map((value, m) => (m === 2 ? null : value));
       expect(tupleFor(holed)).toBeNull();
     }
+
+    // A value that is not finite is just as unwritable as a null, and quieter
+    // about it: NaN and Infinity are what Math.round returns for themselves,
+    // and JSON.stringify writes both as `null` — a null inside a positional
+    // int tuple, which nothing downstream would flag.
+    expect(JSON.stringify([1, Number.NaN, 3])).toBe("[1,null,3]");
+    expect(tupleFor(samplesOf({ pr: months(Number.NaN) }))).toBeNull();
+    expect(tupleFor(samplesOf({ clt: months(Number.POSITIVE_INFINITY) }))).toBeNull();
+
+    // And the dew point is derived, so finite inputs are not enough: humidity
+    // at exactly 0 sends Math.log to -Infinity and the whole expression to
+    // NaN. `hurs` was never sampled, so its real range is not yet known.
+    expect(tupleFor(samplesOf({ hurs: months(0) }))).toBeNull();
+    expect(tupleFor(samplesOf({ hurs: months(1) }))).not.toBeNull();
   });
 
   test("refuses a sample set that is not twelve months, rather than writing a short tuple", () => {
