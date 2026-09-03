@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findAirport } from "@/lib/server/airports";
+import { refuseUnknownGateways } from "@/lib/server/gatewayGuard";
 import { requireMember } from "@/lib/server/authz";
 import { GatewaysSchema } from "@/lib/server/schemas";
 import { DB_UNAVAILABLE, getTrip, storeMode, updateTripDataIf } from "@/lib/server/store";
@@ -44,11 +44,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
       { status: 400 }
     );
   }
-  for (const code of [parsed.data.arrivalAirport, parsed.data.departureAirport]) {
-    if (code !== null && findAirport(code) === null) {
-      return NextResponse.json({ error: `Unknown airport code ${code}` }, { status: 400 });
-    }
-  }
+  const refused = refuseUnknownGateways([parsed.data.arrivalAirport, parsed.data.departureAirport]);
+  if (refused) return refused;
 
   // Optimistic concurrency, exactly as the plan route does it: re-read and
   // re-apply if another member's write lands between our read and our

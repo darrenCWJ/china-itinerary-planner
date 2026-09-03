@@ -4,6 +4,7 @@ import { guestTripView } from "@/lib/redactTrip";
 import { buildTripData } from "@/lib/server/planService";
 import { requireMember, tripAccessFromRequest } from "@/lib/server/authz";
 import { UpdateTripSchema } from "@/lib/server/schemas";
+import { refuseUnknownGateways } from "@/lib/server/gatewayGuard";
 import { carryGateways } from "@/lib/tripGateways";
 import {
   clearScheduleChecks,
@@ -59,6 +60,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       { status: 400 }
     );
   }
+
+  // The check the other two doors make (create, PUT /gateways) — on what
+  // arrives, not on what is stored: a code the nightly refresh has since
+  // retired must not block a rebuild that never mentioned it.
+  const refused = refuseUnknownGateways([
+    parsed.data.input?.arrivalAirport,
+    parsed.data.input?.departureAirport,
+  ]);
+  if (refused) return refused;
 
   const existing = await getTrip(id);
   if (!existing) {
