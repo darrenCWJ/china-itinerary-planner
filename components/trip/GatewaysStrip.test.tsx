@@ -53,6 +53,29 @@ describe("GatewaysStrip", () => {
     expect(screen.getByLabelText("Arrive at")).toBeInTheDocument();
   });
 
+  test("typed text that names no airport cannot be saved", () => {
+    // The trap this closes: a member types a name, taps Save without picking
+    // from the list — and the tap itself blurs the field and closes the list,
+    // so it reads as a deliberate save. The picker reports null for text that
+    // names no airport, so the draft would have gone out as "no arrival
+    // airport" and silently dropped the code that was already stored.
+    const onSave = vi.fn(async () => null);
+    render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "Jorge" } });
+
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+    expect(screen.getByText(/pick an airport from the list/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave).not.toHaveBeenCalled();
+
+    // Finishing the thought releases it: a bare code is a gateway the server
+    // can check, which is exactly what this editor accepts.
+    fireEvent.change(screen.getByLabelText("Arrive at"), { target: { value: "LIM" } });
+    expect(screen.getByRole("button", { name: /save/i })).toBeEnabled();
+    expect(screen.queryByText(/pick an airport from the list/i)).not.toBeInTheDocument();
+  });
+
   test("cancel discards the draft", () => {
     const onSave = vi.fn(async () => null);
     render(<GatewaysStrip gateways={{ arrival: "LIM", departure: "CUZ" }} onSave={onSave} />);

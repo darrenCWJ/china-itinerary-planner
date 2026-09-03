@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Airport } from "@/lib/airports";
 import { IATA_CODE } from "@/lib/tripGateways";
 import { AirportInput } from "./AirportInput";
@@ -19,8 +19,16 @@ interface Props {
    * types; a new code from the parent replaces it.
    */
   value: string | null;
-  /** Fires on every change: null while the text names no airport. */
-  onChange: (pick: AirportPick | null) => void;
+  /**
+   * Fires on every change: `pick` is null while the text names no airport,
+   * and `text` is what the field now holds.
+   *
+   * The second argument is what tells an empty field apart from one holding
+   * "Jorge Chávez" — both report a null pick, and only one of them means the
+   * traveller wants no gateway. A caller that only needs the code may take
+   * one parameter and ignore it.
+   */
+  onChange: (pick: AirportPick | null, text: string) => void;
   /**
    * Accept a bare three-letter code typed without a list pick. The trip page
    * allows it (the server refuses a code the artifact lacks); the wizard does
@@ -40,13 +48,20 @@ interface Props {
  * only path that carries an `airport`. So editing the text after a pick
  * drops the pick by construction — there is no separate "was this picked"
  * flag that could fall out of sync with what the text actually says. (A list
- * pick does deliver one transient `onChange(null)` immediately before the
- * pick — from `AirportInput`'s own `onChange` of the display string, fired
- * in the same event as the pick itself. Harmless for a parent that only sets
- * state; worth knowing for one that does work per call.)
+ * pick does deliver one transient `onChange(null, displayString)` immediately
+ * before the pick — from `AirportInput`'s own `onChange` of the display
+ * string, fired in the same event as the pick itself. Harmless for a parent
+ * that only sets state, since both calls land in one batch and the pick is
+ * the last word; worth knowing for one that does work per call.)
  */
 export function AirportPicker({ label, value, onChange, allowBareCode = false, placeholder }: Props) {
   const [text, setText] = useState(value ?? "");
+  // The text as of the latest change, for the one reader that runs in the
+  // same event as the change that set it: `AirportInput.pick` fires its
+  // `onChange` (the display string) and then `onPick`, so by the time
+  // `onPick` reports, `text` state is still the pre-pick render's value and
+  // only a ref carries the string the field actually now holds.
+  const textRef = useRef(value ?? "");
   // Mirrors `value` so the block below can tell "the parent just changed
   // value" apart from "report() just moved `reported` ahead of value, and
   // the parent's own re-render (which would bring value back level with it)
@@ -69,27 +84,28 @@ export function AirportPicker({ label, value, onChange, allowBareCode = false, p
     }
   }
 
-  const report = (pick: AirportPick | null) => {
+  const report = (pick: AirportPick | null, next: string) => {
     setReported(pick?.iata ?? null);
-    onChange(pick);
+    onChange(pick, next);
   };
 
   const onText = (next: string) => {
+    textRef.current = next;
     setText(next);
     const code = next.trim().toUpperCase();
     if (code === "") {
-      report(null);
+      report(null, next);
       return;
     }
     if (allowBareCode && IATA_CODE.test(code)) {
-      report({ iata: code, airport: null });
+      report({ iata: code, airport: null }, next);
       return;
     }
-    report(null);
+    report(null, next);
   };
 
   const onPick = (airport: Airport) => {
-    report({ iata: airport.iata, airport });
+    report({ iata: airport.iata, airport }, textRef.current);
   };
 
   return (
