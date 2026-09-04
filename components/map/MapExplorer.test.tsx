@@ -1098,7 +1098,7 @@ describe("MapExplorer", () => {
   });
 
   test("never lets an aborted country's answer land on the country that replaced it", async () => {
-    // Five of the six legs swallow their own rejection, so an abort resolves
+    // All six legs swallow their own rejection, so an abort resolves
     // the combined promise instead of rejecting it. Without a check on the
     // signal before the write, Peru's effect lands Peru's answer — cities
     // emptied, "unavailable" set — on top of Germany's freshly cleared state,

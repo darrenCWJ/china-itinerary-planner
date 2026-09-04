@@ -507,7 +507,7 @@ export function MapExplorer({
           ).catch(() => null),
     ])
       .then(([provinceFile, manifest, catalogRes, shardRes, enrichment, climateRes]) => {
-        // Five of the six legs swallow their own rejection, so an abort
+        // All six legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -875,10 +875,11 @@ export function MapExplorer({
           )}
         </div>
         {/*
-          §10.1's layer toggle. Every country this pane draws has both this
-          toggle and the marker-colour legend (`FitLegend`) under the map now
-          — the toggle in the header, the legend under the map — and the two
-          never compete for a slot, because they never sit in the same one.
+          §10.1's layer toggle. Every country this pane draws has the
+          marker-colour legend (`FitLegend`) under the map, and any country
+          with airports has this toggle in the header — `canDrawAirports` is
+          also false for a country with no airport rows of its own — so the two
+          sit in different places and never compete for a slot.
 
           `aria-pressed` with one fixed name, rather than the globe button's
           swapping label. That button chooses between two renderers and neither
