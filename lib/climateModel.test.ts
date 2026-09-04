@@ -26,7 +26,7 @@ import type { ChinaRegion } from "./types";
  * The fit model is tested against `data/climate-anchors.json`: real CHELSA
  * rows for spec §9.5's nine China anchors and for the symptom cities §9.4's
  * four fixes are named after, sampled by `scripts/sample-climate-anchors.mjs`
- * from the cached rasters. Nineteen cities, about 21 KB of fixture, so these
+ * from the cached rasters. Twenty-three cities, about 26 KB of fixture, so these
  * tests never touch `public/` or a raster.
  *
  * Each of the seven brief tests is named by the SYMPTOM that proves its fix,
@@ -102,8 +102,9 @@ describe("fix 1 — cloud cover", () => {
    * Jun–Sep at 34–36% and Jan–Mar at 63–64% — the garúa months are the
    * CLEAREST of the year — and the same inversion holds along the whole
    * coast (Callao 39 vs 58, Trujillo 23 vs 55, Ica 12 vs 55; only Arica in
-   * Chile shows winter cloud). The probe that vouched for fix 1 sampled
-   * January alone.
+   * Chile shows winter cloud — all four are fixture rows now, and the test
+   * below reads them). The probe that vouched for fix 1 sampled January
+   * alone.
    *
    * And once cloud points the wrong way, nothing else in the stored row
    * separates the season. The T−td depression is 5–6 °C in EVERY month of
@@ -153,6 +154,28 @@ describe("fix 1 — cloud cover", () => {
     for (const m of MONTHS) {
       expect(penaltyOf(overcast, wuhan.elev, m, off).total).toBe(penaltyOf(clear, wuhan.elev, m, off).total);
     }
+  });
+
+  test("the coast-wide inversion the tripwire rests on is in the fixture, not only in a comment", () => {
+    // Mean cloud in the garúa months against the summer months, off the
+    // sampled rows. For the Peruvian coast winter reads CLEARER; Arica, in
+    // Chile, is the coastal-desert city whose winter reads cloudier — which
+    // is what makes the inversion a fact about CHELSA's Peruvian coast and
+    // not about coastal deserts. If a re-sample ever flips one of these, the
+    // rationale above is what changes, and in the open.
+    const WINTER = [JUN, JUL, AUG, SEP];
+    const SUMMER = [JAN, FEB, MAR];
+    const meanCloud = (c: FixtureCity, months: number[]): number =>
+      months.reduce((sum, m) => sum + climateMonth(c.row, m).cloud, 0) / months.length;
+
+    for (const key of ["lima", "callao", "trujillo", "ica"]) {
+      const c = city(key);
+      expect(c.role, key).toBe("symptom");
+      expect(meanCloud(c, WINTER), `${c.name}: winter cloud vs summer`).toBeLessThan(meanCloud(c, SUMMER));
+    }
+    const arica = city("arica");
+    expect(arica.role).toBe("symptom");
+    expect(meanCloud(arica, WINTER)).toBeGreaterThan(meanCloud(arica, SUMMER));
   });
 });
 
