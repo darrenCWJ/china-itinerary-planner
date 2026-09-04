@@ -134,8 +134,8 @@ describe("isChinaRegion", () => {
       expect(fitForRegion(group.id, 6), group.id).toBe(NEUTRAL_FIT);
     }
 
-    // Half two, the new seam. HOW Plan 6 aggregates a region's cities into one
-    // verdict is its decision; all this pins is that a verdict handed in is
+    // Half two, the new seam. Plan 6 declined to aggregate (P6-1); the seam
+    // stays uncalled. All this pins is that a verdict handed in is
     // handed back, and that being answerable did not make the id Chinese.
     const bands: MonthFit[] = ["great", "ok", "poor", "avoid"];
     const derived: DerivedRegionFits = new Map(
@@ -383,8 +383,9 @@ describe("the derived branch sits below curated China", () => {
     // 412 rows carries an admin-1 name that is one of China's seven — they
     // are "Sichuan", "Guangdong", "Beijing" — so `isChinaPlace` is false for
     // every Chinese catalog city on the map. Gate the derived branch on it
-    // and all 412 change colour the day Plan 6 ships a CN climate shard,
-    // which is precisely the regression §9.5's success test exists to catch.
+    // and all 412 would change colour if a caller ever handed the map CN's
+    // climate shard — which `MapExplorer` never fetches (P6-5) — which is
+    // precisely the regression §9.5's success test exists to catch.
     const mianyang = city({
       id: "G1800627",
       name: "Mianyang",
@@ -420,8 +421,8 @@ describe("the derived branch sits below curated China", () => {
   test("an id the lookup does not hold still resolves to unknown", () => {
     const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
 
-    // No lookup at all — every caller in the tree today, and every call until
-    // Plan 6 wires one in.
+    // No lookup at all — every caller in the tree today, and what
+    // `RouteMap` and `MapExplorer` pass for a place with no row.
     expect(fitForPlace(cusco, JUNE)).toBe(NEUTRAL_FIT);
     // A lookup that holds some other city.
     expect(fitForPlace(cusco, JUNE, new Map([["G3936456", anchor("lima")]]))).toBe(NEUTRAL_FIT);

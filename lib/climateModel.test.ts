@@ -26,7 +26,7 @@ import type { ChinaRegion } from "./types";
  * The fit model is tested against `data/climate-anchors.json`: real CHELSA
  * rows for spec §9.5's nine China anchors and for the symptom cities §9.4's
  * four fixes are named after, sampled by `scripts/sample-climate-anchors.mjs`
- * from the cached rasters. Twenty-three cities, about 26 KB of fixture, so these
+ * from the cached rasters. Twenty-three cities, about 23 KB of fixture, so these
  * tests never touch `public/` or a raster.
  *
  * Each of the seven brief tests is named by the SYMPTOM that proves its fix,
@@ -63,7 +63,7 @@ interface FixtureCity {
 
 const ROLES = new Set(["tuning", "holdout", "symptom"]);
 
-/** The fixture, validated once: nineteen rows of exactly 60 integers. */
+/** The fixture, validated once: twenty-three rows of exactly 60 integers. */
 const CITIES: FixtureCity[] = fixture.cities.map((city) => {
   if (!ROLES.has(city.role)) throw new Error(`${city.key}: unknown role ${city.role}`);
   if (city.row.length !== 60 || !city.row.every((v) => Number.isSafeInteger(v))) {

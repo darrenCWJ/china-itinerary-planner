@@ -12,15 +12,16 @@ import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
 import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
 import { DEFAULT_PREFS, PREFS_COOKIE, serializePrefsCookie, type UserPrefs } from "@/lib/prefs";
 import { PE_TOPOLOGY } from "./countryFixture";
-import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { FIT_LEGEND_LABEL } from "./FitLegend";
+import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { fitForPlace, fitForRegion, FIT_COLORS, type MapPlace } from "./mapTypes";
 
 /**
  * What is asserted here is the coordination the component exists for: which
  * level is showing, that picking a country at the world level hands the code up
  * and drops back to the country level, and that a country with no detail level
- * costs no China assets. Layout, tint and the legend are visual.
+ * costs no China assets — and, since Plan 6, the legend's own presence and
+ * absence (`describe("the legend")` below). Layout and tint stay visual.
  */
 
 /**

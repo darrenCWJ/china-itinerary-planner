@@ -343,9 +343,10 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
    * (`buildClimateIndex`), so this surface and `MapExplorer` cannot disagree
    * about a stop's verdict. The city shard is fetched for ONE field — `elev`
    * — because the climate row does not carry it and `Destination` has no
-   * slot for it, and at Cusco's 3,312 m it is worth a whole band. Both files
-   * are served with a day of cache (next.config.ts), so the second trip page
-   * that opens on the same country pays nothing.
+   * slot for it, and at Cusco's 3,312 m it is worth a whole band. The city
+   * shard is served with six hours of cache and the climate file with a day
+   * (next.config.ts), so the second trip page that opens on the same country
+   * pays nothing.
    *
    * Skipped for China (§9.5): `fitForPlace` never reads a derived row for a
    * Chinese place, and the shard would be 412 rows nothing consults.
