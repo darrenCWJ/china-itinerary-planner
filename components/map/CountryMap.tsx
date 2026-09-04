@@ -1,35 +1,13 @@
 "use client";
 
-import { useMemo, useRef } from "react";
-import { feature } from "topojson-client";
-import type { Topology, GeometryCollection } from "topojson-specification";
 import type { Airport } from "@/lib/airports";
 import type { ProjectionEntry } from "@/lib/countryProjection";
-import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
-import { provinceByAdcode, REGION_META } from "@/lib/provinces";
 import type { ProvinceFile } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
-import type { ChinaRegion } from "@/lib/types";
 import { CountryLevel } from "./CountryLevel";
 import { CountryPlaceList } from "./CountryPlaceList";
-import {
-  buildFitProjection,
-  createHoverReporter,
-  makeProjector,
-  transformForFeatures,
-  useMarkersVisible,
-  MAP_VIEW_H,
-  MAP_VIEW_W,
-  ZOOM_MS,
-  type HoverPos,
-} from "./mapShared";
-import {
-  FIT_COLORS,
-  FIT_FILL_OPACITY,
-  fitForPlace,
-  fitForRegion,
-  type MapPlace,
-} from "./mapTypes";
+import type { HoverPos } from "./mapShared";
+import type { DerivedClimateIndex, MapPlace } from "./mapTypes";
 
 /**
  * Country level of the two-level picker (spec §6), and now only the dispatcher
@@ -52,13 +30,6 @@ import {
  * climate off them (§6.4: "preserved verbatim"). What they stopped being is
  * the map's zoom level.
  */
-
-interface ProvinceProps {
-  adcode: number;
-  name: string;
-}
-
-type ProvinceFeature = GeoJSON.Feature<GeoJSON.Geometry, ProvinceProps>;
 
 interface LevelProps {
   places: MapPlace[];
@@ -142,6 +113,13 @@ export interface CountryMapProps extends LevelProps {
    * has neither airports nor a control to toggle them with.
    */
   showAirports?: boolean;
+  /**
+   * The open country's derived climate, for `CountryLevel`'s markers and its
+   * card's climate line (§9.4). Threaded, not held: `MapExplorer` and
+   * `RouteMap` each build their own from the fetches they already make.
+   * Optional because the list-only branch below has no marker to colour.
+   */
+  climate?: DerivedClimateIndex;
 }
 
 export function CountryMap({
@@ -151,6 +129,7 @@ export function CountryMap({
   readOnly = false,
   airports,
   showAirports,
+  climate,
   ...level
 }: CountryMapProps) {
   if (provinces) {
@@ -172,6 +151,7 @@ export function CountryMap({
         readOnly={readOnly}
         airports={airports}
         showAirports={showAirports}
+        climate={climate}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
       />

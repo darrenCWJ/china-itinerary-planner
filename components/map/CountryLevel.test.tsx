@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
+import { climateMonth, monthFit } from "@/lib/climateModel";
 import { COUNTRY_DETAIL, detailFor } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import {
@@ -9,6 +11,7 @@ import {
   ZOOM_FILL,
   type MapTransform,
 } from "@/lib/mapTransform";
+import { REGION_MONTHS } from "@/lib/months";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { unitLabel, type RegionId } from "@/lib/regionScheme";
 import FO_PROVINCES from "@/public/provinces/FO.json";
@@ -31,7 +34,7 @@ import {
   peFileWith,
 } from "./countryFixture";
 import { MAP_VIEW_H, MAP_VIEW_W, ZOOM_MS } from "./mapShared";
-import type { MapPlace } from "./mapTypes";
+import { FIT_COLORS, FIT_LABELS, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
 
 /**
  * The generic country level: the map 245 countries never had.
@@ -2040,5 +2043,67 @@ describe("CountryLevel airport agreement", () => {
     expect(container.querySelector("[data-main-airport]")!.textContent).toBe(
       "Main airport: MED · 20 km"
     );
+  });
+});
+
+/**
+ * §9.4's fit colours, worldwide: the marker reads the index the level was
+ * handed, and §5.3.3's card carries the climate line in the slot Plan 3
+ * reserved — above the airport line, because the weather is the thing the
+ * verdict beside it is about.
+ */
+describe("CountryLevel derived climate", () => {
+  const JUNE = 6;
+  const CUSCO_ROW = fixture.cities.find((c) => c.key === "cusco")!.row;
+  const climate: DerivedClimateIndex = new Map([[CUSCO.id, { row: CUSCO_ROW, elev: 3312 }]]);
+  const cuscoJune = monthFit(CUSCO_ROW, 3312, JUNE - 1);
+
+  test("colours a marker by its derived verdict, and leaves a place with no row grey", () => {
+    const { container } = renderLevel({ climate, month: JUNE });
+    // Armed: the verdict is not the absence colour, so a level that ignored
+    // the index would fail on Cusco and not merely agree on Lima.
+    expect(FIT_COLORS[cuscoJune]).not.toBe(FIT_COLORS.unknown);
+    expect(circleFor(container, "cusco", "data-dot").getAttribute("fill")).toBe(FIT_COLORS[cuscoJune]);
+    expect(circleFor(container, "lima", "data-dot").getAttribute("fill")).toBe(FIT_COLORS.unknown);
+  });
+
+  test("the card carries the climate line, above the airport line, and its chip agrees with the marker", () => {
+    const { container } = renderLevel({
+      climate,
+      month: JUNE,
+      airports: [airportNear(CUSCO, "CUZ", 30)],
+    });
+    fireEvent.click(container.querySelector('[data-place="cusco"]')!);
+
+    const june = climateMonth(CUSCO_ROW, JUNE - 1);
+    const facts = container.querySelector("[data-place-facts]")!;
+    expect(facts.querySelector("[data-climate]")!.textContent).toBe(`${june.lo}°–${june.hi}°C typical`);
+    expect(facts.firstElementChild).toHaveAttribute("data-climate");
+    expect(facts.lastElementChild).toHaveAttribute("data-main-airport");
+    expect(screen.getByRole("dialog", { name: "Cusco" }).textContent).toContain(FIT_LABELS[cuscoJune]);
+  });
+
+  test("no row, no line — the slot stays empty rather than blank", () => {
+    const { container } = renderLevel({ climate, month: JUNE });
+    fireEvent.click(container.querySelector('[data-place="lima"]')!);
+    expect(screen.getByRole("dialog", { name: "Lima" })).toBeInTheDocument();
+    expect(container.querySelector("[data-climate]")).toBeNull();
+    expect(container.querySelector("[data-place-facts]")!.textContent).toBe("");
+  });
+
+  test("a Chinese place reads the curated table on the card and the marker, never a derived row", () => {
+    // Drawn on Peru's fixture geometry, which is fine: the place's OWN
+    // country decides which table it reads, not the level's (RouteMap is
+    // multi-country). The row in the lookup is real and is ignored (§9.5).
+    const beijing = place({ id: "beijing", name: "Beijing", country: "CN", region: "North", lon: -78, lat: -12 });
+    const { container } = renderLevel({
+      places: [beijing],
+      climate: new Map([[beijing.id, { row: CUSCO_ROW, elev: 3312 }]]),
+      month: 10,
+    });
+    const october = REGION_MONTHS.North[9];
+    expect(circleFor(container, "beijing", "data-dot").getAttribute("fill")).toBe(FIT_COLORS[october.fit]);
+    fireEvent.click(container.querySelector('[data-place="beijing"]')!);
+    expect(container.querySelector("[data-climate]")!.textContent).toBe(`${october.lo}°–${october.hi}°C typical`);
   });
 });

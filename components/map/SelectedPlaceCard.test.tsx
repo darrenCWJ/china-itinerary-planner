@@ -1,12 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
+import { monthFit } from "@/lib/climateModel";
 import { parseProvinceTopology } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
 import { CountryLevel } from "./CountryLevel";
 import { PE_ENTRY, peFileWith } from "./countryFixture";
 import { MAP_VIEW_H } from "./mapShared";
 import { SelectedPlaceCard } from "./SelectedPlaceCard";
-import type { MapPlace } from "./mapTypes";
+import { FIT_LABELS, type MapPlace } from "./mapTypes";
 
 /**
  * §5.3.3: the surface `PlacePopup` is not.
@@ -198,6 +200,42 @@ describe("SelectedPlaceCard", () => {
     expect(container.querySelector("[data-place-facts]")!.textContent).toBe(
       "Main airport: LIM · 12 km"
     );
+  });
+
+  test("the fit chip reads the derived verdict when the level hands it the index", () => {
+    // The chip and the marker it opened from must agree. The level colours
+    // the marker through `fitForPlace(place, month, climate)`; a card that
+    // called `fitForPlace(place, month)` would say "No data" over a green pin.
+    const row = fixture.cities.find((c) => c.key === "cusco")!;
+    const cusco: MapPlace = {
+      id: "G3941584",
+      kind: "catalog",
+      name: "Cusco",
+      localName: null,
+      province: "Cuzco Department",
+      country: "PE",
+      region: "Cuzco Department",
+      lat: -13.53188,
+      lon: -71.96701,
+      population: 428_450,
+      level: "prefecture",
+      attractionCount: 0,
+      blurb: null,
+    };
+    const JUNE = 6;
+
+    const withIndex = render(
+      <SelectedPlaceCard
+        {...cardProps({ place: cusco, month: JUNE })}
+        climate={new Map([[cusco.id, { row: row.row, elev: row.elev }]])}
+      />
+    );
+    expect(withIndex.getByText(FIT_LABELS[monthFit(row.row, row.elev, JUNE - 1)])).toBeInTheDocument();
+    expect(withIndex.queryByText("No data")).not.toBeInTheDocument();
+    withIndex.unmount();
+
+    const without = render(<SelectedPlaceCard {...cardProps({ place: cusco, month: JUNE })} />);
+    expect(without.getByText("No data")).toBeInTheDocument();
   });
 });
 
