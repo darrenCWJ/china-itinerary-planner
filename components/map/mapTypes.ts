@@ -360,6 +360,17 @@ export interface PlaceClimate {
  * A month outside 1–12 throws on both branches, exactly as `fitForPlace`
  * does: `REGION_MONTHS[region][12]` is `undefined` and `.lo` on it is a
  * TypeError, and `climateMonth` refuses the index outright.
+ *
+ * The derived `lo`/`hi` are the row as sampled — the 1981–2010 grid
+ * normals, UNCORRECTED. The verdict beside them is not: `fitForPlace` hands
+ * the same row to `lib/climateModel.ts`, whose fix 4 warms the daily high by
+ * up to 4 °C at altitude before banding, so at Cusco the badge is computed
+ * as if the day were warmer than the number printed next to it. That is
+ * deliberate (decision P6-7). The number is the measurement and the verdict
+ * is the model; printing the corrected high would present a modelled
+ * adjustment as a reading, and it would falsify spec §9.7's note — "mountain
+ * towns above 2,000 m typically read about 3–4 °C colder than they are" —
+ * which is the disclosure this asymmetry is made under.
  */
 export function placeClimateFor(
   place: MapPlace,

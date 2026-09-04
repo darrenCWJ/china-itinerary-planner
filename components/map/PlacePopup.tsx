@@ -1,15 +1,15 @@
 "use client";
 
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
-import { bandsIn, highlightFor, regionMonthClimate } from "@/lib/months";
+import { bandsIn, highlightFor } from "@/lib/months";
 import {
   FIT_COLORS,
   FIT_LABELS,
   fitForPlace,
   formatPopulation,
-  isChinaPlace,
-  isChinaRegion,
   originLineFor,
+  placeClimateFor,
+  type DerivedClimateIndex,
   type MapPlace,
 } from "./mapTypes";
 
@@ -27,26 +27,28 @@ interface Props {
    * pick a `seasonNotes` line was northern for the same reason.
    */
   country: string;
+  /**
+   * The open country's derived climate, keyed by `MapPlace.id` (§9.4), for
+   * every place whose country is not China. Optional: the trip map's markers
+   * have no hover card, and every caller before Plan 6 passed nothing. A
+   * Chinese place never reads it (§9.5) — `chinaBaseline.test.tsx` renders
+   * this component with and without one and pins the same bytes.
+   */
+  climate?: DerivedClimateIndex;
 }
 
 const POPUP_W = 260;
 
 /** Hover card following the cursor over a map marker. */
-export function PlacePopup({ place, month, position, containerWidth, country }: Props) {
+export function PlacePopup({ place, month, position, containerWidth, country, climate }: Props) {
   const profile = getCountryBaseProfile(country);
-  const fit = fitForPlace(place, month);
-  // regionMonthClimate is China-only data (see lib/months.ts); a place from
-  // outside China's seven regions has no row to read, so this degrades to no
-  // climate line instead of throwing.
-  //
-  // Keyed off the place's own country, not the open one, and not off the
-  // region label alone: Botswana's Central District is spelled exactly like
-  // one of China's seven, and reading the label by itself put Chongqing's
-  // temperatures on a Botswanan city. See `isChinaPlace`.
-  const climate =
-    isChinaPlace(place) && isChinaRegion(place.region)
-      ? regionMonthClimate(place.region, month)
-      : null;
+  const fit = fitForPlace(place, month, climate);
+  // Curated for a Chinese place in one of the seven, derived for a place
+  // outside China with a row in the lookup, nothing otherwise — one resolver
+  // shared with `SelectedPlaceCard`, so the two surfaces cannot disagree.
+  // Keyed off the place's own country, not the open one: Botswana's Central
+  // District is spelled exactly like one of China's seven.
+  const typical = placeClimateFor(place, month, climate);
   const season = profile.seasonOfMonth(month);
   const seasonNote = place.seasonNotes?.[season];
   const highlight = place.kind === "curated" ? highlightFor(place.id, month) : undefined;
@@ -96,15 +98,15 @@ export function PlacePopup({ place, month, position, containerWidth, country }: 
           aria-hidden
         />
         <span className="text-xs font-semibold">{FIT_LABELS[fit]}</span>
-        {climate && (
+        {typical && (
           <span className="text-xs text-[var(--ink-2)]">
-            {climate.lo}°–{climate.hi}°C typical
+            {typical.lo}°–{typical.hi}°C typical
           </span>
         )}
       </div>
 
-      {climate?.note && !seasonNote && (
-        <p className="mt-1 text-xs text-[var(--ink-2)]">{climate.note}</p>
+      {typical?.note && !seasonNote && (
+        <p className="mt-1 text-xs text-[var(--ink-2)]">{typical.note}</p>
       )}
       {seasonNote && <p className="mt-1 text-xs text-[var(--ink-2)]">{seasonNote}</p>}
       {highlight && (
