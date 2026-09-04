@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
 import { climateMonth, monthFit } from "@/lib/climateModel";
+import { climateGapNote } from "@/lib/climateNote";
 import { monthFitForSeasons, REGION_MONTHS, type MonthFit } from "@/lib/months";
 import { regionSchemeFor } from "@/lib/regionScheme";
 import type { ProvinceUnit } from "@/lib/provinceTopology";
@@ -690,5 +691,14 @@ describe("airports are never trip stops, and the compiler is what says so", () =
 
     expect(places).toHaveLength(1);
     expect(airports).toHaveLength(1);
+  });
+});
+
+describe("the honesty note agrees with the fit resolution about which country is curated", () => {
+  test("lib/climateNote's China is mapTypes' China", () => {
+    // Two literals, two layers: lib/ cannot import components/, so
+    // lib/climateNote.ts restates "CN". This is the one place they meet.
+    expect(climateGapNote(CLIMATE_COUNTRY, 412)).toEqual([]);
+    expect(climateGapNote("PE", 750)).toHaveLength(1);
   });
 });
