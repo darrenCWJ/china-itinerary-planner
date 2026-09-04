@@ -2017,6 +2017,12 @@ describe("the legend", () => {
     const legend = screen.getByRole("list", { name: FIT_LEGEND_LABEL });
     expect(legend.textContent).toContain("Great time");
     expect(legend.textContent).toContain("No data");
+    // Under the MAP, not under the 750-chip list that is part of the level:
+    // the legend and the note both precede the list's filter box in the DOM.
+    const filter = screen.getByPlaceholderText(/^Filter /);
+    expect(legend.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const note = screen.getByRole("note", { name: "About these notes" });
+    expect(note.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   test("does not appear over the list-only fallback, which has no colours to read", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
@@ -828,6 +828,19 @@ export interface CountryLevelProps {
    * `placeClimateFor` both gate on the place's own country.
    */
   climate?: DerivedClimateIndex;
+  /**
+   * What the caller wants drawn directly under the map and above the place
+   * list: the picker's legend, its zoom caption and its honesty note.
+   *
+   * A slot rather than three props, because this level should not know
+   * what the chrome says. And a slot HERE rather than markup a caller
+   * appends after the level, because the list is part of this level's own
+   * markup — §5.2's spine sits under its map — so anything appended after
+   * the level lands under 750 chips instead of under the map, which is
+   * where a browser found the legend on the first look. `RouteMap` passes
+   * nothing.
+   */
+  belowMap?: ReactNode;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -845,6 +858,7 @@ export function CountryLevel({
   airports = NO_AIRPORTS,
   showAirports = false,
   climate = NO_CLIMATE,
+  belowMap,
   onTogglePlace,
   onHoverPlace,
 }: CountryLevelProps) {
@@ -1567,6 +1581,8 @@ export function CountryLevel({
           </SelectedPlaceCard>
         )}
       </div>
+
+      {belowMap !== undefined && <div data-below-map="">{belowMap}</div>}
 
       <div className="mt-4">
         <CountryPlaceList

@@ -2108,3 +2108,20 @@ describe("CountryLevel derived climate", () => {
     expect(container.querySelector("[data-climate]")!.textContent).toBe(`${october.lo}°–${october.hi}°C typical`);
   });
 });
+
+describe("CountryLevel belowMap slot", () => {
+  test("renders the caller's content between the map and the list", () => {
+    const { container } = renderLevel({ belowMap: <p data-testid="under-map">under the map</p> });
+    const slot = container.querySelector("[data-below-map]");
+    expect(slot).not.toBeNull();
+    expect(slot!.textContent).toBe("under the map");
+    // Directly after the map's container, directly before the list's.
+    expect(slot!.previousElementSibling!.querySelector("svg")).not.toBeNull();
+    expect(slot!.nextElementSibling!.querySelector("input")).not.toBeNull();
+  });
+
+  test("renders no wrapper when nothing is passed", () => {
+    const { container } = renderLevel();
+    expect(container.querySelector("[data-below-map]")).toBeNull();
+  });
+});

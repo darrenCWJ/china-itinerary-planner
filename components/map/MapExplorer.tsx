@@ -390,9 +390,10 @@ export function MapExplorer({
    * Whether §10.1's toggle has anything to offer — three conditions, and each
    * one is a rendering where the button would be a control over nothing.
    *
-   * The legend beside it sets a related rule, not this one: it is gated on the
-   * geometry (`provinces !== null`), never on the markers or the climate, so
-   * "No data" is explained even for a country whose climate file is missing.
+   * The legend beside it sets a related rule, not this one: it is drawn
+   * inside the level, under the map, so it exists exactly where the
+   * geometry does and "No data" is explained even for a country whose
+   * climate file is missing.
    * This toggle follows the same idea from the other side — a control over
    * nothing is worse than a missing one — which is also why the world level's
    * globe button is withdrawn under reduced motion rather than left offering a
@@ -938,6 +939,25 @@ export function MapExplorer({
           // governs what the map draws, never what the card knows.
           showAirports={showAirports}
           climate={climate}
+          // Under the map, above the list — see `CountryLevel.belowMap` for why
+          // this is a slot and not three siblings after the level. The legend
+          // is drawn for every country whose geometry loaded, climate or no
+          // climate, because "No data" is a colour that needs explaining too;
+          // the note (§9.7) is `climateGapNote`'s lines — `[]` for China and
+          // for a country that drew no derived row, and `GapNote` renders
+          // nothing for `[]`. Neither reaches the list-only fallback, which
+          // has no marker to explain.
+          belowMap={
+            <>
+              <FitLegend />
+              {caption && (
+                <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
+                  {caption}
+                </p>
+              )}
+              <GapNote lines={climateGapNote(countryCode, climate.size)} />
+            </>
+          }
           onZoomRegion={showRegion}
           onTogglePlace={togglePlace}
           onHoverPlace={(place, pos) =>
@@ -955,32 +975,6 @@ export function MapExplorer({
           />
         )}
       </div>
-
-      {/*
-        The key, under the map it explains. Gated on the geometry rather than
-        on the climate: a country whose climate file 404s still draws grey
-        pins, and "No data" is a colour the reader needs explained too.
-      */}
-      {provinces !== null && <FitLegend />}
-
-      {caption && (
-        <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
-          {caption}
-        </p>
-      )}
-
-      {/*
-        §9.7's honesty surface, through the note the tip surfaces already use
-        rather than a second one. Lines, not a country: `GapNote` must not
-        resolve the artifact itself, and `climateGapNote` answers `[]` for
-        China and for a country that drew no derived row — so this renders
-        nothing exactly where there is nothing to qualify.
-
-        Gated on the geometry as the legend is: with the list-only fallback
-        there is no coloured pin and no temperature on screen, so there is
-        nothing to qualify.
-      */}
-      <GapNote lines={climateGapNote(countryCode, provinces === null ? 0 : climate.size)} />
 
       <div className="mt-4 border-t border-dashed border-[var(--line-1)] pt-4">
         <MonthTimeline month={month} onMonth={handleMonth} country={countryCode} />
