@@ -974,8 +974,12 @@ export function MapExplorer({
         resolve the artifact itself, and `climateGapNote` answers `[]` for
         China and for a country that drew no derived row — so this renders
         nothing exactly where there is nothing to qualify.
+
+        Gated on the geometry as the legend is: with the list-only fallback
+        there is no coloured pin and no temperature on screen, so there is
+        nothing to qualify.
       */}
-      <GapNote lines={climateGapNote(countryCode, climate.size)} />
+      <GapNote lines={climateGapNote(countryCode, provinces === null ? 0 : climate.size)} />
 
       <div className="mt-4 border-t border-dashed border-[var(--line-1)] pt-4">
         <MonthTimeline month={month} onMonth={handleMonth} country={countryCode} />

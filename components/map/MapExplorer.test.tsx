@@ -2022,7 +2022,8 @@ describe("the legend", () => {
   test("does not appear over the list-only fallback, which has no colours to read", async () => {
     // "It reads the marker colours, so it appears only where there are
     // markers to read" — the rule this file's own comments have carried since
-    // the China legend it describes was lost with ChinaLevel.
+    // the China legend it describes was lost with ChinaLevel. The honesty
+    // note follows the same gate, so it is asserted absent right alongside it.
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) =>
@@ -2035,6 +2036,7 @@ describe("the legend", () => {
     await settle();
     expect(screen.queryByRole("group", { name: "Map of Peru" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: FIT_LEGEND_LABEL })).not.toBeInTheDocument();
+    expect(screen.queryByRole("note", { name: "About these notes" })).not.toBeInTheDocument();
   });
 });
 

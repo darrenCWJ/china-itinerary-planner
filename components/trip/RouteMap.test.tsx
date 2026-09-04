@@ -747,4 +747,23 @@ describe("the trip map colours its stops by the trip country's climate", () => {
       container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
     ).toBe(FIT_COLORS.unknown);
   });
+
+  test("a city shard that 404s while the climate file answers still colours the stop — without the correction", async () => {
+    // The deliberate divergence from MapExplorer, which builds no index in
+    // this case: here the stops come from the resolve API, not the shard,
+    // so they are drawn regardless, and a verdict without the lapse-rate
+    // correction is still a verdict. Pinned so an "align the two maps" edit
+    // cannot erase the decision silently.
+    stubFetch((url: string) =>
+      String(url) === "/cities/PE.json" ? answer({}, 404) : tripFetch(String(url))
+    );
+    const { container } = renderJune();
+    await settle();
+    const uncorrected = monthFit(CUSCO_ROW, null, JUNE - 1);
+    expect(uncorrected).not.toBe(monthFit(CUSCO_ROW, 3312, JUNE - 1));
+    expect(FIT_COLORS[uncorrected]).not.toBe(FIT_COLORS.unknown);
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[uncorrected]);
+  });
 });

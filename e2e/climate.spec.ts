@@ -11,7 +11,6 @@ import { test, expect, type Page } from "@playwright/test";
  * level's country list to a coloured pin in another country.
  */
 
-const UNKNOWN = "#8a939f";
 /** `FIT_COLORS` less `unknown` — the four colours that are a verdict. */
 const VERDICT_COLOURS = new Set(["#2f7d54", "#b98a2f", "#8f9bab", "#c93b2e"]);
 const LEGEND = { name: "What the marker colours mean" };
@@ -93,7 +92,8 @@ test("China keeps its curated table, and gets no derived-climate note", async ({
   await expect(tooltip).toContainText("North China");
   await expect(tooltip).toContainText("°C typical");
 
-  // And a curated pin is still a curated colour, never the derived grey.
+  // And a curated pin is a verdict colour — never the derived grey, and
+  // never a missing fill.
   const fill = await page.locator('[data-place="beijing"] circle[data-dot]').getAttribute("fill");
-  expect(fill).not.toBe(UNKNOWN);
+  expect(fill !== null && VERDICT_COLOURS.has(fill), `curated pin colour ${fill}`).toBe(true);
 });
