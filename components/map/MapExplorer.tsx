@@ -390,11 +390,13 @@ export function MapExplorer({
    * Whether §10.1's toggle has anything to offer — three conditions, and each
    * one is a rendering where the button would be a control over nothing.
    *
-   * The legend beside it already sets the rule: it "reads the marker colours,
-   * so it appears only where there are markers to read", and the world level's
+   * The legend beside it sets a related rule, not this one: it is gated on the
+   * geometry (`provinces !== null`), never on the markers or the climate, so
+   * "No data" is explained even for a country whose climate file is missing.
+   * This toggle follows the same idea from the other side — a control over
+   * nothing is worse than a missing one — which is also why the world level's
    * globe button is withdrawn under reduced motion rather than left offering a
-   * view that render would refuse. A toggle whose click changes no pixel is
-   * worse than a missing one, because it reads as a broken feature.
+   * view that render would refuse.
    *
    * The first two clauses are `CountryMap`'s own dispatch, restated: China
    * renders `ChinaLevel`, which §9.5 freezes and which has no layer at all; a
@@ -411,7 +413,8 @@ export function MapExplorer({
    * Everything the open country's map needs: its admin-1 geometry — China's
    * curated asset, or the build's per-country file for everyone else — the
    * frame that geometry is drawn in, the Wikidata catalog's cities for that
-   * country, and the GeoNames shard plus its enrichment.
+   * country, the GeoNames shard plus its enrichment, and, for every country
+   * but China, its climate normals (§9.4).
    *
    * Keyed on `countryCode`, which it was not before. The old array was
    * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
@@ -491,8 +494,9 @@ export function MapExplorer({
       // The open country's climate normals (§9.4), for every country but the
       // one whose month table is hand-authored: `fitForPlace` never reads a
       // derived row for a Chinese place (§9.5), so CN.json's 412 rows would be
-      // 20 KB per open that nothing consults. `fetchClimateShard` takes a
-      // fetch rather than a signal — lib/rates.ts's pattern — so the abort is
+      // 24 KB gzipped (78 KB raw) per open that nothing consults.
+      // `fetchClimateShard` takes a fetch rather than a signal — lib/rates.ts's
+      // pattern — so the abort is
       // wrapped in. Swallows its own rejection like the shard leg above it: a
       // country with no climate file draws grey pins, which is the absence of
       // a claim and not an outage.
@@ -871,9 +875,10 @@ export function MapExplorer({
           )}
         </div>
         {/*
-          §10.1's layer toggle, in the slot the legend occupies for China —
-          the two can never both be drawn, because a curated country has no
-          layer to toggle and the other 245 have no colour legend to read.
+          §10.1's layer toggle. Every country this pane draws has both this
+          toggle and the marker-colour legend (`FitLegend`) under the map now
+          — the toggle in the header, the legend under the map — and the two
+          never compete for a slot, because they never sit in the same one.
 
           `aria-pressed` with one fixed name, rather than the globe button's
           swapping label. That button chooses between two renderers and neither

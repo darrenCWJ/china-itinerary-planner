@@ -5,11 +5,11 @@ import { FIT_COLORS, FIT_LABELS, FIT_ORDER } from "./mapTypes";
 /**
  * The key to the marker colours.
  *
- * China's map had one until `ChinaLevel` was retired in 960a6bd, and
- * `MapExplorer` still describes it — "it reads the marker colours, so it
- * appears only where there are markers to read". Now that every country's
- * pins carry a verdict (§9.4), a map with five colours and no key is one
- * only its author can read.
+ * China's map had one until `ChinaLevel` was retired in 960a6bd. `MapExplorer`
+ * draws it for every country whose geometry loaded, climate or no climate,
+ * because "No data" is a colour that needs explaining too. Now that every
+ * country's pins carry a verdict (§9.4), a map with five colours and no key
+ * is one only its author can read.
  *
  * Five existing bands in `FIT_ORDER`, drawn from `FIT_COLORS` and
  * `FIT_LABELS` and nothing else: no new swatch, no colour change, so §9.4's
