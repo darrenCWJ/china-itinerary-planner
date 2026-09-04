@@ -20,6 +20,7 @@ import { usePrefs } from "@/components/shell/PrefsProvider";
 import { AirportPicker, type AirportPick } from "@/components/trip/AirportPicker";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { CountryMap } from "./CountryMap";
+import { FitLegend } from "./FitLegend";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
 import { CLIMATE_COUNTRY, type MapPlace } from "./mapTypes";
@@ -905,6 +906,13 @@ export function MapExplorer({
           />
         )}
       </div>
+
+      {/*
+        The key, under the map it explains. Gated on the geometry rather than
+        on the climate: a country whose climate file 404s still draws grey
+        pins, and "No data" is a colour the reader needs explained too.
+      */}
+      {provinces !== null && <FitLegend />}
 
       {caption && (
         <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">

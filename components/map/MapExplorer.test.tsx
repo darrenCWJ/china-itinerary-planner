@@ -10,6 +10,7 @@ import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
 import { DEFAULT_PREFS, PREFS_COOKIE, serializePrefsCookie, type UserPrefs } from "@/lib/prefs";
 import { PE_TOPOLOGY } from "./countryFixture";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
+import { FIT_LEGEND_LABEL } from "./FitLegend";
 import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
 
 /**
@@ -1970,5 +1971,34 @@ describe("the arrival gateway anchors the suggested route (spec §10.3, D3)", ()
     // the same one GatewaysStrip reads to tell "cleared" from "typed
     // something that is not an airport".
     expect(onArrivalChange).toHaveBeenLastCalledWith(null, "");
+  });
+});
+
+describe("the legend", () => {
+  test("appears under a drawn country map", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of Peru" })).toBeInTheDocument();
+    const legend = screen.getByRole("list", { name: FIT_LEGEND_LABEL });
+    expect(legend.textContent).toContain("Great time");
+    expect(legend.textContent).toContain("No data");
+  });
+
+  test("does not appear over the list-only fallback, which has no colours to read", async () => {
+    // "It reads the marker colours, so it appears only where there are
+    // markers to read" — the rule this file's own comments have carried since
+    // the China legend it describes was lost with ChinaLevel.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        String(url) === "/provinces/PE.json"
+          ? Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+          : defaultFetch(String(url))
+      )
+    );
+    render(<Harness country="PE" />);
+    await settle();
+    expect(screen.queryByRole("group", { name: "Map of Peru" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: FIT_LEGEND_LABEL })).not.toBeInTheDocument();
   });
 });
