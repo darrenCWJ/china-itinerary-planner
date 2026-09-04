@@ -13,7 +13,7 @@
  * GeoNames ids and none of the nine is in it, so the key spaces do not meet.
  * This script bridges them the only way they can be bridged — by sampling the
  * anchors' coordinates directly — and commits the result so the model's tests
- * run in milliseconds against nineteen rows rather than against 10 GB of
+ * run in milliseconds against twenty-three rows rather than against 10 GB of
  * rasters nobody else has cached.
  *
  * It downloads nothing. Every raster must already be in `CIP_CHELSA_CACHE`
@@ -116,6 +116,15 @@ const SYMPTOMS = [
   { key: 'oslo', cc: 'NO', id: 'G3143244', why: 'Norway January is never great' },
   { key: 'bergen', cc: 'NO', id: 'G3161732', why: 'Norway January is never great' },
   { key: 'tromso', cc: 'NO', id: 'G3133895', why: 'Norway January is never great; elev is null' },
+  // The coast the fix-1 tripwire's rationale cites (lib/climateModel.test.ts):
+  // CHELSA clt reads the Peruvian coast's garúa months as its CLEAREST, and
+  // Arica — 400 km south, in Chile — is the one coastal-desert city whose
+  // winter reads cloudier. In the fixture so the inversion is a measurement
+  // and not a comment.
+  { key: 'callao', cc: 'PE', id: 'G3946083', why: 'fix 1 deviation: coastal-desert clt inversion, Lima\'s port' },
+  { key: 'trujillo', cc: 'PE', id: 'G3691175', why: 'fix 1 deviation: coastal-desert clt inversion, northern coast' },
+  { key: 'ica', cc: 'PE', id: 'G3938527', why: 'fix 1 deviation: coastal-desert clt inversion, southern coast' },
+  { key: 'arica', cc: 'CL', id: 'G3899361', why: 'fix 1 deviation: the coastal-desert city whose winter IS cloudier' },
 ];
 
 function readShardRow(cc, id) {

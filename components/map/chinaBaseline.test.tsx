@@ -1,6 +1,7 @@
 import { act } from "react";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
 import {
   CHINA_BASELINE_MARKUP,
   CHINA_FIXTURE,
@@ -11,6 +12,7 @@ import {
 import { CountryMap } from "./CountryMap";
 import { PlacePopup } from "./PlacePopup";
 import { ZOOM_MS } from "./mapShared";
+import type { DerivedClimateIndex } from "./mapTypes";
 
 /**
  * §9.5's success test: **China's rendered output is byte-identical before and
@@ -164,5 +166,56 @@ describe("China's card output", () => {
     expect(CHINA_BASELINE_MARKUP.country).toContain('fill-opacity="0.5"');
     expect(CHINA_BASELINE_MARKUP.popupCurated).toContain(">North China<");
     expect(CHINA_BASELINE_MARKUP.popupCatalog).toContain(">Sichuan · municipality<");
+  });
+});
+
+/**
+ * Plan 5's Task 5 review, verbatim from its ledger: "chinaBaseline.test.tsx
+ * passes no derived lookup, so it does not guard the resolution order —
+ * re-run it with a populated CN lookup once a caller passes one."
+ *
+ * `public/climate/CN.json` is real — 412 rows keyed by the same `G` ids
+ * `public/cities/CN.json` uses — so a caller that ever fetched it would be
+ * handing every Chinese catalog city a derived row. `MapExplorer` never
+ * fetches it (Task 7 skips the leg for CLIMATE_COUNTRY), so today this pins a
+ * future caller: the popup with a lookup that DOES hold a row for each China
+ * place must render the same bytes as the popup with none.
+ */
+describe("China's card output with a populated CN lookup", () => {
+  const chengdu = fixture.cities.find((c) => c.key === "chengdu")!;
+  const populated: DerivedClimateIndex = new Map(
+    CHINA_PLACES.map((p) => [p.id, { row: chengdu.row, elev: chengdu.elev }])
+  );
+
+  test("the lookup really holds a row for every China place", () => {
+    for (const p of CHINA_PLACES) expect(populated.get(p.id), p.id).toBeDefined();
+  });
+
+  test("a curated place's popup is still byte-identical", () => {
+    const { container } = render(
+      <PlacePopup
+        place={CHINA_PLACES[0]}
+        month={CHINA_MONTH}
+        position={{ x: 400, y: 220 }}
+        containerWidth={860}
+        country="CN"
+        climate={populated}
+      />
+    );
+    expect(container.innerHTML).toBe(CHINA_BASELINE_MARKUP.popupCurated);
+  });
+
+  test("a catalog city's popup is still byte-identical", () => {
+    const { container } = render(
+      <PlacePopup
+        place={CHINA_PLACES[2]}
+        month={CHINA_MONTH}
+        position={{ x: 120, y: 40 }}
+        containerWidth={860}
+        country="CN"
+        climate={populated}
+      />
+    );
+    expect(container.innerHTML).toBe(CHINA_BASELINE_MARKUP.popupCatalog);
   });
 });

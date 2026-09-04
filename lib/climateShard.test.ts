@@ -635,7 +635,7 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     expect([...sources], "the source string is not identical across all 246 shards").toHaveLength(1);
   });
 
-  it("the ten catalogued anchor cities reproduce the artifact in all sixty positions", () => {
+  it("the fourteen catalogued anchor cities reproduce the artifact in all sixty positions", () => {
     // The strongest regression guard on the committed artifact this suite
     // has. data/climate-anchors.json's rows came from
     // scripts/sample-climate-anchors.mjs — an entirely separate
@@ -647,12 +647,12 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     // and this fixture silently disagreeing — a scale factor, an off-by-one
     // row, a wrong month.
     //
-    // 10 of the fixture's 19 entries: the other 9 are Q-prefixed curated
+    // 14 of the fixture's 23 entries: the other 9 are Q-prefixed curated
     // Chinese cities (spec §9.5's calibration anchors), absent from the
     // GeoNames-keyed climate shards by design (data/climate-report.md,
     // "## Layout": the rows join public/cities/<CC>.json on the city id).
     const gAnchors = ANCHORS.filter((c) => c.id.startsWith("G"));
-    expect(gAnchors).toHaveLength(10);
+    expect(gAnchors).toHaveLength(14);
 
     const mismatched: string[] = [];
     for (const anchor of gAnchors) {
