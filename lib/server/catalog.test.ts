@@ -81,6 +81,17 @@ describe("catalogCityToDestination", () => {
     expect(evening).toBeDefined();
     expect(evening!.title.toLowerCase()).toContain("local speciality");
   });
+
+  test("claims no seasons — the map derives them from the climate artifact (§9.6)", () => {
+    // `["spring", "autumn"]` was a northern-hemisphere guess stamped on
+    // Sydney and Reykjavík alike, and the trip map read it as `great` every
+    // northern spring. `[]` is the value `mapTypes.fitForPlace` reads as
+    // "nobody has said", and app/plan/page.tsx already stamps it on a
+    // hand-typed place.
+    const dest = catalogCityToDestination(city());
+    expect(dest.bestSeasons).toEqual([]);
+    expect(dest.seasonNotes).toEqual({});
+  });
 });
 
 describe("geoNamesCityToDestination", () => {
@@ -131,6 +142,12 @@ describe("geoNamesCityToDestination", () => {
     );
     expect(plan.days).toHaveLength(2);
     expect(plan.days[0].items.length).toBeGreaterThan(0);
+  });
+
+  test("claims no seasons either (§9.6)", () => {
+    const dest = geoNamesCityToDestination(cusco);
+    expect(dest.bestSeasons).toEqual([]);
+    expect(dest.seasonNotes).toEqual({});
   });
 });
 
