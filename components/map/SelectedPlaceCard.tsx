@@ -97,7 +97,7 @@ export interface SelectedPlaceCardProps {
    * draws every non-China place grey, and the chip should say so too.
    */
   climate?: DerivedClimateIndex;
-  /** §6.4's climate and airport lines. Nothing passes any yet. */
+  /** §6.4's climate and airport lines — `CountryLevel` passes both. */
   children?: ReactNode;
 }
 
