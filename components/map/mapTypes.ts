@@ -149,9 +149,10 @@ export type DerivedClimateIndex = ReadonlyMap<string, DerivedClimate>;
  * outside China's seven.
  *
  * The seam, not the aggregation. HOW a region's cities collapse into one
- * verdict — mean penalty, modal band, population weighting — is Plan 6's
- * decision; this type only says that the answer arrives already computed, so
- * `fitForRegion` stays synchronous and holds no opinion.
+ * verdict — mean penalty, modal band, population weighting — is undecided;
+ * Plan 6 (decision P6-1) declined to build a province tint, so this seam has
+ * no caller. This type only says that the answer would arrive already
+ * computed, so `fitForRegion` stays synchronous and holds no opinion.
  *
  * Keyed by `regionScheme.RegionId`, which is `string` because the ids come out
  * of a data file. Same `ReadonlyMap` reasoning as `DerivedClimateIndex`.
