@@ -357,7 +357,9 @@ import {
   assertShardCoverage,
   bucketByRow,
   climatePayload,
+  ensureRaster,
   indexPayload,
+  readScaling,
 } from "./ingest-climate.mjs";
 import { GZIP_BUDGET, RAW_TRIPWIRE } from "./build-provinces.mjs";
 
@@ -630,9 +632,11 @@ describe("assertRowShape", () => {
 
 describe("assertBudget", () => {
   test("measures against build-provinces.mjs's own two numbers", () => {
-    // Imported rather than restated, so there is one number to change. The
-    // gzip budget is the binding one — it measures what crosses the wire —
-    // and both are inclusive: a shard exactly at the limit passes.
+    // Imported rather than restated, so there is one number to change. Both
+    // are inclusive: a shard exactly at the limit passes. Unlike the city
+    // shard's cap, this one is NOT saturated and is not what shaped the
+    // layout: the worst real shard (IN) gzips to 39,490 B, 26.3% of the
+    // 150,000 B budget, so a future reader should not treat it as binding.
     expect(GZIP_BUDGET).toBe(150_000);
     expect(RAW_TRIPWIRE).toBe(700_000);
     expect(() => assertBudget([{ code: "CO", raw: RAW_TRIPWIRE, gzip: GZIP_BUDGET }])).not.toThrow();
@@ -652,5 +656,196 @@ describe("assertBudget", () => {
     // The two limits answer different questions: one is what a reader pays
     // for over the wire, the other is what their browser pays to parse it.
     expect(() => assertBudget([{ code: "ID", raw: 900_000, gzip: 40_000 }])).toThrow(/raw tripwire/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readScaling
+// ---------------------------------------------------------------------------
+
+describe("readScaling", () => {
+  /** A minimal GDAL_METADATA blob — only the two `role=` items this function reads. */
+  const metadataOf = (scaleItem: string, offsetItem = "-273.15") =>
+    `<GDALMetadata><Item name="SCALE" sample="0" role="scale">${scaleItem}</Item>` +
+    `<Item name="OFFSET" sample="0" role="offset">${offsetItem}</Item></GDALMetadata>`;
+
+  /** Stands in for geotiff's FileDirectory: `hasTag` plus an async `loadValue`. */
+  function fakeDirectory(metadata: string, nodata: string) {
+    return {
+      hasTag: () => true,
+      loadValue: async (name: string) => (name === "GDAL_METADATA" ? metadata : nodata),
+    };
+  }
+
+  test("reads a real scale/offset/nodata triple off the tags", async () => {
+    const directory = fakeDirectory(metadataOf("0.1"), "-2147483647");
+    await expect(readScaling(directory, "CHELSA_tasmin_01_1981-2010_V.2.1.tif")).resolves.toEqual({
+      scale: 0.1,
+      offset: -273.15,
+      nodata: -2147483647,
+    });
+  });
+
+  test("rejects a whitespace-bodied scale item instead of silently reading it as 0", async () => {
+    // item() is `Number(match[1])`, and `Number(' ')` is 0 — finite, and a
+    // scale no real file declares. Without the explicit zero check every
+    // value in the file would decode to the constant offset (raw * 0 +
+    // offset), a plausible number that would pass every gate below it.
+    const directory = fakeDirectory(metadataOf(" "), "-2147483647");
+    await expect(readScaling(directory, "CHELSA_tasmin_01_1981-2010_V.2.1.tif")).rejects.toThrow(
+      /GDAL_METADATA declares no usable scale\/offset/
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ensureRaster
+// ---------------------------------------------------------------------------
+
+import { afterEach, vi } from "vitest";
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+
+/**
+ * All three real builds (Task 6's report) found every one of the 60 rasters
+ * already cached, so `ensureRaster`'s HEAD / stream-to-temp /
+ * verify-byte-count / rename / retry path has never once executed — the
+ * first cold run is an unattended CI job. `fetch` is stubbed globally, the
+ * way this repo's other fetchers are tested, and `cacheDir` is pointed at a
+ * scratch directory via the options `ensureRaster` now takes — the module's
+ * real `CACHE_DIR` is never touched by any test here.
+ */
+describe("ensureRaster", () => {
+  const scratchDirs: string[] = [];
+
+  afterEach(() => {
+    while (scratchDirs.length > 0) {
+      const dir = scratchDirs.pop();
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
+    vi.unstubAllGlobals();
+  });
+
+  function scratchCacheDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "ingest-climate-ensureRaster-"));
+    scratchDirs.push(dir);
+    return dir;
+  }
+
+  /** A HEAD response carrying only the one header ensureRaster reads. */
+  const headResponse = (bytes: number) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: { get: (name: string) => (name === "content-length" ? String(bytes) : null) },
+  });
+
+  /** A GET response whose body stream is exactly `bytes` long. */
+  const okResponse = (bytes: number) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(bytes).fill(7));
+        controller.close();
+      },
+    }),
+  });
+
+  const failureResponse = (status: number, statusText: string) => ({
+    ok: false,
+    status,
+    statusText,
+    headers: { get: () => null },
+  });
+
+  test("a cached file whose size equals the HEAD Content-Length is not re-downloaded, and no GET is issued", async () => {
+    const cacheDir = scratchCacheDir();
+    const BYTES = 37;
+    // Content doesn't matter — the cache check is a byte-count comparison,
+    // never a hash or a read of the file itself.
+    const cachedPath = join(cacheDir, "CHELSA_clt_01_1981-2010_V.2.1.tif");
+    writeFileSync(cachedPath, Buffer.alloc(BYTES, 1));
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return headResponse(BYTES);
+      throw new Error("GET must not be issued when the cache already matches");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await ensureRaster("clt", "01", { cacheDir });
+    expect(result).toEqual({ path: cachedPath, bytes: BYTES, downloadedBytes: 0, downloadMs: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("an absent file is streamed to a PID-suffixed temp and renamed into place with the exact byte count", async () => {
+    const cacheDir = scratchCacheDir();
+    const BYTES = 41;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "HEAD" ? headResponse(BYTES) : okResponse(BYTES)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await ensureRaster("clt", "01", { cacheDir });
+    expect(result.bytes).toBe(BYTES);
+    expect(result.downloadedBytes).toBe(BYTES);
+    expect(statSync(result.path).size).toBe(BYTES);
+    // Only the final file survives — no `.tmp-<pid>` left behind, which is
+    // exactly what a crash mid-stream would otherwise leave at this path.
+    expect(readdirSync(cacheDir)).toEqual([basename(result.path)]);
+  });
+
+  test("a body shorter than Content-Length throws and leaves no file at the final path", async () => {
+    const cacheDir = scratchCacheDir();
+    const DECLARED = 50;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "HEAD" ? headResponse(DECLARED) : okResponse(10)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // `retryDelaysMs: [0, 0]` — same two retries the real module makes, at
+    // no real wall-clock cost, rather than fake timers: this test writes to
+    // real disk on every attempt, and interleaving that with a fake clock is
+    // its own hazard (a fake timer scheduled only after real I/O settles can
+    // outlive `runAllTimersAsync`'s own drain and hang the test forever).
+    await expect(
+      ensureRaster("clt", "01", { cacheDir, retryDelaysMs: [0, 0] })
+    ).rejects.toThrow(/wrote 10 B, expected 50 B/);
+    // The retries all wrote the same short body to the SAME temp name, and
+    // the outer `finally` removes it on the way out — nothing survives.
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  test("a non-2xx HEAD throws", async () => {
+    const cacheDir = scratchCacheDir();
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => failureResponse(500, "Internal Server Error"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      ensureRaster("clt", "01", { cacheDir, retryDelaysMs: [0, 0] })
+    ).rejects.toThrow(/HTTP 500/);
+    // A HEAD that never succeeds must never reach the GET branch.
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit | undefined)?.method === "HEAD")).toBe(
+      true
+    );
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  test("a transient failure followed by success is retried and succeeds", async () => {
+    const cacheDir = scratchCacheDir();
+    const BYTES = 44;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(headResponse(BYTES))
+      .mockResolvedValueOnce(failureResponse(503, "Service Unavailable"))
+      .mockResolvedValueOnce(okResponse(BYTES));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await ensureRaster("clt", "01", { cacheDir, retryDelaysMs: [0] });
+    expect(result.downloadedBytes).toBe(BYTES);
+    expect(statSync(result.path).size).toBe(BYTES);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

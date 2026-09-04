@@ -121,11 +121,12 @@ const nextConfig: NextConfig = {
       },
       {
         /**
-         * The per-country climate files. public/climate/ does not exist yet —
-         * Plan 5 builds it — and the rule lands ahead of it deliberately: a
-         * header rule for a path Next serves nothing at is inert, so it costs
-         * nothing today, and the alternative is remembering to add it later,
-         * after the first uncached fetch has already shipped.
+         * The per-country climate files. `public/climate/` exists now — Plan 5
+         * Task 6 committed it, 246 shards plus `index.json` — and this rule
+         * predates that commit deliberately: a header rule for a path Next
+         * serves nothing at is inert, so landing it first cost nothing, and
+         * the alternative was remembering to add it later, after the first
+         * uncached fetch had already shipped.
          *
          * Same window and same `:path+` reasoning as the province rule above;
          * these are the same kind of by-hand-rebuilt committed artifact.

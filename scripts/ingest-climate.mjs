@@ -474,25 +474,33 @@ const USER_AGENT =
  */
 const DOWNLOAD_FLOOR_MS = 120_000;
 const DOWNLOAD_MIN_BYTES_PER_MS = 1000;
-const downloadBudgetMs = (bytes) => DOWNLOAD_FLOOR_MS + bytes / DOWNLOAD_MIN_BYTES_PER_MS;
+// Math.ceil, because `AbortSignal.timeout` requires an integer and `bytes` is
+// essentially never an exact multiple of DOWNLOAD_MIN_BYTES_PER_MS — every
+// real run so far found every raster already cached, so the GET branch below
+// that calls this was never reached and this was never caught.
+const downloadBudgetMs = (bytes) => Math.ceil(DOWNLOAD_FLOOR_MS + bytes / DOWNLOAD_MIN_BYTES_PER_MS);
 
 /**
  * Two retries, because the host is academic infrastructure and this run makes
  * 60 requests to it over half an hour. A transient 502 on raster 41 must not
  * throw away the forty that came before it.
+ *
+ * `delaysMs` defaults to `RETRY_DELAYS_MS`; a test that wants to exhaust a
+ * retry loop without paying its real wall-clock delay passes a shorter array
+ * instead, down the same `retryDelaysMs` option `ensureRaster` takes.
  */
-async function withRetry(what, attempt) {
+async function withRetry(what, attempt, delaysMs = RETRY_DELAYS_MS) {
   for (let tries = 0; ; tries += 1) {
     try {
       return await attempt();
     } catch (error) {
-      if (tries >= RETRY_DELAYS_MS.length) throw new Error(`${what}: ${error.message}`);
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[tries]));
+      if (tries >= delaysMs.length) throw new Error(`${what}: ${error.message}`, { cause: error });
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[tries]));
     }
   }
 }
 
-async function headContentLength(url) {
+async function headContentLength(url, retryDelaysMs = RETRY_DELAYS_MS) {
   return withRetry(`HEAD ${url}`, async () => {
     const response = await fetch(url, {
       method: 'HEAD',
@@ -503,7 +511,7 @@ async function headContentLength(url) {
     const length = Number(response.headers.get('content-length'));
     if (!Number.isInteger(length) || length <= 0) throw new Error('no usable content-length');
     return length;
-  });
+  }, retryDelaysMs);
 }
 
 /**
@@ -516,12 +524,26 @@ async function headContentLength(url) {
  * than buffered — `pr` alone is 254 MB, and an `arrayBuffer()` of it would be
  * resident for the whole write — and written to a PID-suffixed temp name so
  * an interrupted run leaves no half file at the real path.
+ *
+ * Exported for `scripts/ingest-climate.test.ts`: every real run so far found
+ * every raster already cached, so this path has never once executed against a
+ * live HEAD/GET. `cacheDir` and `retryDelaysMs` default to the module's own
+ * `CACHE_DIR` and `RETRY_DELAYS_MS`, so a caller that passes nothing gets
+ * exactly today's behaviour; a test points the first at a scratch directory
+ * and the second at near-zero delays, so a retry-exhausting failure does not
+ * cost real wall-clock seconds. `fetch` itself is not threaded through — the
+ * global is a `vi.stubGlobal` target, the same way this repo's other fetchers
+ * are tested.
+ *
+ * @param {string} variable
+ * @param {string} month
+ * @param {{ cacheDir?: string, retryDelaysMs?: number[] }} [options]
  */
-async function ensureRaster(variable, month) {
-  mkdirSync(CACHE_DIR, { recursive: true });
+export async function ensureRaster(variable, month, { cacheDir = CACHE_DIR, retryDelaysMs = RETRY_DELAYS_MS } = {}) {
+  mkdirSync(cacheDir, { recursive: true });
   const url = urlFor(variable, month);
-  const path = join(CACHE_DIR, fileFor(variable, month));
-  const expected = await headContentLength(url);
+  const path = join(cacheDir, fileFor(variable, month));
+  const expected = await headContentLength(url, retryDelaysMs);
   if (existsSync(path) && statSync(path).size === expected) {
     return { path, bytes: expected, downloadedBytes: 0, downloadMs: 0 };
   }
@@ -537,7 +559,7 @@ async function ensureRaster(variable, month) {
       await pipeline(Readable.fromWeb(response.body), createWriteStream(temp));
       const written = statSync(temp).size;
       if (written !== expected) throw new Error(`wrote ${written} B, expected ${expected} B`);
-    });
+    }, retryDelaysMs);
     rmSync(path, { force: true });
     renameSync(temp, path);
   } finally {
@@ -576,7 +598,7 @@ async function tagText(directory, name) {
  * The same goes for the sentinel — all five files declare `GDAL_NODATA`, and a
  * release that stopped declaring one is a change a human should see.
  */
-async function readScaling(directory, file) {
+export async function readScaling(directory, file) {
   for (const tag of ['GDAL_METADATA', 'GDAL_NODATA']) {
     if (!directory.hasTag(tag)) {
       throw new Error(`${file}: no ${tag} tag — this build reads the scaling off the file and will not guess it`);
@@ -589,7 +611,13 @@ async function readScaling(directory, file) {
   };
   const scale = item('scale');
   const offset = item('offset');
-  if (!Number.isFinite(scale) || !Number.isFinite(offset)) {
+  // `scale === 0` is checked on top of `Number.isFinite`, and only for
+  // `scale` — `offset` may legitimately be 0, as `pr` and `clt` both declare.
+  // `item()` returns `Number(match[1])`, and `Number(' ')` is 0: a
+  // whitespace-bodied `role="scale"` item would otherwise decode every value
+  // in the file to the constant offset, and 0 is finite enough to sail past
+  // the check below it.
+  if (!Number.isFinite(scale) || scale === 0 || !Number.isFinite(offset)) {
     throw new Error(`${file}: GDAL_METADATA declares no usable scale/offset: ${metadata}`);
   }
   // Trimmed and length-checked before `Number`, because `Number('')` is 0 and
@@ -1336,17 +1364,28 @@ async function main() {
   const offRaster = variables.reduce((n, v) => n + v.offRaster, 0);
   const { rows, skipped } = assembleRows(cities, samples);
   assertSampleHealth(offRaster, atNodata, skipped);
-  assertRowShape(rows);
 
   const now = new Date().toISOString();
   const { sizes, entries, payloads, changed: shardsChanged } = buildShards(countries, cities, rows, now);
-  // Parity against the ids the SHARDS carry, parsed back out of the bytes
-  // about to be written, rather than against the row map they were built from
-  // — that would be a list compared with itself, since the map is only ever
-  // filled from the same catalog. Re-parsing 11 MB costs a fraction of a
-  // second and is the only check that sees `buildShards`'s per-country slice.
+  // Three gates below read the bytes about to be written, parsed back out of
+  // `payloads` once here rather than trusting the maps they were built from —
+  // each of those would be a list compared with itself, since every one of
+  // them is only ever filled from the same catalog. Re-parsing 11 MB costs a
+  // fraction of a second and is the only way any of the three sees
+  // `buildShards`'s per-country slice, or a shard whose own envelope disagrees
+  // with the key it was written under.
   const writtenIds = [];
-  for (const json of payloads.values()) writtenIds.push(...Object.keys(JSON.parse(json).cities));
+  const writtenRows = [];
+  const emittedCountries = new Set();
+  for (const json of payloads.values()) {
+    const parsed = JSON.parse(json);
+    emittedCountries.add(parsed.country);
+    for (const [id, row] of Object.entries(parsed.cities)) {
+      writtenIds.push(id);
+      writtenRows.push([id, row]);
+    }
+  }
+  assertRowShape(writtenRows);
   assertCityParity(writtenIds, new Set(cities.map((c) => c.id)));
 
   let changed = shardsChanged;
@@ -1355,11 +1394,15 @@ async function main() {
   const index = indexPayload(entries, previousIndex.value, now);
   const indexJson = `${JSON.stringify(index)}\n`;
   if (indexJson !== previousIndex.text) changed += 1;
-  // Re-read the reference from disk rather than reusing `countries`, so this
-  // asks the filesystem the same question a reviewer would rather than
-  // comparing a list against itself.
+  // `emittedCountries` comes from each shard's own envelope (parsed above),
+  // not from `payloads`'s keys or the `countries` array `buildShards` was
+  // handed — either of those would be a list compared with itself, the same
+  // failure `assertCityParity`'s own docblock warns about, and would not
+  // catch a shard whose envelope names the wrong country. The reference is
+  // still read from disk fresh, so this asks the filesystem the same question
+  // a reviewer would.
   assertShardCoverage(
-    new Set(payloads.keys()),
+    emittedCountries,
     new Set(readdirSync(CITY_DIR).filter((n) => /^[A-Z]{2}\.json$/.test(n)).map((n) => n.slice(0, 2)))
   );
   assertBudget(sizes);
@@ -1391,7 +1434,7 @@ async function main() {
       skipped: skipped.length,
       offRaster,
       atNodata,
-      sampleCount: cities.length * TUPLE_LENGTH,
+      sampleCount: cities.length * SAMPLE_FIELDS.length * MONTHS_PER_YEAR,
       nullElevations,
       rasterBytes: rasters.reduce((n, r) => n + r.bytes, 0),
       rowReads,
