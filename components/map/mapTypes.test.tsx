@@ -384,8 +384,8 @@ describe("the derived branch sits below curated China", () => {
     // are "Sichuan", "Guangdong", "Beijing" — so `isChinaPlace` is false for
     // every Chinese catalog city on the map. Gate the derived branch on it
     // and all 412 would change colour if a caller ever handed the map CN's
-    // climate shard — which `MapExplorer` never fetches (P6-5) — which is
-    // precisely the regression §9.5's success test exists to catch.
+    // climate shard (`MapExplorer` never fetches it — P6-5), and that is
+    // precisely the regression §9.5's success test ("China's rendered output is byte-identical") exists to catch.
     const mianyang = city({
       id: "G1800627",
       name: "Mianyang",
