@@ -18,20 +18,29 @@
 # the change test below). Dispatch this by hand, on purpose, roughly once a
 # decade, or after a CHELSA erratum.
 #
-# THE ARTIFACT LAGS THE CATALOG between dispatches, and that is normal.
-# public/cities/ is rebuilt NIGHTLY by refresh-cities.yml; these shards only
-# move when a human dispatches this workflow, so for most of a decade the
-# committed climate rows are keyed to a slightly older catalog than the
-# committed city shards. The nightly refresh must keep committing through
-# that lag — its own `commit` job runs the whole `npm test` on the freshly
-# built city shards — which is why lib/climateShard.test.ts checks the
-# COMMITTED artifact's id set against public/cities/ within a bounded drift
-# rather than demanding exact equality. Exact parity is still this BUILD's
-# invariant: scripts/ingest-climate.mjs's assertCityParity runs before the
-# first write, so the verify step below always sees exact parity on a tree
-# this job just built. A city with no climate row in the meantime renders as
-# `unknown` — never as wrong data — because the fit falls back to
-# NEUTRAL_FIT (components/map/mapTypes.ts).
+# THE ARTIFACT LAGS THE CATALOG between dispatches, and that lag is
+# CUMULATIVE, not per-refresh: public/cities/ is rebuilt NIGHTLY by
+# refresh-cities.yml while these shards only move on a hand dispatch, so the
+# gap between them widens every night until someone runs this workflow.
+# Measured over six nightly refreshes, 2026-08-28 to 2026-09-03: +315 ids
+# gained no climate row, −304 climate rows lost their city, a churn that
+# persists rather than flapping back to zero because each country's catalog
+# caps at 750 cities — a ranking swap that pushes a city past that line
+# stays pushed. The steady rate behind it is about 7 ids a night, in each
+# direction; lib/climateShard.test.ts bounds the COMMITTED artifact's id set
+# against public/cities/ at 10,000 per direction — roughly three to four
+# years of that rate — rather than demanding exact equality. Exact parity is
+# still this BUILD's invariant: scripts/ingest-climate.mjs's assertCityParity
+# runs before the first write, so the verify step below always sees exact
+# parity on a tree this job just built. A city with no climate row in the
+# meantime renders as `unknown` — never as wrong data — because the fit
+# falls back to NEUTRAL_FIT (components/map/mapTypes.ts).
+#
+# TWO REASONS TO DISPATCH, not one: a new CHELSA release or erratum, on its
+# own decadal clock (above), and the catalog lag itself reaching
+# lib/climateShard.test.ts's drift bound, which at the measured churn takes a
+# few years rather than a decade. When the nightly cities refresh fails that
+# bound, that failure is itself the signal to dispatch this workflow.
 #
 # ITS OWN WORKFLOW FILE — not a fourth job in refresh-cities.yml. GitHub
 # gives every job a fresh runner regardless of which file it lives in, so
