@@ -104,6 +104,26 @@ const BLOCKS = 5;
 const TUPLE_LENGTH = BLOCKS * MONTHS_PER_YEAR;
 
 /**
+ * The five blocks in tuple order: what each is called, its unit, and the band
+ * outside which `assertRowShape` refuses the row.
+ *
+ * The bands are `lib/climateShard.ts`'s own, restated rather than imported —
+ * a build script cannot import the app's TypeScript, and both ends checking
+ * independently is the point rather than the cost. They are deliberately wide
+ * of anything CHELSA reports (`data/climate-report.md`, "## Measured ranges",
+ * has what it actually contains): the failure they exist for is a decode that
+ * skipped a raster's declared offset, which puts Singapore at 298 °C — well
+ * inside a naive "cold sometimes, hot sometimes" bound and outside this one.
+ */
+const BLOCK_META = [
+  { label: 'lo', unit: '°C', min: -90, max: 60 },
+  { label: 'hi', unit: '°C', min: -90, max: 60 },
+  { label: 'precip', unit: 'mm/month', min: 0, max: 10_000 },
+  { label: 'cloud', unit: '%', min: 0, max: 100 },
+  { label: 'td', unit: '°C', min: -90, max: 60 },
+];
+
+/**
  * The August–Roche–Magnus coefficients, in the form Alduchov & Eskridge (1996)
  * fit: `b` is dimensionless and `c` is in °C. Stated to ±0.4 °C over −40 to
  * +50 °C, which covers the whole range the catalog spans and is well inside
@@ -899,12 +919,25 @@ export function assertCityParity(written, catalog) {
 }
 
 /**
- * Every row is exactly `TUPLE_LENGTH` integers.
+ * Every row is exactly `TUPLE_LENGTH` integers, inside the parser's own bands.
  *
- * `tupleFor` already guarantees this for anything it returns, so the gate is
- * about what happens between there and disk. A positional tuple carries no
- * field names: one short row and every index after it means something else,
- * and `JSON.parse` will accept it happily.
+ * `tupleFor` already guarantees the LENGTH for anything it returns, so that
+ * half of the gate is about what happens between there and disk. A positional
+ * tuple carries no field names: one short row and every index after it means
+ * something else, and `JSON.parse` will accept it happily.
+ *
+ * The guard bands and the per-month `lo <= hi` cross-check are the same ones
+ * `lib/climateShard.ts` applies at read time, restated here because this gate
+ * was the weaker of the two and it is the one that runs BEFORE the first
+ * write. Without them an unscaled decode — 246 shards of Singapore at 298 °C —
+ * passes this build, lands on disk, and only announces itself 66 minutes later
+ * when `npm test` parses the committed artifact back. `lo > hi` earns its own
+ * check because both values can sit inside every band and still be wrong: it
+ * is what a build that scaled `tasmin` and `tasmax` differently looks like.
+ *
+ * Naming the city, the block and the month costs nothing here and is the
+ * difference between "a shard is wrong" and "tasmax is unscaled". This
+ * changes no output: it either passes, or it stops the run before any write.
  */
 export function assertRowShape(rows) {
   for (const [id, row] of rows) {
@@ -913,6 +946,22 @@ export function assertRowShape(rows) {
     }
     const bad = row.findIndex((value) => !Number.isInteger(value));
     if (bad >= 0) throw new Error(`${id}: row[${bad}] is ${row[bad]}, which is not an integer`);
+    for (let b = 0; b < BLOCK_META.length; b += 1) {
+      const { label, min, max } = BLOCK_META[b];
+      for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+        const value = row[b * MONTHS_PER_YEAR + m];
+        if (value < min || value > max) {
+          throw new Error(
+            `${id}: ${label} in month ${m} is ${value}, outside the ${min}..${max} guard band — looks like an unscaled decode`
+          );
+        }
+      }
+    }
+    for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+      const lo = row[m];
+      const hi = row[MONTHS_PER_YEAR + m];
+      if (lo > hi) throw new Error(`${id}: lo in month ${m} is ${lo}, greater than hi (${hi})`);
+    }
   }
 }
 
@@ -1051,15 +1100,6 @@ const seconds = (ms) => (ms / 1000).toFixed(1);
 const drift = (measured, predicted) =>
   `${measured >= predicted ? '+' : '−'}${(Math.abs(100 * (measured - predicted)) / predicted).toFixed(1)}%`;
 
-/** The five blocks, in tuple order, as `measuredRanges` labels them. */
-const BLOCK_LABELS = [
-  { label: 'lo', unit: '°C' },
-  { label: 'hi', unit: '°C' },
-  { label: 'precip', unit: 'mm/month' },
-  { label: 'cloud', unit: '%' },
-  { label: 'td', unit: '°C' },
-];
-
 /**
  * The report's `## Measured ranges` section: what the rows actually contain.
  *
@@ -1083,7 +1123,15 @@ const BLOCK_LABELS = [
  * @returns {string[]} the section's lines, heading first, blank-terminated
  */
 export function measuredRanges(rows) {
-  const blocks = BLOCK_LABELS.map((b) => ({ ...b, min: Infinity, max: -Infinity }));
+  // `BLOCK_META`'s own min/max are the GUARD BANDS; these are the measured
+  // extremes, so they start at the opposite infinities and are named apart
+  // from the band deliberately.
+  const blocks = BLOCK_META.map((b) => ({
+    label: b.label,
+    unit: b.unit,
+    min: Infinity,
+    max: -Infinity,
+  }));
   let cityMonths = 0;
   let inverted = 0;
   for (const [, row] of rows) {

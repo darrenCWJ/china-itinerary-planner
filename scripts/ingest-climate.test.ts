@@ -644,6 +644,38 @@ describe("assertRowShape", () => {
     expect(() => assertRowShape(new Map([["G1", row.map((v, i) => (i === 12 ? 1.5 : v))]])))
       .toThrow(/G1: row\[12\] is 1\.5/);
   });
+
+  test("refuses a value outside each block's own guard band, naming block and month", () => {
+    // The same bands lib/climateShard.ts applies at read time, checked here
+    // because this gate runs BEFORE the first write. An unscaled tasmax —
+    // the failure the -273.15 offset exists to prevent — would otherwise
+    // write 246 shards of Singapore at 298 °C and only surface 66 minutes
+    // later, when npm test parsed the committed artifact back.
+    const at = (i: number, value: number) => new Map([["G1", row.map((v, j) => (j === i ? value : v))]]);
+    expect(() => assertRowShape(at(0, -91))).toThrow(/G1: lo in month 0 is -91, outside the -90\.\.60/);
+    expect(() => assertRowShape(at(23, 298))).toThrow(/G1: hi in month 11 is 298, outside the -90\.\.60/);
+    expect(() => assertRowShape(at(24, -1))).toThrow(/G1: precip in month 0 is -1, outside the 0\.\.10000/);
+    expect(() => assertRowShape(at(35, 10_001))).toThrow(
+      /G1: precip in month 11 is 10001, outside the 0\.\.10000/
+    );
+    expect(() => assertRowShape(at(36, 101))).toThrow(/G1: cloud in month 0 is 101, outside the 0\.\.100/);
+    expect(() => assertRowShape(at(48, -91))).toThrow(/G1: td in month 0 is -91, outside the -90\.\.60/);
+    // Both edges of every band are accepted: the tripwire is for an unscaled
+    // decode, not for a cold winter.
+    expect(() => assertRowShape(at(0, -90))).not.toThrow();
+    expect(() => assertRowShape(at(24, 10_000))).not.toThrow();
+    expect(() => assertRowShape(at(36, 100))).not.toThrow();
+  });
+
+  test("refuses a month whose lo exceeds its hi, which every band alone would pass", () => {
+    // 2 and 1 are both deep inside -90..60, so no band sees this. It is what
+    // a build that scaled tasmin and tasmax differently looks like — and the
+    // reason the cross-check is worth its own pass over the row.
+    const inverted = row.map((v, i) => (i === 12 + 5 ? 0 : i === 5 ? 2 : v));
+    expect(() => assertRowShape(new Map([["G1", inverted]]))).toThrow(
+      /G1: lo in month 5 is 2, greater than hi \(0\)/
+    );
+  });
 });
 
 describe("assertBudget", () => {
@@ -765,6 +797,46 @@ describe("readScaling", () => {
     const directory = fakeDirectory(metadataOf(" "), "-2147483647");
     await expect(readScaling(directory, "CHELSA_tasmin_01_1981-2010_V.2.1.tif")).rejects.toThrow(
       /GDAL_METADATA declares no usable scale\/offset/
+    );
+  });
+
+  test("refuses a file that declares no such tag, naming which one and which file", async () => {
+    // Every branch of readScaling throws rather than defaulting, and this was
+    // the one branch no fixture could reach: fakeDirectory's hasTag is
+    // hardcoded true. All five CHELSA files declare both tags today; a
+    // release that stopped declaring one is a change a human should see, not
+    // one this build should guess past — and the message has to say which
+    // file and which tag, because the run is 60 files deep behind a detached
+    // process by the time anyone reads it.
+    const without = (missing: string) => ({
+      hasTag: (tag: string) => tag !== missing,
+      loadValue: async () => "unreachable",
+    });
+    await expect(
+      readScaling(without("GDAL_NODATA"), "CHELSA_pr_01_1981-2010_V.2.1.tif")
+    ).rejects.toThrow(/^CHELSA_pr_01_1981-2010_V\.2\.1\.tif: no GDAL_NODATA tag/);
+    await expect(
+      readScaling(without("GDAL_METADATA"), "CHELSA_clt_07_1981-2010_V.2.1.tif")
+    ).rejects.toThrow(/^CHELSA_clt_07_1981-2010_V\.2\.1\.tif: no GDAL_METADATA tag/);
+  });
+
+  test("reads a tag geotiff hands back as NUL-terminated bytes exactly as it reads a string", async () => {
+    // GDAL_METADATA and GDAL_NODATA are DEFERRED fields, and loadValue gives
+    // back whatever the file holds — an ASCII blob as a typed array, not
+    // always a JS string. tagText's latin1 decode and trailing-NUL trim are
+    // what make the two forms one value, and nothing exercised them: every
+    // fixture above answers with a string. A NUL left on the end of the
+    // sentinel alone would send `Number("-2147483647\0")` to NaN and abort
+    // the run on a file that is perfectly well-formed.
+    const bytes = (s: string) => new TextEncoder().encode(`${s}\0`);
+    const asBytes = {
+      hasTag: () => true,
+      loadValue: async (name: string) =>
+        name === "GDAL_METADATA" ? bytes(metadataOf("0.1")) : bytes("-2147483647"),
+    };
+    const file = "CHELSA_tasmin_01_1981-2010_V.2.1.tif";
+    await expect(readScaling(asBytes, file)).resolves.toEqual(
+      await readScaling(fakeDirectory(metadataOf("0.1"), "-2147483647"), file)
     );
   });
 });

@@ -337,6 +337,24 @@ describe("fetchClimateShard / fetchClimateIndex", () => {
     await expect(fetchClimateShard("JP", fetchImpl)).rejects.toThrow(/is PE's file, but JP was requested/);
   });
 
+  test("fetchClimateShard resolves a well-formed shard, projecting it through the parser", async () => {
+    // The success path, which only the rejection tests covered: a fetch that
+    // returned 200 and a good body was never once followed through to the Map
+    // the caller actually gets. Mirrors fetchClimateIndex's own success test
+    // below.
+    const parsed = await fetchClimateShard(
+      "PE",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(shard()),
+      }) as unknown as typeof fetch
+    );
+    expect(parsed.country).toBe("PE");
+    expect(parsed.cities).toBeInstanceOf(Map);
+    expect(parsed.cities.get("G1")).toEqual(row());
+  });
+
   test("fetchClimateShard defaults to the global fetch when no fetchImpl is given", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     vi.stubGlobal("fetch", fetchMock);
@@ -568,10 +586,32 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     // against all 58,757 committed rows to get here, and a shard missing a
     // month (wrong array length) would already have thrown. See the module
     // docblock, "Why one bad row refuses the whole shard", for why that
-    // failure is a thrown error rather than a silently short row. What is
-    // left to check here is the envelope metadata parseClimateShard accepts
-    // but does not otherwise compare across files.
+    // failure is a thrown error rather than a silently short row.
+    //
+    // Swept again in the body all the same, because a property proved only by
+    // a `beforeAll` side effect is one refactor away from being proved by
+    // nothing: hoist the parse, relax the parser, or move this test to raw
+    // JSON, and the name still reads as a promise while the assertion is
+    // gone. The sweep costs one pass over rows already in memory.
     expect(climateShards).toHaveLength(246);
+
+    const wrongLength = climateShards.flatMap((s) =>
+      [...s.cities].filter(([, cityRow]) => cityRow.length !== 60).map(([id]) => `${s.country}/${id}`)
+    );
+    expect(wrongLength, `rows that are not 60 values long: ${wrongLength.slice(0, 20).join(", ")}`).toEqual(
+      []
+    );
+
+    // And the index's per-country count against the shard it names. The
+    // "names exactly 246 countries" test above compares the two directory
+    // listings; nothing compared the COUNTS, so an index that undercounted a
+    // country — the listing indexPayload restamps on — agreed with disk.
+    const parsedIndex = parseClimateIndex(JSON.parse(readFileSync(CLIMATE_INDEX_ASSET, "utf8")));
+    const sizeOf = new Map(climateShards.map((s) => [s.country, s.cities.size]));
+    const miscounted = parsedIndex.countries
+      .filter((c) => sizeOf.get(c.code) !== c.count)
+      .map((c) => `${c.code}: index says ${c.count}, shard has ${sizeOf.get(c.code)}`);
+    expect(miscounted, `index counts disagreeing with their shard: ${miscounted.join("; ")}`).toEqual([]);
 
     const badMeta = climateShards
       .filter((s) => s.generatedAt === "" || s.source === "")
