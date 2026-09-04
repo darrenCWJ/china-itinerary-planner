@@ -364,7 +364,13 @@ export function catalogCityToDestination(city: CatalogCity): Destination {
       firstSentence(city.description) ??
       `${city.name}${city.province ? `, ${city.province}` : ""} — from the all-China catalog`,
     knownFor,
-    bestSeasons: ["spring", "autumn"],
+    // No season claim (§9.6). `[]` is what `mapTypes.fitForPlace` reads as
+    // "nobody has said", so a resolved stop's verdict comes from the climate
+    // artifact or is `unknown`. The `["spring", "autumn"]` this replaced was
+    // a northern-hemisphere guess stamped on Sydney and Reykjavík alike; the
+    // wizard's season chip never read it (it renders curated cards only), but
+    // the trip map did, and coloured every worldwide stop `great` in March.
+    bestSeasons: [],
     seasonNotes: {},
     foods: [],
     suggestedDays: [1, maxDays],
@@ -397,7 +403,8 @@ export function geoNamesCityToDestination(entry: CityIndexEntry): Destination {
     emoji: "📍",
     tagline: entry.region ? `${entry.name}, ${entry.region}` : entry.name,
     knownFor: [],
-    bestSeasons: ["spring", "autumn"],
+    // No season claim — see catalogCityToDestination (§9.6).
+    bestSeasons: [],
     seasonNotes: {},
     foods: [],
     suggestedDays: [1, 2],
