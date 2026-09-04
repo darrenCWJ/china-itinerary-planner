@@ -398,6 +398,39 @@ interface ClimateAnchor {
 }
 const ANCHORS: ClimateAnchor[] = fixture.cities.map((c) => ({ id: c.id, name: c.name, row: c.row }));
 
+/**
+ * How far the COMMITTED climate artifact may lag `public/cities/`, per
+ * direction, before this suite calls it a mismatch rather than churn.
+ *
+ * The two artifacts are refreshed on different clocks.
+ * `.github/workflows/refresh-cities.yml` runs NIGHTLY and rebuilds
+ * `public/cities/` from GeoNames; `.github/workflows/refresh-climate.yml` is
+ * dispatch-only, by hand, roughly once a decade — so ids arrive in and leave
+ * the catalog long before the climate artifact follows. Measured churn over
+ * the last four city commits, as ids added/removed: 7/7, 7/7, 308/299, 0/0.
+ *
+ * Exact parity is not being given up; it is being asserted where it can hold.
+ * `assertCityParity` in `scripts/ingest-climate.mjs` runs before the first
+ * write, so every dispatch restores exact parity and refresh-climate.yml's own
+ * verify step always sees it on a tree that job just built. What cannot be
+ * asserted here is exact parity on the committed artifact, because `npm test`
+ * ALSO runs inside refresh-cities.yml's `commit` job, against the freshly
+ * built city shards: an exact check there goes red the first night GeoNames
+ * moves a single id, the nightly refresh then commits nothing, and dispatching
+ * refresh-climate.yml cannot even recover it — the climate build samples the
+ * COMMITTED city shards, so the catalog it needs has never landed.
+ *
+ * The lag is presentational and never wrong data: a city with no climate row
+ * resolves to `NEUTRAL_FIT` (components/map/mapTypes.ts:231-233). So the test
+ * below exists to catch a WHOLESALE mismatch — an artifact built against a
+ * different catalog altogether — and not churn. 1,000 per direction sits far
+ * above the largest measured night (308) and far below any such mismatch.
+ *
+ * Deliberately NOT asserted: that the drift is currently 0, which it is.
+ * Pinning today's zero would recreate exactly the defect this bound removes.
+ */
+const MAX_CATALOG_DRIFT = 1_000;
+
 describe.skipIf(!hasAssets)("the committed climate shards", () => {
   /**
    * Parsed once and shared across the tests below rather than re-parsed by
@@ -434,8 +467,13 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     expect(named).toEqual(onDisk);
   });
 
-  it("its city-id set equals public/cities/, in BOTH directions", () => {
-    // §12.3's join is total in both directions (task-6-report.md, fact 3).
+  it("its city-id set tracks public/cities/ in BOTH directions, within the drift one cities refresh can cause", () => {
+    // §12.3 asks for a join that is total in both directions, and it is —
+    // at BUILD time, where assertCityParity enforces it exactly. What a
+    // committed artifact can promise is the bounded version: see
+    // MAX_CATALOG_DRIFT above for why the exact form of this test broke the
+    // nightly cities refresh rather than the climate build.
+    //
     // Checked independently of the index/shard-code cross-check above: this
     // reads every public/cities/<CC>.json on disk for its own ids, so a
     // country present in one catalog and not the other shows up here even
@@ -455,21 +493,29 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     const missingFromClimate = [...cityIds].filter((id) => !climateIds.has(id));
     const extraInClimate = [...climateIds].filter((id) => !cityIds.has(id));
     expect(
-      missingFromClimate,
-      `${missingFromClimate.length} public/cities/ ids missing from climate (first 5: ${missingFromClimate.slice(0, 5).join(", ")})`
-    ).toEqual([]);
+      missingFromClimate.length,
+      `${missingFromClimate.length} public/cities/ ids have no climate row, past the ${MAX_CATALOG_DRIFT}-id drift bound ` +
+        `(first 20: ${missingFromClimate.slice(0, 20).join(", ")})`
+    ).toBeLessThanOrEqual(MAX_CATALOG_DRIFT);
     expect(
-      extraInClimate,
-      `${extraInClimate.length} climate ids not in public/cities/ (first 5: ${extraInClimate.slice(0, 5).join(", ")})`
-    ).toEqual([]);
+      extraInClimate.length,
+      `${extraInClimate.length} climate ids are not in public/cities/, past the ${MAX_CATALOG_DRIFT}-id drift bound ` +
+        `(first 20: ${extraInClimate.slice(0, 20).join(", ")})`
+    ).toBeLessThanOrEqual(MAX_CATALOG_DRIFT);
 
-    // A Set would hide this: it collapses duplicates instead of reporting
-    // them. Counting occurrences is what actually proves "no id appears in
-    // two shards" (task-6-report.md, fact 3).
+    // Exactly zero, with no drift allowance: a catalog refresh cannot cause a
+    // duplicate. An id in two shards is the build's own per-country slicing
+    // going wrong — which is why assertCityParity refuses it too — and it
+    // means one city was written twice while another was written not at all.
+    //
+    // A Set would hide it: it collapses duplicates instead of reporting them.
+    // Counting occurrences is what actually proves "no id appears in two
+    // shards" (data/climate-report.md, "## Coverage": one row per catalogued
+    // city, 58757 of them).
     const duplicated = [...climateIdOccurrences.entries()].filter(([, n]) => n > 1).map(([id]) => id);
     expect(
       duplicated,
-      `ids appearing in more than one climate shard: ${duplicated.slice(0, 5).join(", ")}`
+      `ids appearing in more than one climate shard: ${duplicated.slice(0, 20).join(", ")}`
     ).toEqual([]);
   });
 

@@ -18,6 +18,21 @@
 # the change test below). Dispatch this by hand, on purpose, roughly once a
 # decade, or after a CHELSA erratum.
 #
+# THE ARTIFACT LAGS THE CATALOG between dispatches, and that is normal.
+# public/cities/ is rebuilt NIGHTLY by refresh-cities.yml; these shards only
+# move when a human dispatches this workflow, so for most of a decade the
+# committed climate rows are keyed to a slightly older catalog than the
+# committed city shards. The nightly refresh must keep committing through
+# that lag — its own `commit` job runs the whole `npm test` on the freshly
+# built city shards — which is why lib/climateShard.test.ts checks the
+# COMMITTED artifact's id set against public/cities/ within a bounded drift
+# rather than demanding exact equality. Exact parity is still this BUILD's
+# invariant: scripts/ingest-climate.mjs's assertCityParity runs before the
+# first write, so the verify step below always sees exact parity on a tree
+# this job just built. A city with no climate row in the meantime renders as
+# `unknown` — never as wrong data — because the fit falls back to
+# NEUTRAL_FIT (components/map/mapTypes.ts).
+#
 # ITS OWN WORKFLOW FILE — not a fourth job in refresh-cities.yml. GitHub
 # gives every job a fresh runner regardless of which file it lives in, so
 # this would not repeat the *exact* mechanism of the 2026-08-28 incident that
