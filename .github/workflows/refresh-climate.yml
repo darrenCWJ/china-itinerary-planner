@@ -29,12 +29,11 @@
 # jobs in the same file. What generalises here is the principle behind that
 # fix, not the mechanism: don't couple unrelated ingest workloads together.
 # This job shares no host and no rate budget with GeoNames or Wikidata, but
-# it is an order of magnitude bigger on every other axis that matters to
-# refresh-cities.yml's shape — 10.65 GB against that file's KB-scale
-# artifacts, a 150-minute timeout against its 20-60 minute jobs, dispatch-only
-# against its daily schedule. Routing it through that file's `commit` job
-# would push an unrelated giant artifact through actions/upload-artifact and
-# recreate, one layer up, exactly the coupling between independent flows that
+# it is bigger on every other axis that matters to refresh-cities.yml's
+# shape — a 150-minute timeout against that file's 20-60 minute jobs,
+# dispatch-only against its daily schedule, and a 10.65 GB download against
+# ingests that fetch megabytes. Routing it through that file's `commit` job
+# would recreate, one layer up, the coupling between independent flows that
 # file's 2026-08-28 split was designed to remove.
 #
 # Disk: scripts/ingest-climate.mjs downloads all 60 rasters (five variables x
@@ -90,7 +89,14 @@ concurrency:
   # this workflow also commits straight to main, and the shared group name
   # is what serialises all three workflows' pushes rather than letting two
   # land at once and turn one into a non-fast-forward. A dispatch here is
-  # rare enough that overlap is unlikely, but joining costs nothing.
+  # rare, but not free while it runs: with cancel-in-progress: false, a run
+  # queued behind this one goes pending, and GitHub cancels a previously
+  # pending run in the group when a newer one queues — so a dispatch
+  # spanning refresh-airports' 08:23 UTC and refresh-cities' 08:53 UTC
+  # schedules can leave one pending and then cancelled by the other. The
+  # cost is at most a delayed — or, if both dailies queue behind this job,
+  # one skipped — scheduled refresh, recovered the next night. Avoid
+  # dispatching inside the 08:00-09:00 UTC window for that reason.
   group: refresh-data
   cancel-in-progress: false
 
@@ -121,8 +127,6 @@ jobs:
           node-version: 24
           cache: npm
 
-      - run: npm ci
-
       # /mnt is the runner's larger scratch volume — see "Disk" in the
       # header. Neither this directory nor write access to it exists by
       # default on the hosted image, so both are created here, and free
@@ -132,15 +136,18 @@ jobs:
       - name: Prepare the raster cache volume
         run: |
           sudo mkdir -p "$CIP_CHELSA_CACHE"
-          sudo chown "$USER" "$CIP_CHELSA_CACHE"
+          sudo chown "$(id -un)" "$CIP_CHELSA_CACHE"
           df -h
           AVAIL_KB=$(df -Pk "$CIP_CHELSA_CACHE" | tail -1 | awk '{print $4}')
+          [ -n "$AVAIL_KB" ] || { echo "::error::could not read free space on $CIP_CHELSA_CACHE"; exit 1; }
           AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
           echo "Free space on the cache volume: ${AVAIL_GB} GB"
           if [ "$AVAIL_KB" -lt $((12 * 1024 * 1024)) ]; then
             echo "::error::Only ${AVAIL_GB} GB free on the CHELSA cache volume ($CIP_CHELSA_CACHE) — need at least 12 GB for the 10.65 GB raster set"
             exit 1
           fi
+
+      - run: npm ci
 
       - name: Ingest climate normals
         run: node scripts/ingest-climate.mjs
@@ -177,9 +184,10 @@ jobs:
           git add public/climate data/climate-report.md
           git commit -m "chore: refresh climate normals from CHELSA"
           # The concurrency group keeps the other two refresh workflows out
-          # of this window, but a human push to main can still land inside
-          # it. Rebase the one data commit onto their tip and retry, rather
-          # than losing this dispatch to a race with no retry — verified to
-          # work on the shallow checkout actions/checkout produces (see
-          # refresh-cities.yml, which uses the identical retry).
-          git push || { git pull --rebase origin main && git push; }
+          # of this window, but a human push to the dispatch branch can
+          # still land inside it. Rebase the one data commit onto their tip
+          # and retry, rather than losing this dispatch to a race with no
+          # retry — verified to work on the shallow checkout
+          # actions/checkout produces (see refresh-cities.yml, which uses
+          # the identical retry).
+          git push || { git pull --rebase origin "$GITHUB_REF_NAME" && git push; }
