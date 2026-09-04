@@ -503,7 +503,7 @@ export function MapExplorer({
           ).catch(() => null),
     ])
       .then(([provinceFile, manifest, catalogRes, shardRes, enrichment, climateRes]) => {
-        // Four of the five legs swallow their own rejection, so an abort
+        // Five of the six legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -540,8 +540,12 @@ export function MapExplorer({
         setCitiesUnavailable(!catalogRes.available && shardRes === null);
         // Joined here, where the parsed shard rows are still in hand: the
         // climate row carries no elevation and `MapPlace` has no field for
-        // one, so this is the only moment the two halves meet.
-        setClimate(buildClimateIndex(climateRes, shardRes?.cities ?? []));
+        // one, so this is the only moment the two halves meet. And no shard,
+        // no index: without the city rows there is no `G`-id place on the map
+        // to look a climate row up for, so an index built from the climate
+        // file alone would colour nothing and still put the honesty note
+        // under a map with no derived pin on it.
+        setClimate(buildClimateIndex(shardRes === null ? null : climateRes, shardRes?.cities ?? []));
       })
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(true);

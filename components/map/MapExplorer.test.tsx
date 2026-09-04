@@ -2096,6 +2096,9 @@ describe("derived climate", () => {
     );
     const { container } = render(<Harness country="PE" />);
     await settle();
+    // Armed on its own: the elevation-less verdict is still a colour, so a
+    // map that built no index at all cannot pass this by rendering grey.
+    expect(FIT_COLORS[monthFit(CUSCO_ROW, null, OCTOBER - 1)]).not.toBe(FIT_COLORS.unknown);
     expect(
       container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
     ).toBe(FIT_COLORS[monthFit(CUSCO_ROW, null, OCTOBER - 1)]);
@@ -2122,6 +2125,25 @@ describe("derived climate", () => {
     expect(
       container.querySelector('[data-place="G2950159"] circle[data-dot]')!.getAttribute("fill")
     ).toBe(FIT_COLORS.unknown);
+    expect(screen.queryByRole("note", NOTE)).not.toBeInTheDocument();
+  });
+
+  test("a city shard that 404s while the climate file answers builds no index, and makes no claim", async () => {
+    // The climate artifact is derived from the shards, so the two cannot
+    // disagree at rest — but a transient failure of the cities leg can
+    // leave the climate leg standing, and an index built from it alone
+    // has rows no pin can look up. The note must not render over that.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        String(url) === "/cities/PE.json"
+          ? Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+          : defaultFetch(String(url))
+      )
+    );
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+    expect(container.querySelector('[data-place="G3941584"]')).toBeNull();
     expect(screen.queryByRole("note", NOTE)).not.toBeInTheDocument();
   });
 
