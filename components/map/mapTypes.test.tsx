@@ -1,18 +1,22 @@
 import { describe, expect, test, vi } from "vitest";
 import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
-import { monthFit } from "@/lib/climateModel";
-import { REGION_MONTHS, type MonthFit } from "@/lib/months";
+import { climateMonth, monthFit } from "@/lib/climateModel";
+import { monthFitForSeasons, REGION_MONTHS, type MonthFit } from "@/lib/months";
 import { regionSchemeFor } from "@/lib/regionScheme";
 import type { ProvinceUnit } from "@/lib/provinceTopology";
 import type { CountryLevelProps } from "./CountryLevel";
 import type { CountryMapProps } from "./CountryMap";
 import {
+  CLIMATE_COUNTRY,
+  FIT_COLORS,
+  FIT_ORDER,
   fitForPlace,
   fitForRegion,
   isChinaRegion,
   NEUTRAL_FIT,
   originLineFor,
+  placeClimateFor,
   type DerivedClimate,
   type DerivedClimateIndex,
   type DerivedRegionFits,
@@ -460,6 +464,116 @@ describe("the derived branch sits below curated China", () => {
     ]);
 
     expect(() => fitForPlace(cusco, JUNE, climate)).toThrow(/row|60/i);
+  });
+});
+
+/**
+ * The lo/hi line's one resolver. `PlacePopup` used to hold this decision
+ * inline (`isChinaPlace(place) && isChinaRegion(place.region) ?
+ * regionMonthClimate(...) : null`); §5.3.3's card is a second surface making
+ * the same claim, and two copies would drift on the first change to either.
+ */
+describe("placeClimateFor", () => {
+  const OCTOBER = 10;
+
+  test("a Chinese place in one of the seven reads the curated table, note included", () => {
+    const beijing = city({ id: "Q956", name: "Beijing", country: "CN", region: "North" });
+    const expected = REGION_MONTHS.North[OCTOBER - 1];
+    expect(placeClimateFor(beijing, OCTOBER)).toEqual({
+      lo: expected.lo,
+      hi: expected.hi,
+      note: expected.note,
+      source: "curated",
+    });
+  });
+
+  test("a Chinese place never reads a derived row — inside the seven or outside them", () => {
+    // Mianyang's real shard row: admin-1 "Sichuan", which is not one of the
+    // seven. The row in the lookup is the one a caller that fetched CN.json
+    // would hand over, and §9.5 says it is ignored.
+    const mianyang = city({
+      id: "G1800627",
+      name: "Mianyang",
+      country: "CN",
+      province: "Sichuan",
+      region: "Sichuan",
+    });
+    expect(placeClimateFor(mianyang, OCTOBER, new Map([[mianyang.id, anchor("chengdu")]]))).toBeNull();
+
+    const beijing = city({ id: "Q956", name: "Beijing", country: "CN", region: "North" });
+    const withRow = placeClimateFor(beijing, OCTOBER, new Map([[beijing.id, anchor("beijing")]]));
+    expect(withRow?.source).toBe("curated");
+    expect(withRow?.lo).toBe(REGION_MONTHS.North[OCTOBER - 1].lo);
+  });
+
+  test("a place outside China reads its derived row, calendar-indexed from January at 0", () => {
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    const row = anchor("cusco");
+    const june = climateMonth(row.row, JUNE - 1);
+    expect(placeClimateFor(cusco, JUNE, new Map([[cusco.id, row]]))).toEqual({
+      lo: june.lo,
+      hi: june.hi,
+      source: "derived",
+    });
+    // Integers, straight off the row: spec §9.4 — the popup interpolates
+    // these unformatted, so a float here would render as `8.437°`.
+    expect(Number.isInteger(june.lo) && Number.isInteger(june.hi)).toBe(true);
+  });
+
+  test("no row, no line — and an admin-1 name that spells like China's is still not China", () => {
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    expect(placeClimateFor(cusco, JUNE)).toBeNull();
+    expect(placeClimateFor(cusco, JUNE, new Map())).toBeNull();
+    // Botswana's Central District, the collision commit 1407502 fixed at the
+    // place level: no China row, and with no derived row, nothing at all.
+    const serowe = city({ id: "G933366", name: "Serowe", country: "BW", region: "Central" });
+    expect(placeClimateFor(serowe, JUNE)).toBeNull();
+  });
+
+  test("a month outside 1-12 throws on both branches, as fitForPlace does", () => {
+    const beijing = city({ id: "Q956", name: "Beijing", country: "CN", region: "North" });
+    expect(() => placeClimateFor(beijing, 13)).toThrow();
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco" });
+    expect(() => placeClimateFor(cusco, 0, new Map([[cusco.id, anchor("cusco")]]))).toThrow();
+  });
+});
+
+describe("an empty bestSeasons is no claim", () => {
+  test("falls through to the derived row, and to unknown without one", () => {
+    // `[]` is what app/plan/page.tsx stamps on a hand-typed place and what
+    // lib/server/catalog.ts stamps on every catalog and GeoNames destination
+    // since §9.6. It used to read as "ok" in every month — a verdict nobody
+    // gave — because `[]` is truthy and `monthFitForSeasons` answers "ok" for
+    // any season outside an empty list.
+    expect(monthFitForSeasons({ bestSeasons: [] }, JUNE)).toBe("ok");
+
+    const cusco = city({ id: "G3941584", name: "Cusco", country: "PE", region: "Cusco", bestSeasons: [] });
+    const row = anchor("cusco");
+    expect(fitForPlace(cusco, JUNE)).toBe(NEUTRAL_FIT);
+    expect(fitForPlace(cusco, JUNE, new Map([[cusco.id, row]]))).toBe(monthFit(row.row, row.elev, JUNE - 1));
+  });
+
+  test("a non-empty list is still the first word", () => {
+    const beijing = city({
+      id: "D-beijing",
+      name: "Beijing",
+      country: "CN",
+      kind: "curated",
+      level: "curated",
+      region: "North",
+      bestSeasons: ["autumn"],
+    });
+    expect(fitForPlace(beijing, 10)).toBe("great");
+    expect(fitForPlace(beijing, JUNE)).toBe("ok");
+  });
+});
+
+describe("FIT_ORDER", () => {
+  test("names every band exactly once, best first and absence last", () => {
+    expect([...FIT_ORDER].sort()).toEqual(Object.keys(FIT_COLORS).sort());
+    expect(new Set(FIT_ORDER).size).toBe(FIT_ORDER.length);
+    expect(FIT_ORDER[0]).toBe("great");
+    expect(FIT_ORDER[FIT_ORDER.length - 1]).toBe("unknown");
   });
 });
 
