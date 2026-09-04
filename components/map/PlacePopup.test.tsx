@@ -1,8 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
+import fixture from "@/data/climate-anchors.json";
+import { climateMonth, monthFit } from "@/lib/climateModel";
 import { NATIONAL_CROWD, REGION_MONTHS } from "@/lib/months";
 import { PlacePopup } from "./PlacePopup";
-import type { MapPlace } from "./mapTypes";
+import { FIT_LABELS, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
 
 /**
  * What the hover card claims about where a place is.
@@ -45,7 +47,7 @@ function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlac
  * did before the prop existed — they are about `place`, not about the country
  * being planned. The crowd cases pass it explicitly, in both directions.
  */
-function show(subject: MapPlace, country = "CN", month = 10) {
+function show(subject: MapPlace, country = "CN", month = 10, climate?: DerivedClimateIndex) {
   return render(
     <PlacePopup
       place={subject}
@@ -53,6 +55,7 @@ function show(subject: MapPlace, country = "CN", month = 10) {
       position={{ x: 100, y: 100 }}
       containerWidth={640}
       country={country}
+      climate={climate}
     />
   );
 }
@@ -235,6 +238,60 @@ describe("PlacePopup — the climate row is China-only", () => {
     // Positive half: the fit dot beside where the climate would have gone is
     // still rendered, so the absence above is a missing row and not a missing
     // card. "No data" is FIT_LABELS.unknown — mapTypes.NEUTRAL_FIT.
+    expect(screen.getByText("No data")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The derived half of the climate row. The China-only tests above are kept
+ * as they are: this surface still reads `REGION_MONTHS` for a Chinese place,
+ * and `chinaBaseline.test.tsx` pins that output byte for byte.
+ */
+describe("PlacePopup — the derived climate row", () => {
+  const JUNE = 6;
+  const cuscoRow = fixture.cities.find((c) => c.key === "cusco")!.row;
+  const cusco = () =>
+    place({ id: "G3941584", name: "Cusco", province: "Cuzco Department", region: "Cuzco Department" });
+
+  test("reads a derived row for a place outside China — the verdict and the temperatures", () => {
+    const subject = cusco();
+    const climate: DerivedClimateIndex = new Map([[subject.id, { row: cuscoRow, elev: 3312 }]]);
+    const { container } = show(subject, "PE", JUNE, climate);
+
+    const june = climateMonth(cuscoRow, JUNE - 1);
+    expect(container.textContent).toContain(`${june.lo}°–${june.hi}°C typical`);
+    expect(screen.getByText(FIT_LABELS[monthFit(cuscoRow, 3312, JUNE - 1)])).toBeInTheDocument();
+    expect(screen.queryByText("No data")).not.toBeInTheDocument();
+  });
+
+  test("the elevation it was handed reaches the verdict", () => {
+    // Cusco at 3,312 m is `great` in June and `ok` without the lapse-rate
+    // correction (mapTypes.test.tsx pins the model); the label on the card
+    // has to move with it, or the popup is reading the row and not the pair.
+    const subject = cusco();
+    expect(monthFit(cuscoRow, 3312, JUNE - 1)).not.toBe(monthFit(cuscoRow, null, JUNE - 1));
+    show(subject, "PE", JUNE, new Map([[subject.id, { row: cuscoRow, elev: null }]]));
+    expect(screen.getByText(FIT_LABELS[monthFit(cuscoRow, null, JUNE - 1)])).toBeInTheDocument();
+  });
+
+  test("a Chinese place ignores a derived row, inside the seven and outside them", () => {
+    // Mianyang: admin-1 "Sichuan", not one of the seven, with a row in the
+    // lookup. §9.5 — no derived read for any CN place.
+    const mianyang = place({
+      id: "G1800627",
+      name: "Mianyang",
+      country: "CN",
+      province: "Sichuan",
+      region: "Sichuan",
+    });
+    const { container } = show(mianyang, "CN", 10, new Map([[mianyang.id, { row: cuscoRow, elev: 500 }]]));
+    expect(container.textContent).not.toContain("typical");
+    expect(screen.getByText("No data")).toBeInTheDocument();
+  });
+
+  test("still degrades to no row for a place the lookup does not hold", () => {
+    const { container } = show(cusco(), "PE", JUNE, new Map());
+    expect(container.textContent).not.toContain("typical");
     expect(screen.getByText("No data")).toBeInTheDocument();
   });
 });
