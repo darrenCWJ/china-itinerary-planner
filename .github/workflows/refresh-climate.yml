@@ -53,7 +53,7 @@
 #
 # Disk: scripts/ingest-climate.mjs downloads all 60 rasters (five variables x
 # twelve months) into its cache directory and never deletes them — 10.65 GB,
-# measured (see .superpowers/sdd/task-6-report.md). GitHub-hosted
+# measured (see data/climate-report.md's "## Rasters"). GitHub-hosted
 # ubuntu-latest runners have only the low tens of GB free on the root
 # volume — not reliable headroom for that — but also carry a second, larger
 # scratch volume mounted at /mnt, typically 60+ GB free. "Prepare the raster
@@ -62,7 +62,7 @@
 # default) and fails the job closed, before the download starts, if less
 # than 12 GB is free there. This assertion about the hosted image's disk
 # layout is standard for GitHub-hosted ubuntu-latest runners but has not been
-# exercised by an actual dispatch of this workflow — see the task report.
+# exercised by an actual dispatch of this workflow.
 #
 # No actions/cache for the raster set: 10.65 GB is over GitHub's 10 GB
 # per-repository cache limit, and a dispatch happens roughly once a decade —

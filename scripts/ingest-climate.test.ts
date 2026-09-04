@@ -359,6 +359,7 @@ import {
   climatePayload,
   ensureRaster,
   indexPayload,
+  measuredRanges,
   readScaling,
 } from "./ingest-climate.mjs";
 import { GZIP_BUDGET, RAW_TRIPWIRE } from "./build-provinces.mjs";
@@ -526,6 +527,21 @@ describe("indexPayload", () => {
     const before = indexPayload(countries, null, "2026-01-01T00:00:00.000Z");
     expect(indexPayload(countries.slice(0, 1), before, now).generatedAt).toBe(now);
   });
+
+  test("restamps when a shard's rows changed even though the listing did not", () => {
+    // A CHELSA erratum — the one event refresh-climate.yml's header names as
+    // a reason to dispatch — rewrites rows in every shard and adds or removes
+    // no city at all, so the {code, count} listing comes out identical. On the
+    // listing alone all 246 shards would restamp while this index, and
+    // data/climate-report.md's `Generated:` line with it, kept the previous
+    // decade's date.
+    const before = indexPayload(countries, null, "2026-01-01T00:00:00.000Z");
+    expect(indexPayload(countries, before, now, 246).generatedAt).toBe(now);
+    expect(indexPayload(countries, before, now, 1).generatedAt).toBe(now);
+    // Zero changed shards is still the quiet case, which is the whole point
+    // of preserving the stamp at all.
+    expect(indexPayload(countries, before, now, 0).generatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
 });
 
 describe("assertShardCoverage", () => {
@@ -656,6 +672,61 @@ describe("assertBudget", () => {
     // The two limits answer different questions: one is what a reader pays
     // for over the wire, the other is what their browser pays to parse it.
     expect(() => assertBudget([{ code: "ID", raw: 900_000, gzip: 40_000 }])).toThrow(/raw tripwire/);
+  });
+});
+
+describe("measuredRanges", () => {
+  /** A row of five constant blocks, so a fixture reads as five numbers. */
+  const flat = (lo: number, hi: number, precip: number, cloud: number, td: number): number[] => [
+    ...Array<number>(12).fill(lo),
+    ...Array<number>(12).fill(hi),
+    ...Array<number>(12).fill(precip),
+    ...Array<number>(12).fill(cloud),
+    ...Array<number>(12).fill(td),
+  ];
+
+  /** One block's line, split on whitespace, so the padding is not the subject. */
+  const fields = (lines: string[], label: string): string[] => {
+    const line = lines.find((l) => l.startsWith(`${label} `));
+    expect(line, `no ${label} line among ${JSON.stringify(lines)}`).toBeDefined();
+    return line!.trim().split(/\s+/);
+  };
+
+  test("takes each block's min and max across rows, never within one", () => {
+    // G1 holds the lo floor and the td floor, G2 every ceiling: a min/max
+    // taken per ROW, or over the flat 60 ints, would blend the five blocks
+    // into one range and still look like a plausible report.
+    const lines = measuredRanges([
+      ["G1", flat(-46, 12, 0, 0, -43)],
+      ["G2", flat(0, 47, 2476, 93, 24)],
+      ["G3", flat(-5, 20, 100, 50, 0)],
+    ]);
+    expect(fields(lines, "lo")).toEqual(["lo", "-46..0", "°C"]);
+    expect(fields(lines, "hi")).toEqual(["hi", "12..47", "°C"]);
+    expect(fields(lines, "precip")).toEqual(["precip", "0..2476", "mm/month"]);
+    expect(fields(lines, "cloud")).toEqual(["cloud", "0..93", "%"]);
+    expect(fields(lines, "td")).toEqual(["td", "-43..24", "°C"]);
+    expect(lines.join("\n")).toMatch(/^36 city-months, of which \*\*0\*\* have/m);
+  });
+
+  test("counts the months where lo exceeds hi, which no single band would catch", () => {
+    // 20 and 10 are both well inside the parser's -90..60 band, so only the
+    // cross-field check sees the inversion — the shape a build that scaled
+    // tasmin and tasmax differently would take.
+    const lines = measuredRanges([
+      ["G1", flat(0, 10, 0, 0, 0)],
+      ["G2", flat(20, 10, 0, 0, 0)],
+    ]);
+    expect(lines.join("\n")).toMatch(/^24 city-months, of which \*\*12\*\* have/m);
+  });
+
+  test("returns a whole section, heading first and blank-terminated", () => {
+    // buildReport splices these lines straight in ahead of '## Rasters', so
+    // the trailing blank is the section separator, not decoration.
+    const lines = measuredRanges([["G1", flat(0, 10, 0, 0, 0)]]);
+    expect(lines[0]).toBe("## Measured ranges");
+    expect(lines[1]).toBe("");
+    expect(lines.at(-1)).toBe("");
   });
 });
 

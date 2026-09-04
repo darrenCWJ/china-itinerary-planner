@@ -46,6 +46,26 @@ drop whole cities silently, because 60 positional integers carry no per-month
 absence marker: one unwritable month and the city cannot be written at all.
 That is why all three are gates and not statistics.
 
+## Measured ranges
+
+Per block, over every row written above — the provenance behind the guard
+bands `lib/climateShard.ts` refuses a row outside of. Those bands are
+deliberately wide of anything CHELSA reports, so these are the figures that
+say how much room is actually left under them:
+
+```
+lo      -46..33     °C
+hi      -40..47     °C
+precip  0..2476     mm/month
+cloud   0..93       %
+td      -43..24     °C
+```
+
+705084 city-months, of which **0** have `lo` greater than `hi` — the
+one cross-field invariant the parser checks per month, and the one a decode
+that scaled `tasmin` and `tasmax` differently would trip while landing inside
+every band above.
+
 ## Rasters
 
 - Variables: tasmin, tasmax, pr, clt, hurs — 12 months each, 60 files

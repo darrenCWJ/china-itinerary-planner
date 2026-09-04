@@ -31,8 +31,9 @@ function row(): number[] {
 }
 
 /**
- * One shard envelope, in the shape task-6-report.md's "Shard shape" fact
- * records: a single `cities` object keyed by GeoNames id.
+ * One shard envelope, in the shape `climatePayload` writes and
+ * data/climate-report.md's "## Layout" describes: a single `cities` object
+ * keyed by GeoNames id.
  */
 const shard = (overrides: Record<string, unknown> = {}) => ({
   country: "PE",
@@ -549,8 +550,8 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
 
     // Unlike the city- and province-shard suites, this cap is NOT binding:
     // the worst real shard (IN) gzips to 39,490 B, 26.3% of the 150,000 B
-    // cap (task-6-report.md, Fix 1). So the tripwire below is not "is the
-    // cap still saturated" — it never was — but "would a refresh that
+    // cap (data/climate-report.md, "## Size"). So the tripwire below is not
+    // "is the cap still saturated" — it never was — but "would a refresh that
     // doubled the artifact go unnoticed": half the cap is a wide enough
     // berth for CHELSA's own numbers to drift across a future release, but
     // a duplicated block or a doubled sample count would cross it.
@@ -595,7 +596,8 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
     //
     // 10 of the fixture's 19 entries: the other 9 are Q-prefixed curated
     // Chinese cities (spec §9.5's calibration anchors), absent from the
-    // GeoNames-keyed climate shards by design (task-6-report.md).
+    // GeoNames-keyed climate shards by design (data/climate-report.md,
+    // "## Layout": the rows join public/cities/<CC>.json on the city id).
     const gAnchors = ANCHORS.filter((c) => c.id.startsWith("G"));
     expect(gAnchors).toHaveLength(10);
 
