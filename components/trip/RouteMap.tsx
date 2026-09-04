@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Topology } from "topojson-specification";
 import { CountryMap } from "@/components/map/CountryMap";
-import type { MapPlace } from "@/components/map/mapTypes";
+import { buildClimateIndex, NO_CLIMATE } from "@/components/map/climateIndex";
+import { CLIMATE_COUNTRY, type DerivedClimateIndex, type MapPlace } from "@/components/map/mapTypes";
+import { fetchCityShard } from "@/lib/cityShard";
+import { fetchClimateShard } from "@/lib/climateShard";
 import { getCountry } from "@/lib/countries";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { hasDetailLevel } from "@/lib/countryDetail";
@@ -333,6 +336,51 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
     return () => controller.abort();
   }, [wantsProvinces, countryCode]);
 
+  /**
+   * The trip country's derived climate (§9.4), for the stops' colours.
+   *
+   * Two static fetches the wizard's map also makes, joined the same way
+   * (`buildClimateIndex`), so this surface and `MapExplorer` cannot disagree
+   * about a stop's verdict. The city shard is fetched for ONE field — `elev`
+   * — because the climate row does not carry it and `Destination` has no
+   * slot for it, and at Cusco's 3,312 m it is worth a whole band. Both files
+   * are served with a day of cache (next.config.ts), so the second trip page
+   * that opens on the same country pays nothing.
+   *
+   * Skipped for China (§9.5): `fitForPlace` never reads a derived row for a
+   * Chinese place, and the shard would be 412 rows nothing consults.
+   *
+   * Both legs swallow their own rejection, for §5.2's reason: a stop is drawn
+   * whether or not its verdict arrives, and grey is the absence of a claim.
+   * Cleared up front so one country's rows are never read against another's
+   * stops between a switch and the new file landing.
+   *
+   * And unlike `MapExplorer`, a city shard that fails while the climate file
+   * answers still builds the index: this surface's stops come from
+   * `/api/destinations/resolve`, not from the shard, so they are drawn either
+   * way, and a verdict without the lapse-rate correction is still a verdict
+   * — `lib/climateModel.ts` reads a missing elevation as no correction. The
+   * shard here is fetched for that one field and nothing else.
+   */
+  const [climate, setClimate] = useState<DerivedClimateIndex>(NO_CLIMATE);
+
+  useEffect(() => {
+    setClimate(NO_CLIMATE);
+    if (countryCode === CLIMATE_COUNTRY) return;
+    const controller = new AbortController();
+    // `fetchClimateShard` takes a fetch rather than a signal — lib/rates.ts's
+    // pattern — so the abort is wrapped in.
+    const scoped: typeof fetch = (input, init) => fetch(input, { ...init, signal: controller.signal });
+    Promise.all([
+      fetchClimateShard(countryCode, scoped).catch(() => null),
+      fetchCityShard(countryCode, controller.signal).catch(() => null),
+    ]).then(([shard, cities]) => {
+      if (controller.signal.aborted) return;
+      setClimate(buildClimateIndex(shard, cities?.cities ?? []));
+    });
+    return () => controller.abort();
+  }, [countryCode]);
+
   if (places.length === 0) {
     return (
       <p
@@ -377,6 +425,7 @@ export function RouteMap({ plan, country, startDate, season }: Props) {
         // dots, labels and hover and drop every control §5.3 gave them, so
         // nothing here offers to change a trip it cannot change.
         readOnly
+        climate={climate}
         onZoomRegion={noop}
         onTogglePlace={noop}
         onHoverPlace={noop}
