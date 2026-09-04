@@ -6,9 +6,9 @@ import { isCountryCode } from "./countries";
  * One file per country under `public/climate/`, built by
  * `scripts/ingest-climate.mjs` from CHELSA V2.1 climatologies 1981-2010
  * (CC0 1.0, DOI 10.16904/envidat.228) and committed, exactly as
- * `public/cities/` and `public/provinces/` are — see task-6-report.md and
- * the generated `data/climate-report.md`. This module is the only thing
- * that knows the file's shape.
+ * `public/cities/` and `public/provinces/` are — see the generated
+ * `data/climate-report.md` for that build's own measurement record. This
+ * module is the only thing that knows the file's shape.
  *
  * Fetched per country like a city shard, not read server-side: `public/` is
  * not readable from a Vercel lambda — the same constraint `cityShard.ts` and
@@ -78,7 +78,8 @@ import { isCountryCode } from "./countries";
  * outside this one. No build gate upstream of this module would notice that
  * mistake; this one does. For reference, the artifact's OWN measured ranges
  * sit far inside these guard bands: lo −46..33, hi −40..47, precip 0..2476,
- * cloud 0..93, td −43..24 (task-6-report.md, "For Task 8").
+ * cloud 0..93, td −43..24 (data/climate-report.md, "## Measured ranges",
+ * which the build regenerates from the rows it is about to write).
  */
 
 /** Root-relative so the fetch resolves the same from every route. */
@@ -147,7 +148,7 @@ const TD = 4;
  * Wide of anything CHELSA actually reports — see the module docblock's "The
  * bounds are a guard rail, not a climate claim". Measured extremes across
  * the whole committed artifact: lo −46..33, hi −40..47, precip 0..2476,
- * cloud 0..93, td −43..24.
+ * cloud 0..93, td −43..24 (data/climate-report.md, "## Measured ranges").
  */
 const TEMP_MIN_C = -90;
 const TEMP_MAX_C = 60;

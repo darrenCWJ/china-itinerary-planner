@@ -974,10 +974,27 @@ export function climatePayload(country, cities, previous, now) {
  * tree — otherwise every dispatch commits one line of pure noise in the one
  * file a reviewer checks first, and learning to ignore it is how the real
  * change gets waved through.
+ *
+ * `shardsChanged` is why the listing alone cannot decide this. The listing is
+ * `{code, count}` per country, and a CHELSA erratum — the one event
+ * `.github/workflows/refresh-climate.yml`'s header names as a reason to
+ * dispatch — rewrites rows in every shard while adding and removing no city
+ * at all. On the listing alone, all 246 shards would restamp while this index
+ * kept the previous decade's date, and `buildReport` takes the report's
+ * `Generated:` line from THIS stamp, so the record of the run would be stale
+ * too. Defaulted to 0 so the three-argument form still means "the listing
+ * decides", which is what the unchanged-case tests are about.
+ *
+ * @param {{ code: string, count: number }[]} countries
+ * @param {object | null} previous
+ * @param {string} now
+ * @param {number} shardsChanged how many shard files this run's bytes differ in
  */
-export function indexPayload(countries, previous, now) {
+export function indexPayload(countries, previous, now, shardsChanged = 0) {
   const unchanged =
-    previous !== null && JSON.stringify(previous.countries) === JSON.stringify(countries);
+    previous !== null &&
+    shardsChanged === 0 &&
+    JSON.stringify(previous.countries) === JSON.stringify(countries);
   return { generatedAt: unchanged ? previous.generatedAt : now, countries };
 }
 
@@ -1033,6 +1050,75 @@ const seconds = (ms) => (ms / 1000).toFixed(1);
 /** Signed, because "off by −6.3%" and "off by 6.3%" are different findings. */
 const drift = (measured, predicted) =>
   `${measured >= predicted ? '+' : '−'}${(Math.abs(100 * (measured - predicted)) / predicted).toFixed(1)}%`;
+
+/** The five blocks, in tuple order, as `measuredRanges` labels them. */
+const BLOCK_LABELS = [
+  { label: 'lo', unit: '°C' },
+  { label: 'hi', unit: '°C' },
+  { label: 'precip', unit: 'mm/month' },
+  { label: 'cloud', unit: '%' },
+  { label: 'td', unit: '°C' },
+];
+
+/**
+ * The report's `## Measured ranges` section: what the rows actually contain.
+ *
+ * Committed because this is the provenance behind `lib/climateShard.ts`'s
+ * guard bands, and until it was written here it existed only in an agent
+ * scratch file that `.gitignore` keeps out of the repository — eight comments
+ * cited a document a reader could not open. The bands are deliberately wide of
+ * anything CHELSA reports, and with no measured figures beside them a reader
+ * cannot tell a generous guard rail from one a future release would trip.
+ *
+ * `lo > hi` is counted for the same reason: it is the one CROSS-FIELD
+ * invariant the parser checks per month, so a decode that scaled `tasmin` and
+ * `tasmax` differently would land inside every band and still be caught. The
+ * count here is what says the artifact has never needed it.
+ *
+ * Pure, and takes the same `[id, row]` iterable `assertRowShape` does, so the
+ * block can be recomputed from `public/climate/*.json` alone rather than only
+ * as a side effect of a 26-minute build.
+ *
+ * @param {Iterable<[string, number[]]>} rows
+ * @returns {string[]} the section's lines, heading first, blank-terminated
+ */
+export function measuredRanges(rows) {
+  const blocks = BLOCK_LABELS.map((b) => ({ ...b, min: Infinity, max: -Infinity }));
+  let cityMonths = 0;
+  let inverted = 0;
+  for (const [, row] of rows) {
+    for (let b = 0; b < blocks.length; b += 1) {
+      const block = blocks[b];
+      for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+        const value = row[b * MONTHS_PER_YEAR + m];
+        if (value < block.min) block.min = value;
+        if (value > block.max) block.max = value;
+      }
+    }
+    for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+      cityMonths += 1;
+      if (row[m] > row[MONTHS_PER_YEAR + m]) inverted += 1;
+    }
+  }
+  return [
+    '## Measured ranges',
+    '',
+    'Per block, over every row written above — the provenance behind the guard',
+    'bands `lib/climateShard.ts` refuses a row outside of. Those bands are',
+    'deliberately wide of anything CHELSA reports, so these are the figures that',
+    'say how much room is actually left under them:',
+    '',
+    '```',
+    ...blocks.map((b) => `${b.label.padEnd(7)} ${`${b.min}..${b.max}`.padEnd(11)} ${b.unit}`),
+    '```',
+    '',
+    `${cityMonths} city-months, of which **${inverted}** have \`lo\` greater than \`hi\` — the`,
+    'one cross-field invariant the parser checks per month, and the one a decode',
+    'that scaled `tasmin` and `tasmax` differently would trip while landing inside',
+    'every band above.',
+    '',
+  ];
+}
 
 /**
  * The committed measurement record, in `data/provinces-report.md`'s shape:
@@ -1108,6 +1194,7 @@ function buildReport(stats) {
     'absence marker: one unwritable month and the city cannot be written at all.',
     'That is why all three are gates and not statistics.',
     '',
+    ...measuredRanges(stats.rows),
     '## Rasters',
     '',
     `- Variables: ${SAMPLE_FIELDS.join(', ')} — 12 months each, ${stats.rasters.length} files`,
@@ -1391,7 +1478,11 @@ async function main() {
   let changed = shardsChanged;
   const indexPath = join(OUT_DIR, 'index.json');
   const previousIndex = readPrevious(indexPath);
-  const index = indexPayload(entries, previousIndex.value, now);
+  // `shardsChanged`, not the listing alone: an erratum re-run moves rows in
+  // every shard and changes no country's count, and an index that kept its
+  // old stamp through that would date the whole artifact — and the report's
+  // `Generated:` line with it — to the previous run.
+  const index = indexPayload(entries, previousIndex.value, now, shardsChanged);
   const indexJson = `${JSON.stringify(index)}\n`;
   if (indexJson !== previousIndex.text) changed += 1;
   // `emittedCountries` comes from each shard's own envelope (parsed above),
@@ -1431,6 +1522,9 @@ async function main() {
       shardCount: countries.length,
       cityCount: cities.length,
       rowCount: rows.size,
+      // The rows themselves, not just their count: `measuredRanges` reads
+      // every value of every one of them for the `## Measured ranges` block.
+      rows,
       skipped: skipped.length,
       offRaster,
       atNodata,
