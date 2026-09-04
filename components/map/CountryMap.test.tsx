@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
+import { monthFit } from "@/lib/climateModel";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
@@ -8,7 +10,7 @@ import type { RegionId } from "@/lib/regionScheme";
 import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
 import { CountryMap } from "./CountryMap";
 import { CN_FILE, PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
-import type { MapPlace } from "./mapTypes";
+import { FIT_COLORS, type MapPlace } from "./mapTypes";
 
 /**
  * What the dispatcher routes where, and what a country with no geometry gets
@@ -601,5 +603,45 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       expect(held.airports).toBe(0);
       expect(on.airports).toBe(hasMap ? 2 : 0);
     }, 30_000);
+  });
+});
+
+describe("CountryMap threads the climate index", () => {
+  test("the level it draws reads the index the dispatcher was handed", () => {
+    const row = fixture.cities.find((c) => c.key === "cusco")!.row;
+    const cusco: MapPlace = {
+      id: "G3941584",
+      kind: "catalog",
+      name: "Cusco",
+      localName: null,
+      province: "Cuzco Department",
+      country: "PE",
+      region: "Cuzco Department",
+      lat: -13.53188,
+      lon: -71.96701,
+      population: 428_450,
+      level: "prefecture",
+      attractionCount: 0,
+      blurb: null,
+    };
+    const { container } = render(
+      <CountryMap
+        country="PE"
+        provinces={PE_FILE}
+        projection={PE_ENTRY as ProjectionEntry}
+        places={[cusco]}
+        selected={[]}
+        month={6}
+        zoomRegion={null}
+        routeIds={[]}
+        climate={new Map([[cusco.id, { row, elev: 3312 }]])}
+        onZoomRegion={() => {}}
+        onTogglePlace={() => {}}
+        onHoverPlace={() => {}}
+      />
+    );
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[monthFit(row, 3312, 5)]);
   });
 });
