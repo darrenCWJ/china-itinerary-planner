@@ -54,10 +54,11 @@ const CLIMATE_SOURCE = "/climate/:path+";
 const PROVINCE_PATHS = ["/provinces/PE.json", "/provinces/index.json"];
 
 /**
- * public/climate/ does not exist yet — Plan 5 creates it. Rule and guard land
- * now because they cost nothing until it does (a header rule for a path Next
- * serves nothing at is inert), and because the alternative is remembering to
- * add them later, after the first uncached fetch has already shipped.
+ * `public/climate/` exists now — Plan 5 Task 6 committed it, 246 shards plus
+ * `index.json`. Rule and guard predate that commit deliberately: they cost
+ * nothing before the directory exists (a header rule for a path Next serves
+ * nothing at is inert), and the alternative was remembering to add them
+ * later, after the first uncached fetch had already shipped.
  */
 const CLIMATE_PATHS = ["/climate/PE.json"];
 
