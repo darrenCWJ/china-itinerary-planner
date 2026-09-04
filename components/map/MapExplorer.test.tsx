@@ -3,6 +3,9 @@ import { useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PrefsProvider } from "@/components/shell/PrefsProvider";
 import type { AirportPick } from "@/components/trip/AirportPicker";
+import fixture from "@/data/climate-anchors.json";
+import { climateMonth, monthFit } from "@/lib/climateModel";
+import { DERIVED_CLIMATE_NOTE } from "@/lib/climateNote";
 import { COUNTRY_DETAIL, hasDetailLevel } from "@/lib/countryDetail";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
@@ -11,7 +14,7 @@ import { DEFAULT_PREFS, PREFS_COOKIE, serializePrefsCookie, type UserPrefs } fro
 import { PE_TOPOLOGY } from "./countryFixture";
 import { MapExplorer, type MapLevel } from "./MapExplorer";
 import { FIT_LEGEND_LABEL } from "./FitLegend";
-import { fitForPlace, fitForRegion, type MapPlace } from "./mapTypes";
+import { fitForPlace, fitForRegion, FIT_COLORS, type MapPlace } from "./mapTypes";
 
 /**
  * What is asserted here is the coordination the component exists for: which
@@ -195,6 +198,8 @@ vi.mock("next/dynamic", async () => {
  * `public/cities/PE.json` (Lima is index 0 of 750, Cusco index 7). Every field
  * differs between the two, so a cross-wire — the wrong row under a name, or
  * one row's admin-1 pasted onto the other — is visible rather than absorbed.
+ * `elev` is the field §9.4's lapse-rate correction reads; Cusco's 3,312 m is
+ * worth a whole band.
  */
 const PE_SHARD = {
   country: "PE",
@@ -208,6 +213,7 @@ const PE_SHARD = {
       lon: -77.02824,
       a1: "Lima Province",
       p: 7_737_002,
+      elev: 152,
       tz: "America/Lima",
     },
     {
@@ -217,6 +223,7 @@ const PE_SHARD = {
       lon: -71.96701,
       a1: "Cuzco Department",
       p: 428_450,
+      elev: 3312,
       tz: "America/Lima",
     },
   ],
@@ -267,6 +274,25 @@ const DE_SHARD = {
       tz: "Europe/Berlin",
     },
   ],
+};
+
+const anchorRow = (key: string): number[] => {
+  const found = fixture.cities.find((c) => c.key === key);
+  if (!found) throw new Error(`data/climate-anchors.json has no city "${key}"`);
+  return found.row;
+};
+
+/**
+ * Peru's climate shard, cut to the two cities `PE_SHARD` carries. The rows
+ * are the anchors fixture's, which `lib/climateShard.test.ts` pins
+ * byte-identical to the committed `public/climate/PE.json`, so what the map
+ * colours here is what it colours in production.
+ */
+const PE_CLIMATE = {
+  country: "PE",
+  generatedAt: "2026-09-03T19:48:35.466Z",
+  source: "CHELSA V2.1 climatologies 1981-2010, CC0 1.0, DOI 10.16904/envidat.228",
+  cities: { G3936456: anchorRow("lima"), G3941584: anchorRow("cusco") },
 };
 
 /**
@@ -540,9 +566,17 @@ function defaultFetch(url: string) {
                     // Japan's and China's enrichment included — 404s. That is
                     // the honest answer for the four codes with no shard at
                     // all, and the map has to keep working through it.
-                    : href.startsWith("/cities/")
-                      ? null
-                      : WORLD_FIXTURE;
+                    : href === "/climate/PE.json"
+                      ? PE_CLIMATE
+                      // Every other country's climate file 404s — the honest
+                      // answer for the four codes with no shard, and the shape
+                      // a country takes between a catalog refresh and the next
+                      // climate dispatch.
+                      : href.startsWith("/climate/")
+                        ? null
+                        : href.startsWith("/cities/")
+                          ? null
+                          : WORLD_FIXTURE;
   return Promise.resolve({
     ok: body !== null,
     status: body === null ? 404 : 200,
@@ -2000,5 +2034,123 @@ describe("the legend", () => {
     await settle();
     expect(screen.queryByRole("group", { name: "Map of Peru" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: FIT_LEGEND_LABEL })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * §9.4's fit colours worldwide, on the wire and on the pins. The model and
+ * the join are pinned in their own files; what this pins is the effect —
+ * which file is asked for, for whom, and what the marker under the cursor
+ * ends up reading.
+ */
+describe("derived climate", () => {
+  /** `MapExplorer`'s DEFAULT_MONTH. */
+  const OCTOBER = 10;
+  const CUSCO_ROW = anchorRow("cusco");
+  const NOTE = { name: "About these notes" };
+
+  test("fetches the open country's climate file", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+    expect(requested("/climate/PE.json")).toBe(true);
+  });
+
+  test("never fetches China's — nothing would read it", async () => {
+    // `fitForPlace` ignores a derived row for any CN place (§9.5), and CN.json
+    // is 412 rows the map would download on every open for nothing.
+    render(<Harness country="CN" />);
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of China" })).toBeInTheDocument();
+    expect(requested("/climate/CN.json")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/climate/"))).toBe(false);
+  });
+
+  test("colours a marker by the verdict the model gives its row and its elevation", async () => {
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+    const expected = FIT_COLORS[monthFit(CUSCO_ROW, 3312, OCTOBER - 1)];
+    // Armed twice: the verdict is a colour and not the absence grey, and the
+    // elevation changes it — so a map that dropped the join would fail here
+    // rather than agree by accident.
+    expect(expected).not.toBe(FIT_COLORS.unknown);
+    expect(monthFit(CUSCO_ROW, 3312, OCTOBER - 1)).not.toBe(monthFit(CUSCO_ROW, null, OCTOBER - 1));
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(expected);
+  });
+
+  test("the elevation comes from the city shard, not from the climate row", async () => {
+    // The same shard with the elevations withheld: the row is identical, so
+    // only the join can move the colour.
+    const noElevations = {
+      ...PE_SHARD,
+      cities: PE_SHARD.cities.map(({ elev: _elev, ...row }) => row),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        String(url) === "/cities/PE.json"
+          ? Promise.resolve({ ok: true, status: 200, json: async () => noElevations })
+          : defaultFetch(String(url))
+      )
+    );
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[monthFit(CUSCO_ROW, null, OCTOBER - 1)]);
+  });
+
+  test("the hover card reads the same index as the marker", async () => {
+    const { container } = render(<Harness country="PE" />);
+    await settle();
+    // React's onMouseEnter is delivered from mouseover; testing-library's
+    // `mouseEnter` fires both. The position is client pixels the reporter
+    // measures against a zero rect in jsdom, which only moves the card.
+    fireEvent.mouseEnter(container.querySelector('[data-place="G3941584"]')!, {
+      clientX: 300,
+      clientY: 200,
+    });
+    const october = climateMonth(CUSCO_ROW, OCTOBER - 1);
+    expect(screen.getByRole("tooltip").textContent).toContain(`${october.lo}°–${october.hi}°C typical`);
+  });
+
+  test("a country whose climate file 404s draws grey pins and makes no claim", async () => {
+    const { container } = render(<Harness country="DE" />);
+    await settle();
+    expect(requested("/climate/DE.json")).toBe(true);
+    expect(
+      container.querySelector('[data-place="G2950159"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS.unknown);
+    expect(screen.queryByRole("note", NOTE)).not.toBeInTheDocument();
+  });
+
+  test("says what the derived figures are, under a derived map and never under China's", async () => {
+    render(<Harness country="PE" />);
+    await settle();
+    expect(screen.getByRole("note", NOTE).textContent).toContain(DERIVED_CLIMATE_NOTE);
+    cleanup();
+
+    render(<Harness country="CN" />);
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of China" })).toBeInTheDocument();
+    expect(screen.queryByRole("note", NOTE)).not.toBeInTheDocument();
+  });
+
+  test("the index belongs to the country it was fetched for", async () => {
+    // A PE→DE switch: Peru's rows must not colour Germany's cities, and the
+    // note that was true of Peru is a claim about a country the user left.
+    const view = render(<Harness country="PE" />);
+    await settle();
+    expect(screen.getByRole("note", NOTE)).toBeInTheDocument();
+
+    view.rerender(<Harness country="DE" />);
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of Germany" })).toBeInTheDocument();
+    expect(view.container.querySelector('[data-place="G3941584"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-place="G2950159"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS.unknown);
+    expect(screen.queryByRole("note", NOTE)).not.toBeInTheDocument();
   });
 });
