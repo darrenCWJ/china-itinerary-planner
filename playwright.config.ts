@@ -81,9 +81,11 @@ export default defineConfig({
       // exists to test the signed-out redirect and cannot pass while holding a
       // session — it fails as a timeout, which reads like a broken app.
       // gateways.spec.ts creates trips through the API with the saved
-      // session, so it belongs to the signed-in project too.
+      // session, so it belongs to the signed-in project too. climate.spec.ts
+      // drives the wizard through the world level to Peru with the saved
+      // session, so it belongs here too.
       name: "chromium",
-      testMatch: /(map|gateways)\.spec\.ts/,
+      testMatch: /(map|gateways|climate)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/user.json" },
       dependencies: ["setup"],
     },
