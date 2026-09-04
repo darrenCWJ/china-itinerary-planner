@@ -631,3 +631,27 @@ describe("CountryMap threads the climate index", () => {
     ).toBe(FIT_COLORS[monthFit(cusco.row, cusco.elev, 5)]);
   });
 });
+
+describe("CountryMap threads the below-map slot", () => {
+  test("the level draws it; the list-only fallback does not", () => {
+    const slot = <p data-testid="under-map">under the map</p>;
+    const common = {
+      country: "PE",
+      projection: PE_ENTRY as ProjectionEntry,
+      places: [CUSCO_PLACE],
+      selected: [] as string[],
+      month: 6,
+      zoomRegion: null,
+      routeIds: [] as string[],
+      onZoomRegion: () => {},
+      onTogglePlace: () => {},
+      onHoverPlace: () => {},
+    };
+    const drawn = render(<CountryMap {...common} provinces={PE_FILE} belowMap={slot} />);
+    expect(drawn.container.querySelector("[data-below-map]")!.textContent).toBe("under the map");
+    drawn.unmount();
+    const fallback = render(<CountryMap {...common} provinces={null} belowMap={slot} />);
+    expect(fallback.container.querySelector("[data-below-map]")).toBeNull();
+    expect(fallback.queryByText("under the map")).toBeNull();
+  });
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { Airport } from "@/lib/airports";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
@@ -120,6 +121,12 @@ export interface CountryMapProps extends LevelProps {
    * Optional because the list-only branch below has no marker to colour.
    */
   climate?: DerivedClimateIndex;
+  /**
+   * Drawn under the map and above the list by `CountryLevel` — see its
+   * `belowMap`. Nothing of it reaches the list-only fallback: a legend and a
+   * note about colours have nothing to explain where no marker is drawn.
+   */
+  belowMap?: ReactNode;
 }
 
 export function CountryMap({
@@ -130,6 +137,7 @@ export function CountryMap({
   airports,
   showAirports,
   climate,
+  belowMap,
   ...level
 }: CountryMapProps) {
   if (provinces) {
@@ -152,6 +160,7 @@ export function CountryMap({
         airports={airports}
         showAirports={showAirports}
         climate={climate}
+        belowMap={belowMap}
         onTogglePlace={level.onTogglePlace}
         onHoverPlace={level.onHoverPlace}
       />
