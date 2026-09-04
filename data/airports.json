@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-02T12:49:20.777Z",
+ "generatedAt": "2026-09-04T12:46:16.025Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -39780,7 +39780,7 @@
    "country": "CA",
    "lat": 42.2756,
    "lon": -82.955597,
-   "size": "medium"
+   "size": "large"
   },
   {
    "iata": "YQH",
