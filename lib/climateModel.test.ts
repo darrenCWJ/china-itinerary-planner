@@ -475,6 +475,11 @@ describe("contract requirements — spec §9.4", () => {
         // corrected `high`/`dewPoint` locals.
         expect(month.lo).toBe(c.row[m]);
         expect(month.hi).toBe(c.row[12 + m]);
+        // td pinned to its raw position for the same reason, and it is the
+        // one that needs it most: `correctedDewPoint` is a real float on the
+        // penalty path, so integer-ness alone would stay green if climateMonth
+        // ever handed back a corrected value that happened to round.
+        expect(month.td).toBe(c.row[48 + m]);
       }
     }
   });

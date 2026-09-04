@@ -101,9 +101,11 @@ on:
 
 concurrency:
   # SHARED with refresh-airports.yml and refresh-cities.yml, deliberately:
-  # this workflow also commits straight to main, and the shared group name
-  # is what serialises all three workflows' pushes rather than letting two
-  # land at once and turn one into a non-fast-forward. A dispatch here is
+  # this workflow also pushes a data commit with no human in the loop — to
+  # the branch it was dispatched on, which is main whenever it is dispatched
+  # there — and the shared group name is what serialises all three workflows'
+  # pushes rather than letting two land at once and turn one into a
+  # non-fast-forward. A dispatch here is
   # rare, but not free while it runs: with cancel-in-progress: false, a run
   # queued behind this one goes pending, and GitHub cancels a previously
   # pending run in the group when a newer one queues — so a dispatch
@@ -202,7 +204,11 @@ jobs:
           # of this window, but a human push to the dispatch branch can
           # still land inside it. Rebase the one data commit onto their tip
           # and retry, rather than losing this dispatch to a race with no
-          # retry — verified to work on the shallow checkout
-          # actions/checkout produces (see refresh-cities.yml, which uses
-          # the identical retry).
+          # retry — the same mechanism as refresh-cities.yml's retry, and
+          # verified the same way on the shallow checkout actions/checkout
+          # produces. NOT identical to it: that workflow is schedule-only, so
+          # it can hardcode `origin main`; this one is workflow_dispatch-only
+          # and rebases onto "$GITHUB_REF_NAME", the branch it was actually
+          # dispatched on. Hardcoding main here would rebase a dispatch made
+          # on a feature branch onto main and push the result there.
           git push || { git pull --rebase origin "$GITHUB_REF_NAME" && git push; }
