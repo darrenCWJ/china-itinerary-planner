@@ -7,6 +7,7 @@ import { provincePath } from "@/lib/provinceTopology";
 import { DESTINATIONS } from "@/lib/data";
 import type { DayPlan, TripPlan } from "@/lib/itinerary";
 import type { Destination } from "@/lib/types";
+import { fitForPlace, NEUTRAL_FIT } from "@/components/map/mapTypes";
 import { RouteMap, routeDestinationIds, routeMonth, routePlaces, unresolvedStopIds } from "./RouteMap";
 
 /**
@@ -37,8 +38,8 @@ const plan = (days: DayPlan[]): TripPlan => ({ days, tips: [] }) as unknown as T
  * Cusco, in the shape `/api/destinations/resolve` answers with.
  *
  * Copied from `geoNamesCityToDestination`'s own output rather than invented:
- * the six fields the bundled GeoNames index carries, plus the generic seasons
- * and activities that function stamps on. `lib/server/catalog.test.ts` pins the
+ * the six fields the bundled GeoNames index carries, plus the empty season claim §9.6
+ * leaves and the generic activities that function stamps on. `lib/server/catalog.test.ts` pins the
  * server half of the same value.
  */
 const CUSCO: Destination = {
@@ -52,7 +53,7 @@ const CUSCO: Destination = {
   emoji: "📍",
   tagline: "Cusco, Cuzco Department",
   knownFor: [],
-  bestSeasons: ["spring", "autumn"],
+  bestSeasons: [],
   seasonNotes: {},
   foods: [],
   suggestedDays: [1, 2],
@@ -160,6 +161,14 @@ describe("routePlaces with resolved stops", () => {
   test("a resolved stop with no coordinates is still not drawn", () => {
     const offMap = { ...CUSCO, id: "offmap:grandmas-village", lat: null, lon: null };
     expect(routePlaces(plan([day(1, offMap.id)]), [offMap])).toEqual([]);
+  });
+
+  test("a resolved stop carries no season claim, so its verdict is the artifact's or nothing", () => {
+    // Before §9.6 every resolved stop was `great` in April through the
+    // stamp; the trip map coloured Sydney's autumn as a northern spring.
+    const [place] = routePlaces(plan([day(1, "G3941584")]), [CUSCO]);
+    expect(place.bestSeasons).toEqual([]);
+    expect(fitForPlace(place, 4)).toBe(NEUTRAL_FIT);
   });
 });
 
