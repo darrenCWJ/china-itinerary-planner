@@ -652,6 +652,10 @@ describe("assertRowShape", () => {
     // write 246 shards of Singapore at 298 °C and only surface 66 minutes
     // later, when npm test parsed the committed artifact back.
     const at = (i: number, value: number) => new Map([["G1", row.map((v, j) => (j === i ? value : v))]]);
+    // lo's high edge and hi's low edge each need the OTHER value pulled to
+    // match, or lo <= hi breaks before the band under test gets a say.
+    const at2 = (i: number, vi: number, j: number, vj: number) =>
+      new Map([["G1", row.map((v, k) => (k === i ? vi : k === j ? vj : v))]]);
     expect(() => assertRowShape(at(0, -91))).toThrow(/G1: lo in month 0 is -91, outside the -90\.\.60/);
     expect(() => assertRowShape(at(23, 298))).toThrow(/G1: hi in month 11 is 298, outside the -90\.\.60/);
     expect(() => assertRowShape(at(24, -1))).toThrow(/G1: precip in month 0 is -1, outside the 0\.\.10000/);
@@ -660,11 +664,18 @@ describe("assertRowShape", () => {
     );
     expect(() => assertRowShape(at(36, 101))).toThrow(/G1: cloud in month 0 is 101, outside the 0\.\.100/);
     expect(() => assertRowShape(at(48, -91))).toThrow(/G1: td in month 0 is -91, outside the -90\.\.60/);
-    // Both edges of every band are accepted: the tripwire is for an unscaled
-    // decode, not for a cold winter.
-    expect(() => assertRowShape(at(0, -90))).not.toThrow();
-    expect(() => assertRowShape(at(24, 10_000))).not.toThrow();
-    expect(() => assertRowShape(at(36, 100))).not.toThrow();
+    // All ten accepting edges: the tripwire is for an unscaled decode, not
+    // for a cold winter or a dry month.
+    expect(() => assertRowShape(at(0, -90))).not.toThrow(); // lo low
+    expect(() => assertRowShape(at2(11, 60, 23, 60))).not.toThrow(); // lo high
+    expect(() => assertRowShape(at2(12, -90, 0, -90))).not.toThrow(); // hi low
+    expect(() => assertRowShape(at(23, 60))).not.toThrow(); // hi high
+    expect(() => assertRowShape(at(24, 0))).not.toThrow(); // precip low
+    expect(() => assertRowShape(at(24, 10_000))).not.toThrow(); // precip high
+    expect(() => assertRowShape(at(36, 0))).not.toThrow(); // cloud low
+    expect(() => assertRowShape(at(36, 100))).not.toThrow(); // cloud high
+    expect(() => assertRowShape(at(48, -90))).not.toThrow(); // td low
+    expect(() => assertRowShape(at(59, 60))).not.toThrow(); // td high
   });
 
   test("refuses a month whose lo exceeds its hi, which every band alone would pass", () => {
@@ -675,6 +686,58 @@ describe("assertRowShape", () => {
     expect(() => assertRowShape(new Map([["G1", inverted]]))).toThrow(
       /G1: lo in month 5 is 2, greater than hi \(0\)/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assertRowShape vs parseClimateShard
+// ---------------------------------------------------------------------------
+
+import { parseClimateShard } from "../lib/climateShard";
+
+describe("assertRowShape vs parseClimateShard", () => {
+  test("agree on every block's accept/refuse boundary", () => {
+    // BLOCK_META here and lib/climateShard.ts's own band constants are
+    // restated independently rather than shared (this file's own docblock:
+    // a build script cannot import the app's TypeScript). Independence is
+    // the point, but only a check like this one would notice the two
+    // quietly drifting apart.
+    const blocks: [string, number, number][] = [
+      ["lo", -90, 60],
+      ["hi", -90, 60],
+      ["precip", 0, 10_000],
+      ["cloud", 0, 100],
+      ["td", -90, 60],
+    ];
+    // lo defaults to -90 and hi to 60 so lo <= hi holds at every probe below,
+    // whichever block is under test; the other three blocks never touch it.
+    const base: number[] = Array.from({ length: 60 }, (_, i) =>
+      Math.floor(i / 12) === 0 ? -90 : Math.floor(i / 12) === 1 ? 60 : 1
+    );
+    const throws = (fn: () => unknown) => {
+      try {
+        fn();
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    blocks.forEach(([label, min, max], b) => {
+      for (const probe of [min - 1, min, max, max + 1]) {
+        const row = base.slice();
+        row[b * 12] = probe;
+        const shapeThrew = throws(() => assertRowShape(new Map([["G1", row]])));
+        const parseThrew = throws(() =>
+          parseClimateShard({
+            country: "PE",
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            source: "test",
+            cities: { G1: row },
+          })
+        );
+        expect(parseThrew, `${label} ${probe}`).toBe(shapeThrew);
+      }
+    });
   });
 });
 
@@ -759,6 +822,13 @@ describe("measuredRanges", () => {
     expect(lines[0]).toBe("## Measured ranges");
     expect(lines[1]).toBe("");
     expect(lines.at(-1)).toBe("");
+  });
+
+  test("refuses an empty row set rather than reporting Infinity..-Infinity", () => {
+    // Every block's min/max starts at the opposite infinity; with no rows to
+    // narrow it, that starting point is what would otherwise reach the
+    // committed report.
+    expect(() => measuredRanges([])).toThrow(/no rows to measure/);
   });
 });
 

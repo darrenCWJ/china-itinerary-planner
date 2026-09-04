@@ -1123,6 +1123,14 @@ const drift = (measured, predicted) =>
  * @returns {string[]} the section's lines, heading first, blank-terminated
  */
 export function measuredRanges(rows) {
+  // Materialized up front so an empty set can be refused before any block
+  // is touched — left as the iterable's own type, an empty `rows` would
+  // otherwise leave every block at its opposite-infinity starting point and
+  // ship `Infinity..-Infinity` straight into the committed report.
+  const entries = [...rows];
+  if (entries.length === 0) {
+    throw new Error('measuredRanges: no rows to measure — refusing to report Infinity..-Infinity ranges');
+  }
   // `BLOCK_META`'s own min/max are the GUARD BANDS; these are the measured
   // extremes, so they start at the opposite infinities and are named apart
   // from the band deliberately.
@@ -1134,7 +1142,7 @@ export function measuredRanges(rows) {
   }));
   let cityMonths = 0;
   let inverted = 0;
-  for (const [, row] of rows) {
+  for (const [, row] of entries) {
     for (let b = 0; b < blocks.length; b += 1) {
       const block = blocks[b];
       for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
