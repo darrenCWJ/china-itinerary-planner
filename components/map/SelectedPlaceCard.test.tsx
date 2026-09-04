@@ -5,7 +5,7 @@ import { monthFit } from "@/lib/climateModel";
 import { parseProvinceTopology } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
 import { CountryLevel } from "./CountryLevel";
-import { PE_ENTRY, peFileWith } from "./countryFixture";
+import { CUSCO_PLACE, PE_ENTRY, peFileWith } from "./countryFixture";
 import { MAP_VIEW_H } from "./mapShared";
 import { SelectedPlaceCard } from "./SelectedPlaceCard";
 import { FIT_LABELS, type MapPlace } from "./mapTypes";
@@ -207,34 +207,19 @@ describe("SelectedPlaceCard", () => {
     // the marker through `fitForPlace(place, month, climate)`; a card that
     // called `fitForPlace(place, month)` would say "No data" over a green pin.
     const row = fixture.cities.find((c) => c.key === "cusco")!;
-    const cusco: MapPlace = {
-      id: "G3941584",
-      kind: "catalog",
-      name: "Cusco",
-      localName: null,
-      province: "Cuzco Department",
-      country: "PE",
-      region: "Cuzco Department",
-      lat: -13.53188,
-      lon: -71.96701,
-      population: 428_450,
-      level: "prefecture",
-      attractionCount: 0,
-      blurb: null,
-    };
     const JUNE = 6;
 
     const withIndex = render(
       <SelectedPlaceCard
-        {...cardProps({ place: cusco, month: JUNE })}
-        climate={new Map([[cusco.id, { row: row.row, elev: row.elev }]])}
+        {...cardProps({ place: CUSCO_PLACE, month: JUNE })}
+        climate={new Map([[CUSCO_PLACE.id, { row: row.row, elev: row.elev }]])}
       />
     );
     expect(withIndex.getByText(FIT_LABELS[monthFit(row.row, row.elev, JUNE - 1)])).toBeInTheDocument();
     expect(withIndex.queryByText("No data")).not.toBeInTheDocument();
     withIndex.unmount();
 
-    const without = render(<SelectedPlaceCard {...cardProps({ place: cusco, month: JUNE })} />);
+    const without = render(<SelectedPlaceCard {...cardProps({ place: CUSCO_PLACE, month: JUNE })} />);
     expect(without.getByText("No data")).toBeInTheDocument();
   });
 });

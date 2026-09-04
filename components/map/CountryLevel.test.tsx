@@ -2054,9 +2054,10 @@ describe("CountryLevel airport agreement", () => {
  */
 describe("CountryLevel derived climate", () => {
   const JUNE = 6;
-  const CUSCO_ROW = fixture.cities.find((c) => c.key === "cusco")!.row;
-  const climate: DerivedClimateIndex = new Map([[CUSCO.id, { row: CUSCO_ROW, elev: 3312 }]]);
-  const cuscoJune = monthFit(CUSCO_ROW, 3312, JUNE - 1);
+  const cusco = fixture.cities.find((c) => c.key === "cusco")!;
+  const CUSCO_ROW = cusco.row;
+  const climate: DerivedClimateIndex = new Map([[CUSCO.id, { row: CUSCO_ROW, elev: cusco.elev }]]);
+  const cuscoJune = monthFit(CUSCO_ROW, cusco.elev, JUNE - 1);
 
   test("colours a marker by its derived verdict, and leaves a place with no row grey", () => {
     const { container } = renderLevel({ climate, month: JUNE });
@@ -2098,7 +2099,7 @@ describe("CountryLevel derived climate", () => {
     const beijing = place({ id: "beijing", name: "Beijing", country: "CN", region: "North", lon: -78, lat: -12 });
     const { container } = renderLevel({
       places: [beijing],
-      climate: new Map([[beijing.id, { row: CUSCO_ROW, elev: 3312 }]]),
+      climate: new Map([[beijing.id, { row: CUSCO_ROW, elev: cusco.elev }]]),
       month: 10,
     });
     const october = REGION_MONTHS.North[9];
