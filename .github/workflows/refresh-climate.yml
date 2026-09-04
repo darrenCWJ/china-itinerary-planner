@@ -1,0 +1,185 @@
+# Refreshes public/climate/ (246 country shards + index.json) and
+# data/climate-report.md from CHELSA V2.1's global climatologies — five
+# variables x twelve months of 1981-2010 normals (DOI 10.16904/envidat.228),
+# sampled for every city in public/cities/. CHELSA V2.1 is CC0 1.0 — no
+# attribution condition — so unlike refresh-cities.yml's GeoNames credit,
+# nothing is added anywhere in the UI for this one; see
+# data/climate-report.md's own Source section for the record.
+#
+# workflow_dispatch ONLY. No `schedule:` key, on purpose. These are WMO
+# climate normals recalculated once a decade (1981-2010 is the current
+# release), not something that moves week to week the way airports or cities
+# do. Every run also re-downloads the full 10.65 GB raster set from scratch
+# (see "Disk" below), from an academic host with no SLA to a repo this size.
+# A nightly cron here would spend that cost 365 times a year to produce,
+# every time but the one CHELSA ships a new decade, a byte-identical tree:
+# scripts/ingest-climate.mjs preserves each shard's `generatedAt` when its
+# rows are unchanged, so a run with nothing new to say commits nothing (see
+# the change test below). Dispatch this by hand, on purpose, roughly once a
+# decade, or after a CHELSA erratum.
+#
+# ITS OWN WORKFLOW FILE — not a fourth job in refresh-cities.yml. GitHub
+# gives every job a fresh runner regardless of which file it lives in, so
+# this would not repeat the *exact* mechanism of the 2026-08-28 incident that
+# file's own header records — that was two STEPS sharing one JOB's runner
+# (and so its IP): enrich-cities.mjs spent ~30 unbroken minutes against
+# Wikidata's query service, and ingest-country-facts.mjs started the instant
+# it finished, on the same runner, with the rate budget already spent; WDQS
+# answered 429 twice in one day. The fix was splitting those into separate
+# jobs in the same file. What generalises here is the principle behind that
+# fix, not the mechanism: don't couple unrelated ingest workloads together.
+# This job shares no host and no rate budget with GeoNames or Wikidata, but
+# it is an order of magnitude bigger on every other axis that matters to
+# refresh-cities.yml's shape — 10.65 GB against that file's KB-scale
+# artifacts, a 150-minute timeout against its 20-60 minute jobs, dispatch-only
+# against its daily schedule. Routing it through that file's `commit` job
+# would push an unrelated giant artifact through actions/upload-artifact and
+# recreate, one layer up, exactly the coupling between independent flows that
+# file's 2026-08-28 split was designed to remove.
+#
+# Disk: scripts/ingest-climate.mjs downloads all 60 rasters (five variables x
+# twelve months) into its cache directory and never deletes them — 10.65 GB,
+# measured (see .superpowers/sdd/task-6-report.md). GitHub-hosted
+# ubuntu-latest runners have only the low tens of GB free on the root
+# volume — not reliable headroom for that — but also carry a second, larger
+# scratch volume mounted at /mnt, typically 60+ GB free. "Prepare the raster
+# cache volume" below points CIP_CHELSA_CACHE at /mnt, creates that directory
+# (sudo — the hosted image does not grant this user write access to /mnt by
+# default) and fails the job closed, before the download starts, if less
+# than 12 GB is free there. This assertion about the hosted image's disk
+# layout is standard for GitHub-hosted ubuntu-latest runners but has not been
+# exercised by an actual dispatch of this workflow — see the task report.
+#
+# No actions/cache for the raster set: 10.65 GB is over GitHub's 10 GB
+# per-repository cache limit, and a dispatch happens roughly once a decade —
+# there is no "usually warm" case to optimise for, so every run downloads
+# everything regardless and there would be nothing left to restore between
+# runs. (`cache: npm` below is a different, unrelated mechanism — it caches
+# node_modules, megabytes not gigabytes, the same way ci.yml uses it.)
+#
+# Needs `npm ci`, unlike refresh-airports.yml and refresh-cities.yml's ingest
+# jobs: scripts/ingest-climate.mjs imports `geotiff` to read the rasters, so
+# this job runs on a real install rather than Node built-ins alone. The same
+# install also provides vitest for the verify step below.
+#
+# Commit condition: `git status --porcelain -- public/climate`, not
+# `git diff --quiet`. Same reasoning as refresh-cities.yml's catalog watch:
+# this build mirrors public/cities/ country by country, so a country newly
+# given a climate row arrives as an untracked shard, and `git diff` cannot
+# see untracked files. A quiet run leaves no diff at all — every shard keeps
+# its previous `generatedAt` when its rows are unchanged, index.json keeps
+# its stamp when the listing is unchanged, and data/climate-report.md is not
+# rewritten when nothing else changed.
+#
+# A commit here triggers a Vercel deploy with no human in the loop: GitHub
+# does not create workflow runs from pushes authenticated with the default
+# GITHUB_TOKEN (recursion prevention; only workflow_dispatch and
+# repository_dispatch are exempt), and actions/checkout persists exactly
+# that token for the `git push` below — so ci.yml never runs on this
+# workflow's own commit, while Vercel's git integration deploys it
+# regardless. That is why "Verify the artifacts against the repo's own
+# tests" runs the full `npm test` before the commit step: it is the only
+# gate standing between a bad build and production.
+name: Refresh climate
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  # SHARED with refresh-airports.yml and refresh-cities.yml, deliberately:
+  # this workflow also commits straight to main, and the shared group name
+  # is what serialises all three workflows' pushes rather than letting two
+  # land at once and turn one into a non-fast-forward. A dispatch here is
+  # rare enough that overlap is unlikely, but joining costs nothing.
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Least privilege: this job writes files under public/climate/ and
+    # data/climate-report.md, and nothing else.
+    permissions:
+      contents: write
+    # Expected wall clock: ~26 min sampling (measured, 1,557 s, everything
+    # cached) + ~37 min for the cold 10.65 GB download (measured at 4.81 MB/s
+    # from the author's host — a GitHub runner may be faster or slower) +
+    # ~3 min more for `npm ci` and `npm test` ≈ 66 min. 150 is roughly double
+    # that: slack for a slower runner or host, while a genuinely stalled
+    # download still goes red well short of the 6-hour default.
+    timeout-minutes: 150
+    env:
+      # /mnt, not the default (tmpdir()/cip-chelsa, on the root volume) — see
+      # "Disk" in the header. Read by scripts/ingest-climate.mjs itself; the
+      # "Prepare the raster cache volume" step below creates this exact path.
+      CIP_CHELSA_CACHE: /mnt/cip-chelsa
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # /mnt is the runner's larger scratch volume — see "Disk" in the
+      # header. Neither this directory nor write access to it exists by
+      # default on the hosted image, so both are created here, and free
+      # space is checked before the ingest step starts spending its
+      # ~37-minute download budget against a volume that might not have
+      # room for it.
+      - name: Prepare the raster cache volume
+        run: |
+          sudo mkdir -p "$CIP_CHELSA_CACHE"
+          sudo chown "$USER" "$CIP_CHELSA_CACHE"
+          df -h
+          AVAIL_KB=$(df -Pk "$CIP_CHELSA_CACHE" | tail -1 | awk '{print $4}')
+          AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
+          echo "Free space on the cache volume: ${AVAIL_GB} GB"
+          if [ "$AVAIL_KB" -lt $((12 * 1024 * 1024)) ]; then
+            echo "::error::Only ${AVAIL_GB} GB free on the CHELSA cache volume ($CIP_CHELSA_CACHE) — need at least 12 GB for the 10.65 GB raster set"
+            exit 1
+          fi
+
+      - name: Ingest climate normals
+        run: node scripts/ingest-climate.mjs
+
+      # The whole suite, not a hand-picked subset — same reasoning as
+      # refresh-cities.yml's identically named step: ci.yml never runs on
+      # this workflow's own commit (see header), so this is the only gate
+      # standing between a bad build and a production deploy. `npx tsc
+      # --noEmit` is deliberately not repeated: this script writes JSON
+      # only, so every TypeScript file in the tree is byte-identical to what
+      # the push that put this commit on the dispatch branch already
+      # type-checked.
+      - name: Verify the artifacts against the repo's own tests
+        run: npm test
+
+      - name: Commit if the climate normals changed
+        run: |
+          # git status --porcelain, not git diff --quiet: see "Commit
+          # condition" in the header — a newly covered country's shard
+          # arrives untracked, and git diff cannot see untracked files.
+          CHANGED="$(git status --porcelain -- public/climate)"
+          if [ -z "$CHANGED" ]; then
+            echo "No change in the climate normals — nothing to commit."
+            exit 0
+          fi
+          echo "$CHANGED" | head -20
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # data/climate-report.md is staged but deliberately NOT part of the
+          # change test above: it is prose about the data, not something the
+          # app reads, so it rides along with a real change instead of being
+          # able to cause one — same treatment refresh-cities.yml gives
+          # data/cities-report.md.
+          git add public/climate data/climate-report.md
+          git commit -m "chore: refresh climate normals from CHELSA"
+          # The concurrency group keeps the other two refresh workflows out
+          # of this window, but a human push to main can still land inside
+          # it. Rebase the one data commit onto their tip and retry, rather
+          # than losing this dispatch to a race with no retry — verified to
+          # work on the shallow checkout actions/checkout produces (see
+          # refresh-cities.yml, which uses the identical retry).
+          git push || { git pull --rebase origin main && git push; }
