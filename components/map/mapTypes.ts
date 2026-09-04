@@ -1,5 +1,5 @@
-import { monthFit } from "@/lib/climateModel";
-import { monthFitForSeasons, REGION_MONTHS, type MonthFit } from "@/lib/months";
+import { climateMonth, monthFit } from "@/lib/climateModel";
+import { monthFitForSeasons, regionMonthClimate, REGION_MONTHS, type MonthFit } from "@/lib/months";
 import type { ChinaRegion, Season } from "@/lib/types";
 
 /** Unified marker model: curated destinations + catalog cities. */
@@ -221,11 +221,14 @@ export function fitForPlace(
   month: number,
   climate?: DerivedClimateIndex
 ): MonthFit {
-  if (place.bestSeasons) {
-    return monthFitForSeasons(
-      { bestSeasons: place.bestSeasons, avoidSeasons: place.avoidSeasons },
-      month
-    );
+  // A non-empty list, not a truthy one. `[]` is the established "nobody has
+  // said" value — app/plan/page.tsx stamps it on a hand-typed place and
+  // lib/server/catalog.ts on every catalog and GeoNames destination (§9.6) —
+  // and `monthFitForSeasons` answers "ok" for any season outside an empty
+  // list, which is a verdict nobody gave.
+  const seasons = place.bestSeasons;
+  if (seasons !== undefined && seasons.length > 0) {
+    return monthFitForSeasons({ bestSeasons: seasons, avoidSeasons: place.avoidSeasons }, month);
   }
   if (place.country === CLIMATE_COUNTRY) return regionFit(place.region, month);
   const derived = climate?.get(place.id);
@@ -324,3 +327,60 @@ export function formatPopulation(population: number | null): string | null {
   if (population >= 1_000) return `${Math.round(population / 1_000)}k people`;
   return `${population} people`;
 }
+
+/**
+ * What a surface says the weather typically is: the `lo°–hi°C typical` line
+ * on `PlacePopup` and on `SelectedPlaceCard` (§5.3.3).
+ *
+ * `note` is the curated table's editorial one-liner ("Blossom season",
+ * "'Furnace city' heat"); a derived row never has one — the model produces a
+ * band, not prose. `source` is carried so a surface can say which it is
+ * showing without re-deriving the decision below.
+ */
+export interface PlaceClimate {
+  lo: number;
+  hi: number;
+  note?: string;
+  source: "curated" | "derived";
+}
+
+/**
+ * The one resolver for that line, on the same gate `fitForPlace` uses.
+ *
+ * Lifted out of `PlacePopup` when the card became a second surface making the
+ * same claim, for the reason `originLineFor` gives: two copies drift on the
+ * first change to either. The order is `fitForPlace`'s, minus the curated
+ * `bestSeasons` step — a season claim carries no temperatures — so a Chinese
+ * place reads `REGION_MONTHS` or nothing, and every other place reads its
+ * derived row or nothing. A Chinese place outside the seven gets `null`, not a
+ * derived row, however many rows the caller holds (§9.5): `public/climate/
+ * CN.json` really does carry 412 rows keyed by the same ids, and ignoring
+ * them is the whole point of the gate.
+ *
+ * A month outside 1–12 throws on both branches, exactly as `fitForPlace`
+ * does: `REGION_MONTHS[region][12]` is `undefined` and `.lo` on it is a
+ * TypeError, and `climateMonth` refuses the index outright.
+ */
+export function placeClimateFor(
+  place: MapPlace,
+  month: number,
+  climate?: DerivedClimateIndex
+): PlaceClimate | null {
+  if (place.country === CLIMATE_COUNTRY) {
+    if (!isChinaRegion(place.region)) return null;
+    const row = regionMonthClimate(place.region, month);
+    return { lo: row.lo, hi: row.hi, note: row.note, source: "curated" };
+  }
+  const derived = climate?.get(place.id);
+  if (derived === undefined) return null;
+  const { lo, hi } = climateMonth(derived.row, month - 1);
+  return { lo, hi, source: "derived" };
+}
+
+/**
+ * The bands in the order a legend reads them: best first, the absence marker
+ * last. A list rather than `Object.keys(FIT_COLORS)`, because object key
+ * order is an accident of declaration and a legend's order is a decision.
+ * `mapTypes.test.tsx` pins that the two name the same set.
+ */
+export const FIT_ORDER: readonly MonthFit[] = ["great", "ok", "poor", "avoid", "unknown"];
