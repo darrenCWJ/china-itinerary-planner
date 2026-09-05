@@ -1,5 +1,6 @@
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
+import type { MapPlace } from "./mapTypes";
 
 /**
  * The hand-built admin-1 country both country-level test files are held to.
@@ -187,6 +188,32 @@ export const PE_ENTRY: ProjectionEntry = {
   // Recomputed from `bounds` by `projectionFor`; carried because the manifest
   // carries it, and never read by the renderer.
   scale: 8021.4062,
+};
+
+/**
+ * Cusco as a catalog place, with its real shard id `G3941584` and its real
+ * coordinates from `public/cities/PE.json` — the id `data/climate-anchors.json`
+ * keys its `cusco` row by, so a test can plant that row in a
+ * `DerivedClimateIndex` under this place's id and read a real verdict.
+ *
+ * Here rather than inline in each test, for the reason this file exists:
+ * two copies of the same place in two test files drift on the first edit
+ * to either, and the map's tests already share their geometry from here.
+ */
+export const CUSCO_PLACE: MapPlace = {
+  id: "G3941584",
+  kind: "catalog",
+  name: "Cusco",
+  localName: null,
+  province: "Cuzco Department",
+  country: "PE",
+  region: "Cuzco Department",
+  lat: -13.53188,
+  lon: -71.96701,
+  population: 428_450,
+  level: "prefecture",
+  attractionCount: 0,
+  blurb: null,
 };
 
 /**

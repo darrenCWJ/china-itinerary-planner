@@ -1,14 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
+import { monthFit } from "@/lib/climateModel";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
 import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
 import { CountryMap } from "./CountryMap";
-import { CN_FILE, PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
-import type { MapPlace } from "./mapTypes";
+import { CN_FILE, CUSCO_PLACE, PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
+import { FIT_COLORS, type MapPlace } from "./mapTypes";
 
 /**
  * What the dispatcher routes where, and what a country with no geometry gets
@@ -601,5 +603,55 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       expect(held.airports).toBe(0);
       expect(on.airports).toBe(hasMap ? 2 : 0);
     }, 30_000);
+  });
+});
+
+describe("CountryMap threads the climate index", () => {
+  test("the level it draws reads the index the dispatcher was handed", () => {
+    const cusco = fixture.cities.find((c) => c.key === "cusco")!;
+    const { container } = render(
+      <CountryMap
+        country="PE"
+        provinces={PE_FILE}
+        projection={PE_ENTRY as ProjectionEntry}
+        places={[CUSCO_PLACE]}
+        selected={[]}
+        month={6}
+        zoomRegion={null}
+        routeIds={[]}
+        climate={new Map([[CUSCO_PLACE.id, { row: cusco.row, elev: cusco.elev }]])}
+        onZoomRegion={() => {}}
+        onTogglePlace={() => {}}
+        onHoverPlace={() => {}}
+      />
+    );
+    expect(FIT_COLORS[monthFit(cusco.row, cusco.elev, 5)]).not.toBe(FIT_COLORS.unknown);
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[monthFit(cusco.row, cusco.elev, 5)]);
+  });
+});
+
+describe("CountryMap threads the below-map slot", () => {
+  test("the level draws it; the list-only fallback does not", () => {
+    const slot = <p data-testid="under-map">under the map</p>;
+    const common = {
+      country: "PE",
+      projection: PE_ENTRY as ProjectionEntry,
+      places: [CUSCO_PLACE],
+      selected: [] as string[],
+      month: 6,
+      zoomRegion: null,
+      routeIds: [] as string[],
+      onZoomRegion: () => {},
+      onTogglePlace: () => {},
+      onHoverPlace: () => {},
+    };
+    const drawn = render(<CountryMap {...common} provinces={PE_FILE} belowMap={slot} />);
+    expect(drawn.container.querySelector("[data-below-map]")!.textContent).toBe("under the map");
+    drawn.unmount();
+    const fallback = render(<CountryMap {...common} provinces={null} belowMap={slot} />);
+    expect(fallback.container.querySelector("[data-below-map]")).toBeNull();
+    expect(fallback.queryByText("under the map")).toBeNull();
   });
 });

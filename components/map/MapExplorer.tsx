@@ -20,9 +20,10 @@ import { usePrefs } from "@/components/shell/PrefsProvider";
 import { AirportPicker, type AirportPick } from "@/components/trip/AirportPicker";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { CountryMap } from "./CountryMap";
+import { FitLegend } from "./FitLegend";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
-import { CLIMATE_COUNTRY, type MapPlace } from "./mapTypes";
+import { CLIMATE_COUNTRY, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
 import {
   fetchCityEnrichment,
   fetchCityShard,
@@ -35,6 +36,10 @@ import { foldPlaceName } from "@/lib/foldPlaceName";
 import { fetchProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { regionForProvinceText } from "@/lib/provinces";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
+import { GapNote } from "@/components/plan/GapNote";
+import { climateGapNote } from "@/lib/climateNote";
+import { fetchClimateShard } from "@/lib/climateShard";
+import { buildClimateIndex, NO_CLIMATE } from "./climateIndex";
 
 /**
  * The level coordinator (spec §6): world ⇄ country, sharing one shell, one
@@ -275,6 +280,20 @@ export function MapExplorer({
    * touches the toggle never sees a state they did not choose.
    */
   const [showAirports, setShowAirports] = useState(false);
+  /**
+   * The open country's derived climate (§9.4): every shard row joined to its
+   * city's elevation, keyed by `MapPlace.id`. What colours the markers
+   * outside China, what the hover card and the selected-place card read
+   * their `lo°–hi°C typical` line from, and what the honesty note under the
+   * map is about.
+   *
+   * Built once per country load, in the effect below, from two of the legs
+   * it already runs — the climate shard and the city shard's `elev` — and
+   * never at render: `mapTypes.ts`'s rule is that the fit resolution stays
+   * synchronous over rows already in hand. `NO_CLIMATE` rather than a fresh
+   * `Map` so "nothing yet" is one referentially stable value.
+   */
+  const [climate, setClimate] = useState<DerivedClimateIndex>(NO_CLIMATE);
   const [hover, setHover] = useState<{
     place: MapPlace;
     pos: { x: number; y: number };
@@ -371,11 +390,14 @@ export function MapExplorer({
    * Whether §10.1's toggle has anything to offer — three conditions, and each
    * one is a rendering where the button would be a control over nothing.
    *
-   * The legend beside it already sets the rule: it "reads the marker colours,
-   * so it appears only where there are markers to read", and the world level's
+   * The legend beside it sets a related rule, not this one: it is drawn
+   * inside the level, under the map, so it exists exactly where the
+   * geometry does and "No data" is explained even for a country whose
+   * climate file is missing.
+   * This toggle follows the same idea from the other side — a control over
+   * nothing is worse than a missing one — which is also why the world level's
    * globe button is withdrawn under reduced motion rather than left offering a
-   * view that render would refuse. A toggle whose click changes no pixel is
-   * worse than a missing one, because it reads as a broken feature.
+   * view that render would refuse.
    *
    * The first two clauses are `CountryMap`'s own dispatch, restated: China
    * renders `ChinaLevel`, which §9.5 freezes and which has no layer at all; a
@@ -392,7 +414,8 @@ export function MapExplorer({
    * Everything the open country's map needs: its admin-1 geometry — China's
    * curated asset, or the build's per-country file for everyone else — the
    * frame that geometry is drawn in, the Wikidata catalog's cities for that
-   * country, and the GeoNames shard plus its enrichment.
+   * country, the GeoNames shard plus its enrichment, and, for every country
+   * but China, its climate normals (§9.4).
    *
    * Keyed on `countryCode`, which it was not before. The old array was
    * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
@@ -423,6 +446,8 @@ export function MapExplorer({
     setCitiesUnavailable(false);
     setProvinces(null);
     setProjection(null);
+    // Peru's rows left in place across a switch would colour Germany's cities.
+    setClimate(NO_CLIMATE);
     // `hover` holds a `MapPlace` derived from the `cities` array just emptied,
     // so leaving it would keep a popup open over a place that no longer exists.
     setHover(null);
@@ -467,9 +492,23 @@ export function MapExplorer({
       fetchCityEnrichment(countryCode, controller.signal).catch(
         () => ({}) as CityEnrichmentIndex
       ),
+      // The open country's climate normals (§9.4), for every country but the
+      // one whose month table is hand-authored: `fitForPlace` never reads a
+      // derived row for a Chinese place (§9.5), so CN.json's 412 rows would be
+      // 24 KB gzipped (78 KB raw) per open that nothing consults.
+      // `fetchClimateShard` takes a fetch rather than a signal — lib/rates.ts's
+      // pattern — so the abort is
+      // wrapped in. Swallows its own rejection like the shard leg above it: a
+      // country with no climate file draws grey pins, which is the absence of
+      // a claim and not an outage.
+      countryCode === CLIMATE_COUNTRY
+        ? Promise.resolve(null)
+        : fetchClimateShard(countryCode, (input, init) =>
+            fetch(input, { ...init, signal: controller.signal })
+          ).catch(() => null),
     ])
-      .then(([provinceFile, manifest, catalogRes, shardRes, enrichment]) => {
-        // Four of the five legs swallow their own rejection, so an abort
+      .then(([provinceFile, manifest, catalogRes, shardRes, enrichment, climateRes]) => {
+        // All six legs swallow their own rejection, so an abort
         // *resolves* this Promise.all rather than rejecting it — and the
         // `.catch` below, which is where the other aborted paths are filtered
         // out, never runs. Without this the previous country's effect writes
@@ -504,6 +543,14 @@ export function MapExplorer({
         // catalog has never covered is the normal case for 245 of them, and
         // showing an outage notice for it would be a lie.
         setCitiesUnavailable(!catalogRes.available && shardRes === null);
+        // Joined here, where the parsed shard rows are still in hand: the
+        // climate row carries no elevation and `MapPlace` has no field for
+        // one, so this is the only moment the two halves meet. And no shard,
+        // no index: without the city rows there is no `G`-id place on the map
+        // to look a climate row up for, so an index built from the climate
+        // file alone would colour nothing and still put the honesty note
+        // under a map with no derived pin on it.
+        setClimate(buildClimateIndex(shardRes === null ? null : climateRes, shardRes?.cities ?? []));
       })
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(true);
@@ -829,9 +876,11 @@ export function MapExplorer({
           )}
         </div>
         {/*
-          §10.1's layer toggle, in the slot the legend occupies for China —
-          the two can never both be drawn, because a curated country has no
-          layer to toggle and the other 245 have no colour legend to read.
+          §10.1's layer toggle. Every country this pane draws has the
+          marker-colour legend (`FitLegend`) under the map, and any country
+          with airports has this toggle in the header — `canDrawAirports` is
+          also false for a country with no airport rows of its own — so the two
+          sit in different places and never compete for a slot.
 
           `aria-pressed` with one fixed name, rather than the globe button's
           swapping label. That button chooses between two renderers and neither
@@ -889,6 +938,26 @@ export function MapExplorer({
           // reaches the card whether this is on or off (§10.2): the toggle
           // governs what the map draws, never what the card knows.
           showAirports={showAirports}
+          climate={climate}
+          // Under the map, above the list — see `CountryLevel.belowMap` for why
+          // this is a slot and not three siblings after the level. The legend
+          // is drawn for every country whose geometry loaded, climate or no
+          // climate, because "No data" is a colour that needs explaining too;
+          // the note (§9.7) is `climateGapNote`'s lines — `[]` for China and
+          // for a country that drew no derived row, and `GapNote` renders
+          // nothing for `[]`. Neither reaches the list-only fallback, which
+          // has no marker to explain.
+          belowMap={
+            <>
+              <FitLegend />
+              {caption && (
+                <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
+                  {caption}
+                </p>
+              )}
+              <GapNote lines={climateGapNote(countryCode, climate.size)} />
+            </>
+          }
           onZoomRegion={showRegion}
           onTogglePlace={togglePlace}
           onHoverPlace={(place, pos) =>
@@ -900,17 +969,12 @@ export function MapExplorer({
             place={hover.place}
             month={month}
             country={countryCode}
+            climate={climate}
             position={hover.pos}
             containerWidth={mapWrapRef.current?.clientWidth ?? 640}
           />
         )}
       </div>
-
-      {caption && (
-        <p className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--ink-2)]">
-          {caption}
-        </p>
-      )}
 
       <div className="mt-4 border-t border-dashed border-[var(--line-1)] pt-4">
         <MonthTimeline month={month} onMonth={handleMonth} country={countryCode} />

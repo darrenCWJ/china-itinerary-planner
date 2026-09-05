@@ -7,6 +7,7 @@ import {
   fitForPlace,
   formatPopulation,
   originLineFor,
+  type DerivedClimateIndex,
   type MapPlace,
 } from "./mapTypes";
 import { MAP_VIEW_H, MAP_VIEW_W } from "./mapShared";
@@ -87,7 +88,16 @@ export interface SelectedPlaceCardProps {
    * can answer it — by the time the caller re-renders, the node is gone.
    */
   onDismiss: (heldFocus: boolean) => void;
-  /** §6.4's climate and airport lines. Nothing passes any yet. */
+  /**
+   * The open country's derived climate, keyed by `MapPlace.id`, so the fit
+   * chip agrees with the marker this card opened from — `CountryLevel`
+   * colours that marker through `fitForPlace(place, month, climate)`, and a
+   * chip that resolved without the index would read "No data" over a green
+   * pin. Optional for the same reason the marker's is: a level with none
+   * draws every non-China place grey, and the chip should say so too.
+   */
+  climate?: DerivedClimateIndex;
+  /** §6.4's climate and airport lines — `CountryLevel` passes both. */
   children?: ReactNode;
 }
 
@@ -99,6 +109,7 @@ export function SelectedPlaceCard({
   takeFocus,
   onToggle,
   onDismiss,
+  climate,
   children,
 }: SelectedPlaceCardProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -146,7 +157,7 @@ export function SelectedPlaceCard({
     };
   }, []);
 
-  const fit = fitForPlace(place, month);
+  const fit = fitForPlace(place, month, climate);
   const originLine = originLineFor(place);
   const population = formatPopulation(place.population);
   const size = place.attractionCount > 0 ? `${place.attractionCount} sights` : population;

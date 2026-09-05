@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { geoPath, type GeoPath } from "d3-geo";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
@@ -25,7 +25,8 @@ import {
   type FittedProjection,
   type HoverPos,
 } from "./mapShared";
-import { FIT_COLORS, fitForPlace, type MapPlace } from "./mapTypes";
+import { NO_CLIMATE } from "./climateIndex";
+import { FIT_COLORS, fitForPlace, placeClimateFor, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
 import { SelectedPlaceCard } from "./SelectedPlaceCard";
 
 /**
@@ -810,6 +811,36 @@ export interface CountryLevelProps {
    * who never finds the toggle still deserves it.
    */
   showAirports?: boolean;
+  /**
+   * The open country's derived climate (§9.4), keyed by `MapPlace.id`: what
+   * colours every marker outside China and fills the card's climate line.
+   *
+   * Built by the caller from two fetches it already makes — the climate
+   * shard and the city shard's elevations (`buildClimateIndex`) — and passed
+   * down already in hand, so the fit resolution stays synchronous over rows
+   * the component holds. Never a callback: `mapTypes.ts`'s docblock on
+   * `DerivedClimateIndex` is the rule.
+   *
+   * Optional, defaulting to the shared empty index: `RouteMap` builds its
+   * own, and a level with none is the correct render for a country whose
+   * file has not landed yet — grey pins, no line, no claim. A Chinese place
+   * never reads it however full it is (§9.5): `fitForPlace` and
+   * `placeClimateFor` both gate on the place's own country.
+   */
+  climate?: DerivedClimateIndex;
+  /**
+   * What the caller wants drawn directly under the map and above the place
+   * list: the picker's legend, its zoom caption and its honesty note.
+   *
+   * A slot rather than three props, because this level should not know
+   * what the chrome says. And a slot HERE rather than markup a caller
+   * appends after the level, because the list is part of this level's own
+   * markup — §5.2's spine sits under its map — so anything appended after
+   * the level lands under 750 chips instead of under the map, which is
+   * where a browser found the legend on the first look. `RouteMap` passes
+   * nothing.
+   */
+  belowMap?: ReactNode;
   onTogglePlace: (place: MapPlace) => void;
   onHoverPlace: (place: MapPlace | null, pos: HoverPos | null) => void;
 }
@@ -826,6 +857,8 @@ export function CountryLevel({
   readOnly = false,
   airports = NO_AIRPORTS,
   showAirports = false,
+  climate = NO_CLIMATE,
+  belowMap,
   onTogglePlace,
   onHoverPlace,
 }: CountryLevelProps) {
@@ -1173,6 +1206,14 @@ export function CountryLevel({
   );
 
   /**
+   * The card's climate line (§5.3.3, "where the climate lo/hi line lives"):
+   * the curated table for a Chinese place in one of the seven, the derived
+   * row for anyone else who has one, nothing otherwise. Cheap enough to
+   * resolve per render — one Map lookup and five array reads.
+   */
+  const cardClimate = cardPlace === null ? null : placeClimateFor(cardPlace, month, climate);
+
+  /**
    * §10.1's layer, projected once per country rather than once per frame.
    *
    * Empty while the layer is off, so a country whose airports have landed pays
@@ -1422,7 +1463,7 @@ export function CountryLevel({
                       cx={x}
                       cy={y}
                       r={r}
-                      fill={FIT_COLORS[fitForPlace(place, month)]}
+                      fill={FIT_COLORS[fitForPlace(place, month, climate)]}
                       fillOpacity={place.kind === "curated" ? 0.95 : 0.8}
                       stroke="var(--paper)"
                       strokeWidth={MARKER_STROKE / k}
@@ -1483,6 +1524,7 @@ export function CountryLevel({
             place={cardPlace}
             month={month}
             selected={selected.includes(cardPlace.id)}
+            climate={climate}
             // The marker's PAINTED position, not the projected one its own
             // `cx`/`cy` carry. This card is a sibling of the `<svg>`, so the
             // `[data-zoom]` transform that moves every marker moves nothing
@@ -1501,6 +1543,18 @@ export function CountryLevel({
               if (heldFocus) refocus(cardPlace.id);
             }}
           >
+            {/*
+              The weather the verdict beside it is about, in the same words the
+              hover card uses. Above the airport line because it is the fact a
+              reader opened the card to check; absent rather than "no data"
+              because the wrapper is `empty:hidden` and the chip already says
+              "No data" when there is none.
+            */}
+            {cardClimate && (
+              <p data-climate="">
+                {cardClimate.lo}°–{cardClimate.hi}°C typical
+              </p>
+            )}
             {/*
               §10.2's line, into the slot Plan 3 reserved and named. "Main
               airport" and never "Nearest": `nearestAirports` discounts distance
@@ -1527,6 +1581,8 @@ export function CountryLevel({
           </SelectedPlaceCard>
         )}
       </div>
+
+      {belowMap !== undefined && <div data-below-map="">{belowMap}</div>}
 
       <div className="mt-4">
         <CountryPlaceList

@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import fixture from "@/data/climate-anchors.json";
+import { monthFit } from "@/lib/climateModel";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { provincePath } from "@/lib/provinceTopology";
 import { DESTINATIONS } from "@/lib/data";
 import type { DayPlan, TripPlan } from "@/lib/itinerary";
 import type { Destination } from "@/lib/types";
+import { FIT_COLORS, fitForPlace, NEUTRAL_FIT } from "@/components/map/mapTypes";
 import { RouteMap, routeDestinationIds, routeMonth, routePlaces, unresolvedStopIds } from "./RouteMap";
 
 /**
@@ -37,8 +40,8 @@ const plan = (days: DayPlan[]): TripPlan => ({ days, tips: [] }) as unknown as T
  * Cusco, in the shape `/api/destinations/resolve` answers with.
  *
  * Copied from `geoNamesCityToDestination`'s own output rather than invented:
- * the six fields the bundled GeoNames index carries, plus the generic seasons
- * and activities that function stamps on. `lib/server/catalog.test.ts` pins the
+ * the six fields the bundled GeoNames index carries, plus the empty season claim §9.6
+ * leaves and the generic activities that function stamps on. `lib/server/catalog.test.ts` pins the
  * server half of the same value.
  */
 const CUSCO: Destination = {
@@ -52,7 +55,7 @@ const CUSCO: Destination = {
   emoji: "📍",
   tagline: "Cusco, Cuzco Department",
   knownFor: [],
-  bestSeasons: ["spring", "autumn"],
+  bestSeasons: [],
   seasonNotes: {},
   foods: [],
   suggestedDays: [1, 2],
@@ -160,6 +163,14 @@ describe("routePlaces with resolved stops", () => {
   test("a resolved stop with no coordinates is still not drawn", () => {
     const offMap = { ...CUSCO, id: "offmap:grandmas-village", lat: null, lon: null };
     expect(routePlaces(plan([day(1, offMap.id)]), [offMap])).toEqual([]);
+  });
+
+  test("a resolved stop carries no season claim, so its verdict is the artifact's or nothing", () => {
+    // Before §9.6 every resolved stop was `great` in April through the
+    // stamp; the trip map coloured Sydney's autumn as a northern spring.
+    const [place] = routePlaces(plan([day(1, "G3941584")]), [CUSCO]);
+    expect(place.bestSeasons).toEqual([]);
+    expect(fitForPlace(place, 4)).toBe(NEUTRAL_FIT);
   });
 });
 
@@ -313,6 +324,40 @@ const PE_MANIFEST = {
   },
 };
 
+const CUSCO_ROW = fixture.cities.find((c) => c.key === "cusco")!.row;
+
+/** Peru's climate shard, cut to the one stop the trip has. */
+const PE_CLIMATE = {
+  country: "PE",
+  generatedAt: "2026-09-03T19:48:35.466Z",
+  source: "CHELSA V2.1 climatologies 1981-2010, CC0 1.0, DOI 10.16904/envidat.228",
+  cities: { G3941584: CUSCO_ROW },
+};
+
+/**
+ * Peru's city shard, cut the same way. The trip map fetches it for ONE field:
+ * `elev`, which the climate row does not carry and `Destination` has no slot
+ * for, and which is worth a whole band at Cusco's 3,312 m.
+ */
+const PE_CITIES = {
+  country: "PE",
+  generatedAt: "2026-08-25T09:23:00.949Z",
+  source: "GeoNames cities500 (CC BY 4.0)",
+  cities: [
+    {
+      id: "G3941584",
+      n: "Cusco",
+      lat: -13.53188,
+      lon: -71.96701,
+      a1: "Cuzco Department",
+      a1c: "PE.08",
+      p: 428_450,
+      elev: 3312,
+      tz: "America/Lima",
+    },
+  ],
+};
+
 function answer(body: unknown, status = 200) {
   return Promise.resolve({ ok: status < 400, status, json: async () => body });
 }
@@ -323,6 +368,8 @@ function tripFetch(url: string) {
   if (href.startsWith("/api/destinations/resolve")) return answer({ destinations: [CUSCO] });
   if (href === "/provinces/PE.json") return answer(PE_PROVINCES);
   if (href === PROJECTION_PATH) return answer(PE_MANIFEST);
+  if (href === "/climate/PE.json") return answer(PE_CLIMATE);
+  if (href === "/cities/PE.json") return answer(PE_CITIES);
   return answer({}, 404);
 }
 
@@ -645,5 +692,78 @@ describe("the trip map is a view of the trip, not a picker", () => {
     // leftover.
     expect(prose).toMatch(/RegionId/);
     expect(prose).toMatch(/null/);
+  });
+});
+
+/**
+ * §9.4 on the trip map (decision P6-4). Removing the season stamp (§9.6)
+ * turned every worldwide stop from a fabricated green to grey; this is what
+ * turns it into the artifact's own verdict, with the same join the wizard's
+ * map uses so the two cannot disagree about Cusco's June.
+ */
+describe("the trip map colours its stops by the trip country's climate", () => {
+  const JUNE = 6;
+  const renderJune = () =>
+    render(<RouteMap plan={PERU_TRIP} country="PE" startDate="2026-06-15" season="winter" />);
+
+  test("asks for the trip country's climate and city shards, and never China's", async () => {
+    renderJune();
+    await settle();
+    const urls = requestedUrls();
+    expect(urls).toContain("/climate/PE.json");
+    expect(urls).toContain("/cities/PE.json");
+    expect(urls.some((u) => u.startsWith("/climate/CN") || u.startsWith("/cities/CN"))).toBe(false);
+  });
+
+  test("a China trip asks for no climate at all", async () => {
+    // Curated China reads its own table (§9.5); the shard would be 412 rows
+    // nothing consults.
+    render(
+      <RouteMap plan={plan([day(1, "beijing"), day(2, "xian")])} country="CN" startDate={null} season="autumn" />
+    );
+    await settle();
+    expect(requestedUrls().some((u) => u.startsWith("/climate/") || u.startsWith("/cities/"))).toBe(false);
+  });
+
+  test("colours a resolved stop by its derived verdict, elevation included", async () => {
+    const { container } = renderJune();
+    await settle();
+    const verdict = monthFit(CUSCO_ROW, 3312, JUNE - 1);
+    // Armed: the elevation moves the band, and the band is not the grey.
+    expect(verdict).not.toBe(monthFit(CUSCO_ROW, null, JUNE - 1));
+    expect(FIT_COLORS[verdict]).not.toBe(FIT_COLORS.unknown);
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[verdict]);
+  });
+
+  test("a stop whose climate file 404s stays grey", async () => {
+    stubFetch((url: string) =>
+      String(url) === "/climate/PE.json" ? answer({}, 404) : tripFetch(String(url))
+    );
+    const { container } = renderJune();
+    await settle();
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS.unknown);
+  });
+
+  test("a city shard that 404s while the climate file answers still colours the stop — without the correction", async () => {
+    // The deliberate divergence from MapExplorer, which builds no index in
+    // this case: here the stops come from the resolve API, not the shard,
+    // so they are drawn regardless, and a verdict without the lapse-rate
+    // correction is still a verdict. Pinned so an "align the two maps" edit
+    // cannot erase the decision silently.
+    stubFetch((url: string) =>
+      String(url) === "/cities/PE.json" ? answer({}, 404) : tripFetch(String(url))
+    );
+    const { container } = renderJune();
+    await settle();
+    const uncorrected = monthFit(CUSCO_ROW, null, JUNE - 1);
+    expect(uncorrected).not.toBe(monthFit(CUSCO_ROW, 3312, JUNE - 1));
+    expect(FIT_COLORS[uncorrected]).not.toBe(FIT_COLORS.unknown);
+    expect(
+      container.querySelector('[data-place="G3941584"] circle[data-dot]')!.getAttribute("fill")
+    ).toBe(FIT_COLORS[uncorrected]);
   });
 });

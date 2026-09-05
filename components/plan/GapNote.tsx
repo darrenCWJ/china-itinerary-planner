@@ -6,9 +6,12 @@ import type { ReactElement } from "react";
  * `CountryProfile.gapNote` says what our data does not cover for a country —
  * one line naming the source and the four subjects we have nothing on, plus a
  * second line naming the individual facts we are missing when any are. This
- * component is the only place it is drawn, on all three tip surfaces:
+ * component is the only place it is drawn — on the three tip surfaces,
  * `components/PlanStep.tsx`, `components/trip/PlanTab.tsx` and
- * `components/trip/BriefingView.tsx`.
+ * `components/trip/BriefingView.tsx`, and on a fourth that is not a tip
+ * surface at all: `components/map/MapExplorer.tsx` renders it under the map
+ * with `lib/climateNote.ts`'s lines (spec §9.7), so the lines this component
+ * is handed are not always `CountryProfile.gapNote`'s.
  *
  * **It takes lines, not a country code, and that is load-bearing.** Resolving
  * the note needs `lib/countryProfile.ts`, which reaches the 70 KB facts
