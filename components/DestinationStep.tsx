@@ -58,11 +58,19 @@ export function DestinationStep({
   const [region, setRegion] = useState("All");
   const [announcement, setAnnouncement] = useState("");
   /**
-   * The country being planned. It lives here rather than inside `MapExplorer`
-   * because search is scoped by it too — the map is one of two ways into a
-   * country, and both have to agree on which one is open.
+   * Which level the map pane is on. It lives here rather than inside
+   * `MapExplorer` because the country control in this step's header has to
+   * reach it too — the map is one of two ways into a country, and both have
+   * to agree on which one is open.
+   *
+   * Opens on the world level. The globe is the country picker, and since the
+   * planner went worldwide no single country has a claim to be the first
+   * thing on screen. The browsing country (`country`, "CN" until the picker
+   * says otherwise) still scopes search, the cards and step 0's season chips;
+   * it just no longer pre-empts the choice. `DestinationStepLevel.test.tsx`
+   * pins this.
    */
-  const [mapLevel, setMapLevel] = useState<MapLevel>("country");
+  const [mapLevel, setMapLevel] = useState<MapLevel>("world");
   const activeCountry = getCountry(country);
   const countryLabel = activeCountry.name || activeCountry.code || "this country";
 

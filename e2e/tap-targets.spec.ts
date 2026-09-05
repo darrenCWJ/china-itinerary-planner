@@ -21,9 +21,11 @@ import { test, expect, type Page } from "@playwright/test";
 
 const TAP_MIN_PX = 44;
 
+/** The step opens on the globe now, so China's map is one pick from the A–Z list away. */
 async function openTheMap(page: Page) {
   await page.goto("/plan");
   await page.getByRole("button", { name: /Next/ }).first().click();
+  await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: "China" });
   await expect(page.getByRole("group", { name: /^Map of / })).toBeVisible({ timeout: 30_000 });
 }
 
