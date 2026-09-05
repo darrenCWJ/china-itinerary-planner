@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-04T12:46:16.025Z",
+ "generatedAt": "2026-09-05T11:51:50.962Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -22610,7 +22610,7 @@
    "country": "FK",
    "lat": -51.822642,
    "lon": -58.445777,
-   "size": "large"
+   "size": "medium"
   },
   {
    "iata": "MPY",
