@@ -87,13 +87,26 @@ export function rotationFor(lon: number, lat: number): Rotation {
 /**
  * A pointer drag, in viewBox units, applied to a rotation.
  *
- * Vertical drag inverts: dragging down brings the northern hemisphere toward
- * the viewer, and d3's phi is the negated latitude, so a positive dy raises it.
+ * The surface follows the hand on both axes. d3's rotation is the NEGATED
+ * centre — `rotationCentre` above — so the two axes take opposite signs here:
+ *
+ * - Dragging right (dx > 0) must bring what was west of the centre into the
+ *   middle, i.e. the centre's longitude falls. Longitude is -lambda, so
+ *   lambda RISES with dx.
+ * - Dragging down (dy > 0) must bring the north into the middle, i.e. the
+ *   centre's latitude rises. Latitude is -phi, so phi FALLS with dy.
+ *
+ * The vertical sign was `+` until 2026-09-06, on the reasoning "phi is the
+ * negated latitude, so a positive dy raises it" — which raised phi, and so
+ * LOWERED the centre: the globe turned against the pointer on that axis
+ * while the horizontal one was right, and `lib/globeRotation.test.ts` pinned
+ * the inverted sign. Measured in a browser before the fix: an 80px drag down
+ * moved China 115px up.
  */
 export function rotateByDrag(from: Rotation, dx: number, dy: number): Rotation {
   return [
     normaliseLambda(from[0] + dx * DRAG_DEGREES_PER_UNIT),
-    clampPhi(from[1] + dy * DRAG_DEGREES_PER_UNIT),
+    clampPhi(from[1] - dy * DRAG_DEGREES_PER_UNIT),
   ];
 }
 
