@@ -13,17 +13,66 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 /**
- * `/plan` opens on the trip-details step; the map is the step after it.
+ * `/plan` opens on the trip-details step; the map is the step after it, and
+ * it opens on the world level — so a country's map is one more pick away.
+ * China is chosen from the A–Z list rather than the globe: the list is a
+ * native select Playwright can drive without knowing where China is drawn.
  *
  * There is no URL for the map — the wizard holds its step in `useState` — so
  * reaching it is a click, and that is worth saying once here rather than in
  * every spec.
  */
-async function openTheMap(page: Page) {
+async function openTheWorld(page: Page) {
   await page.goto("/plan");
   await page.getByRole("button", { name: /Next/ }).first().click();
+  await expect(page.getByRole("group", { name: /^World globe/ })).toBeVisible({ timeout: 30_000 });
+}
+
+async function openTheMap(page: Page) {
+  await openTheWorld(page);
+  await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: "China" });
   await expect(page.getByRole("group", { name: /^Map of / })).toBeVisible({ timeout: 30_000 });
 }
+
+test("the destinations step opens on the globe, not on a country", async ({ page }) => {
+  await openTheWorld(page);
+
+  // No country map yet — the globe is the picker, and the pick has not been
+  // made. Before this the step opened on China's map with the globe a
+  // "Change country" click away, which read as a China planner with a world
+  // map bolted on.
+  await expect(page.getByRole("group", { name: /^Map of / })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Where in the world?" })).toBeVisible();
+});
+
+test("dragging the globe turns it the way the pointer moves", async ({ page }) => {
+  await openTheWorld(page);
+  const globe = page.getByRole("group", { name: /^World globe/ });
+  const box = await globe.boundingBox();
+  if (!box) throw new Error("the globe has no bounding box");
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  // China sits at the centre of the opening rotation. Its node is the ruler:
+  // where it is drawn before and after a drag says which way the globe turned.
+  const china = page.getByRole("button", { name: /^China/ });
+  const before = await china.boundingBox();
+  if (!before) throw new Error("China is not drawn");
+
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x + 60, centre.y + 60, { steps: 10 });
+  await page.mouse.up();
+
+  // The surface follows the hand: down-and-right takes China down and right.
+  // Measured in the browser before the fix: an 80px drag down moved China
+  // 115px UP, while the horizontal axis was already right.
+  await expect
+    .poll(async () => {
+      const after = await china.boundingBox();
+      return after ? { dx: Math.sign(after.x - before.x), dy: Math.sign(after.y - before.y) } : null;
+    })
+    .toEqual({ dx: 1, dy: 1 });
+});
 
 test("China renders the same country map as everywhere else", async ({ page }) => {
   await openTheMap(page);

@@ -308,9 +308,17 @@ async function pickCountry(code: string): Promise<void> {
   await settle();
 }
 
-/** Hand-type a place with no map pin. The option is committed on mousedown. */
+/**
+ * Hand-type a place with no map pin. The option is committed on mousedown.
+ *
+ * By placeholder, not by a bare `combobox` role: the step opens on the world
+ * level now, whose A–Z country list is a native select and so a second
+ * combobox on the page until a country is picked.
+ */
 async function typeOwnPlace(name: string): Promise<void> {
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: name } });
+  fireEvent.change(screen.getByPlaceholderText("Search a city, or type any place"), {
+    target: { value: name },
+  });
   await settle();
   fireEvent.mouseDown(screen.getByRole("option", { name: /as its own place/ }));
   await settle();
