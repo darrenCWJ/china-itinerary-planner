@@ -16,25 +16,22 @@ const VERDICT_COLOURS = new Set(["#2f7d54", "#b98a2f", "#8f9bab", "#c93b2e"]);
 const LEGEND = { name: "What the marker colours mean" };
 const NOTE = { name: "About these notes" };
 
-/** `/plan` opens on the details step; the map is the step after it. */
-async function openTheMap(page: Page) {
+/**
+ * `/plan` opens on the details step; the map is the step after it, and it
+ * opens on the world level, so a country is one pick away. Picked through the
+ * list rather than the globe: the list is the one path that reaches every
+ * country whichever renderer the world level chose, and it is a native select,
+ * which Playwright can drive without knowing where the country is drawn.
+ */
+async function openCountry(page: Page, name: string) {
   await page.goto("/plan");
   await page.getByRole("button", { name: /Next/ }).first().click();
-  await expect(page.getByRole("group", { name: /^Map of / })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: name });
+  await expect(page.getByRole("group", { name: `Map of ${name}` })).toBeVisible({ timeout: 30_000 });
 }
 
-/**
- * China → the world level → Peru, through the list rather than the globe:
- * the list is the one path that reaches every country whichever renderer the
- * world level chose, and it is a native select, which Playwright can drive
- * without knowing where Peru is drawn.
- */
-async function openPeru(page: Page) {
-  await openTheMap(page);
-  await page.getByRole("button", { name: "← All countries" }).click();
-  await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: "Peru" });
-  await expect(page.getByRole("group", { name: "Map of Peru" })).toBeVisible({ timeout: 30_000 });
-}
+const openTheMap = (page: Page) => openCountry(page, "China");
+const openPeru = (page: Page) => openCountry(page, "Peru");
 
 test("a country outside China draws its cities in verdict colours, from the committed climate shard", async ({
   page,
