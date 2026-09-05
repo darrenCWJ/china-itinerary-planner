@@ -152,11 +152,31 @@ describe("rotateByDrag", () => {
   });
 
   test("dragging down tips the north pole toward the viewer", () => {
-    expect(rotateByDrag([0, 0], 0, 100)[1]).toBeGreaterThan(0);
+    // The surface follows the pointer: pulling down brings the north into the
+    // middle of the disc, so the centre's latitude RISES. d3's phi is the
+    // negated latitude, so it falls. The previous expectation had the sign the
+    // other way and pinned a globe that turned against the hand dragging it.
+    const after = rotateByDrag([0, 0], 0, 100);
+    expect(after[1]).toBeLessThan(0);
+    expect(rotationCentre(after)[1]).toBeGreaterThan(0);
+  });
+
+  test("dragging up tips the south pole toward the viewer", () => {
+    expect(rotationCentre(rotateByDrag([0, 0], 0, -100))[1]).toBeLessThan(0);
+  });
+
+  test("dragging right brings the west of the centre into the middle", () => {
+    // The same rule on the other axis, stated in longitude so both share a
+    // reading: the point under the pointer travels with it, so what was to
+    // the left (west) of the centre arrives there.
+    expect(rotationCentre(rotateByDrag([0, 0], 100, 0))[0]).toBeLessThan(0);
   });
 
   test("clamps the tilt rather than flipping over the pole", () => {
-    expect(rotateByDrag([0, 80], 0, 10_000)[1]).toBe(90);
+    // Up brings the south pole in and phi climbs; down does the opposite.
+    // Either way a drag long enough to go over the pole stops at it.
+    expect(rotateByDrag([0, 80], 0, -10_000)[1]).toBe(90);
+    expect(rotateByDrag([0, -80], 0, 10_000)[1]).toBe(-90);
   });
 
   test("a full disc-width drag turns the globe half way round", () => {
