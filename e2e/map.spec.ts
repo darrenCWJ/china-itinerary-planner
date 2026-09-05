@@ -28,8 +28,14 @@ async function openTheWorld(page: Page) {
   await expect(page.getByRole("group", { name: /^World globe/ })).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Waits on the A–Z list rather than on the globe's group, so the flat
+ * renderer — reduced motion, or the preference — reaches China's map too.
+ * Only the two globe tests below need the globe itself.
+ */
 async function openTheMap(page: Page) {
-  await openTheWorld(page);
+  await page.goto("/plan");
+  await page.getByRole("button", { name: /Next/ }).first().click();
   await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: "China" });
   await expect(page.getByRole("group", { name: /^Map of / })).toBeVisible({ timeout: 30_000 });
 }
@@ -43,6 +49,8 @@ test("the destinations step opens on the globe, not on a country", async ({ page
   // map bolted on.
   await expect(page.getByRole("group", { name: /^Map of / })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Where in the world?" })).toBeVisible();
+  // And no way "back" to a country the planner has not opened.
+  await expect(page.getByRole("button", { name: /^← Back to/ })).toHaveCount(0);
 });
 
 test("dragging the globe turns it the way the pointer moves", async ({ page }) => {

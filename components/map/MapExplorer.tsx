@@ -279,6 +279,18 @@ export function MapExplorer({
     place: MapPlace;
     pos: { x: number; y: number };
   } | null>(null);
+  /**
+   * Whether this pane has shown a country level yet.
+   *
+   * The destinations step opens on the world level now, so on a first visit
+   * there is no country to go "back" to: the step-down control the world
+   * level offers is drawn only once a country has been opened. Derived during
+   * render — the pattern `app/plan/page.tsx` uses to keep `seasonCountry` in
+   * step with `tripCountry` — rather than in an effect, which would paint one
+   * frame without the control and then add it.
+   */
+  const [openedCountry, setOpenedCountry] = useState(level === "country");
+  if (level === "country" && !openedCountry) setOpenedCountry(true);
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
   const { prefs, setPrefs } = usePrefs();
@@ -703,13 +715,15 @@ export function MapExplorer({
               reaches every country whether the map draws it as a shape or a dot.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onLevelChange("country")}
-            className={STEP_UP_BUTTON}
-          >
-            ← Back to {countryLabel}
-          </button>
+          {openedCountry && (
+            <button
+              type="button"
+              onClick={() => onLevelChange("country")}
+              className={STEP_UP_BUTTON}
+            >
+              ← Back to {countryLabel}
+            </button>
+          )}
         </div>
         <div className="mt-3">
           <WorldLevel selectedCountry={countryCode} onSelectCountry={pickCountry} />

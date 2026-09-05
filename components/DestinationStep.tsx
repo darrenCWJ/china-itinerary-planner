@@ -66,9 +66,10 @@ export function DestinationStep({
    * Opens on the world level. The globe is the country picker, and since the
    * planner went worldwide no single country has a claim to be the first
    * thing on screen. The browsing country (`country`, "CN" until the picker
-   * says otherwise) still scopes search, the cards and step 0's season chips;
-   * it just no longer pre-empts the choice. `DestinationStepLevel.test.tsx`
-   * pins this.
+   * says otherwise) still scopes search, the curated cards and the map pane —
+   * and, until something is picked, the trip's country and so step 0's season
+   * chips; it just no longer pre-empts the choice.
+   * `DestinationStepLevel.test.tsx` pins this.
    */
   const [mapLevel, setMapLevel] = useState<MapLevel>("world");
   const activeCountry = getCountry(country);
@@ -253,6 +254,18 @@ export function DestinationStep({
     else onRemoveCatalog(id);
   };
 
+  /**
+   * The line under the heading. Keyed on the level as well as the view: the
+   * step opens on the world level now, and "drag the timeline" described a
+   * timeline the globe does not have.
+   */
+  const hint =
+    view !== "map"
+      ? "Pick one or more destinations. Mark places you've already been and they'll drop out of the running."
+      : mapLevel === "world"
+        ? "Pick a country on the globe or from the list under it, then tap places to add them."
+        : "Zoom the map, drag the timeline to your month, and tap places to add them.";
+
   return (
     <section>
       <p aria-live="polite" className="sr-only">
@@ -261,11 +274,7 @@ export function DestinationStep({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-bold">Where to this time?</h2>
-          <p className="mt-1 text-sm text-[var(--ink-2)]">
-            {view === "map"
-              ? "Zoom the map, drag the timeline to your month, and tap places to add them."
-              : "Pick one or more destinations. Mark places you've already been and they'll drop out of the running."}
-          </p>
+          <p className="mt-1 text-sm text-[var(--ink-2)]">{hint}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {/* The way into the world map (spec §6) — reachable from either view. */}
