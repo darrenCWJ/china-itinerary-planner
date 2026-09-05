@@ -129,15 +129,9 @@ test("the place list is a real 44px target, since it is what makes the map confo
   expect(short, `list chips under ${TAP_MIN_PX}px: ${short.join(", ")}`).toEqual([]);
 });
 
-test("every visible button on the planning page is a real 44px target", async ({ page }) => {
-  // Swept over the whole page rather than named, because every control this
-  // found was one no test had thought to name: the map/cards toggle at 24px,
-  // the wizard's "← Back" at 38px, "Build my plan →" at 36px and the step rail
-  // at 32px. All of them had their behaviour asserted in jsdom and their size
-  // asserted nowhere, because jsdom has no size to assert.
-  await openTheMap(page);
-
-  const undersized = await page.evaluate((min) => {
+/** Every `<button>` on screen outside the place list (covered above) that is shorter than the minimum. */
+async function undersizedButtons(page: Page): Promise<string[]> {
+  return page.evaluate((min) => {
     const out: string[] = [];
     for (const el of document.querySelectorAll("button")) {
       const box = el.getBoundingClientRect();
@@ -151,6 +145,32 @@ test("every visible button on the planning page is a real 44px target", async ({
     }
     return out;
   }, TAP_MIN_PX);
+}
 
+test("every visible button on the planning page is a real 44px target", async ({ page }) => {
+  // Swept over the whole page rather than named, because every control this
+  // found was one no test had thought to name: the map/cards toggle at 24px,
+  // the wizard's "← Back" at 38px, "Build my plan →" at 36px and the step rail
+  // at 32px. All of them had their behaviour asserted in jsdom and their size
+  // asserted nowhere, because jsdom has no size to assert.
+  await openTheMap(page);
+
+  const undersized = await undersizedButtons(page);
   expect(undersized, `chrome buttons under ${TAP_MIN_PX}px: ${undersized.join(", ")}`).toEqual([]);
+});
+
+test("every visible button on the landing globe is a real 44px target", async ({ page }) => {
+  // The world level is the first thing a phone user sees now, and until this
+  // sweep its controls carried the token in markup jsdom asserts and nothing
+  // measured. Swept before any country is picked, once the A–Z list says the
+  // level has drawn. The globe's own country nodes are SVG paths, not
+  // `<button>`s, and stay exempt: the list beneath is their conforming target.
+  await page.goto("/plan");
+  await page.getByRole("button", { name: /Next/ }).first().click();
+  await expect(page.getByRole("combobox", { name: "Or pick from the list" })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const undersized = await undersizedButtons(page);
+  expect(undersized, `world-level buttons under ${TAP_MIN_PX}px: ${undersized.join(", ")}`).toEqual([]);
 });

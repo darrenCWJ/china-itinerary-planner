@@ -9,8 +9,9 @@ import { DestinationStep } from "./DestinationStep";
  * The world level (the globe) is the country picker, and since Phase 3 the
  * planner is worldwide — so the first thing a planner sees is the globe, not
  * the map of whichever country the browsing scope happens to default to. The
- * default country still exists (it scopes step 0's season chips and the
- * accent), it just no longer gets to be the opening screen.
+ * default country still exists (it scopes search, the map pane and the
+ * curated cards, and until something is picked the trip's country and so
+ * step 0's season chips), it just no longer gets to be the opening screen.
  *
  * `MapExplorer` is stubbed to a readout of the one prop under test. Its real
  * rendering owns four fetches and a topology parse and has its own suite.
@@ -72,13 +73,18 @@ afterEach(() => {
 test("opens on the world level, so the globe is the first thing a planner sees", () => {
   renderStep();
   expect(level()).toBe("world");
+  // And the line under the heading describes the globe, not a timeline the
+  // globe does not have.
+  expect(screen.getByText(/Pick a country on the globe/)).toBeInTheDocument();
 });
 
 test("a country picked from the globe opens, and Change country returns to the globe", () => {
   renderStep();
   fireEvent.click(screen.getByRole("button", { name: "step down into the country" }));
   expect(level()).toBe("country");
+  expect(screen.getByText(/Zoom the map, drag the timeline/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /Change country/ }));
   expect(level()).toBe("world");
+  expect(screen.getByText(/Pick a country on the globe/)).toBeInTheDocument();
 });

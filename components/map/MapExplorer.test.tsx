@@ -756,8 +756,12 @@ describe("MapExplorer", () => {
   });
 
   test("goes back to the country level without changing the country", async () => {
-    render(<Harness level="world" />);
+    // Up from the country first: the way back is offered only to someone who
+    // has been down there (see the cold-start test below).
+    render(<Harness />);
 
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
     await settle();
     fireEvent.click(screen.getByRole("button", { name: "← Back to China" }));
 
@@ -765,6 +769,26 @@ describe("MapExplorer", () => {
     expect(
       screen.getByRole("group", { name: "Map of China" })
     ).toBeInTheDocument();
+  });
+
+  test("a cold start on the world level offers no way back to a country never opened", async () => {
+    // The destinations step opens here now. "← Back to China" on a screen the
+    // planner has not left would assert a history that has not happened; the
+    // globe and the A–Z list are the ways forward, and the control appears
+    // once a country has actually been shown.
+    render(<Harness level="world" />);
+
+    await settle();
+    expect(screen.getByRole("group", { name: /pick a country/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^← Back to/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Japan/ }));
+    await settle();
+    expect(screen.getByRole("group", { name: "Map of Japan" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
+    await settle();
+    expect(screen.getByRole("button", { name: "← Back to Japan" })).toBeInTheDocument();
   });
 
   test("buys no China assets for a country that cannot use them", async () => {
@@ -793,8 +817,10 @@ describe("MapExplorer", () => {
    * token.
    */
   test("gives its back-out control the C5 tap target its siblings apply", async () => {
-    render(<Harness level="world" />);
+    render(<Harness />);
 
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
     await settle();
     expect(screen.getByRole("button", { name: "← Back to China" })).toHaveClass(
       "min-h-[var(--tap-min)]"
@@ -951,7 +977,9 @@ describe("MapExplorer", () => {
   });
 
   test("the world level's way back names the country too", async () => {
-    render(<Harness country="GA" level="world" />);
+    render(<Harness country="GA" />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
     await settle();
     expect(screen.getByRole("button", { name: "← Back to Gabon" })).toBeInTheDocument();
   });
