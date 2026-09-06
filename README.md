@@ -156,7 +156,7 @@ the database ever moves, move the region with it.
 | `CATALOG_URL` | Optional: override the remote catalog fallback URL |
 | `BETTER_AUTH_SECRET` | Enables accounts. 32 random bytes — `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Unset locally = accounts off; unset (or an example value) on a deployment = boot refused |
 | `BETTER_AUTH_URL` | Base URL of this deployment (e.g. `http://192.168.1.20:3000` on a Pi) |
-| `TRUSTED_ORIGINS` | Comma-separated extra origins allowed to call the auth API |
+| `TRUSTED_ORIGINS` | Comma-separated extra origins allowed to call the auth API; on Vercel the deployment's own aliases are trusted without it |
 | `ADMIN_USER_IDS` | Comma-separated account ids that may reset other members' passwords |
 
 > Upgrading note: ACCESS_CODE alone no longer locks the site. If you
