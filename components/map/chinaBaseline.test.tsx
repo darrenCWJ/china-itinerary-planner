@@ -39,11 +39,13 @@ import type { DerivedClimateIndex } from "./mapTypes";
  * `CountryLevel` would draw a real map, pass every list assertion, and fail
  * only here.
  *
- * The other half of §9.5 lives in `MapExplorer.test.tsx`'s "China still fetches
- * the curated asset and renders identically", which pins the INPUT — that China
- * still reaches for `/china-provinces.json` and never for `/provinces/CN.json`
- * or the manifest. That test proves China is drawn from the same bytes; this one
- * proves the same bytes still draw the same map.
+ * The other half of §9.5 lives in `MapExplorer.provinces.test.tsx`'s "China
+ * fetches its province file and manifest, like every other country", which
+ * pins the INPUT — and now asserts the opposite of what this paragraph
+ * used to claim: China reaches for `/provinces/CN.json` and the manifest,
+ * and never for `/china-provinces.json`. That test proves China is fetched
+ * through the same path as every other country; this one proves the map
+ * built from that path still renders the same output.
  */
 
 afterEach(cleanup);

@@ -6,8 +6,8 @@ import type { AirportPick } from "@/components/trip/AirportPicker";
 import fixture from "@/data/climate-anchors.json";
 import { PROJECTION_PATH } from "@/lib/countryProjection";
 import { PREFS_COOKIE, serializePrefsCookie, type UserPrefs } from "@/lib/prefs";
-import { MapExplorer, type MapLevel } from "./MapExplorer";
-import type { MapPlace } from "./mapTypes";
+import { MapExplorer, type MapLevel } from "@/components/map/MapExplorer";
+import type { MapPlace } from "@/components/map/mapTypes";
 
 /**
  * The fixtures, the fetch table and the host component the four MapExplorer
@@ -17,6 +17,11 @@ import type { MapPlace } from "./mapTypes";
  * §12.1 restates: importing one `.test.tsx` from another makes vitest collect
  * the imported file's `describe` blocks a second time. Nothing under `app/` or
  * `components/` imports it, so it never reaches a bundle.
+ *
+ * Lives under `test/`, not beside the component it mounts: it value-imports
+ * `vitest` and `@testing-library/react`, and `lib/contracts.test.ts` scans
+ * `components/` for surfaces that mount `MapExplorer` — sitting in
+ * `components/map/` would make this file one of them.
  *
  * What is NOT here is `fetchMock` and the `beforeEach` that builds it. Two of
  * the four files reassign that variable — `withAirports` and the province
@@ -30,11 +35,11 @@ import type { MapPlace } from "./mapTypes";
  *
  * Carries both `smallCountries` (WorldTopology's shape) and `points`
  * (GlobeTopology's shape, `lib/globeTopology.ts`) so the same fixture body —
- * this file's `fetchMock` returns it for any URL that isn't a China or
- * catalog endpoint — parses under whichever world-level renderer a test
- * exercises. `GlobeLevel.test.tsx` keeps its own richer, two-hemisphere
- * fixture for what it actually tests (rotation, clipping); this one only
- * needs to stay parseable.
+ * `defaultFetch` below returns it for every consumer's `fetchMock` for any
+ * URL that isn't a China or catalog endpoint — parses under whichever
+ * world-level renderer a test exercises. `GlobeLevel.test.tsx` keeps its own
+ * richer, two-hemisphere fixture for what it actually tests (rotation,
+ * clipping); this one only needs to stay parseable.
  *
  * Wound south-west, north-west, north-east, south-east, the order
  * `worldFixture.ts` documents and for the reason it gives: reversed, d3 reads
@@ -140,7 +145,7 @@ export const A_CATALOG_PLACE: MapPlace = {
   blurb: null,
 };
 /**
- * MapExplorer pulls WorldMap in through `next/dynamic`: real code-splitting in
+ * WorldPane pulls WorldMap in through `next/dynamic`: real code-splitting in
  * production, and a wall-clock dependency in tests. The module load plus
  * React.lazy's unwrap costs ~90ms cold on an idle machine, and it is the only
  * reason these tests ever needed a timeout budget at all. Under full-suite
@@ -151,8 +156,8 @@ export const A_CATALOG_PLACE: MapPlace = {
  * Raising a budget only moves the threshold; the test still races the machine,
  * and the next busy CI box moves it back. Resolving the components up front
  * removes the race outright: both are imported once, here, and `dynamic()`
- * hands the right one straight back, so nothing in this file suspends and no
- * assertion depends on how loaded the CPU is.
+ * hands the right one straight back, so nothing in the files that import
+ * this harness suspends and no assertion depends on how loaded the CPU is.
  *
  * A previous version of this mock said exactly that and then did the opposite.
  * Extended to tell the two renderers apart, it began returning a wrapper that
@@ -169,14 +174,15 @@ export const A_CATALOG_PLACE: MapPlace = {
  * is rewritten. It throws rather than guessing when a loader matches neither
  * name or both: with two dynamic imports, a mock that quietly fell back to one
  * of them would render the flat map in the globe's place and every globe
- * assertion here would pass against the wrong component.
+ * assertion in the files that import this harness would pass against the
+ * wrong component.
  *
- * What is given up is coverage of the `loading` fallback, which no test here
- * asserts on.
+ * What is given up is coverage of the `loading` fallback, which no test in
+ * the files that import this harness asserts on.
  */
 vi.mock("next/dynamic", async () => {
-  const { WorldMap } = await import("./WorldMap");
-  const { GlobeLevel } = await import("./GlobeLevel");
+  const { WorldMap } = await import("@/components/map/WorldMap");
+  const { GlobeLevel } = await import("@/components/map/GlobeLevel");
   const byName: Record<string, ComponentType<Record<string, unknown>>> = {
     WorldMap: WorldMap as unknown as ComponentType<Record<string, unknown>>,
     GlobeLevel: GlobeLevel as unknown as ComponentType<Record<string, unknown>>,
@@ -426,8 +432,8 @@ export const CN_CATALOG = [
 export function provinceFixture(code: string) {
   // China gets a second unit because it HAS 31, and D10 suppresses the region
   // control at one: a one-unit CN would hide the province picker China gained
-  // when it stopped rendering through `ChinaLevel`, which is the thing several
-  // cases below are about.
+  // when it stopped rendering through `ChinaLevel`, which is the thing
+  // several of the province cases in MapExplorer.provinces.test.tsx are about.
   const extra =
     code === "CN"
       ? [
@@ -641,24 +647,25 @@ export function installMapExplorerHarness(): void {
  * Flush mount effects, the promises they start, and the renders those cause —
  * then let the test query synchronously.
  *
- * Used instead of `findBy*` throughout this file. Those poll against a
- * wall-clock budget, and mounting this component is real CPU work (jsdom plus
- * d3-geo projection) rather than anything that waits. That is comfortably
- * inside the budget on an idle machine and can fall outside it when the full
- * suite has every core busy, which is exactly the shape of the flake: it never
- * reproduced on this file alone, only in a full run. Nothing here was ever slow
- * to *settle* — it was slow to *compute*, and a poll timeout cannot tell those
- * apart, so it reported "Unable to find role=…" as though the element were
- * missing.
+ * Used instead of `findBy*` throughout the four MapExplorer test files. Those
+ * poll against a wall-clock budget, and mounting this component is real CPU
+ * work (jsdom plus d3-geo projection) rather than anything that waits. That
+ * is comfortably inside the budget on an idle machine and can fall outside
+ * it when the full suite has every core busy, which is exactly the shape
+ * of the flake: it never reproduced on those files alone, only in a full
+ * run. Nothing here was ever slow to *settle* — it was slow to *compute*,
+ * and a poll timeout cannot tell those apart, so it reported "Unable to
+ * find role=…" as though the element were missing.
  *
  * The "~165ms" this note used to quote for that mount was measured off the
- * first test in the file, and was mostly not the mount: the bulk of it was the
- * one-time jsdom environment warmup that every file's first role query used to
- * pay, which now happens in vitest.setup.ts instead. Removing it from this file
- * takes the first test from ~347ms to ~164ms. The sibling tests that mount and
- * settle the same world level land at ~35-45ms; the first test stays longer
- * than they do because it also pays React's first render and the world
- * renderer's first module evaluation, neither of which the setup warmup covers.
+ * first test that calls it, and was mostly not the mount: the bulk of it was
+ * the one-time jsdom environment warmup that every file's first role query
+ * used to pay, which now happens in vitest.setup.ts instead. Removing it
+ * from this file takes the first test from ~347ms to ~164ms. The sibling
+ * tests that mount and settle the same world level land at ~35-45ms; the
+ * first test stays longer than they do because it also pays React's first
+ * render and the world renderer's first module evaluation, neither of which
+ * the setup warmup covers.
  *
  * Draining to a fixed point removes the clock from the assertion entirely. The
  * work still takes however long it takes; the test simply waits for it rather
@@ -755,10 +762,11 @@ export function Harness({
 
 /**
  * Mounts `Harness` and flushes its mount effects — this file's own
- * `render` + `settle()` pair, named for the tests below that only vary
- * `selected`/`country`/`arrival`/`onArrivalChange` and want the mount and
- * flush in one call. Returns what `render` returns, `unmount` included, so a
- * test that needs a second render of its own can tear the first down first.
+ * `render` + `settle()` pair, named for the tests that call `renderExplorer`
+ * that only vary `selected`/`country`/`arrival`/`onArrivalChange` and want
+ * the mount and flush in one call. Returns what `render` returns, `unmount`
+ * included, so a test that needs a second render of its own can tear the
+ * first down first.
  */
 export async function renderExplorer(props: {
   selected?: string[];

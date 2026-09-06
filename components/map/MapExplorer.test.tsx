@@ -1,9 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { PROJECTION_PATH } from "@/lib/countryProjection";
-import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
-import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
-import { DEFAULT_PREFS } from "@/lib/prefs";
+// First, before any import that could reach `next/dynamic`: the harness
+// registers that mock, and vitest hoists a mock only above the imports of the
+// file that declares it.
 import {
   CHINA_TOPOLOGY_PATH,
   chip,
@@ -15,7 +12,13 @@ import {
   renderExplorer,
   settle,
   WORLD_FIXTURE,
-} from "./mapExplorerHarness";
+} from "@/test/mapExplorerHarness";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { PROJECTION_PATH } from "@/lib/countryProjection";
+import { GLOBE_TOPOLOGY_PATH } from "@/lib/globeTopology";
+import { WORLD_TOPOLOGY_PATH } from "@/lib/isoTopology";
+import { DEFAULT_PREFS } from "@/lib/prefs";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -35,7 +38,8 @@ function requested(path: string): boolean {
  * level is showing, that picking a country at the world level hands the code up
  * and drops back to the country level, and that a country with no detail level
  * costs no China assets — and, since Plan 6, the legend's own presence and
- * absence (`describe("the legend")` below). Layout and tint stay visual.
+ * absence (`describe("the legend")` in MapExplorer.climate.test.tsx). Layout
+ * and tint stay visual.
  */
 
 describe("MapExplorer", () => {

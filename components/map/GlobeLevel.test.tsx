@@ -25,13 +25,13 @@ const GLOBE_FIXTURE = {
 /**
  * A hand-driven `requestAnimationFrame`.
  *
- * The suite has no other rAF in it, and `MapExplorer.test.tsx`'s `settle()`
- * drains microtasks until the DOM stops changing without advancing a single
- * frame. A test that waited for a real frame would therefore assert against
- * whatever the environment felt like scheduling, over a 650ms wall-clock
- * tween. Driving the frames by hand makes the tween's start, its middle and
- * its end three separate, deterministic assertions — and makes "no frame is
- * scheduled once it lands" something a test can actually see.
+ * The suite has no other rAF in it, and `test/mapExplorerHarness.tsx`'s
+ * `settle()` drains microtasks until the DOM stops changing without advancing
+ * a single frame. A test that waited for a real frame would therefore
+ * assert against whatever the environment felt like scheduling, over a 650ms
+ * wall-clock tween. Driving the frames by hand makes the tween's start, its
+ * middle and its end three separate, deterministic assertions — and makes
+ * "no frame is scheduled once it lands" something a test can actually see.
  */
 let frames: Map<number, FrameRequestCallback>;
 let nextFrameId: number;
@@ -57,7 +57,8 @@ function installFrameDriver() {
  * then let the test query synchronously.
  *
  * Used instead of `findBy*` throughout this file, for the reason
- * `MapExplorer.test.tsx` documents and one more that is specific to the globe.
+ * `test/mapExplorerHarness.tsx` documents and one more that is specific to
+ * the globe.
  * `findBy*` resolves from a MutationObserver, which fires on the commit's DOM
  * change — but React flushes passive effects *after* that, so on a loaded
  * machine a `findByRole` can return with the countries painted and the
@@ -275,8 +276,8 @@ describe("GlobeLevel", () => {
 
   test("eases the spin over frames and schedules none once it lands", async () => {
     // Bounded and self-stopping. An ambient loop would either spin
-    // MapExplorer.test.tsx's `settle()` to its cap or, worse, have every
-    // assertion in this file read a frame that happened to be mid-flight.
+    // test/mapExplorerHarness.tsx's `settle()` to its cap or, worse, have
+    // every assertion in this file read a frame that happened to be mid-flight.
     const { container } = render(<GlobeLevel onSelectCountry={() => {}} />);
     await settle();
     expect(frames.size).toBe(0);

@@ -58,9 +58,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 /**
- * `MapExplorer` pulls both world-level renderers in through `next/dynamic`.
+ * `WorldPane` pulls both world-level renderers in through `next/dynamic`.
  * Resolved up front and handed back synchronously, for the reason
- * `components/map/MapExplorer.test.tsx` spells out at length: a loader that
+ * `test/mapExplorerHarness.tsx` spells out at length: a loader that
  * defers puts the wall clock back into every assertion below.
  */
 vi.mock("next/dynamic", async () => {
@@ -252,10 +252,10 @@ afterEach(() => {
 /**
  * Drain mount effects and the renders they cause, without racing a clock.
  *
- * The same fixed-point drain `components/map/MapExplorer.test.tsx` uses, and
- * for the reason it documents: mounting this tree is real CPU work rather than
- * anything that waits, and a polling `findBy*` reports a busy machine as a
- * missing element (commit 84cd61e).
+ * The same fixed-point drain `components/map/MapExplorer.test.tsx` uses,
+ * and for the reason documented in `test/mapExplorerHarness.tsx`: mounting
+ * this tree is real CPU work rather than anything that waits, and a polling
+ * `findBy*` reports a busy machine as a missing element (commit 84cd61e).
  */
 async function settle(): Promise<void> {
   let previous = "";

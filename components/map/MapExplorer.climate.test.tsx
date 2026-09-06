@@ -1,8 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { climateMonth, monthFit } from "@/lib/climateModel";
-import { DERIVED_CLIMATE_NOTE } from "@/lib/climateNote";
-import { FIT_LEGEND_LABEL } from "./FitLegend";
+// First, before any import that could reach `next/dynamic`: the harness
+// registers that mock, and vitest hoists a mock only above the imports of the
+// file that declares it.
 import {
   A_CATALOG_PLACE,
   anchorRow,
@@ -11,7 +9,12 @@ import {
   installMapExplorerHarness,
   PE_SHARD,
   settle,
-} from "./mapExplorerHarness";
+} from "@/test/mapExplorerHarness";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { climateMonth, monthFit } from "@/lib/climateModel";
+import { DERIVED_CLIMATE_NOTE } from "@/lib/climateNote";
+import { FIT_LEGEND_LABEL } from "./FitLegend";
 import { fitForPlace, fitForRegion, FIT_COLORS } from "./mapTypes";
 
 let fetchMock: ReturnType<typeof vi.fn>;

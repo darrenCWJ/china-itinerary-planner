@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { PREFS_COOKIE } from "@/lib/prefs";
+// First, before any import that could reach `next/dynamic`: the harness
+// registers that mock, and vitest hoists a mock only above the imports of the
+// file that declares it.
 import {
   chip,
   defaultFetch,
@@ -8,7 +8,10 @@ import {
   installMapExplorerHarness,
   PROVINCE_FILE,
   settle,
-} from "./mapExplorerHarness";
+} from "@/test/mapExplorerHarness";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { PREFS_COOKIE } from "@/lib/prefs";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -96,11 +99,11 @@ describe("the open country's airports on its map", () => {
  * so this control is the whole of the feature's reachability: `CountryLevel`
  * has drawn `showAirports` since the layer landed and no caller passed it.
  *
- * The state is ephemeral — this component's twelfth `useState` — and NOT a
+ * The state is ephemeral — a `useState` of this component's own — and NOT a
  * fifth `UserPrefs` field. That is not merely "one less thing to persist":
  * `PrefsSchema` is a `z.object()`, Zod 4 strips unlisted keys, and the PUT to
  * `/api/me/prefs` answers 200 with the stripped object, so an unlisted key is
- * actively clobbered rather than merely dropped. `lib/server/schemas.ts:312-315`
+ * actively clobbered rather than merely dropped. `lib/server/schemas.ts:325-328`
  * is the scar that records that happening to `pivot` for real. The globe/flat
  * button a few lines above IS a prefs writer, which makes it the closest
  * visual precedent and the wrong one to copy — hence the assertion below that

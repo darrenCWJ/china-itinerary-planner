@@ -319,9 +319,9 @@ export function GlobeLevel({
   /**
    * A bounded, self-stopping tween — never an ambient loop.
    *
-   * `MapExplorer.test.tsx`'s `settle()` drains microtasks until the DOM stops
-   * changing, so a globe that repainted forever would either spin that helper
-   * to its cap or have every assertion read a frame that happened to be
+   * `test/mapExplorerHarness.tsx`'s `settle()` drains microtasks until the DOM
+   * stops changing, so a globe that repainted forever would either spin that
+   * helper to its cap or have every assertion read a frame that happened to be
    * mid-flight. At `t >= 1` no further frame is scheduled and the handle is
    * dropped, so the component is quiescent between turns.
    */

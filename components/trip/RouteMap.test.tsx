@@ -180,7 +180,7 @@ describe("routePlaces with resolved stops", () => {
  *
  * d3-geo reads rings spherically, so the anticlockwise version of either square
  * is the globe MINUS the square: `geoBounds` answers ±180 and every fit
- * collapses. `MapExplorer.test.tsx`'s fixture carries the same warning.
+ * collapses. `test/mapExplorerHarness.tsx`'s fixture carries the same warning.
  *
  * **Two and not one, and that is load-bearing rather than decorative.**
  * `regionSchemeFor` returns NO groups for a country with a single selectable
@@ -396,7 +396,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Drain the effect chain — the same helper `MapExplorer.test.tsx` uses. */
+/** Drain the effect chain — the same helper `test/mapExplorerHarness.tsx` uses. */
 async function settle(): Promise<void> {
   let previous = "";
   for (let i = 0; i < 10 && document.body.innerHTML !== previous; i++) {
