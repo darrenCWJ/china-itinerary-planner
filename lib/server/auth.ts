@@ -4,6 +4,7 @@ import { admin } from "better-auth/plugins";
 import { checkAuthSecret } from "../authSecret";
 import { getDb } from "./db";
 import { storeMode } from "./store";
+import { trustedOriginsFrom } from "./trustedOrigins";
 
 export const ACCOUNTS_UNAVAILABLE =
   "Accounts need a BETTER_AUTH_SECRET in the deployment's environment variables. Set one (any long random string) and restart.";
@@ -58,10 +59,9 @@ function buildAuth() {
     // would hand Better Auth an empty baseURL instead of falling back.
     baseURL: process.env.BETTER_AUTH_URL?.trim() || "http://localhost:3000",
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    // The manual list plus this deployment's own Vercel aliases — see
+    // lib/server/trustedOrigins.ts for why previews needed this.
+    trustedOrigins: trustedOriginsFrom(process.env),
     database: database(),
     emailAndPassword: { enabled: true },
     plugins: [admin({ adminUserIds: adminUserIds() })],
