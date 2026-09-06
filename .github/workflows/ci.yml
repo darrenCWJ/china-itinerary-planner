@@ -28,6 +28,16 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
+      # The `server-only` guard on lib/server/airports.ts, cityIndex.ts and
+      # catalog.ts fires only in a production build: it is what turns a client
+      # import of a multi-megabyte artifact into a build error instead of a
+      # silent shipment. Nothing else in CI runs `next build` — `tsc` and
+      # vitest cannot see the boundary, and the e2e job runs `next dev` — so
+      # without this step the guard's only trigger would be Vercel's preview
+      # check, which is not required. Verified negatively on 2026-09-06: a
+      # client import of lib/server/catalog fails this command with the full
+      # import trace. Measured at 8-19 s locally.
+      - run: npx next build
 
   # A separate job from `test`, deliberately: a browser download and a Next
   # build are minutes of work that the unit gate should not wait behind, and a
