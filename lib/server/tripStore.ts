@@ -303,6 +303,36 @@ export function setCurrencySettings(tripId: string, settings: CurrencySettings):
   return true;
 }
 
+/**
+ * `setCurrencySettings` under the trip's version guard: the upsert lands only
+ * if nobody has bumped the trip since it was read. False = conflict or
+ * unknown trip; the caller re-reads and re-applies.
+ *
+ * One transaction, so the version check and the write cannot interleave with
+ * another writer's `touch` — better-sqlite3 runs it synchronously on the one
+ * connection, which is what makes the read-then-write atomic here.
+ */
+export function setCurrencySettingsIf(
+  tripId: string,
+  settings: CurrencySettings,
+  expectedVersion: number
+): boolean {
+  const db = getDb();
+  const write = db.transaction((): boolean => {
+    const row = db.prepare("SELECT version FROM trips WHERE id = ?").get(tripId) as
+      | { version: number }
+      | undefined;
+    if (row === undefined || Number(row.version) !== expectedVersion) return false;
+    db.prepare(
+      "INSERT INTO trip_settings (trip_id, currency_settings) VALUES (?, ?) " +
+        "ON CONFLICT(trip_id) DO UPDATE SET currency_settings = excluded.currency_settings"
+    ).run(tripId, JSON.stringify(settings));
+    touch(tripId);
+    return true;
+  });
+  return write();
+}
+
 /** Rebuilding the plan orphans every schedule check (item ids change). */
 export function clearScheduleChecks(tripId: string): void {
   getDb()

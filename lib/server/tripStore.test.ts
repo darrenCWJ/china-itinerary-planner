@@ -32,6 +32,7 @@ import {
   revokeBriefing,
   setCheck,
   setCurrencySettings,
+  setCurrencySettingsIf,
   setUserPrefs,
   tripsForUser,
   updateExpense,
@@ -280,6 +281,26 @@ describe("money & journal storage", () => {
     const trip = getTrip(id)!;
     expect(trip.currencySettings).toEqual(settings);
     expect(setCurrencySettings("nope", settings)).toBe(false);
+  });
+
+  test("setCurrencySettingsIf writes only against the version it was given", () => {
+    const { id } = createTrip(tripData(), "Ada");
+    const version = getTrip(id)!.version;
+    const settings: CurrencySettings = { home: "PEN", rates: { PEN: 3.7 } };
+
+    // A stale expectation writes nothing and bumps nothing.
+    expect(setCurrencySettingsIf(id, settings, version + 1)).toBe(false);
+    expect(getTrip(id)!.currencySettings).not.toEqual(settings);
+    expect(getTrip(id)!.version).toBe(version);
+
+    // The current one writes, and the version moves — so a second writer
+    // holding the old number is refused, exactly as updateTripDataIf does.
+    expect(setCurrencySettingsIf(id, settings, version)).toBe(true);
+    expect(getTrip(id)!.currencySettings).toEqual(settings);
+    expect(getTrip(id)!.version).toBe(version + 1);
+    expect(setCurrencySettingsIf(id, settings, version)).toBe(false);
+
+    expect(setCurrencySettingsIf("nope", settings, 1)).toBe(false);
   });
 });
 

@@ -253,6 +253,17 @@ export async function setCurrencySettings(
   return sqlite.setCurrencySettings(tripId, settings);
 }
 
+export async function setCurrencySettingsIf(
+  tripId: string,
+  settings: CurrencySettings,
+  expectedVersion: number
+): Promise<boolean> {
+  if (storeMode() === "postgres") {
+    return (await pg()).setCurrencySettingsIf(tripId, settings, expectedVersion);
+  }
+  return sqlite.setCurrencySettingsIf(tripId, settings, expectedVersion);
+}
+
 export async function linkMemberAccount(
   tripId: string,
   memberName: string,

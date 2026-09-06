@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { TripData } from "../tripShared";
-import { getTrip, updateTripDataIf } from "./pgStore";
+import { getTrip, setCurrencySettingsIf, updateTripDataIf } from "./pgStore";
 
 /**
  * pgStore has no database to talk to here, so these drive it through the one
@@ -69,6 +69,33 @@ describe("updateTripDataIf — the optimistic-concurrency guard", () => {
     expect(write.params).toContain(7);
     // touch() used to carry this; folding the bump inward must not drop it.
     expect(write.text).toMatch(/updated_at\s*=/);
+  });
+});
+
+describe("setCurrencySettingsIf — the same guard for the settings blob", () => {
+  const SETTINGS = { home: "PEN", rates: { PEN: 3.7 } };
+
+  it("guards, bumps and upserts in ONE statement", async () => {
+    const statements = installRecorder(1);
+
+    expect(await setCurrencySettingsIf("trip-1", SETTINGS, 7)).toBe(true);
+
+    // A guard in one autocommit statement and the write in another is not a
+    // guard: the other writer can land between them. The CTE keeps them in one.
+    expect(statements).toHaveLength(1);
+    const [only] = statements;
+    expect(only.text).toContain("version = version + 1");
+    expect(only.text).toContain("AND version = $");
+    expect(only.text).toContain("INSERT INTO trip_settings");
+    expect(only.text).toContain("ON CONFLICT (trip_id) DO UPDATE");
+    expect(only.params).toContain("trip-1");
+    expect(only.params).toContain(7);
+    expect(only.params).toContainEqual(SETTINGS);
+  });
+
+  it("reports a lost race as false", async () => {
+    installRecorder(0);
+    expect(await setCurrencySettingsIf("trip-1", SETTINGS, 7)).toBe(false);
   });
 });
 
