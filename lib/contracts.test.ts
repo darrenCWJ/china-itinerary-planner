@@ -101,30 +101,12 @@ function stripComments(text: string): string {
 const isScannable = (entry: string) =>
   /\.(tsx?|css)$/.test(entry) && !/\.test\.tsx?$/.test(entry) && !/\.d\.ts$/.test(entry);
 
-/**
- * Modules that exist only to be imported by tests, and ship in no bundle.
- *
- * `mapExplorerHarness.tsx` renders `MapExplorer` the way a page would — it is
- * the host the four MapExplorer test files mount — so left in the scan it
- * reads as a second surface putting GeoNames city names on screen, and C7's
- * mount check below fails on a mount no user can reach. It cannot be named
- * `.test.tsx` and be caught by the rule above: importing one test file from
- * another makes vitest collect its `describe` blocks twice (spec §12.1), which
- * is the reason shared fixtures are plain modules here at all.
- *
- * One path at a time rather than a `*Harness` pattern, so a module leaving
- * every contract's reach stays a decision somebody made and reviewed.
- */
-const TEST_SUPPORT: ReadonlySet<string> = new Set(["components/map/mapExplorerHarness.tsx"]);
-
 function collect(): SourceFile[] {
   const out: SourceFile[] = [];
   const add = (full: string) => {
-    const path = relative(process.cwd(), full).split(sep).join("/");
-    if (TEST_SUPPORT.has(path)) return;
     const text = readFileSync(full, "utf8");
     out.push({
-      path,
+      path: relative(process.cwd(), full).split(sep).join("/"),
       text,
       code: stripComments(text),
     });
@@ -678,6 +660,11 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
    * lib/ is a different and much larger argument (every module that shapes city
    * data would become a candidate, and none of them renders anything), and it
    * is not made here.
+   *
+   * `RouteSuggestion` (`lib/route.ts`) carries `order: RoutePlace[]`, each
+   * with the GeoNames `name` of a catalog stop, and the split moved the JSX
+   * that prints them out of `MapExplorer.tsx` and into `RoutePanel.tsx` —
+   * which is what makes that file a candidate now, not a coincidence of naming.
    */
   const CITY_NAME_TOKENS = [
     /\bdestinationNames\b/,
@@ -685,6 +672,7 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     /\.destinations\b/,
     /\bCatalogHit\b/,
     /\bMapCity\b/,
+    /\bRouteSuggestion\b/,
   ] as const;
 
   /**
@@ -809,7 +797,12 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
     {
       path: "components/map/MapExplorer.tsx",
       mountedIn: ["components/DestinationStep.tsx"],
-      why: "Renders MapCity pins, but only ever as DestinationStep's map pane — the credit sits directly above it, under the search.",
+      why: "Stays a candidate through the CatalogHit it hands up to onAddCatalog — MapCity itself moved to useCountryAssets.ts/explorerPlaces.ts in the split — but only ever mounts as DestinationStep's map pane, where the credit sits directly above it, under the search.",
+    },
+    {
+      path: "components/map/RoutePanel.tsx",
+      mountedIn: ["components/map/MapExplorer.tsx"],
+      why: "The suggested route's place list, under the map. It became a candidate when the split pulled RoutePanel out of MapExplorer.tsx, carrying the RouteSuggestion JSX with it — and it is mounted only by MapExplorer.tsx, covered by DestinationStep through it.",
     },
     {
       path: "components/plan/PlaceSearch.tsx",

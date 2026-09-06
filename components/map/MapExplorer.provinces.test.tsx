@@ -1,8 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { COUNTRY_DETAIL, hasDetailLevel } from "@/lib/countryDetail";
-import { PROJECTION_PATH } from "@/lib/countryProjection";
-import { PE_TOPOLOGY } from "./countryFixture";
+// First, before any import that could reach `next/dynamic`: the harness
+// registers that mock, and vitest hoists a mock only above the imports of the
+// file that declares it.
 import {
   CHINA_TOPOLOGY_PATH,
   chip,
@@ -11,7 +9,12 @@ import {
   installMapExplorerHarness,
   pendingUntilAbort,
   settle,
-} from "./mapExplorerHarness";
+} from "@/test/mapExplorerHarness";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { COUNTRY_DETAIL, hasDetailLevel } from "@/lib/countryDetail";
+import { PROJECTION_PATH } from "@/lib/countryProjection";
+import { PE_TOPOLOGY } from "./countryFixture";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -278,9 +281,9 @@ describe("the province level's chrome", () => {
     ]);
     expect(markerNames(container).sort()).toEqual(["Cusco", "Lima"]);
     // C5's 44px minimum, which its sibling controls are each pinned to
-    // separately above. This one is the only way into a province, and it is
-    // the one control in the header that is not a `STEP_UP_BUTTON` and so
-    // cannot inherit the token from that constant.
+    // separately in MapExplorer.test.tsx. This one is the only way into
+    // a province, and it is the one control in the header that is not a
+    // `STEP_UP_BUTTON` and so cannot inherit the token from that constant.
     expect(regionControl().className).toContain("min-h-[var(--tap-min)]");
 
     fireEvent.change(regionControl(), { target: { value: "PE-CUS" } });

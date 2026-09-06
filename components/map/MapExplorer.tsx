@@ -7,6 +7,7 @@ import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { hasDetailLevel } from "@/lib/countryDetail";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
 import type { CatalogHit } from "@/lib/tripShared";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 import type { AirportPick } from "@/components/trip/AirportPicker";
 import { CountryMap } from "./CountryMap";
 import { FitLegend } from "./FitLegend";
@@ -91,14 +92,14 @@ export function MapExplorer({
   /**
    * Whether §10.1's airport layer is drawn — off until a reader asks for it.
    *
-   * This component's twelfth `useState`, and deliberately not a fifth
+   * A `useState` of this component's own, and deliberately not a fifth
    * `UserPrefs` field (D11). The cost of that fifth field is not the one the
    * spec argued: `PrefsSchema` is a `z.object()` and Zod strips unlisted keys,
    * so `PrefsProvider.setPrefs` would write the correct value to the cookie
    * and then PUT it to `/api/me/prefs`, which answers 200 with the key
    * removed — an active clobber of the value the browser had just written,
-   * not merely a failure to persist it. `lib/server/schemas.ts:312-315` is the
-   * scar where that happened to `pivot` for real, and `:330-332` is the
+   * not merely a failure to persist it. `lib/server/schemas.ts:325-328` is the
+   * scar where that happened to `pivot` for real, and `:352-355` is the
    * prophylactic one that kept it from happening to `worldView`.
    *
    * Nothing is lost by keeping it here. The layer answers "where are this
@@ -125,6 +126,7 @@ export function MapExplorer({
   const [openedCountry, setOpenedCountry] = useState(level === "country");
   if (level === "country" && !openedCountry) setOpenedCountry(true);
   const mapWrapRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
@@ -337,6 +339,7 @@ export function MapExplorer({
         countryCode={countryCode}
         countryLabel={countryLabel}
         openedCountry={openedCountry}
+        reducedMotion={reducedMotion}
         onPickCountry={pickCountry}
         onLevelChange={onLevelChange}
       />
@@ -489,11 +492,12 @@ export function MapExplorer({
           month={month}
           zoomRegion={zoomRegion}
           routeIds={route?.order.map((p) => p.id) ?? []}
-          // The array this component has held since PR1 and spent on one thing
-          // — `suggestRoute`'s flight legs — reaching a second reader (§10.2).
-          // No new fetch and no new route: `/api/map/airports?country=XX` is
-          // already asked for above, and it is the request that keeps
-          // `lib/server/airports.ts` and its 876,823 B artifact on the server.
+          // The array the country load has held since PR1 and spent on one
+          // thing — `suggestRoute`'s flight legs — reaching a second reader
+          // (§10.2). No new fetch and no new route: `/api/map/airports?country=XX`
+          // is already asked for by `useCountryAssets`, and it is the request
+          // that keeps `lib/server/airports.ts` and its 835,697 B artifact on
+          // the server.
           airports={airports}
           // The layer's switch, and the only writer of it. `airports` above
           // reaches the card whether this is on or off (§10.2): the toggle

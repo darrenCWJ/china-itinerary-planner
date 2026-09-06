@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { usePrefs } from "@/components/shell/PrefsProvider";
-import { useReducedMotion } from "@/lib/useReducedMotion";
 import type { MapLevel } from "./MapExplorer";
 import { STEP_UP_BUTTON } from "./stepUpButton";
 
@@ -38,6 +37,12 @@ interface Props {
   countryLabel: string;
   /** Whether this pane has shown a country level yet, so a way back exists. */
   openedCountry: boolean;
+  /**
+   * Whether the user has asked the OS for reduced motion — resolved by
+   * `MapExplorer` and passed down rather than read here (see the docblock
+   * on `WorldLevel` below for why).
+   */
+  reducedMotion: boolean;
   onPickCountry: (code: string) => void;
   onLevelChange: (level: MapLevel) => void;
 }
@@ -54,11 +59,11 @@ export function WorldPane({
   countryCode,
   countryLabel,
   openedCountry,
+  reducedMotion,
   onPickCountry,
   onLevelChange,
 }: Props) {
   const { prefs, setPrefs } = usePrefs();
-  const reducedMotion = useReducedMotion();
   /**
    * Reduced motion wins over an explicit globe preference.
    *
@@ -67,6 +72,10 @@ export function WorldPane({
    * Rather than shipping a globe with the spin disabled, which is a worse globe
    * than the flat map is a map, the preference resolves to flat and the user
    * keeps a renderer that was designed to be still.
+   *
+   * `reducedMotion` arrives as a prop rather than a `useReducedMotion()` call
+   * here because this pane remounts on every return to the world level, and
+   * the hook's first frame is always `false`.
    */
   const WorldLevel = prefs.worldView === "flat" || reducedMotion ? WorldMap : GlobeLevel;
 

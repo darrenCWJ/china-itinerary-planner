@@ -88,7 +88,7 @@ const type = (text: string) => {
  * Drain to a fixed point — pending effects, the promises they started, and the
  * renders those cause — then let the test query synchronously.
  *
- * Kept identical to the helper in `components/map/MapExplorer.test.tsx` and
+ * Kept identical to the helper in `test/mapExplorerHarness.tsx` and
  * `lib/useTripPayload.test.tsx` so the three read as one pattern. Their
  * docblocks carry the general argument: a wait measured against a wall clock
  * cannot tell "has not finished yet" apart from "is never going to happen", so
