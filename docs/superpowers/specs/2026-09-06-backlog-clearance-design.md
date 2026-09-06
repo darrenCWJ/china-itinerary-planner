@@ -71,9 +71,10 @@ Verified against `main` at 3ddf4dc before anything was written, because the back
 | `components/map/useCountryAssets.ts` | the six-leg country load effect and the airports effect, with their state, returned as one object plus `retry()`; the hover reset that lived in the effect becomes a one-line effect in `MapExplorer` keyed on the country |
 | `components/map/WorldPane.tsx` | the world-level branch, owning the dynamic `WorldMap`/`GlobeLevel` imports, the reduced-motion resolution and the globe toggle |
 | `components/map/RoutePanel.tsx` | the suggested-route block |
-| `components/map/mapExplorerHarness.tsx` | the test file's fixtures, fetch mock, `Harness` and `renderExplorer` |
+| `components/map/stepUpButton.ts` | the `STEP_UP_BUTTON` class, shared by `MapExplorer` and `WorldPane` |
+| `test/mapExplorerHarness.tsx` | the test file's fixtures, fetch mock, `Harness` and `renderExplorer` — under a root-level `test/`, outside the roots `lib/contracts.test.ts` scans, because inside `components/` a module that value-imports `MapExplorer` reads as a second, uncredited mount of it (found in review; the first cut named it out of the contract instead) |
 
-The test file splits along its existing `describe` blocks into `MapExplorer.test.tsx`, `MapExplorer.provinces.test.tsx`, `MapExplorer.airports.test.tsx` and `MapExplorer.climate.test.tsx`. Every file lands under 800 lines. The four new source files join `lib/countryFacts.test.ts`'s `MUST_STAY_CHEAP` list, since they are map surfaces and the contract is about map surfaces.
+The test file splits along its existing `describe` blocks into `MapExplorer.test.tsx`, `MapExplorer.provinces.test.tsx`, `MapExplorer.airports.test.tsx` and `MapExplorer.climate.test.tsx`. `explorerPlaces.test.tsx` is a `.tsx` in the jsdom project, not the `.test.ts` first planned: Vitest collects only `lib/**/*.test.ts` and `components/**/*.test.tsx`, so a `.test.ts` under `components/` would never run. Every file lands under 800 lines. The four new source files join `lib/countryFacts.test.ts`'s `MUST_STAY_CHEAP` list, since they are map surfaces and the contract is about map surfaces; and because `MapCity` left the only `.tsx` the CC BY 4.0 contract could see while `RoutePanel.tsx` prints place names, `RouteSuggestion` joins that contract's tokens and `RoutePanel` its allowlist, exactly mounted by `MapExplorer`.
 
 **Not in scope.** The prefetch of China's assets at the world level (left alone on purpose in PR #29), and any change to what the map draws.
 
