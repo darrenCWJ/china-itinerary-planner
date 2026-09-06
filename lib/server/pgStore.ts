@@ -626,6 +626,32 @@ export async function setCurrencySettings(
   return true;
 }
 
+/**
+ * `setCurrencySettings` under the trip's version guard — see the sqlite twin
+ * for the contract. ONE statement: the CTE bumps `trips.version` only where
+ * it still equals the expected value, and the upsert is fed from its
+ * `RETURNING`, so a stale expectation inserts nothing and the guard and the
+ * write cannot be split across autocommit statements (the property
+ * pgStore.test.ts pins for `updateTripDataIf`, for the same reason).
+ */
+export async function setCurrencySettingsIf(
+  tripId: string,
+  settings: CurrencySettings,
+  expectedVersion: number
+): Promise<boolean> {
+  await ensureSchema();
+  const s = sql();
+  const result = await s`WITH bumped AS (
+      UPDATE trips SET version = version + 1, updated_at = ${Date.now()}
+      WHERE id = ${tripId} AND version = ${expectedVersion}
+      RETURNING id
+    )
+    INSERT INTO trip_settings (trip_id, currency_settings)
+    SELECT id, ${s.json(JSON.parse(JSON.stringify(settings)))} FROM bumped
+    ON CONFLICT (trip_id) DO UPDATE SET currency_settings = EXCLUDED.currency_settings`;
+  return result.count > 0;
+}
+
 export async function linkMemberAccount(
   tripId: string,
   memberName: string,
