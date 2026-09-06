@@ -3,7 +3,13 @@ import { defineConfig } from "vitest/config";
 
 // `import.meta.dirname`, not `__dirname`: this file is .mts so Vite loads it as
 // real ESM, where the CommonJS globals do not exist.
-const alias = { "@": path.resolve(import.meta.dirname, ".") };
+const alias = {
+  "@": path.resolve(import.meta.dirname, "."),
+  // `server-only` throws on import outside a React Server Components build,
+  // which is the point of it in `next build` and noise here — see
+  // vitest.server-only.ts.
+  "server-only": path.resolve(import.meta.dirname, "vitest.server-only.ts"),
+};
 
 /**
  * Two projects, split by file extension so their includes cannot overlap:
