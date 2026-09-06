@@ -1,3 +1,4 @@
+import "server-only";
 import bundledCityIndexJson from "../../data/cities-index.json";
 import { isGeoNamesId } from "../geoNamesId";
 import type { CountryCode } from "../types";
@@ -31,10 +32,18 @@ export { isGeoNamesId };
  * only get down to 4,828,362. The payload is parsed once per cold start, so
  * that difference is paid per instance, not once.
  *
- * Server-only by convention, like lib/server/catalog.ts — importing it from a
- * client component would pull 3.65 MB into the browser bundle. The client's
- * side of the same data is a single country shard out of public/cities/ —
- * median 12 KB, 97 KB at the largest — parsed by lib/cityShard.ts.
+ * Measured 2026-09-06, JSON.parse of the committed files, median of five: this
+ * one 22.6 ms, airports.json 2.5 ms, catalog.json 1.1 ms — about 27 ms per
+ * cold instance for the three. That is why they stay static imports rather
+ * than runtime reads: a file the function bundle does not carry answers 500,
+ * and 27 ms is not worth that risk.
+ *
+ * Server-only, and enforced: `server-only` above makes a client import a
+ * `next build` error rather than a silent 3.65 MB in the browser bundle.
+ * Vitest aliases the package to an empty module (vitest.server-only.ts). The
+ * client's side of the same data is a single country shard out of
+ * public/cities/ — median 12 KB, 97 KB at the largest — parsed by
+ * lib/cityShard.ts.
  */
 
 export interface CityIndexEntry {

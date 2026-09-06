@@ -1,3 +1,4 @@
+import "server-only";
 import bundledAirportsJson from "../../data/airports.json";
 import {
   findAirport as findIn,
@@ -19,8 +20,9 @@ import type { LatLon } from "../geo";
  * server-side, so it needs no new mechanism — just more of the one already in
  * use.
  *
- * Server-only by convention, like lib/server/catalog.ts — importing it from a
- * client component would pull the artifact into the browser bundle.
+ * Server-only, and enforced: `server-only` above makes a client import a
+ * `next build` error rather than a silent 816 KB in the browser bundle.
+ * Vitest aliases the package to an empty module (vitest.server-only.ts).
  */
 
 interface AirportArtifact {

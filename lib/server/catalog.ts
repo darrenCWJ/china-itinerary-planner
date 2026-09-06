@@ -1,3 +1,4 @@
+import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import bundledCatalogJson from "../../data/catalog.json";
@@ -73,6 +74,9 @@ function catalogPath(): string {
  * The catalog is bundled into the build so serverless deployments (read-only
  * filesystem, no data/ directory) still have the full all-China dataset. The
  * on-disk copy takes precedence locally so /api/destinations/refresh works.
+ *
+ * Server-only, and enforced by the `server-only` import above; Vitest
+ * aliases the package to an empty module (vitest.server-only.ts).
  */
 const BUNDLED_CATALOG = bundledCatalogJson as unknown as Catalog;
 
