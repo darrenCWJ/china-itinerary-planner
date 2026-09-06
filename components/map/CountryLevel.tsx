@@ -1067,6 +1067,18 @@ export function CountryLevel({
   );
 
   /**
+   * Each marker's fill, resolved once per (places, month, climate) rather than
+   * once per render: this level re-renders on every hover — the hover card is
+   * state above it — and a verdict depends on nothing the pointer changes.
+   * Indexed like `marks`, by the place's position in the country, so a zoom
+   * re-uses it untouched.
+   */
+  const fills = useMemo(
+    () => places.map((place) => FIT_COLORS[fitForPlace(place, month, climate)]),
+    [places, month, climate]
+  );
+
+  /**
    * The markers a framed map draws, paired with their index into everything
    * computed above — §6.5, and `cityProvince`'s first ever reader.
    *
@@ -1463,7 +1475,7 @@ export function CountryLevel({
                       cx={x}
                       cy={y}
                       r={r}
-                      fill={FIT_COLORS[fitForPlace(place, month, climate)]}
+                      fill={fills[index]}
                       fillOpacity={place.kind === "curated" ? 0.95 : 0.8}
                       stroke="var(--paper)"
                       strokeWidth={MARKER_STROKE / k}

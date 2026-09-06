@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import fixture from "@/data/climate-anchors.json";
 import type { Airport } from "@/lib/airports";
@@ -34,7 +35,13 @@ import {
   peFileWith,
 } from "./countryFixture";
 import { MAP_VIEW_H, MAP_VIEW_W, ZOOM_MS } from "./mapShared";
-import { FIT_COLORS, FIT_LABELS, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
+import {
+  FIT_COLORS,
+  FIT_LABELS,
+  fitForPlace,
+  type DerivedClimateIndex,
+  type MapPlace,
+} from "./mapTypes";
 
 /**
  * The generic country level: the map 245 countries never had.
@@ -72,6 +79,13 @@ vi.mock("@/lib/dragLayer", async (importOriginal) => {
       return actual.nonOverlappingRadii(points, ceiling);
     },
   };
+});
+
+// Wraps the real resolver in a spy so a test can count how often a render
+// consults it. Behaviour is unchanged: every call goes through to the original.
+vi.mock("./mapTypes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./mapTypes")>();
+  return { ...actual, fitForPlace: vi.fn(actual.fitForPlace) };
 });
 
 function place(over: Partial<MapPlace> & Pick<MapPlace, "id" | "name">): MapPlace {
@@ -192,8 +206,12 @@ const PE_ONE_UNIT: ProvinceFile = parseProvinceTopology({
   cityProvince: {},
 });
 
-function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
-  const props = {
+/**
+ * The default props `renderLevel` renders with, reusable where a test needs
+ * the props without a render — to build a second component around them, say.
+ */
+function levelProps(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
+  return {
     country: "PE",
     provinces: PE_FILE,
     projection: PE_ENTRY as ProjectionEntry | null,
@@ -205,6 +223,10 @@ function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
     onHoverPlace: vi.fn(),
     ...over,
   };
+}
+
+function renderLevel(over: Partial<Parameters<typeof CountryLevel>[0]> = {}) {
+  const props = levelProps(over);
   return { ...render(<CountryLevel {...props} />), props };
 }
 
@@ -2106,6 +2128,41 @@ describe("CountryLevel derived climate", () => {
     expect(circleFor(container, "beijing", "data-dot").getAttribute("fill")).toBe(FIT_COLORS[october.fit]);
     fireEvent.click(container.querySelector('[data-place="beijing"]')!);
     expect(container.querySelector("[data-climate]")!.textContent).toBe(`${october.lo}°–${october.hi}°C typical`);
+  });
+
+  test("resolves each marker's verdict once per month, not once per hover", () => {
+    /**
+     * A host that re-renders the level on hover, as MapExplorer does — the
+     * hover card is state above the level. Without it the level would not
+     * re-render and the assertion would be vacuous.
+     */
+    function HoverHost(props: Parameters<typeof CountryLevel>[0]) {
+      const [hovered, setHovered] = useState<string>("");
+      return (
+        <>
+          <CountryLevel {...props} onHoverPlace={(place) => setHovered(place?.id ?? "")} />
+          <output data-testid="hovered">{hovered}</output>
+        </>
+      );
+    }
+    const spy = vi.mocked(fitForPlace);
+    const base = levelProps();
+    const { container, rerender } = render(<HoverHost {...base} />);
+    const settled = spy.mock.calls.length;
+    expect(settled).toBeGreaterThan(0);
+
+    const cusco = container.querySelector('[data-place="cusco"]')!;
+    fireEvent.mouseEnter(cusco, { clientX: 40, clientY: 50 });
+    fireEvent.mouseMove(cusco, { clientX: 41, clientY: 51 });
+    fireEvent.mouseMove(cusco, { clientX: 42, clientY: 52 });
+    // The host re-rendered (the hover reached it)…
+    expect(screen.getByTestId("hovered").textContent).toBe("cusco");
+    // …and no marker asked for its verdict again.
+    expect(spy.mock.calls.length).toBe(settled);
+
+    // A month change is a real reason to ask.
+    rerender(<HoverHost {...base} month={base.month === 6 ? 7 : 6} />);
+    expect(spy.mock.calls.length).toBeGreaterThan(settled);
   });
 });
 
