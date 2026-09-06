@@ -2,9 +2,9 @@
 
 - Source: https://os.zhdk.cloud.switch.ch/chelsav2/GLOBAL/climatologies/1981-2010/<var>/CHELSA_<var>_<MM>_1981-2010_V.2.1.tif
 - Licence: CC0 1.0 — CHELSA V2.1 climatologies 1981–2010, DOI 10.16904/envidat.228
-- Generated: 2026-09-03T19:48:35.466Z
-- Built by: `node scripts/ingest-climate.mjs`, Node v24.14.1
-- Catalog: the 246 committed shards under `public/cities/`, **58757 cities**
+- Generated: 2026-09-06T17:15:50.533Z
+- Built by: `node scripts/ingest-climate.mjs`, Node v24.20.0
+- Catalog: the 246 committed shards under `public/cities/`, **58759 cities**
 
 ## Layout
 
@@ -28,15 +28,15 @@ calendar-ordered and no `seasonIn` is applied on the way in.
 
 The rows join `public/cities/<CC>.json` on the city id. Elevation is not
 repeated here; a consumer that needs it reads `elev` from the city row, where
-301 of 58757 rows carry `null` and must be treated as "no correction".
+302 of 58759 rows carry `null` and must be treated as "no correction".
 
 ## Coverage
 
 - Country shards: **246**
-- Cities with a climate row: **58757**
+- Cities with a climate row: **58759**
 - Cities dropped for an unwritable month: **0**
 - Cities no raster could place: **0**
-- Samples on the file's declared nodata sentinel: **0** of 3525420
+- Samples on the file's declared nodata sentinel: **0** of 3525540
 
 The last three are zero and are expected to stay zero, but none of them is
 guaranteed by the format. CHELSA V2.1 is modelled over ocean as well as land,
@@ -61,7 +61,7 @@ cloud   0..93       %
 td      -43..24     °C
 ```
 
-705084 city-months, of which **0** have `lo` greater than `hi` — the
+705108 city-months, of which **0** have `lo` greater than `hi` — the
 one cross-field invariant the parser checks per month, and the one a decode
 that scaled `tasmin` and `tasmax` differently would trip while landing inside
 every band above.
@@ -70,15 +70,15 @@ every band above.
 
 - Variables: tasmin, tasmax, pr, clt, hurs — 12 months each, 60 files
 - On disk: 10653609738 B (10.65 GB)
-- Downloaded by this run: 0 B (0.00 GB); 60 of 60 files were already cached
+- Downloaded by this run: 10653609738 B (10.65 GB); 0 of 60 files were already cached
 
 | variable | grid | rows touched | bytes | downloaded | sample |
 |---|---|---|---|---|---|
-| `tasmin` | 43200×20880 @ 0.0083333333° | 11771 of 20880 | 1456659970 B | 0 B | 378.1 s |
-| `tasmax` | 43200×20880 @ 0.0083333333° | 11771 of 20880 | 1450131784 B | 0 B | 371.9 s |
-| `pr` | 43200×20880 @ 0.0083333333° | 11771 of 20880 | 2877520406 B | 0 B | 380.7 s |
-| `clt` | 14401×7201 @ 0.02499999° | 4511 of 7201 | 712735369 B | 0 B | 61.8 s |
-| `hurs` | 43200×20880 @ 0.0083333333° | 11771 of 20880 | 4156562209 B | 0 B | 321.4 s |
+| `tasmin` | 43200×20880 @ 0.0083333333° | 11772 of 20880 | 1456659970 B | 1456659970 B | 299.3 s |
+| `tasmax` | 43200×20880 @ 0.0083333333° | 11772 of 20880 | 1450131784 B | 1450131784 B | 304.4 s |
+| `pr` | 43200×20880 @ 0.0083333333° | 11772 of 20880 | 2877520406 B | 2877520406 B | 319.6 s |
+| `clt` | 14401×7201 @ 0.02499999° | 4510 of 7201 | 712735369 B | 712735369 B | 49.0 s |
+| `hurs` | 43200×20880 @ 0.0083333333° | 11772 of 20880 | 4156562209 B | 4156562209 B | 321.9 s |
 
 Two grids, not one: `clt` is a coarser raster on its own origin that reaches
 both poles, where the other four stop at +84°. Each file carries its own
@@ -96,10 +96,10 @@ hurs    scale 0.01  offset 0        nodata 65535
 
 ## Cost
 
-- Download: 0 B in 0.0 s
-- Sample: 1513.8 s over 619140 row reads
-- Wall clock: 1556.7 s (25.9 min)
-- Peak RSS: 215924736 B (206 MB)
+- Download: 10653609738 B in 567.5 s
+- Sample: 1294.1 s over 619176 row reads
+- Wall clock: 1902.8 s (31.7 min)
+- Peak RSS: 288800768 B (275 MB)
 
 Spec §14.8 budgeted this run at "tens of minutes, single-digit GB,
 sub-500 MB RSS" and asked for the truth. Two of the three hold. **The download
@@ -110,13 +110,13 @@ for single-digit GB of scratch disk will not finish.
 Memory is a non-issue and stays one. A decoded row is 86 KB on the 1 km grid
 and is released before the next is read; the resident cost is the catalog plus
 the whole year's decoded samples, which is 28.20 MB of Float64 for
-58757 cities. Nothing needs streaming, and nothing needs the 1.8 GB a
+58759 cities. Nothing needs streaming, and nothing needs the 1.8 GB a
 whole-raster decode would take.
 
 ## Size
 
-- Raw: 11008116 B (11.01 MB)
-- Gzip: 2489418 B (2.49 MB)
+- Raw: 11008426 B (11.01 MB)
+- Gzip: 2489615 B (2.49 MB)
 - Largest shard by raw bytes: ID, 152210 B raw / 36978 B gzip
 - Worst shard by gzip bytes: IN, 39490 B gzip / 143489 B raw
 - Median shard: SV, 20059 B raw / 4881 B gzip
@@ -146,8 +146,8 @@ its own error. Measured against those predictions:
 
 | | predicted | measured | off by |
 |---|---|---|---|
-| whole artifact, raw | 11089517 B | 11008116 B | −0.7% |
-| whole artifact, gzip | 3480000 B | 2489418 B | −28.5% |
+| whole artifact, raw | 11089517 B | 11008426 B | −0.7% |
+| whole artifact, gzip | 3480000 B | 2489615 B | −28.5% |
 | worst shard, gzip | 55000 B | 39490 B | −28.2% |
 
 Raw came out almost exactly where January said it would; both gzip figures
