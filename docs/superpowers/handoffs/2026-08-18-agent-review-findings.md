@@ -13,7 +13,21 @@ reviewers each, which is the strongest signal in the set.
 picked country never reaching the write boundary, and catalog search not being
 country-scoped.
 
-**Everything below is still open.**
+**Status 2026-09-06 — every finding below is closed.** Verified against
+`main` at 3ddf4dc; the findings are left as written because they are the
+record of what was found.
+
+| Finding | Closed by |
+|---|---|
+| HIGH `app/plan/page.tsx:158` (country never reaches the write boundary; listed twice) | `tripInput` carries `country: tripCountry` (`app/plan/page.tsx` ~305-317) and `addOffMap` stamps the open country (~209) |
+| HIGH `components/plan/PlaceSearch.tsx:70` (catalog search unscoped; listed twice) | `app/api/destinations/route.ts` requires `country` and answers nothing without it; `PlaceSearch` sends the open country on every request |
+| MEDIUM `components/map/WorldMap.tsx:66` (small-country pointer target) | Closed the way the finding proposed — a different interaction: the world level's A–Z `<select>` ("Or pick from the list", `components/map/worldLevelShared.tsx`) reaches every country, and the globe is the default picker (PR #17, PR #29) |
+| MEDIUM `components/shell/CountryHero.tsx:72` (accent override bypasses prefs) | `CountryHero` resolves through `resolveAccentOverride(prefs, country.code)` from `lib/prefs` |
+| LOW `data/country-images.json:56` (984-character credit) | At the boundary: `lib/countryImagery.ts`'s `creditText` refuses a credit over `MAX_CREDIT_TEXT_LENGTH`, so the record yields no image and Indonesia renders the accent gradient; the data row is unchanged on purpose (its docblock says why) |
+| MEDIUM `components/trip/BalancesCard.tsx:89` (positive balance in the seal family) | A positive balance is `var(--ink-0)` (`BalancesCard.tsx` ~126) |
+| MEDIUM `components/plan/useDayBuilder.ts:62` (activities frozen at mount) | `useDayBuilder` dispatches `setActivities` whenever `activitiesByDestination` changes (~79-80) |
+
+**Everything below was open when this was written.**
 
 ## HIGH — app/plan/page.tsx:158
 
