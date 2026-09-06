@@ -74,14 +74,30 @@ describe("PUT /api/trips/:id/currency", () => {
     expect(setCurrencySettingsIf).not.toHaveBeenCalled();
   });
 
-  test("re-reads and retries when another member's write lands first", async () => {
+  test("re-reads and retries when another member's write lands first, merging into what they wrote", async () => {
+    // Their save lands between our read and our write: the version moves to
+    // 8 and the pivot is theirs. The second read sees it; the second write
+    // must be built from it — a retry that re-reads but merges into the FIRST
+    // read still reverts their save, which is the bug this route exists to
+    // prevent.
+    const theirs = {
+      ...storedPayload(),
+      version: 8,
+      currencySettings: { home: "PEN", rates: { PEN: 3.7 }, pivot: "PEN" },
+    };
+    vi.mocked(getTrip)
+      .mockResolvedValueOnce(storedPayload())
+      .mockResolvedValueOnce(theirs)
+      .mockResolvedValue(theirs);
     vi.mocked(setCurrencySettingsIf).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const res = await PUT(request(BODY), params);
     expect(res.status).toBe(200);
     expect(setCurrencySettingsIf).toHaveBeenCalledTimes(2);
-    // Re-READ, not merely re-written: the second attempt merges into the
-    // trip as it is now, which is the whole point of retrying.
-    expect(vi.mocked(getTrip).mock.calls.length).toBeGreaterThanOrEqual(3);
+    const [, merged, version] = vi.mocked(setCurrencySettingsIf).mock.calls[1];
+    expect(version).toBe(8);
+    expect(merged).toEqual({ home: "SGD", rates: { SGD: 5.2 }, pivot: "PEN" });
+    // Two attempts, then the payload read: exactly three reads.
+    expect(getTrip).toHaveBeenCalledTimes(3);
   });
 
   test("gives up with a 409 after three lost races", async () => {

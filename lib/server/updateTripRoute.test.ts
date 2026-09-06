@@ -112,13 +112,27 @@ describe("PATCH /api/trips/:id and the gateway codes", () => {
     expect(clearScheduleChecks).toHaveBeenCalledTimes(1);
   });
 
-  test("re-reads and rebuilds when another member's write lands first", async () => {
+  test("re-reads and rebuilds against what the other member wrote", async () => {
+    // Their save lands between our read and our write: the version moves to
+    // 8 and they set an arrival gateway. `input` says nothing about gateways,
+    // so the second attempt must carry THEIRS forward — a retry that re-reads
+    // but rebuilds from the first read would revert their save.
+    const theirs = fullPayload();
+    theirs.version = 8;
+    theirs.data.input = { ...theirs.data.input, arrivalAirport: "PEK", departureAirport: null };
+    vi.mocked(getTrip)
+      .mockResolvedValueOnce(fullPayload())
+      .mockResolvedValueOnce(theirs)
+      .mockResolvedValue(theirs);
     vi.mocked(updateTripDataIf).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const res = await PATCH(request({ input }), params);
     expect(res.status).toBe(200);
     expect(updateTripDataIf).toHaveBeenCalledTimes(2);
-    // The second attempt rebuilds against a fresh read.
-    expect(vi.mocked(getTrip).mock.calls.length).toBeGreaterThanOrEqual(3);
+    const [, data, version] = vi.mocked(updateTripDataIf).mock.calls[1];
+    expect(version).toBe(8);
+    expect(data.input.arrivalAirport).toBe("PEK");
+    // Two attempts, then the payload read: exactly three reads.
+    expect(getTrip).toHaveBeenCalledTimes(3);
     expect(clearScheduleChecks).toHaveBeenCalledTimes(1);
   });
 

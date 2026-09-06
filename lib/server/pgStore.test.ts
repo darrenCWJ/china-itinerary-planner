@@ -88,6 +88,11 @@ describe("setCurrencySettingsIf — the same guard for the settings blob", () =>
     expect(only.text).toContain("AND version = $");
     expect(only.text).toContain("INSERT INTO trip_settings");
     expect(only.text).toContain("ON CONFLICT (trip_id) DO UPDATE");
+    // The coupling itself: the upsert is fed FROM the guard's CTE, so a stale
+    // expectation yields no row to insert. An upsert written as plain VALUES
+    // beside an unreferenced CTE would satisfy every line above and still
+    // write unconditionally.
+    expect(only.text).toContain("FROM bumped");
     expect(only.params).toContain("trip-1");
     expect(only.params).toContain(7);
     expect(only.params).toContainEqual(SETTINGS);
