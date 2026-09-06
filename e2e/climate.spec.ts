@@ -14,7 +14,7 @@ import { test, expect, type Page } from "@playwright/test";
 /** `FIT_COLORS` less `unknown` — the four colours that are a verdict. */
 const VERDICT_COLOURS = new Set(["#2f7d54", "#b98a2f", "#8f9bab", "#c93b2e"]);
 const LEGEND = { name: "What the marker colours mean" };
-const NOTE = { name: "About these notes" };
+const NOTE = { name: "About the climate colours" };
 
 /**
  * `/plan` opens on the details step; the map is the step after it, and it
