@@ -17,6 +17,8 @@ vi.mock("@/lib/server/store", () => ({
   storeMode: () => "sqlite",
   DB_UNAVAILABLE: "unavailable",
   getTrip: vi.fn(),
+  updateTripDataIf: vi.fn(async () => true),
+  // Present so "never called" is about a real export, not a typo.
   updateTripData: vi.fn(async () => undefined),
   clearScheduleChecks: vi.fn(async () => undefined),
 }));
@@ -31,7 +33,7 @@ vi.mock("@/lib/server/airports", () => ({
 
 const { PATCH } = await import("@/app/api/trips/[id]/route");
 const { requireMember } = await import("@/lib/server/authz");
-const { getTrip, updateTripData, clearScheduleChecks } = await import("@/lib/server/store");
+const { getTrip, updateTripDataIf, updateTripData, clearScheduleChecks } = await import("@/lib/server/store");
 const { NextRequest } = await import("next/server");
 
 function request(body: unknown) {
@@ -55,7 +57,7 @@ const input = {
 };
 
 function storedInput() {
-  const [, data] = vi.mocked(updateTripData).mock.calls[0];
+  const [, data] = vi.mocked(updateTripDataIf).mock.calls[0];
   return data.input;
 }
 
@@ -64,6 +66,8 @@ beforeEach(() => {
   vi.mocked(requireMember).mockResolvedValue({ memberName: "Ada" });
   vi.mocked(getTrip).mockReset();
   vi.mocked(getTrip).mockResolvedValue(fullPayload());
+  vi.mocked(updateTripDataIf).mockReset();
+  vi.mocked(updateTripDataIf).mockResolvedValue(true);
   vi.mocked(updateTripData).mockClear();
   vi.mocked(clearScheduleChecks).mockClear();
 });
@@ -96,5 +100,33 @@ describe("PATCH /api/trips/:id and the gateway codes", () => {
     expect(res.status).toBe(200);
     expect(storedInput().arrivalAirport).toBe("XXX");
     expect(storedInput().departureAirport).toBeNull();
+  });
+
+  test("writes under the version it read, never through the unguarded write", async () => {
+    const res = await PATCH(request({ input }), params);
+    expect(res.status).toBe(200);
+    const [id, , version] = vi.mocked(updateTripDataIf).mock.calls[0];
+    expect(id).toBe("trip-1");
+    expect(version).toBe(fullPayload().version);
+    expect(updateTripData).not.toHaveBeenCalled();
+    expect(clearScheduleChecks).toHaveBeenCalledTimes(1);
+  });
+
+  test("re-reads and rebuilds when another member's write lands first", async () => {
+    vi.mocked(updateTripDataIf).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const res = await PATCH(request({ input }), params);
+    expect(res.status).toBe(200);
+    expect(updateTripDataIf).toHaveBeenCalledTimes(2);
+    // The second attempt rebuilds against a fresh read.
+    expect(vi.mocked(getTrip).mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(clearScheduleChecks).toHaveBeenCalledTimes(1);
+  });
+
+  test("gives up with a 409 after three lost races, clearing no ticks", async () => {
+    vi.mocked(updateTripDataIf).mockResolvedValue(false);
+    const res = await PATCH(request({ input }), params);
+    expect(res.status).toBe(409);
+    expect(updateTripDataIf).toHaveBeenCalledTimes(3);
+    expect(clearScheduleChecks).not.toHaveBeenCalled();
   });
 });

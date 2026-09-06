@@ -11,8 +11,11 @@ import {
   DB_UNAVAILABLE,
   getTrip,
   storeMode,
-  updateTripData,
+  updateTripDataIf,
 } from "@/lib/server/store";
+
+/** Re-read/re-apply attempts when another member writes concurrently. */
+const MAX_WRITE_ATTEMPTS = 3;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -70,31 +73,44 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   ]);
   if (refused) return refused;
 
-  const existing = await getTrip(id);
-  if (!existing) {
-    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  await ensureCatalogLoaded();
+  // The rebuild replaces the plan on purpose — a member asked for it — but
+  // it must not also replace what another member wrote between this read
+  // and this write: the gateways they just saved, say. So it lands under the
+  // same version guard the plan and gateways routes use, and a lost race
+  // re-reads and rebuilds against the newer trip rather than reverting it.
+  for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+    const existing = await getTrip(id);
+    if (!existing) {
+      return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+    }
+    const data = buildTripData({
+      tripName: parsed.data.tripName ?? existing.data.tripName,
+      startDate:
+        parsed.data.startDate !== undefined ? parsed.data.startDate : existing.data.startDate,
+      // A rebuild sends a whole TripInput; one written before the gateway
+      // fields existed omits them, and absent means "unchanged", never
+      // "cleared".
+      input: parsed.data.input
+        ? carryGateways(parsed.data.input, existing.data.input)
+        : existing.data.input,
+    });
+    if (data.plan.days.length === 0) {
+      return NextResponse.json(
+        { error: "No plannable destinations in the selection" },
+        { status: 400 }
+      );
+    }
+    const written = await updateTripDataIf(id, data, existing.version);
+    if (!written) continue;
+    // The rebuilt plan has fresh item ids, so old schedule ticks are orphans.
+    await clearScheduleChecks(id);
+    const payload = await getTrip(id, gate.memberName);
+    return NextResponse.json({ ...payload, myMemberName: gate.memberName });
   }
 
-  await ensureCatalogLoaded();
-  const data = buildTripData({
-    tripName: parsed.data.tripName ?? existing.data.tripName,
-    startDate:
-      parsed.data.startDate !== undefined ? parsed.data.startDate : existing.data.startDate,
-    // A rebuild sends a whole TripInput; one written before the gateway fields
-    // existed omits them, and absent means "unchanged", never "cleared".
-    input: parsed.data.input
-      ? carryGateways(parsed.data.input, existing.data.input)
-      : existing.data.input,
-  });
-  if (data.plan.days.length === 0) {
-    return NextResponse.json(
-      { error: "No plannable destinations in the selection" },
-      { status: 400 }
-    );
-  }
-  await updateTripData(id, data);
-  // The rebuilt plan has fresh item ids, so old schedule ticks are orphans.
-  await clearScheduleChecks(id);
-  const payload = await getTrip(id, gate.memberName);
-  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
+  return NextResponse.json(
+    { error: "The trip is being edited by someone else right now — try again." },
+    { status: 409 }
+  );
 }
