@@ -101,12 +101,30 @@ function stripComments(text: string): string {
 const isScannable = (entry: string) =>
   /\.(tsx?|css)$/.test(entry) && !/\.test\.tsx?$/.test(entry) && !/\.d\.ts$/.test(entry);
 
+/**
+ * Modules that exist only to be imported by tests, and ship in no bundle.
+ *
+ * `mapExplorerHarness.tsx` renders `MapExplorer` the way a page would — it is
+ * the host the four MapExplorer test files mount — so left in the scan it
+ * reads as a second surface putting GeoNames city names on screen, and C7's
+ * mount check below fails on a mount no user can reach. It cannot be named
+ * `.test.tsx` and be caught by the rule above: importing one test file from
+ * another makes vitest collect its `describe` blocks twice (spec §12.1), which
+ * is the reason shared fixtures are plain modules here at all.
+ *
+ * One path at a time rather than a `*Harness` pattern, so a module leaving
+ * every contract's reach stays a decision somebody made and reviewed.
+ */
+const TEST_SUPPORT: ReadonlySet<string> = new Set(["components/map/mapExplorerHarness.tsx"]);
+
 function collect(): SourceFile[] {
   const out: SourceFile[] = [];
   const add = (full: string) => {
+    const path = relative(process.cwd(), full).split(sep).join("/");
+    if (TEST_SUPPORT.has(path)) return;
     const text = readFileSync(full, "utf8");
     out.push({
-      path: relative(process.cwd(), full).split(sep).join("/"),
+      path,
       text,
       code: stripComments(text),
     });

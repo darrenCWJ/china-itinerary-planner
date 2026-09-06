@@ -1,134 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import type { Topology } from "topojson-specification";
-import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import { getCountryBaseProfile } from "@/lib/countryBaseProfile";
 import { hasDetailLevel } from "@/lib/countryDetail";
-import {
-  PROJECTION_PATH,
-  parseProjectionManifest,
-  type ProjectionEntry,
-} from "@/lib/countryProjection";
-import { DESTINATIONS } from "@/lib/data";
-import { haversineKm, latLonOf } from "@/lib/geo";
 import { suggestRoute, type RoutePlace } from "@/lib/route";
-import type { CatalogHit, MapCity } from "@/lib/tripShared";
-import { usePrefs } from "@/components/shell/PrefsProvider";
-import { AirportPicker, type AirportPick } from "@/components/trip/AirportPicker";
-import { useReducedMotion } from "@/lib/useReducedMotion";
+import type { CatalogHit } from "@/lib/tripShared";
+import type { AirportPick } from "@/components/trip/AirportPicker";
 import { CountryMap } from "./CountryMap";
 import { FitLegend } from "./FitLegend";
 import { MonthTimeline } from "./MonthTimeline";
 import { PlacePopup } from "./PlacePopup";
-import { CLIMATE_COUNTRY, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
-import {
-  fetchCityEnrichment,
-  fetchCityShard,
-  shardRowToMapCity,
-  type CityEnrichmentIndex,
-  type CityShardRow,
-} from "@/lib/cityShard";
-import { curatedPlaceNames } from "@/lib/curatedNames";
-import { foldPlaceName } from "@/lib/foldPlaceName";
-import { fetchProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
-import { regionForProvinceText } from "@/lib/provinces";
+import { RoutePanel } from "./RoutePanel";
+import { type MapPlace } from "./mapTypes";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
 import { GapNote } from "@/components/plan/GapNote";
 import { climateGapNote } from "@/lib/climateNote";
-import { fetchClimateShard } from "@/lib/climateShard";
-import { buildClimateIndex, NO_CLIMATE } from "./climateIndex";
-
-/**
- * The level coordinator (spec §6): world ⇄ country, sharing one shell, one
- * month timeline and one route panel between them.
- *
- * The world topology is 730KB, so `WorldMap` is a dynamic import as well as a
- * conditional render — the asset *and* the code that parses it stay off any
- * page where the picker is never opened. `GlobeLevel` carries the same asset
- * weight for its own 110m topology, so it is dynamic for the same reason.
- */
-const WorldMap = dynamic(() => import("./WorldMap").then((m) => m.WorldMap), {
-  ssr: false,
-  loading: () => <div className="h-[420px] animate-pulse rounded-lg bg-[var(--line-1)]/40" />,
-});
-
-const GlobeLevel = dynamic(() => import("./GlobeLevel").then((m) => m.GlobeLevel), {
-  ssr: false,
-  // Aspect ratio matches the globe's viewBox (860x620): the skeleton preserves
-  // the globe's proportions so no visible resize occurs on swap-in. aria-busy
-  // so a screen reader is told it is waiting, matching the skeleton inside
-  // WorldMap itself.
-  loading: () => (
-    <div
-      className="aspect-[860/620] w-full animate-pulse rounded-lg bg-[var(--line-1)]/40"
-      aria-busy="true"
-    />
-  ),
-});
-
-/**
- * How near two places of the same name have to be before they are one place.
- *
- * 25 km, not the ingest's `DEDUP_RADIUS_KM = 5`. GeoNames puts a Chinese
- * prefecture-level city's point on the urban seat and Wikidata puts it on the
- * administrative centroid, and the gap between the two is what these rows are
- * made of: every duplicate measured lands between 5.0 km (Qinzhou, Dezhou) and
- * 18.7 km (Tacheng), so 5 km is exactly the gate they all cleared. 25 km still
- * leaves daylight above the widest of them and well below the nearest pair
- * that must survive — Longnan's two points, 42.9 km apart.
- */
-const SAME_CITY_KM = 25;
-
-/**
- * Shard rows that are a second marker for a city the catalog already answered.
- *
- * The sibling of `dropCatalogDuplicates` in `scripts/ingest-cities.mjs`, not a
- * reuse of it: that one is a Node build script reading the GeoNames dump's row
- * shape, it cannot be imported into a "use client" bundle, and it runs at a
- * different radius. A re-ingest would not help here anyway — it would leave the
- * client just as defenceless against the next catalog row that lands beside a
- * shard row already shipped.
- *
- * The two legs are concatenated below, and China is the one country where both
- * of them answer — so without this a duplicate draws twice: two
- * `<g role="button">` with the same `aria-label`, which a screen reader reads
- * out as two cities, and two ids that `togglePlace` resolves separately, so the
- * plan allocates days to Nantong twice with a ~5 km route leg between the
- * copies. Search offers one Nantong (Task 13); this is the same catalog's other
- * surface, and the two have to agree.
- *
- * Keyed on distance, not on the admin-1 string, because `MapCity` carries
- * coordinates on both sides and the strings disagree. Measured against
- * data/catalog.json and public/cities/CN.json with the real `foldPlaceName`
- * and `haversineKm`: of the 19 duplicate rows, 6 would slip through a
- * name-plus-admin-1 test because the catalog labels them by prefecture where
- * the shard labels them by province (Pizhou/Xuzhou, Xingning/Meizhou,
- * Laizhou/Yantai, Laohekou/Xiangyang, plus Yining and Tacheng in Xinjiang) —
- * and that test would also wrongly fold Liaoning's two Jinzhous, 229.5 km
- * apart under one province label. Name alone is worse again: 32 of the 51
- * shard rows sharing a folded name with a catalog city are genuinely different
- * places, the widest being the two Yushus at 2,852 km.
- *
- * The shard row is the one dropped. The catalog row carries the QID that
- * `resolveDestinations` sends down the Wikidata branch, plus its attraction
- * count and blurb; the GeoNames row carries none of that.
- */
-function dropCatalogTwins(rows: CityShardRow[], catalog: MapCity[]): CityShardRow[] {
-  const byFoldedName = new Map<string, MapCity[]>();
-  for (const city of catalog) {
-    const key = foldPlaceName(city.name);
-    const found = byFoldedName.get(key);
-    if (found) found.push(city);
-    else byFoldedName.set(key, [city]);
-  }
-  return rows.filter((row) => {
-    const twins = byFoldedName.get(foldPlaceName(row.n));
-    return !twins?.some((twin) => haversineKm(twin, row) <= SAME_CITY_KM);
-  });
-}
+import { buildExplorerPlaces } from "./explorerPlaces";
+import { STEP_UP_BUTTON } from "./stepUpButton";
+import { WorldPane } from "./WorldPane";
+import { useCountryAssets } from "./useCountryAssets";
 
 export type MapLevel = "world" | "country";
 
@@ -158,20 +50,9 @@ interface Props {
 const DEFAULT_MONTH = 10;
 
 /**
- * The one step-up control, drawn at whichever rung the two machines are on.
- *
- * Extracted because there are now three of them — out of a region, out of a
- * country, and back down from the world level — and they are the same control
- * in three states rather than three controls that happen to look alike. A
- * literal repeated three times is a place `min-h-[var(--tap-min)]` can go
- * missing from one of them: C5's 44px minimum is asserted per control in
- * `MapExplorer.test.tsx` precisely because each is the only way out of the
- * state it appears in, and a shared constant is what keeps a fourth rung from
- * being added without it.
+ * The level coordinator (spec §6): world ⇄ country, sharing one shell, one
+ * month timeline and one route panel between them.
  */
-const STEP_UP_BUTTON =
-  "inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--line-1)] px-3 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--accent-ink)] hover:text-[var(--accent-ink)]";
-
 export function MapExplorer({
   selected,
   visited,
@@ -208,59 +89,6 @@ export function MapExplorer({
    */
   const [zoomRegion, setZoomRegion] = useState<RegionId | null>(null);
   /**
-   * The open country's own admin-1 geometry, or null when it has none yet.
-   *
-   * **Nothing renders it yet**, deliberately, and for the reason
-   * `lib/provinceTopology.ts` and `lib/countryDetail.ts` each gave one commit
-   * earlier: PR4's country level is the reader, and it lands next. What arrives
-   * first is the half that can go wrong on its own — which file is asked for,
-   * how often, what happens to the one already in flight, and what the pane
-   * does when it never comes. None of that is a rendering question, and all of
-   * it is covered by `MapExplorer.test.tsx`'s "the open country's province
-   * file".
-   *
-   * Null and not `undefined`: there is no pending state to distinguish here,
-   * because nothing in this component waits on it. A country whose geometry has
-   * not landed renders exactly as a country whose geometry failed — the list,
-   * which is the accessibility spine and is never gated on a map (§5.2).
-   */
-  const [provinces, setProvinces] = useState<ProvinceFile | null>(null);
-  /**
-   * The open country's §5.4 framing, or null when the manifest has none for it.
-   *
-   * Fetched in the same `Promise.all` as the geometry rather than once on
-   * mount, so the two land in the same render. Split across two effects, the
-   * level would draw its fallback fit first and re-frame when the manifest
-   * arrived — a visible jump, and for the nine trimmed countries a frame that
-   * briefly shows the island the trim exists to leave out.
-   *
-   * The whole 20 KB manifest is re-fetched per country rather than cached in a
-   * ref: `next.config.ts` serves it immutable, so the second request is a
-   * memory-cache hit, and a cache here would need a test-only reset hook —
-   * `lib/provinceTopology.ts` and `lib/cityShard.ts` both make the same call.
-   */
-  const [projection, setProjection] = useState<ProjectionEntry | null>(null);
-  const [cities, setCities] = useState<MapCity[]>([]);
-  const [citiesUnavailable, setCitiesUnavailable] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  /**
-   * The country's airports — for the route estimator, and since PR8 for the
-   * card's "Main airport" line and §10.1's layer too. Empty until they load,
-   * and empty is exactly the "no airport data" path `estimateLeg` already
-   * handles — so the panel renders correct-but-coarser estimates first and
-   * sharpens when they arrive, rather than waiting.
-   *
-   * ONE country's rows, which is the scope of every answer downstream: a
-   * border city's true main airport can be across the border and simply absent
-   * here. `mainAirportFor` in lib/mainAirport.ts carries that record and the
-   * worked case (Basel gets ZRH at 74 km; its real airport is BSL at 6 km, in
-   * France), because the limit belongs to this fetch rather than to the line of
-   * text it ends up as — and the fix, when someone wants it, is a wider fetch
-   * on this line rather than a change there.
-   */
-  const [airports, setAirports] = useState<Airport[]>([]);
-  /**
    * Whether §10.1's airport layer is drawn — off until a reader asks for it.
    *
    * This component's twelfth `useState`, and deliberately not a fifth
@@ -280,20 +108,6 @@ export function MapExplorer({
    * touches the toggle never sees a state they did not choose.
    */
   const [showAirports, setShowAirports] = useState(false);
-  /**
-   * The open country's derived climate (§9.4): every shard row joined to its
-   * city's elevation, keyed by `MapPlace.id`. What colours the markers
-   * outside China, what the hover card and the selected-place card read
-   * their `lo°–hi°C typical` line from, and what the honesty note under the
-   * map is about.
-   *
-   * Built once per country load, in the effect below, from two of the legs
-   * it already runs — the climate shard and the city shard's `elev` — and
-   * never at render: `mapTypes.ts`'s rule is that the fit resolution stays
-   * synchronous over rows already in hand. `NO_CLIMATE` rather than a fresh
-   * `Map` so "nothing yet" is one referentially stable value.
-   */
-  const [climate, setClimate] = useState<DerivedClimateIndex>(NO_CLIMATE);
   const [hover, setHover] = useState<{
     place: MapPlace;
     pos: { x: number; y: number };
@@ -312,23 +126,26 @@ export function MapExplorer({
   if (level === "country" && !openedCountry) setOpenedCountry(true);
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
-  const { prefs, setPrefs } = usePrefs();
-  const reducedMotion = useReducedMotion();
-  /**
-   * Reduced motion wins over an explicit globe preference.
-   *
-   * The globe's rotation is direct manipulation, which the guideline does not
-   * forbid — but selecting a country spins it 650ms unprompted, which it does.
-   * Rather than shipping a globe with the spin disabled, which is a worse globe
-   * than the flat map is a map, the preference resolves to flat and the user
-   * keeps a renderer that was designed to be still.
-   */
-  const WorldLevel = prefs.worldView === "flat" || reducedMotion ? WorldMap : GlobeLevel;
-
   const { code: countryCode, name: countryName } = getCountry(country);
   const countryLabel = countryName || countryCode || "this country";
   /** Whether the build wrote this country an admin-1 file. True 246 times. */
   const hasDetail = hasDetailLevel(country);
+
+  const {
+    provinces,
+    projection,
+    cities,
+    citiesUnavailable,
+    airports,
+    climate,
+    loadError,
+    retry,
+  } = useCountryAssets(countryCode, hasDetail);
+
+  // `hover` holds a `MapPlace` derived from the previous country's cities, so
+  // it is dropped the moment the country changes — `useCountryAssets` empties
+  // those cities in the same commit, and nothing else re-creates a place.
+  useEffect(() => setHover(null), [countryCode]);
 
   /**
    * The zoomable groups this country offers the chrome, and the one it is
@@ -422,244 +239,10 @@ export function MapExplorer({
    */
   const canDrawAirports = provinces !== null && airports.length > 0;
 
-  /**
-   * Everything the open country's map needs: its admin-1 geometry — China's
-   * curated asset, or the build's per-country file for everyone else — the
-   * frame that geometry is drawn in, the Wikidata catalog's cities for that
-   * country, the GeoNames shard plus its enrichment, and, for every country
-   * but China, its climate normals (§9.4).
-   *
-   * Keyed on `countryCode`, which it was not before. The old array was
-   * `[retryKey, hasCurated]` — a boolean — so CN→JP→CN refired it but JP→DE did
-   * not. That was harmless while /api/map/cities took no country; the moment it
-   * does, a foreign-to-foreign switch would leave the previous country's cities
-   * on the map.
-   *
-   * The shard is a static asset the browser fetches, not a second API leg:
-   * `public/` is unreadable from a Vercel lambda (spec §3.2), and at 22 KB
-   * gzipped for the largest country it needs no loading state of its own.
-   *
-   * Everything keyed to the country is cleared up front, not just on failure —
-   * the same reason the airports effect below clears first. Between a country
-   * switch and the new data landing, the previous country's cities are wrong
-   * answers, not stale ones, and its "unavailable" notice is a claim about a
-   * country the user has already left.
-   *
-   * `provinces` is cleared with the rest. It carries
-   * no country guard of its own — every country has one of these files — so
-   * Peru's departments left in place across a switch would draw as Germany's
-   * states, which is not a stale answer but a wrong one, and one that looks
-   * exactly like a working map.
-   */
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoadError(false);
-    setCities([]);
-    setCitiesUnavailable(false);
-    setProvinces(null);
-    setProjection(null);
-    // Peru's rows left in place across a switch would colour Germany's cities.
-    setClimate(NO_CLIMATE);
-    // `hover` holds a `MapPlace` derived from the `cities` array just emptied,
-    // so leaving it would keep a popup open over a place that no longer exists.
-    setHover(null);
-    Promise.all([
-      // All 246, China included. Gated on the registry rather than tried-and-caught,
-      // because `provincePath` is well-formed for AQ, BV, HM and XD too and
-      // the build wrote no file for any of them: without this, every map open
-      // in one of those four spends a request on a guaranteed 404.
-      //
-      // Swallows its own rejection (§5.2): a country whose geometry is missing
-      // still lists every one of its cities, so routing that failure to
-      // `loadError` would replace a working list with a retry button.
-      hasDetail
-        ? fetchProvinceTopology(countryCode, controller.signal).catch(() => null)
-        : Promise.resolve(null),
-      // The frame the geometry above is drawn in (§5.4). Swallows its own
-      // rejection for the same reason the leg above it does, and degrades
-      // further than that one: a country with no entry still gets a map, fitted
-      // to its own units, because the manifest and the code deploy
-      // independently and a country whose entry has not been built yet must not
-      // lose its map over it.
-      hasDetail
-        ? fetch(PROJECTION_PATH, { signal: controller.signal })
-            .then((r) => {
-              if (!r.ok) throw new Error(`projections ${r.status}`);
-              return r.json() as Promise<unknown>;
-            })
-            .then(parseProjectionManifest)
-            .catch(() => null)
-        : Promise.resolve(null),
-      fetch(`/api/map/cities?country=${encodeURIComponent(countryCode)}`, {
-        signal: controller.signal,
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error(`cities ${r.status}`);
-          return r.json() as Promise<{ available: boolean; cities: MapCity[] }>;
-        })
-        .catch(() => ({ available: false, cities: [] as MapCity[] })),
-      // 246 of ~250 codes have a shard; the rest 404. A country with none is a
-      // country with no cities to offer, not an outage.
-      fetchCityShard(countryCode, controller.signal).catch(() => null),
-      fetchCityEnrichment(countryCode, controller.signal).catch(
-        () => ({}) as CityEnrichmentIndex
-      ),
-      // The open country's climate normals (§9.4), for every country but the
-      // one whose month table is hand-authored: `fitForPlace` never reads a
-      // derived row for a Chinese place (§9.5), so CN.json's 412 rows would be
-      // 24 KB gzipped (78 KB raw) per open that nothing consults.
-      // `fetchClimateShard` takes a fetch rather than a signal — lib/rates.ts's
-      // pattern — so the abort is
-      // wrapped in. Swallows its own rejection like the shard leg above it: a
-      // country with no climate file draws grey pins, which is the absence of
-      // a claim and not an outage.
-      countryCode === CLIMATE_COUNTRY
-        ? Promise.resolve(null)
-        : fetchClimateShard(countryCode, (input, init) =>
-            fetch(input, { ...init, signal: controller.signal })
-          ).catch(() => null),
-    ])
-      .then(([provinceFile, manifest, catalogRes, shardRes, enrichment, climateRes]) => {
-        // All six legs swallow their own rejection, so an abort
-        // *resolves* this Promise.all rather than rejecting it — and the
-        // `.catch` below, which is where the other aborted paths are filtered
-        // out, never runs. Without this the previous country's effect writes
-        // its answer over the new country's freshly cleared state one
-        // microtask after the switch, and `citiesUnavailable` in particular
-        // lands as an outage notice for a country whose request is still in
-        // flight.
-        if (controller.signal.aborted) return;
-        setProvinces(provinceFile);
-        setProjection(manifest?.get(countryCode) ?? null);
-        // A GeoNames row for a place a curated card already covers is a second
-        // marker for the same place. `dropCatalogDuplicates` in the ingest only
-        // removes rows that duplicate a data/catalog.json QID city, and
-        // Yangshuo — a curated destination — has no catalog.json row, so its
-        // row survives and would draw beside "Guilin & Yangshuo".
-        const suppressed = curatedPlaceNames(countryCode);
-        const shardCities = dropCatalogTwins(
-          (shardRes?.cities ?? []).filter((row) => !suppressed.has(foldPlaceName(row.n))),
-          catalogRes.cities
-        ).map((row) => shardRowToMapCity(row, enrichment));
-        // China is the one country that gets both halves, and they are not
-        // disjoint. Measured on the committed data: /api/map/cities answers CN
-        // with 676 Wikidata cities, and of the shard's 413 rows 3 fold to a
-        // curated name and 19 more are `dropCatalogTwins` duplicates, so 391
-        // join them — 1,067 catalog markers rather than the 1,086 a plain
-        // concatenation draws. The 391 are Chinese cities the QID catalog never
-        // covered, and that coverage is the point of the phase.
-        // The place list's per-province cap does not apply: China renders
-        // ChinaLevel and its curated markers, not CountryLevel and its list.
-        setCities([...catalogRes.cities, ...shardCities]);
-        // Unavailable only when BOTH sources failed. A country the Wikidata
-        // catalog has never covered is the normal case for 245 of them, and
-        // showing an outage notice for it would be a lie.
-        setCitiesUnavailable(!catalogRes.available && shardRes === null);
-        // Joined here, where the parsed shard rows are still in hand: the
-        // climate row carries no elevation and `MapPlace` has no field for
-        // one, so this is the only moment the two halves meet. And no shard,
-        // no index: without the city rows there is no `G`-id place on the map
-        // to look a climate row up for, so an index built from the climate
-        // file alone would colour nothing and still put the honesty note
-        // under a map with no derived pin on it.
-        setClimate(buildClimateIndex(shardRes === null ? null : climateRes, shardRes?.cities ?? []));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setLoadError(true);
-      });
-    return () => controller.abort();
-  }, [retryKey, hasDetail, countryCode]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // Cleared up front, not just on failure: without this, a country switch
-    // computes the route estimator against the *previous* country's airports
-    // until the new fetch resolves — for adjacent countries that interim can
-    // resolve a wrong-country pair. Clearing first makes the interim the
-    // legacy no-airports path instead, which `estimateLeg` already handles.
-    setAirports([]);
-    fetch(`/api/map/airports?country=${encodeURIComponent(countryCode)}`, {
-      signal: controller.signal,
-    })
-      .then((res) => res.json())
-      .then((json: { airports: Airport[] }) => setAirports(json.airports))
-      // Airports only sharpen the estimate — losing them costs precision, not
-      // function, so this failure is silent by design.
-      .catch(() => {
-        if (!controller.signal.aborted) setAirports([]);
-      });
-    return () => controller.abort();
-  }, [countryCode]);
-
-  const places = useMemo<MapPlace[]>(() => {
-    const curated = DESTINATIONS.filter(
-      // Every destination states its own country, so there is no default here
-      // that a non-Chinese destination could fall through.
-      (d) => !visited.includes(d.id) && d.country === countryCode
-    ).flatMap(
-      (d): MapPlace[] => {
-        // A place with no coordinates cannot be drawn on a map or routed
-        // through, so it is dropped here rather than given a fake pin. Every
-        // curated destination has real coordinates, so nothing is lost today.
-        const at = latLonOf(d);
-        if (!at) return [];
-        return [
-          {
-            id: d.id,
-            kind: "curated",
-            name: d.name,
-            localName: d.localName,
-            province: null,
-            // The destination's own country, not the open one. A curated place
-            // is only ever drawn on its own country's map today, but `region`
-            // is only readable against the country it belongs to.
-            country: d.country,
-            region: d.region,
-            lat: at.lat,
-            lon: at.lon,
-            population: null,
-            level: "curated",
-            attractionCount: d.activities.length,
-            blurb: d.tagline,
-            emoji: d.emoji,
-            bestSeasons: d.bestSeasons,
-            seasonNotes: d.seasonNotes,
-          },
-        ];
-      }
-    );
-    const catalog = cities.map(
-      (c): MapPlace => ({
-        id: c.qid,
-        kind: "catalog",
-        name: c.name,
-        localName: c.localName,
-        province: c.province,
-        // Every city in this list came out of the open country's shard, so the
-        // open country IS its country. Carried on the place because `region`
-        // below cannot be read without it: outside China the admin-1 name is
-        // the region label, and some of those names ARE China's — Botswana's
-        // Central District spells the same as China's Central. See `isChinaPlace`.
-        country: countryCode,
-        // `regionForProvinceText` is a China-only keyword table and its
-        // `?? "Central"` fallback is one of China's own seven — which
-        // `isChinaRegion` then accepts, handing a Peruvian city a Chinese
-        // month-fit rather than the neutral one that guard exists to give.
-        // Outside China the admin-1 name IS the region label.
-        region:
-          countryCode === CLIMATE_COUNTRY
-            ? (regionForProvinceText(`${c.province ?? ""} ${c.name}`) ?? "Central")
-            : (c.province ?? ""),
-        lat: c.lat,
-        lon: c.lon,
-        population: c.population,
-        level: c.level,
-        attractionCount: c.attractionCount,
-        blurb: c.blurb,
-      })
-    );
-    return [...curated, ...catalog];
-  }, [cities, visited, countryCode]);
+  const places = useMemo(
+    () => buildExplorerPlaces(cities, visited, countryCode),
+    [cities, visited, countryCode]
+  );
 
   const placeById = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
 
@@ -750,49 +333,13 @@ export function MapExplorer({
   // its own asset, so a failed province topology must not blank it out.
   if (level === "world") {
     return (
-      <div className="mt-5 rounded-xl border border-[var(--line-1)] bg-[var(--paper)] p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="font-display text-lg font-bold">Where in the world?</h3>
-            <p className="mt-0.5 text-xs text-[var(--ink-2)]">
-              {/* Was "search above": review proved that false — PlaceSearch is
-                  scoped to the country already chosen and cannot change it. The
-                  control that can is the list beneath the map. */}
-              Pick a country to plan in it — or use the list below the map, which
-              reaches every country whether the map draws it as a shape or a dot.
-            </p>
-          </div>
-          {openedCountry && (
-            <button
-              type="button"
-              onClick={() => onLevelChange("country")}
-              className={STEP_UP_BUTTON}
-            >
-              ← Back to {countryLabel}
-            </button>
-          )}
-        </div>
-        <div className="mt-3">
-          <WorldLevel selectedCountry={countryCode} onSelectCountry={pickCountry} />
-        </div>
-        {/*
-          Hidden under reduced motion: `WorldLevel` above has already resolved
-          to the flat map in that case, and offering a globe the same render
-          then refuses to show would be worse than not offering it.
-        */}
-        {!reducedMotion && (
-          <button
-            type="button"
-            onClick={() =>
-              setPrefs({ ...prefs, worldView: prefs.worldView === "flat" ? "globe" : "flat" })
-            }
-            className="mt-3 min-h-[var(--tap-min)] rounded-lg border px-3 text-sm"
-            style={{ borderColor: "var(--line-1)", color: "var(--accent-ink)" }}
-          >
-            {prefs.worldView === "flat" ? "Show the globe" : "Show a flat map"}
-          </button>
-        )}
-      </div>
+      <WorldPane
+        countryCode={countryCode}
+        countryLabel={countryLabel}
+        openedCountry={openedCountry}
+        onPickCountry={pickCountry}
+        onLevelChange={onLevelChange}
+      />
     );
   }
 
@@ -802,7 +349,7 @@ export function MapExplorer({
         <p className="text-sm text-[var(--ink-2)]">Couldn&apos;t load the map data.</p>
         <button
           type="button"
-          onClick={() => setRetryKey((k) => k + 1)}
+          onClick={retry}
           className="mt-3 inline-flex min-h-[var(--tap-min)] items-center rounded-lg border border-[var(--accent-ink)] px-4 text-sm font-medium text-[var(--accent-ink)] hover:bg-[var(--line-1)]/50"
         >
           Try again
@@ -995,119 +542,14 @@ export function MapExplorer({
       </div>
 
       {route && (
-        <div className="mt-4 rounded-lg border border-[var(--line-1)] bg-[var(--surf-1)]/60 p-3">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <h4 className="text-sm font-bold">
-              Suggested route · {route.totalKm.toLocaleString()} km
-              {arrival?.airport && (
-                // The separator is inside the span, not a margin: a margin is
-                // invisible to a screen reader, which reads the heading as one
-                // string and heard "…24 kmstarts near PVG".
-                <span className="font-normal text-[var(--ink-2)]">
-                  {" · starts near "}
-                  {arrival.iata}
-                </span>
-              )}
-            </h4>
-            {onArrivalChange && (
-              // A picked value is a whole airport name — "Jorge Chávez
-              // International Airport (LIM)" — so a fixed 12rem truncated
-              // every one of them. Full width on a phone, wider than the old
-              // box once there is room for it.
-              <div className="w-full sm:w-64">
-                <AirportPicker
-                  label="Flying into"
-                  value={arrival?.iata ?? null}
-                  onChange={onArrivalChange}
-                  placeholder="Airport name or code"
-                />
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={applyRouteOrder}
-              className="inline-flex min-h-[var(--tap-min)] items-center rounded-lg bg-[var(--accent-ink)] px-3 text-xs font-semibold text-[var(--paper)] transition-colors hover:bg-[color-mix(in_oklab,var(--accent-ink)_85%,var(--ink-0))]"
-            >
-              Apply this order
-            </button>
-          </div>
-          {/*
-            `role="list"` beside the label, redundant as it looks: Tailwind's
-            preflight sets `list-style: none` on every ol, and Safari/VoiceOver
-            drop a list's implicit role when it has no marker — so without this
-            the labelled list is announced as a plain group of items.
-          */}
-          <ol
-            role="list"
-            aria-label="Suggested route"
-            className="mt-2 flex flex-wrap items-center gap-1 text-sm"
-          >
-            {route.order.map((p, i) => {
-              const leg = i > 0 ? route.legs[i - 1] : null;
-              return (
-                <li key={p.id} className="flex items-center gap-1">
-                  {leg?.kind === "estimated" && (
-                    <span
-                      className="mx-0.5 text-xs text-[var(--ink-2)]"
-                      // `leg.km` is city-to-city (lib/route.ts), never the
-                      // airport pair's distance — the two can differ by ~300
-                      // km, so the airport codes are labeled as the flight
-                      // and the km called out as city-to-city rather than
-                      // left to read as if they measured the same hop.
-                      title={
-                        leg.airports
-                          ? `Flying ${leg.airports.from.iata} → ${leg.airports.to.iata} · ${leg.km.toLocaleString()} km city-to-city · ~${leg.hours}h`
-                          : `${leg.km.toLocaleString()} km · ~${leg.hours}h`
-                      }
-                    >
-                      {leg.mode === "flight" ? "✈️" : "🚄"}
-                      <span className="ml-0.5 font-mono text-[10px]">{leg.hours}h</span>
-                    </span>
-                  )}
-                  {/*
-                    A country whose profile withholds a rail speed has no rail
-                    leg to draw, so this one has a distance and no duration.
-                    Shown as km without an hours figure: the glyph branch above
-                    is binary — rail or flight — and neither is true here.
-                  */}
-                  {leg?.kind === "overland" && (
-                    <span
-                      className="mx-0.5 text-xs text-[var(--ink-2)]"
-                      title={`${leg.km.toLocaleString()} km overland · no travel-time estimate for ${countryLabel}`}
-                    >
-                      · {leg.km.toLocaleString()} km overland
-                    </span>
-                  )}
-                  {/*
-                    A leg into a hand-typed place has no distance or duration
-                    (spec §5.6). Rendered as an untimed transfer rather than a
-                    fabricated estimate — inventing "0 km · ~0.5h" for a place
-                    with no location would be a guess dressed as data.
-                  */}
-                  {leg?.kind === "unknown" && (
-                    <span className="mx-0.5 text-xs text-[var(--ink-2)]" title="No location set for this place">
-                      · transfer
-                    </span>
-                  )}
-                  <span className="rounded-full bg-[var(--paper)] px-2.5 py-0.5 font-medium">
-                    {i + 1}. {p.name}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-          {route.notes.map((note) => (
-            <p key={note} className="mt-2 text-xs text-[var(--ink-2)]">
-              {note}
-            </p>
-          ))}
-          {unresolvedCount > 0 && (
-            <p className="mt-2 text-xs text-[var(--ink-2)]">
-              {unresolvedCount} selected place{unresolvedCount > 1 ? "s" : ""}{" "}
-              couldn&apos;t be placed on the map and stay at the end of the order.
-            </p>
-          )}
-        </div>
+        <RoutePanel
+          route={route}
+          arrival={arrival}
+          onArrivalChange={onArrivalChange}
+          onApplyOrder={applyRouteOrder}
+          countryLabel={countryLabel}
+          unresolvedCount={unresolvedCount}
+        />
       )}
     </div>
   );
