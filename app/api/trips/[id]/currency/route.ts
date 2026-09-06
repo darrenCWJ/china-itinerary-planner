@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireMember } from "@/lib/server/authz";
 import { CurrencySettingsSchema } from "@/lib/server/schemas";
-import { DB_UNAVAILABLE, getTrip, setCurrencySettings, storeMode } from "@/lib/server/store";
+import { DB_UNAVAILABLE, getTrip, setCurrencySettingsIf, storeMode } from "@/lib/server/store";
 import { applyCurrencySettingsUpdate } from "@/lib/tripShared";
+
+/** Re-read/re-apply attempts when another member writes concurrently. */
+const MAX_WRITE_ATTEMPTS = 3;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -29,23 +32,30 @@ export async function PUT(req: NextRequest, { params }: Params) {
     );
   }
 
-  // Read-modify-write: the client never sends a pivot (it isn't editable —
-  // see CurrencySettingsEditor), so the only way to avoid clobbering a
-  // trip's stamped pivot with every home/rate save is to read the currently
-  // stored one first and carry it forward. setCurrencySettings replaces the
-  // whole settings blob, so skipping this read would silently erase the
-  // pivot the moment anyone touched their home currency or a single rate.
-  const before = await getTrip(id, gate.memberName);
-  if (!before) {
-    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  // Read-modify-write under the version guard the plan and gateways routes
+  // use. The client never sends a pivot (it isn't editable — see
+  // CurrencySettingsEditor), so the stored one is read and carried forward
+  // by applyCurrencySettingsUpdate; and because two members can do that at
+  // once, the write lands only if the trip's version is still the one that
+  // was read. A lost race re-reads and re-applies rather than reverting the
+  // other member's save.
+  for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+    const before = await getTrip(id, gate.memberName);
+    if (!before) {
+      return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+    }
+    const written = await setCurrencySettingsIf(
+      id,
+      applyCurrencySettingsUpdate(before.currencySettings, parsed.data),
+      before.version
+    );
+    if (!written) continue;
+    const payload = await getTrip(id, gate.memberName);
+    return NextResponse.json({ ...payload, myMemberName: gate.memberName });
   }
-  const saved = await setCurrencySettings(
-    id,
-    applyCurrencySettingsUpdate(before.currencySettings, parsed.data)
+
+  return NextResponse.json(
+    { error: "The trip is being edited by someone else right now — try again." },
+    { status: 409 }
   );
-  if (!saved) {
-    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
-  }
-  const payload = await getTrip(id, gate.memberName);
-  return NextResponse.json({ ...payload, myMemberName: gate.memberName });
 }
