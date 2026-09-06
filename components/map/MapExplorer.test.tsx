@@ -2049,7 +2049,7 @@ describe("the legend", () => {
     // the legend and the note both precede the list's filter box in the DOM.
     const filter = screen.getByPlaceholderText(/^Filter /);
     expect(legend.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const note = screen.getByRole("note", { name: "About these notes" });
+    const note = screen.getByRole("note", { name: "About the climate colours" });
     expect(note.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -2070,7 +2070,7 @@ describe("the legend", () => {
     await settle();
     expect(screen.queryByRole("group", { name: "Map of Peru" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: FIT_LEGEND_LABEL })).not.toBeInTheDocument();
-    expect(screen.queryByRole("note", { name: "About these notes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("note", { name: "About the climate colours" })).not.toBeInTheDocument();
   });
 });
 
@@ -2084,7 +2084,7 @@ describe("derived climate", () => {
   /** `MapExplorer`'s DEFAULT_MONTH. */
   const OCTOBER = 10;
   const CUSCO_ROW = anchorRow("cusco");
-  const NOTE = { name: "About these notes" };
+  const NOTE = { name: "About the climate colours" };
 
   test("fetches the open country's climate file", async () => {
     render(<Harness country="PE" />);

@@ -969,7 +969,7 @@ export function MapExplorer({
                   {caption}
                 </p>
               )}
-              <GapNote lines={climateGapNote(countryCode, climate.size)} />
+              <GapNote label="About the climate colours" lines={climateGapNote(countryCode, climate.size)} />
             </>
           }
           onZoomRegion={showRegion}

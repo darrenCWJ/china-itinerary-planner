@@ -31,13 +31,24 @@ import type { ReactElement } from "react";
  * any code that is not a country (a note that cannot name whose data is
  * missing is not actionable).
  */
-export function GapNote({ lines }: { lines: readonly string[] }): ReactElement | null {
+export function GapNote({
+  lines,
+  label = "About these notes",
+}: {
+  lines: readonly string[];
+  /**
+   * The accessible name. The default fits the three tip surfaces, where the
+   * paragraph sits under a list of notes; the map passes its own, because
+   * under a map the thing being explained is the colours, not any notes.
+   */
+  label?: string;
+}): ReactElement | null {
   if (lines.length === 0) return null;
 
   return (
     <div
       role="note"
-      aria-label="About these notes"
+      aria-label={label}
       // Muted and visibly not advice: no bullet, no seal glyph, smaller and
       // dimmer than a tip, separated from the list by a rule.
       className="mt-3 border-t border-dashed border-[var(--line-1)] pt-3 text-xs italic leading-relaxed text-[var(--ink-2)]"
