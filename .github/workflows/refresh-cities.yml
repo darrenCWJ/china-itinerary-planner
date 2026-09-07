@@ -122,10 +122,10 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          # 24 for stable TypeScript type stripping: ingest-cities.mjs imports
-          # lib/*.ts leaves directly rather than keeping a copy that could
-          # drift. enrich-cities.mjs is node:fs|path|url only and doesn't need
-          # it for that reason, but runs under the same setup-node step.
+          # 24 for stable TypeScript type stripping: scripts/cities/build.mjs
+          # imports lib/*.ts leaves directly rather than keeping a copy that could
+          # drift. enrich-cities.mjs is node:fs|path|url only and doesn't need it
+          # for that reason, but runs under the same setup-node step.
           node-version: 24
       # No `npm ci` here any more, and no `cache: npm`: both ingest scripts run
       # on Node built-ins alone, so this job needs no node_modules and now

@@ -143,7 +143,7 @@ jobs:
     timeout-minutes: 150
     env:
       # /mnt, not the default (tmpdir()/cip-chelsa, on the root volume) — see
-      # "Disk" in the header. Read by scripts/ingest-climate.mjs itself; the
+      # "Disk" in the header. Read by scripts/climate/acquire.mjs itself; the
       # "Prepare the raster cache volume" step below creates this exact path.
       CIP_CHELSA_CACHE: /mnt/cip-chelsa
     steps:

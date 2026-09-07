@@ -137,12 +137,12 @@ and `lib/contracts.test.ts` fails the build if it ever does not.
 app/                  /plan wizard, / trips home, /trip/[id], /b/[code] briefing, /login + /signup, /account, /api routes
 components/
   auth/  briefing/  home/  plan/  shell/  trip/
-  map/                the globe, the country map, the province level, layers, hooks (see components/map/MapExplorer.tsx)
+  map/                the globe, the country map (CountryLevel + UnitsLayer/AirportLayer/MarkerLayer, countryView, markerGeometry, markerLayout, useMarkerSelection), the province level, hooks
 lib/                  pure planning logic, shared types, clients (+ tests beside each module)
   data/               the 16 curated destinations
   server/             airports, catalog, cityIndex (server-only artifacts); auth, session, stores (sqlite + postgres), schemas
   contracts.test.ts   whole-tree contracts: one nav, one credit per surface, no second fetch of trip data
-scripts/              ingest-*.mjs (data), enrich-cities.mjs, build-*.mjs (geometry), sample-climate-anchors.mjs
+scripts/              ingest-*.mjs and enrich-cities.mjs (entries) with their modules under scripts/{climate,cities,enrich,country-facts}/; build-*.mjs (geometry); sample-climate-anchors.mjs
 data/                 committed artifacts and their reports (airports, catalog, cities-index, country-facts, climate anchors)
 public/               cities/<CC>.json, provinces/<CC>.json, climate/<CC>.json (246 each), country-projections.json, world-globe.json
 e2e/                  Playwright specs and the saved session (auth.setup.ts)
