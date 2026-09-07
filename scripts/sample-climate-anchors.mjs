@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { fromFile } from 'geotiff';
 
-import { decodeSample, pixelFor, tupleFor } from './ingest-climate.mjs';
+import { decodeSample, pixelFor, tupleFor } from './climate/sample.mjs';
 
 /** Resolved from this file, never `process.cwd()` — see build-provinces.mjs. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');

@@ -30,7 +30,7 @@
 # direction; lib/climateShard.test.ts bounds the COMMITTED artifact's id set
 # against public/cities/ at 10,000 per direction — roughly three to four
 # years of that rate — rather than demanding exact equality. Exact parity is
-# still this BUILD's invariant: scripts/ingest-climate.mjs's assertCityParity
+# still this BUILD's invariant: scripts/climate/gate.mjs's assertCityParity
 # runs before the first write, so the verify step below always sees exact
 # parity on a tree this job just built. A city with no climate row in the
 # meantime renders as `unknown` — never as wrong data — because the fit
@@ -81,9 +81,10 @@
 # node_modules, megabytes not gigabytes, the same way ci.yml uses it.)
 #
 # Needs `npm ci`, unlike refresh-airports.yml and refresh-cities.yml's ingest
-# jobs: scripts/ingest-climate.mjs imports `geotiff` to read the rasters, so
-# this job runs on a real install rather than Node built-ins alone. The same
-# install also provides vitest for the verify step below.
+# jobs: scripts/ingest-climate.mjs (through scripts/climate/acquire.mjs)
+# imports `geotiff` to read the rasters, so this job runs on a real install
+# rather than Node built-ins alone. The same install also provides vitest for
+# the verify step below.
 #
 # Commit condition: `git status --porcelain -- public/climate`, not
 # `git diff --quiet`. Same reasoning as refresh-cities.yml's catalog watch:
