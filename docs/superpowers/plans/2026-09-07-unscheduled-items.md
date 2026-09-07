@@ -8,6 +8,19 @@
 
 **Tech Stack:** Next.js 16, React, TypeScript; Vitest 4 with two projects (`node`: `lib/**/*.test.ts` + `scripts/**/*.test.ts`; `jsdom`: `components/**/*.test.tsx` + `lib/**/*.test.tsx`); Playwright (workers: 1, one project per spec pattern); Node ESM scripts under `scripts/`.
 
+## Execution record — PR 1 (2026-09-07, PR #31)
+
+Tasks 0–9 were executed on 2026-09-07 (working ledger: `.superpowers/sdd/unscheduled-ledger.md`, gitignored). Where the branch differs from what this plan predicts, the branch is right, and this section is the in-repo record of it:
+
+- **Task 1:** `lib/tickets.test.ts` holds 17 tests after the task (9 pre-existing + 8 new), not 11 — Step 4 counted `describe` blocks. The arithmetic for Task 9 (+8) was unaffected.
+- **Task 2:** Step 7's "`lib/contracts.test.ts` green" was wrong: C7's "TripView credits the guest surface as well as the member one" counted every comment-stripped `destinationNames` token (pinned 2) and Step 5's reads made it 5. The test now counts render sites (`destinationNames.map(`); the pin stays 2; `lib/contracts.test.ts` is therefore in PR 1's diff. Step 8's grep also hits the new test's own absence regex and Task 1's docblocks — both quote the retired strings on purpose.
+- **Task 4:** the prefetch was six requests / 94.7 KB gzipped, not five / 90.8 — `/cities/enrich/CN.json` (3.9 KB) was missed. The docblocks in `useCountryAssets.ts` and `MapExplorer.tsx` and the test's comment carry the corrected figure.
+- **Task 5 → 5b:** the e2e failed on the real bundle: `components/plan/PlaceSearch.tsx` fetched the default country's shard on mount (it is live on the globe step, scoped to `"CN"`) — a second requester spec §4 did not know about. Task 5b (not in this plan; commit 9a2be0a) gates that effect behind a one-way `wanted` latch set on the box's first focus or first keystroke, with a test in `PlaceSearch.test.tsx`. Playwright is 22 with Task 5's test passing.
+- **Task 7:** two figures corrected from the tree — climate rows are 58,759 (`data/climate-report.md`), and the wizard's Step 1 is Trip details, Step 2 Destinations (`lib/wizard.ts`).
+- **Task 8:** the table has twelve rows (the prose said eleven) and the grep prints 14 (not 13). The final review found three more specs the census missed (backlog-clearance, map-timeline-explorer, app-shell-login); done in the fix wave.
+- **Task 9:** the final whole-branch review returned 0 Critical, 0 Important and nine Minor, closed in two commits — among them a `MapExplorer.test.tsx` assertion that a round trip to the globe re-fetches nothing, and `TripView` resolving `tripCurrency` once. Final gates on 94784ac: tsc clean; **141 files, 2,680 passed, 1 expected fail** (the plan said 2,679 — Task 5b's test is the +1); Playwright 22; `next build` green; glance 8/8 at desktop and Pixel 5.
+- **Consequence for PR 2:** Task 10's expected baseline is **141 files / 2,680 passed / 1 expected fail**, not 2,679.
+
 ## Global Constraints
 
 - **Do not run `git commit`, `git add`, `git checkout`, `git stash` or `git mv`.** The controller commits after review, with the message each task ends with. `git diff` and `git status` are fine. (`git mv` is replaced by a plain file move plus `git status` showing the rename after the controller stages it.)
