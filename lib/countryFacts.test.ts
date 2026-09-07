@@ -920,6 +920,12 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     "components/map/RoutePanel.tsx",
     "components/map/useCountryAssets.ts",
     "components/map/explorerPlaces.ts",
+    "components/map/CountryLevel.tsx",
+    "components/map/countryView.ts",
+    "components/map/markerGeometry.ts",
+    "components/map/useRenderedWidth.ts",
+    "components/map/useMarkerSelection.ts",
+    "components/map/markerLayout.ts",
     "components/map/MonthTimeline.tsx",
     "components/map/PlacePopup.tsx",
     "components/trip/RouteMap.tsx",
@@ -958,7 +964,7 @@ describe("only the surfaces that read a fact pay for the artifact", () => {
     // The list is real files, not typos that can never fail.
     const scanned = FILES.map((file) => file.path);
     for (const path of MUST_STAY_CHEAP) expect(scanned).toContain(path);
-    expect(MUST_STAY_CHEAP).toHaveLength(13);
+    expect(MUST_STAY_CHEAP).toHaveLength(19);
   });
 
   test("the client entry points that pay for it are exactly these", () => {
