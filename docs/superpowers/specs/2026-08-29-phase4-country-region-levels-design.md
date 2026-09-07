@@ -1,7 +1,7 @@
 # Phase 4 — country and region levels for every country
 
 **Date:** 2026-08-29
-**Status:** design, awaiting review
+**Status:** shipped — PRs #22, #26, #27, #28, merged 2026-09-02 to 2026-09-05
 **Supersedes:** §6 of [2026-08-23-global-expansion-design.md](2026-08-23-global-expansion-design.md)
 **Scope:** reversing judgement call J14 — a real country level (L2) and admin-1
 region level (L3) for every country, plus the airport map layer, trip gateways,

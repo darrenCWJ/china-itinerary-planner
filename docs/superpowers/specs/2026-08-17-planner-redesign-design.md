@@ -1,7 +1,7 @@
 # Itinerary Planner Redesign — Design
 
 **Date:** 2026-08-17
-**Status:** Approved for planning
+**Status:** shipped — PRs #6, #7 and #11, merged 2026-08-20 and 2026-08-21
 **Source:** Claude Design project `f12cdbfe-73f7-4940-9eef-f0ce4c3d59b2` — "Itinerary Planner Prototype.dc.html"
 
 ---

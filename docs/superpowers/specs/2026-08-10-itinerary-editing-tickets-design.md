@@ -1,7 +1,7 @@
 # Itinerary Editing + Tickets — Design
 
 **Date:** 2026-08-10
-**Status:** Approved by user (chat), implementing
+**Status:** shipped 2026-08-10, before the repository had pull requests
 
 ## Goal
 

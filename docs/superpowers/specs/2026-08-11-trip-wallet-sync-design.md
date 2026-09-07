@@ -1,7 +1,7 @@
 # Trip Wallet — Cross-Device Sync — Design
 
 **Date:** 2026-08-11
-**Status:** Approved by user (chat), implementing
+**Status:** shipped 2026-08-11, before the repository had pull requests
 
 ## Goal
 

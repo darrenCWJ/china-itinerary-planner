@@ -1,7 +1,7 @@
 # Worldwide city catalog — Phase 3 design
 
 **Date:** 2026-08-25
-**Status:** design, awaiting review
+**Status:** shipped — PR #21, merged 2026-08-27
 **Supersedes:** §5 of `2026-08-23-global-expansion-design.md`
 **Scope:** replacing the 695-city China-only catalog with a worldwide one, and
 opening the three gates that keep the app China-bound.
