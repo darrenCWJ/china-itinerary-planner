@@ -53,6 +53,30 @@ test("the destinations step opens on the globe, not on a country", async ({ page
   await expect(page.getByRole("button", { name: /^← Back to/ })).toHaveCount(0);
 });
 
+test("nothing country-scoped is fetched until a country is opened", async ({ page }) => {
+  // What jsdom cannot prove about the real bundle: that the request never
+  // leaves the browser. Recorded from before navigation, so a request fired
+  // during hydration is caught too.
+  const countryScoped: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (
+      /^\/(provinces|cities|climate)\//.test(path) ||
+      path.startsWith("/api/map/") ||
+      path === "/country-projections.json"
+    ) {
+      countryScoped.push(path);
+    }
+  });
+
+  await openTheWorld(page);
+  expect(countryScoped).toEqual([]);
+
+  await page.getByRole("combobox", { name: "Or pick from the list" }).selectOption({ label: "China" });
+  await expect(page.getByRole("group", { name: "Map of China" })).toBeVisible({ timeout: 30_000 });
+  expect(countryScoped).toContain("/provinces/CN.json");
+});
+
 test("dragging the globe turns it the way the pointer moves", async ({ page }) => {
   await openTheWorld(page);
   const globe = page.getByRole("group", { name: /^World globe/ });
