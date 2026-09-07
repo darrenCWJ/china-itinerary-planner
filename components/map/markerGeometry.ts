@@ -62,18 +62,6 @@ export const AIRPORT_MARK = 2.4;
 export const AIRPORT_STROKE = 1;
 
 /**
- * §10.1's sizes are `ARRIVABLE_AIRPORT_SIZES`, and this file no longer owns
- * them: `mainAirportFor` ranks over the same set, so the code the card prints
- * is always a diamond this layer drew. That used to be two lists on two axes —
- * an allow-list here, a 150 km cut over all three sizes there — and they
- * disagreed both ways. lib/airports.ts carries the decision.
- *
- * What size does NOT decide is how big a mark is. It chooses WHETHER an airport
- * is drawn and nothing else: a two-tier glyph would put a second visual scale
- * beside the city dots', and a reader cannot act on the difference anyway.
- */
-
-/**
  * The smallest extent, in viewBox units, a unit is framed as though it had.
  *
  * Half a unit, and what makes that a measurement rather than a taste is where
