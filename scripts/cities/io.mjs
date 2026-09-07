@@ -50,7 +50,8 @@ const ADMIN1_URL = 'https://download.geonames.org/export/dump/admin1CodesASCII.t
  * CC BY 4.0, not public domain — unlike OurAirports and Natural Earth. The
  * credit has to be visible in the UI as well as here; that is
  * components/plan/GeoNamesCredit.tsx — see `buildReport`'s Attribution section
- * below, which records where it renders and what guards it.
+ * in scripts/cities/report.mjs, which records where it renders and what guards
+ * it.
  */
 export const SOURCE_LICENSE = 'GeoNames cities500 (CC BY 4.0)';
 export const SOURCE_ATTRIBUTION = 'https://www.geonames.org/ — CC BY 4.0';

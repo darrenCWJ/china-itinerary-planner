@@ -17,10 +17,11 @@
  *
  * `FILLER_POOL`, `SAMPLE_FILLERS` and `SAMPLE_GROWTH_GAIN` come from
  * scripts/country-facts/fixtures.ts, their single home since 2026-09-07: the
- * `run()` harness in scripts/ingest-country-facts.test.ts sizes its feed from
- * the same pool and reuses the same growth slices, and it now reads them from
- * there too rather than from a copy. `SAMPLE_DRIFT_LOSS` below is this file's
- * alone and stays here.
+ * whole-feed harness in scripts/country-facts/runHarness.ts sizes its feed
+ * from the same pool, and the `run()` describes in
+ * scripts/ingest-country-facts.test.ts reuse the same growth slices — both
+ * read them from there now rather than from a copy. `SAMPLE_DRIFT_LOSS` below
+ * is this file's alone and stays here.
  *
  * The last describe, `the four withhold rules are observably live on a whole
  * feed`, joined this file on 2026-09-07 — the split's table always placed it

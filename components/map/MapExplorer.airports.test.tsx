@@ -157,7 +157,11 @@ describe("the airport layer's toggle", () => {
     return screen.getByRole("button", { name: "Airports" });
   }
 
-  /** Every mark §10.1's layer drew — the same query `CountryLevel.test.tsx` uses. */
+  /**
+   * Every mark §10.1's layer drew — the same query
+   * `CountryLevel.airports.test.tsx` uses, through `airportMarks` in
+   * `test/countryLevelHarness.tsx`.
+   */
   function marks(container: HTMLElement): Element[] {
     return [...container.querySelectorAll("[data-airports] [data-airport]")];
   }

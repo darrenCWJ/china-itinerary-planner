@@ -15,13 +15,13 @@
  *   - `public/cities/enrich/<CC>.json` stamps
  *     `"Wikidata (CC0) + Wikipedia (CC BY-SA) summaries"`. The descriptions
  *     rendered as `MapCity.blurb` are mostly Wikipedia intro extracts
- *     (`scripts/enrich-cities.mjs:709-714`, the `prop=extracts&exintro` call
- *     fed through `firstSentences`) — CC BY-SA 4.0, attribution AND
+ *     (`fetchExtracts` in `scripts/enrich/io.mjs`, the `prop=extracts&exintro`
+ *     call, fed through `firstSentences`) — CC BY-SA 4.0, attribution AND
  *     share-alike, a stronger condition than CC BY.
  *
  * BOTH clauses indicate modification, which CC BY 4.0 §3(a)(1)(B) and CC BY-SA
  * 4.0 require just as much as the attribution itself. The data really is
- * modified: `scripts/ingest-cities.mjs` cuts to the top 750 per country,
+ * modified: `scripts/cities/build.mjs` cuts to the top 750 per country,
  * resolves admin-1 codes to human-readable names and drops near-duplicates
  * within 5 km, and `firstSentences()` shortens every description to its opening
  * sentence or two. A credit that named the sources but implied the material was

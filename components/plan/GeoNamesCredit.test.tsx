@@ -96,9 +96,9 @@ describe("GeoNamesCredit", () => {
     /**
      * CC BY 4.0 §3(a)(1)(B) and CC BY-SA 4.0 both require an indication that
      * the material was changed, on the same footing as the attribution itself.
-     * It unambiguously was: `scripts/ingest-cities.mjs` cuts to the top 750 per
+     * It unambiguously was: `scripts/cities/build.mjs` cuts to the top 750 per
      * country, resolves admin-1 codes to names and drops near-duplicates within
-     * 5 km; `firstSentences()` in `scripts/enrich-cities.mjs` shortens every
+     * 5 km; `firstSentences()` in `scripts/enrich/plan.mjs` shortens every
      * description to its opening sentence or two.
      *
      * Asserted per source rather than per document, because "modified" written
@@ -132,7 +132,7 @@ describe("GeoNamesCredit", () => {
     /**
      * A measured 437 of the 5,105 committed descriptions are Wikidata
      * `schema:description` values rather than Wikipedia extracts — the fallback
-     * at `scripts/enrich-cities.mjs:714`, `firstSentences(extract) ??
+     * in `scripts/enrich-cities.mjs`, `firstSentences(extract) ??
      * entity.description` — and the entire lazy runtime path in
      * `lib/server/cityEnrichment.ts` returns nothing else. Those are CC0: public
      * domain dedication, no attribution or share-alike condition at all.

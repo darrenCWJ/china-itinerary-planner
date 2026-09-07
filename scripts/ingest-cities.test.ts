@@ -62,9 +62,11 @@ describe("main()'s ordering", () => {
     // matters: the workflow commits whatever reaches disk and Vercel deploys
     // the commit.
     const gate = source.indexOf("assertSane(shards, previousIndex)");
-    // Not "writeFileAtomic(path," alone — that substring also matches the
-    // function's own declaration ("function writeFileAtomic(path, content)"),
-    // which sits above main() and would make this pass unconditionally.
+    // Not "writeFileAtomic(path," alone. The function's own declaration
+    // ("function writeFileAtomic(path, content)") is scripts/cities/io.mjs's
+    // since 2026-09-07 and so is out of `source` entirely, but the narrower
+    // substring stays: it names the shard write itself rather than whichever
+    // of the five call sites reads first.
     const firstWrite = source.indexOf("writeFileAtomic(path, json)");
     expect(gate).toBeGreaterThan(-1);
     expect(firstWrite).toBeGreaterThan(-1);

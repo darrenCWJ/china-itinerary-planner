@@ -65,8 +65,8 @@ export interface MainAirport {
  * When the layer is OFF nothing is drawn and there is nothing to disagree with;
  * §10.2's line is a fact about the open place either way. lib/airports.ts's
  * docblock carries the decision and the case for it, and
- * `CountryLevel.test.tsx`'s "the airport the card names is one the layer drew"
- * is what holds the two together, by rendering both at once.
+ * `CountryLevel.airports.test.tsx`'s "the airport the card names is one the
+ * layer drew" is what holds the two together, by rendering both at once.
  *
  * ## The border limit
  *
@@ -90,8 +90,8 @@ export interface MainAirport {
  *   — cannot be said per place without exactly the cross-border data whose
  *   absence IS the limit.
  * - The copy's cleanliness is enforced, not merely intended:
- *   CountryLevel.test.tsx pins the rendered line's exact `textContent`, so a
- *   caveat added to it fails there.
+ *   CountryLevel.airports.test.tsx pins the rendered line's exact
+ *   `textContent`, so a caveat added to it fails there.
  *
  * Fixing it is a change to the ARRAY, not to this function: a wider fetch (the
  * open country plus its neighbours) or an unfiltered artifact, both out of

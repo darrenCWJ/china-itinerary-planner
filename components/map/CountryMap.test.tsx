@@ -330,7 +330,7 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
     // and 4° tall inside a 6°-by-4° frame, so latitude constrains their fit and
     // `k` lands just under 1, which would let the tap-target assertion below
     // pass without ever dividing by anything. The island reaches 3.46, and
-    // `CountryLevel.test.tsx` pins that number to the decimal.
+    // `CountryLevel.zoom.test.tsx` pins that number to the decimal.
     {
       label: "a country framed on one province",
       provinces: peFileWith(ZOOMED_CITY_PROVINCE),
@@ -505,17 +505,17 @@ describe("reachability — the Phase 4 acceptance criterion", () => {
       // viewBox units from the same `--tap-min` token (§5.3.2), so the map half
       // of the criterion is asserted in the units the map draws in. That the
       // radius really is 44 CSS px is pinned against the token and the viewBox
-      // as literals in `CountryLevel.test.tsx`; what is claimed HERE is that a
-      // marker on this branch gets the whole of it — a single place has no
-      // neighbour, so `nonOverlappingRadii` caps nothing.
+      // as literals in `CountryLevel.markers.test.tsx`; what is claimed HERE is
+      // that a marker on this branch gets the whole of it — a single place has
+      // no neighbour, so `nonOverlappingRadii` caps nothing.
       //
       // Over `k`, because the circle is drawn INSIDE the transform: the same
       // 44 CSS px is 16.89 viewBox units unzoomed and 4.89 at the island's
       // 3.46. Comparing against the unscaled token on the framed branch would
       // fail a compliant marker, so the floor is the token in the units of
       // this frame. A floor, not an equality — that the radius is exactly
-      // `tapTargetRadius(width) / k` is `CountryLevel.test.tsx`'s claim, and
-      // what §12.2 asks here is that no control on this branch opts out.
+      // `tapTargetRadius(width) / k` is `CountryLevel.zoom.test.tsx`'s claim,
+      // and what §12.2 asks here is that no control on this branch opts out.
       const floor = TAP_MIN_R_FALLBACK / zoomScale(container);
       for (const marker of drawnMarkers(container)) {
         const hit = Number(marker.querySelector("circle[data-hit]")?.getAttribute("r"));

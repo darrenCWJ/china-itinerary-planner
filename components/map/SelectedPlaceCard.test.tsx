@@ -304,7 +304,7 @@ describe("SelectedPlaceCard in the country level", () => {
  * be reachable for them — and jsdom's CSS parser drops the whole declaration
  * rather than storing a value it cannot compute, so `style.left` is absent in
  * every render, zoomed or not. The x axis is pinned instead where it is
- * computed: `paintedAt` in `CountryLevel.test.tsx`.
+ * computed: `paintedAt` in `CountryLevel.zoom.test.tsx`.
  *
  * A second fixture, and it has to be a second one: the card's own topology
  * above is a single selectable unit, which is exactly the country §6.6's gate

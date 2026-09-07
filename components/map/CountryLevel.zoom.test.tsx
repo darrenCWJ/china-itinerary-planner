@@ -5,7 +5,6 @@ import {
   airportNear,
   capCall,
   circleFor,
-  dotR,
   hitR,
   installCountryLevelHarness,
   markers,

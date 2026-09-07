@@ -10,8 +10,8 @@
 
 /**
  * The two per-file budgets, imported rather than restated so there is one
- * number to change. `build-provinces.mjs` is argv-guarded exactly like this
- * module, so importing it runs its module body and nothing else.
+ * number to change. `build-provinces.mjs` is argv-guarded exactly like the
+ * entry, so importing it runs its module body and nothing else.
  */
 import { GZIP_BUDGET, RAW_TRIPWIRE } from '../build-provinces.mjs';
 import { BLOCK_META, MONTHS_PER_YEAR, TUPLE_LENGTH } from './sample.mjs';

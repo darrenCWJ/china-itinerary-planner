@@ -12,7 +12,7 @@
  * `entity` and `CURATED_UPSTREAM` come from
  * scripts/country-facts/fixtures.ts, their single home since 2026-09-07:
  * `CURATED_UPSTREAM` builds its `languages` rows with `entity`, and
- * `healthyFeed` in scripts/ingest-country-facts.test.ts enumerates the same
+ * `healthyFeed` in scripts/country-facts/runHarness.ts enumerates the same
  * table to give every curated country its measured upstream shape — from the
  * one declaration now, not from a copy apiece.
  */

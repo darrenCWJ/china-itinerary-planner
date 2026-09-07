@@ -584,7 +584,7 @@ describe("FIT_ORDER", () => {
  * types must enforce it."
  *
  * A compile-time block on purpose. The runtime half already exists —
- * `CountryLevel.test.tsx`'s "clicking an airport mark does not select
+ * `CountryLevel.airports.test.tsx`'s "clicking an airport mark does not select
  * anything" — and all it can prove is that the layer *as written* never calls
  * `onTogglePlace`. It cannot prove that a later edit could not, and that is
  * the failure the spec is worried about.

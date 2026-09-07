@@ -315,8 +315,8 @@ export const PE_CLIMATE = {
  *
  *  - `Jingzhou` is a duplicate: 5.3 km from catalog Q71247 of the same name.
  *    It is in the shard precisely because it cleared the ingest's 5 km dedup
- *    radius (`scripts/ingest-cities.mjs`), which is why the client has to catch
- *    it too.
+ *    radius (`DEDUP_RADIUS_KM` in `scripts/cities/build.mjs`), which is why the
+ *    client has to catch it too.
  *  - `Heshan` is not: Hunan's Heshan is 631.3 km from the catalog's Heshan in
  *    Laibin, Guangxi. Two different cities that share a romanisation, and both
  *    have to survive.
