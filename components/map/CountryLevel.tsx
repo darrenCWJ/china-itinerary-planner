@@ -1,32 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { geoPath, type GeoPath } from "d3-geo";
-import { feature, merge } from "topojson-client";
-import type { GeometryCollection, MultiPolygon, Polygon } from "topojson-specification";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { ARRIVABLE_AIRPORT_SIZES, type Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
-import { projectionFor, type ProjectionEntry, type ViewBox } from "@/lib/countryProjection";
+import type { ProjectionEntry } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
-import { IDENTITY_TRANSFORM, ZOOM_FILL, type MapTransform } from "@/lib/mapTransform";
+import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { MAIN_AIRPORT_LABEL, mainAirportFor } from "@/lib/mainAirport";
-import { MAP_VIEW_PAD } from "@/lib/mapView";
-import { PROVINCE_OBJECT, type ProvinceFile, type ProvinceUnit } from "@/lib/provinceTopology";
-import { regionSchemeFor, unitLabel, type RegionId } from "@/lib/regionScheme";
+import type { ProvinceFile } from "@/lib/provinceTopology";
+import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
 import { CountryPlaceList } from "./CountryPlaceList";
+import { buildCountryView } from "./countryView";
 import {
-  buildFitProjection,
   createHoverReporter,
-  makeProjector,
   transformForFeatures,
   MAP_VIEW_H,
   MAP_VIEW_W,
   ZOOM_MS,
-  type FittedProjection,
   type HoverPos,
 } from "./mapShared";
+import {
+  ADMIN1_MAX_ZOOM_K,
+  AIRPORT_MARK,
+  AIRPORT_STROKE,
+  FOCUS_RING,
+  labelFor,
+  MARKER_STROKE,
+  OUTLINE_STROKE,
+  paintedAt,
+  ROUTE_STROKE,
+  SELECTION_RING,
+  TAP_MIN_R_FALLBACK,
+  tapTargetRadius,
+  UNIT_STROKE,
+} from "./markerGeometry";
+import { markerFills, markerMarks, projectPlaces, routePath, visibleEntries } from "./markerLayout";
+import { useMarkerSelection } from "./useMarkerSelection";
+import { useRenderedWidth } from "./useRenderedWidth";
 import { NO_CLIMATE } from "./climateIndex";
-import { FIT_COLORS, fitForPlace, placeClimateFor, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
+import { placeClimateFor, type DerivedClimateIndex, type MapPlace } from "./mapTypes";
 import { SelectedPlaceCard } from "./SelectedPlaceCard";
 
 /**
@@ -92,89 +104,6 @@ import { SelectedPlaceCard } from "./SelectedPlaceCard";
  * Hover is untouched, because a tooltip describes without offering.
  */
 
-/** What this level reads off a unit's TopoJSON geometry. */
-interface UnitProps {
-  sel: 0 | 1;
-}
-
-/**
- * The extent the country is fitted into, inset so coastlines are not flush
- * against the frame.
- *
- * The same box `buildFitProjection` uses, on purpose: the manifest path and
- * the fallback then frame a country identically, and the only difference
- * between them is WHICH geometry decides the bounds. The committed `scale` is
- * measured against the flush 860 x 620 box, so it is not the number this
- * produces — `projectionFor` refits to whatever box it is handed, and §5.4's
- * own test recomputes the committed value from the committed bounds.
- */
-const VIEW_BOX: ViewBox = [
-  [MAP_VIEW_PAD, MAP_VIEW_PAD],
-  [MAP_VIEW_W - MAP_VIEW_PAD, MAP_VIEW_H - MAP_VIEW_PAD],
-];
-
-/**
- * Marker geometry, in viewBox units **at `k` = 1** — which is to say, the
- * number each of these is meant to be on screen.
- *
- * Every one of them is written `/ k` at its use site, and that is not
- * decoration. The province zoom magnifies the whole group by `k`, so a
- * constant left undivided is drawn over `k` times as many CSS pixels: at the
- * ceiling of 5 a 0.7-unit province border is a 3.5-pixel one, and the map
- * dissolves into a handful of fat strokes exactly as `MAX_ZOOM_K`'s docblock
- * warns. Dividing here is what makes visual weight scale-invariant, and it is
- * why these are named constants rather than literals scattered through the JSX
- * — a literal is a place a `/ k` can go missing without anyone noticing.
- *
- * `CountryLevel.test.tsx`'s "every stroke, radius and font divides by k" holds
- * the whole set to that ratio by rendering the map twice, so a constant added
- * later without one fails there rather than on someone's screen.
- */
-const UNIT_STROKE = 0.7;
-const OUTLINE_STROKE = 1.2;
-const MARKER_STROKE = 1.2;
-const SELECTION_RING = 3.5;
-/**
- * Outside the selection ring rather than on top of it.
- *
- * The two states land on the same marker constantly — a keyboard user selects
- * by focusing and then pressing Enter — and at the same radius the solid
- * `--seal` ring simply paints over the dashed one, which is a focus indicator
- * that vanishes exactly when it is being used. Concentric keeps both readable.
- */
-const FOCUS_RING = SELECTION_RING + 2.5;
-const ROUTE_STROKE = 2;
-/**
- * §10.1's airport mark: half the side of the square that is rotated 45° into a
- * diamond, and the weight of its outline.
- *
- * A diamond because every other mark on this map is a circle — a city dot, its
- * selection ring, its focus ring — and an airport is none of those and is not
- * selectable at all. The shape has to carry that on its own, since the layer
- * draws no text: labelling all 502 of the United States' would bury the cities
- * the map exists to choose between, and the one airport a reader can act on is
- * named on the card instead.
- *
- * 2.4 puts the diamond 4.8 units across the flats, against 9 for the smallest
- * city dot's diameter and 16 for a municipality's, so the layer reads as
- * infrastructure underneath the places rather than as a fourth kind of place.
- * Divided by `k` at the use site, like every constant above it.
- */
-const AIRPORT_MARK = 2.4;
-const AIRPORT_STROKE = 1;
-
-/**
- * §10.1's sizes are `ARRIVABLE_AIRPORT_SIZES`, and this file no longer owns
- * them: `mainAirportFor` ranks over the same set, so the code the card prints
- * is always a diamond this layer drew. That used to be two lists on two axes —
- * an allow-list here, a 150 km cut over all three sizes there — and they
- * disagreed both ways. lib/airports.ts carries the decision.
- *
- * What size does NOT decide is how big a mark is. It chooses WHETHER an airport
- * is drawn and nothing else: a two-tier glyph would put a second visual scale
- * beside the city dots', and a reader cannot act on the difference anyway.
- */
-
 /**
  * The empty airport array, as one module-level value rather than a `[]` literal
  * in the destructure below.
@@ -187,547 +116,6 @@ const AIRPORT_STROKE = 1;
  * trip map renders against.
  */
 const NO_AIRPORTS: Airport[] = [];
-
-/**
- * The smallest extent, in viewBox units, a unit is framed as though it had.
- *
- * Half a unit, and what makes that a measurement rather than a taste is where
- * it lands in the committed geometry. Sorting all 4,525 zoomable groups by the
- * side of the square that fits at the same scale — `ZOOM_FILL · 620 / k` — the
- * bottom of the list reads:
- *
- *     Jarvis 0.095 · Howland 0.095 · Navassa 0.135 · Ashmore 0.174 ·
- *     Wake 0.184 · Palmyra 0.194 · Baker 0.203 · Johnston 0.251 ·
- *     Midway 0.283 · VEN+99? 0.363   ← the floor sits here, at 0.5 →
- *     Pateros 0.536 · Pukapuka 0.540 · Three Kings 0.588 · …
- *
- * Ten groups fall below it and **not one of them has a city assigned to it** —
- * nine uninhabited atolls and one of Venezuela's unnamed remainder units. The
- * smallest group any city is in is GB London at **0.951**, nearly twice the
- * floor. So the ceiling this feeds binds only on geometry no traveller can
- * reach, and every province anyone can plan in gets the fit itself.
- *
- * Below the floor there is nothing left to frame. A polygon under half a
- * viewBox unit across is finer than the coordinate system the map is drawn in,
- * so more magnification magnifies the simplifier's rounding rather than the
- * island.
- */
-export const MIN_FRAMED_EXTENT = 0.5;
-
-/**
- * The zoom ceiling for the ADMIN-1 path — 1091.2, against `MAX_ZOOM_K`'s 5.
- *
- * ## Why the two paths differ
- *
- * `MAX_ZOOM_K` was tuned for `ChinaLevel`, and correctly. Its seven groups are
- * several provinces each, and measured against the curated asset they actually
- * render the fits run 1.885 (Northwest) to 3.755 (Central) — so on the real
- * China map the ceiling never fires at all, and 5 is a guard rather than a
- * policy.
- *
- * This level frames ONE admin-1 unit, which is a different regime by two orders
- * of magnitude: over the committed province files, **3,039 of the 4,525
- * zoomable groups (67.2%) fit above 5x.** For them the shared ceiling was not a
- * guard, it was the framing, and it framed badly — Rhode Island covers 0.14% of
- * the viewBox at 5x against 36.3% fitted, Delhi 0.45% against 54.9%, Jakarta
- * 0.16% against 52.5%. "Zoom to this province" left the province a speck in the
- * middle of an empty frame.
- *
- * Nothing that `MAX_ZOOM_K`'s docblock warns about applies here. "The outlines
- * become a handful of fat strokes and the labels outgrow the map" is a fact
- * about lengths that do NOT divide by `k`, and every length in this file does —
- * that is the whole of the discipline the marker constants above describe. A
- * magnified unit is drawn with the same stroke weights, marker radii and font
- * sizes on screen at `k` = 800 as at `k` = 1.
- *
- * ## Why this number
- *
- * Derived from an extent rather than picked as a magnification: it is the scale
- * a square unit of `MIN_FRAMED_EXTENT` viewBox units is fitted at. That puts
- * the number that has to be defended into the map's own units, where it can be
- * checked against the geometry — which is what `MIN_FRAMED_EXTENT` does — and
- * leaves this constant as arithmetic. A ceiling chosen directly in `k` would be
- * a magnification with nothing to measure it against, which is how 5 came to
- * outlive the framing it was chosen for.
- *
- * It remains a real ceiling. `transformForBounds` divides by the bounds' extent
- * and answers `Infinity` for a point, so something finite has to stop it; ten
- * groups in the committed set reach this one.
- */
-export const ADMIN1_MAX_ZOOM_K = (ZOOM_FILL * Math.min(MAP_VIEW_W, MAP_VIEW_H)) / MIN_FRAMED_EXTENT;
-
-/** `--tap-min`, in CSS pixels — `app/globals.css`, and WCAG 2.2 AA 2.5.8. */
-export const TAP_MIN_PX = 44;
-
-/**
- * `--tap-min` as a marker radius in viewBox units, at a given rendered width
- * (§5.3.2).
- *
- * The SVG is `w-full` over a fixed 860-unit viewBox, so one viewBox unit is
- * `renderedWidth / MAP_VIEW_W` CSS pixels — 1.30px across a 1120px desktop
- * column, 0.45px across a 390px phone. A radius in viewBox units is therefore
- * a different number of pixels on every viewport, and it moves the OPPOSITE
- * way from the viewport: a NARROWER screen stretches the same viewBox over
- * FEWER pixels, each unit is worth less, and the compliant radius is LARGER.
- * 16.9 units on the desktop column; 48.5 on the phone.
- *
- * That inversion is why this is a function of a measured width and not the
- * constant it obviously wants to be. Folding `MAP_MAX_RENDER_W` in and calling
- * the widest layout the worst case reads as the conservative choice and is the
- * exact opposite of one: it yields 44px at 1120 and less at every width below
- * — 30px at 768, 15px at 390 — so it fails 2.5.8 on every phone, i.e. on
- * precisely the devices a minimum tap target exists for. If a later PR is
- * tempted to simplify this back to a constant, that is the arithmetic it has
- * to answer, and `CountryLevel.test.tsx` asserts it at three widths.
- *
- * `renderedWidth` must be positive; `useRenderedWidth` is what guarantees it,
- * by reporting an unmeasurable container as null rather than as 0.
- *
- * `WorldMap`'s docblock converts the same way when it calls its 9-unit hit
- * circle "~22px at desktop" — and reaches the opposite conclusion for the
- * world level, where a compliant circle would swallow San Marino's neighbours
- * outright. At country level the same collision is possible between two
- * cities, so this is a ceiling and `nonOverlappingRadii` is what enforces it.
- * The narrower the screen the harder that cap bites, which is the trade §5.2's
- * list is there to make acceptable.
- *
- * At `k` = 1, for the reason the marker constants above are, and divided by
- * `k` at its use site like every one of them: a magnified map draws the same
- * radius over `k` times as many CSS pixels, so `/ k` is what keeps the target
- * 44px rather than 44k. It is the MEASUREMENT that is divided —
- * `tapTargetRadius(renderedWidth) / k`, never `TAP_MIN_R_FALLBACK / k` —
- * because a zoomed phone needs three times the radius a zoomed desktop does,
- * exactly as an unzoomed one does.
- */
-export function tapTargetRadius(renderedWidth: number): number {
-  return (TAP_MIN_PX / 2) * (MAP_VIEW_W / renderedWidth);
-}
-
-/**
- * The widest the map is ever laid out, in CSS pixels: `/plan`'s `max-w-6xl`
- * (72rem) less its `px-4` gutters, from `app/plan/page.tsx`.
- */
-export const MAP_MAX_RENDER_W = 1120;
-
-/**
- * The radius used until a width can be measured: the server render, the first
- * client paint, and jsdom — which lays nothing out and answers 0 to every
- * `getBoundingClientRect`.
- *
- * The widest layout gives the SMALLEST compliant radius, so this is the floor
- * of the honest range rather than a middle guess. An unmeasured frame then
- * draws a target that is merely too small on a phone, for the one commit
- * before the measurement replaces it, instead of one that swallows half the
- * country's cities on a desktop and has to shrink back.
- */
-export const TAP_MIN_R_FALLBACK = tapTargetRadius(MAP_MAX_RENDER_W);
-
-/**
- * The container's own width in CSS pixels, or null while there is nothing to
- * measure.
- *
- * §5.3.2's target is specified in CSS pixels and drawn in viewBox units, and
- * only the browser knows the ratio between them: `w-full` hands the width to
- * the layout, so a phone, a tablet and a desktop column each produce a
- * different one. Measuring is the only way to honour a pixel token from inside
- * a scaled viewBox — any compile-time constant is correct at exactly one width
- * and wrong at all the others.
- *
- * `useEffect` rather than `useLayoutEffect`: this is a `"use client"` component
- * that Next still renders on the server, where a layout effect is a warning and
- * a no-op. The cost is one commit at `TAP_MIN_R_FALLBACK`, and the circle it
- * sizes is `fill="transparent"`, so nothing visible moves when it is replaced.
- *
- * The observer is what carries it through a rotation or a window drag, both of
- * which change the ratio without remounting anything. jsdom implements no
- * `ResizeObserver`, so there the mount measurement stands alone.
- */
-function useRenderedWidth(ref: RefObject<HTMLElement | null>): number | null {
-  const [width, setWidth] = useState<number | null>(null);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-
-    const measure = () => {
-      const measured = node.getBoundingClientRect().width;
-      // 0 is what jsdom answers for everything and what a browser answers for
-      // a `display: none` subtree. Neither is a width to divide by.
-      setWidth(measured > 0 ? measured : null);
-    };
-    measure();
-
-    if (typeof ResizeObserver !== "function") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [ref]);
-
-  return width;
-}
-
-/**
- * Where a projected point ends up once the zoom has moved it.
- *
- * The matrix is `translate(tx, ty) scale(k)` about the viewBox origin, so this
- * is three multiplications — unremarkable, except that it is the ONLY way the
- * card can follow its marker. `SelectedPlaceCard` is an HTML sibling of the
- * `<svg>` and positions itself from a percentage of the frame; the transform
- * reaches everything inside `[data-zoom]` and nothing outside it. A card handed
- * the PROJECTED position would sit where its marker was before the zoom, which
- * for the island in the fixture is 4,400 units west of the frame the marker is
- * now centred in — and the card is the only affordance a touch user has for
- * reaching a place at all.
- *
- * A named function rather than two expressions in the JSX because it is the
- * piece a test can hold: jsdom drops the card's `left` declaration, which is
- * wrapped in a `clamp()` it cannot compute, so the x axis has no rendered form
- * to be asserted against and is pinned through this instead.
- */
-export function paintedAt(
-  point: { x: number; y: number },
-  { k, tx, ty }: MapTransform
-): { x: number; y: number } {
-  return { x: point.x * k + tx, y: point.y * k + ty };
-}
-
-/** A place big enough to be worth a name on a country-wide map. */
-const LABELLED_PREFECTURE_POPULATION = 3_000_000;
-
-function labelFor(place: MapPlace): boolean {
-  return (
-    place.kind === "curated" ||
-    place.level === "municipality" ||
-    (place.level === "prefecture" && (place.population ?? 0) > LABELLED_PREFECTURE_POPULATION)
-  );
-}
-
-function radiusFor(place: MapPlace): number {
-  if (place.kind === "curated") return 7;
-  if (place.level === "municipality") return 8;
-  if (place.level === "prefecture") return 6.5;
-  return 4.5;
-}
-
-/** The manifest's projection, plus the path generator that draws through it. */
-function fromManifest(entry: ProjectionEntry): FittedProjection {
-  const projection = projectionFor(entry, VIEW_BOX);
-  return { projection, pathGen: geoPath(projection) };
-}
-
-interface UnitShape {
-  id: string;
-  d: string;
-  /** §7.2: false for geometry that shapes the outline without being a choice. */
-  selectable: boolean;
-  label: string | null;
-}
-
-/** One unit as geometry rather than as a path string — what a zoom measures. */
-type UnitFeature = GeoJSON.Feature<GeoJSON.Geometry, UnitProps>;
-
-/**
- * Everything one country's topology is drawn from, and everything a zoom into
- * one of its units needs to frame it.
- *
- * The first three are what the JSX consumes. The last two used to be computed
- * here and thrown away, and the province zoom is what wants them back: they
- * are the pair `transformForFeatures` takes — a generator, and the features to
- * frame — and they fall out of the same pass that produced the `d` strings.
- * `pathGen` turns a unit into the path beside it; `pathGen.bounds(feature)`
- * turns the same unit into the extent the zoom is fitted to. Rebuilding a
- * projection at zoom time would be that arithmetic twice over and, worse, a
- * SECOND answer to "where is this province" — the kind of drift that leaves a
- * marker outside the frame that was supposed to hold it.
- */
-export interface CountryView {
-  units: UnitShape[];
-  /** The merged national border, or null when the merge drew nothing. */
-  outline: string | null;
-  project: (lon: number, lat: number) => [number, number];
-  /**
-   * The generator the shapes above were drawn through.
-   *
-   * Exposed to be MEASURED with, not to re-draw with: every `d` a unit needs
-   * is already in `units`, and a second `pathGen(feature)` per frame is
-   * precisely the cost the memo around this exists to pay once.
-   */
-  pathGen: GeoPath;
-  /**
-   * The units a region group can name, by id.
-   *
-   * Selectable ones, and drawn ones. `regionSchemeFor` drops `sel: 0` for
-   * §7.2's reason — ISO 3166-1 governs territorial EXTENT while 3166-2 governs
-   * SUBDIVISION identity — and this map drops them for the same one, so the set
-   * that can be zoomed to is exactly the set `data-unit` marks. That matters
-   * because 43 committed `cityProvince` values name a unit this omits: a
-   * lookup that ought to miss must not be made to hit by a second, laxer index
-   * of the same geometry.
-   *
-   * A miss therefore resolves to no feature, an empty list, and
-   * `IDENTITY_TRANSFORM` from the guard in `transformForFeatures` — an
-   * unzoomed map rather than a vanished one.
-   */
-  selectableFeatures: ReadonlyMap<string, UnitFeature>;
-}
-
-/**
- * Decodes one country's province file into everything drawn from it.
- *
- * A module-level function rather than an inline `useMemo` body, because it is
- * the expensive half of this file — a TopoJSON decode, a `merge()` over every
- * unit, and one path render each — and out here a test can hold its product in
- * a hand instead of inferring it from the DOM. The memo is then one line, and
- * its dependency array is the whole of its policy: this runs once per
- * topology, and a zoom must never be one of its inputs.
- */
-export function buildCountryView(
-  provinces: ProvinceFile,
-  projection: ProjectionEntry | null
-): CountryView {
-  const topology = provinces.topology;
-  const collection = topology.objects[PROVINCE_OBJECT] as GeometryCollection<UnitProps>;
-  const features = feature(topology, collection).features;
-
-  /**
-   * `collection.geometries`, not `collection`.
-   *
-   * `@types/topojson-client` declares `merge(topology, GeometryCollection |
-   * Array<Polygon | MultiPolygon>)`, and the runtime accepts only the array:
-   * `mergeArcs` calls `objects.forEach`, so a GeometryCollection throws
-   * "objects.forEach is not a function". The types are wrong, not the docs.
-   */
-  const outline = merge(
-    topology,
-    collection.geometries as Array<Polygon<UnitProps> | MultiPolygon<UnitProps>>
-  );
-
-  // A manifest entry beats a fit; the fit is what a country without one gets.
-  const { projection: proj, pathGen } = projection
-    ? fromManifest(projection)
-    : buildFitProjection(features);
-
-  const byId = new Map<string, ProvinceUnit>(provinces.units.map((unit) => [unit.id, unit]));
-  const units: UnitShape[] = [];
-  const selectableFeatures = new Map<string, UnitFeature>();
-  for (const shape of features) {
-    const d = pathGen(shape);
-    if (!d) continue;
-    const id = typeof shape.id === "string" ? shape.id : "";
-    const unit = typeof shape.id === "string" ? (byId.get(shape.id) ?? null) : null;
-    const selectable = unit?.selectable ?? false;
-    units.push({
-      id,
-      d,
-      selectable,
-      // `unitLabel` and not the precedence inlined, which is what this was:
-      // `unit.nameEn ?? unit.name ?? unit.id`. That is the same order for 245
-      // countries and wrong for the 246th — every CN unit has `nameEn: null`,
-      // so it fell straight to the endonym and put 北京市 in the tooltip while
-      // the picker beside it, which does call `unitLabel`, said "Beijing".
-      //
-      // Invisible until China started rendering here: it had a renderer of its
-      // own, and this branch never saw a file whose English names live in a
-      // separate table. One function, so the two controls cannot disagree.
-      label: unit ? unitLabel(provinces.country, unit) : null,
-    });
-    // Indexed off the same `selectable` the path above was drawn with, inside
-    // the same `if (!d) continue`, so the zoomable set cannot drift from the
-    // drawn one.
-    if (selectable) selectableFeatures.set(id, shape);
-  }
-
-  return {
-    units,
-    outline: pathGen(outline),
-    project: makeProjector(proj),
-    pathGen,
-    selectableFeatures,
-  };
-}
-
-/** Everything spread onto one marker's `<g>` in a level that can be planned in. */
-interface MarkerInteractionProps {
-  ref: (node: SVGGElement | null) => void;
-  role: "button";
-  tabIndex: number;
-  "aria-pressed": boolean;
-  /**
-   * Activating a marker opens §5.3.3's card and, from the keyboard, moves focus
-   * into it. Announced rather than sprung: a caret that leaves the marker layer
-   * without warning is indistinguishable from focus being lost, which is the
-   * thing a roving tabindex exists to prevent.
-   */
-  "aria-haspopup": "dialog";
-  "aria-label": string;
-  className: string;
-  onClick: () => void;
-  onKeyDown: (event: React.KeyboardEvent) => void;
-  onFocus: () => void;
-  onBlur: () => void;
-}
-
-/**
- * What a read-only marker gets instead: nothing.
- *
- * Not a subset with the role left on. Every field above is a claim — `role`
- * that it can be pressed, `tabIndex` that it is worth a Tab, `aria-haspopup`
- * that pressing it opens something, `aria-label` that it is a control with a
- * name, `cursor-pointer` that a mouse has somewhere to go — and on a surface
- * that toggles nothing, each of them is false. The place is still drawn, still
- * labelled on the map, and still a real `<button>` in the list below (§5.2),
- * which is where its one honest control lives.
- *
- * `Record<string, never>` rather than an empty interface so the spread is typed
- * as adding nothing at all, and a field added here has to be argued for.
- */
-type ReadOnlyMarkerProps = Record<string, never>;
-
-const READ_ONLY_MARKER: ReadOnlyMarkerProps = {};
-
-/**
- * Roving tabindex over the marker layer (§5.3.1), ported from
- * `useCountrySelection` in `worldLevelShared.tsx`.
- *
- * The PATTERN, not the hook. That one picks exactly one country out of a
- * name-sorted list and tints it from an accent ramp; this one toggles any
- * number of places in and out of a plan and colours them by month fit, so
- * there is no shared implementation to extract without inventing a third
- * abstraction over two. What is shared is the part that matters and the part
- * that was argued for once: **the marker layer is ONE tab stop**, `tabStop`
- * names which marker carries it, arrows move a caret between markers without
- * leaving the group, and Enter/Space acts on the marker the caret is on.
- *
- * `ChinaLevel` gives `tabIndex={0}` to every curated marker and `-1` to every
- * catalog one, which `worldLevelShared` calls "fine for thirty of them and
- * indefensible for 235". A country shard draws up to 750, and the ones that
- * would have been skipped entirely under that rule are the catalog cities —
- * i.e. all of them, outside China.
- *
- * There is no `mounted` set and none is needed: Mercator clips nothing, so
- * every place in `places` has a node, including the ones the §5.4 trim leaves
- * outside the viewport. The caret can land on one, and the list reaches it.
- */
-function useMarkerSelection(
-  places: MapPlace[],
-  selected: string[],
-  /**
-   * Activation, with the modality that caused it.
-   *
-   * Not `onTogglePlace` any more, because §5.3.3's card has to know: a keyboard
-   * activation moves focus into the card, and a pointer one must not. The
-   * distinction cannot be recovered downstream — by the time the card mounts,
-   * both look like a state change — and it is not `event.detail === 0` either,
-   * which is a heuristic about how a click was synthesised rather than a fact
-   * about which handler ran.
-   */
-  onActivate: (place: MapPlace, viaKeyboard: boolean) => void,
-  /**
-   * Whether the level can be planned in at all.
-   *
-   * The whole keyboard model hangs off this rather than off a check inside
-   * `onActivate`, because what a read-only marker must stop doing first is
-   * ANNOUNCING: an inert `role="button"` is a promise the accessibility tree
-   * makes on the map's behalf, and it is the one a user acts on.
-   */
-  interactive: boolean
-): {
-  markerProps: (place: MapPlace, index: number) => MarkerInteractionProps | ReadOnlyMarkerProps;
-  focusedId: string | null;
-  /** Put focus back on one marker — what a dismissed card returns it to. */
-  refocus: (id: string) => void;
-} {
-  const nodeRefs = useRef(new Map<string, SVGGElement>());
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-
-  /**
-   * Which marker Tab lands on: wherever the caret was left, else a place
-   * already in the plan, else the first place drawn.
-   *
-   * The second term is what a user who has never touched the map gets — they
-   * added Cusco through the list, so tabbing into the map puts them on Cusco
-   * rather than on whichever city the shard happens to list first. The first
-   * term is dropped rather than trusted when the shard it pointed into has
-   * been replaced by another country's, which is a prop change here and not an
-   * unmount: a stale id would leave `tabIndex 0` on nothing at all.
-   */
-  const active = activeId !== null && places.some((p) => p.id === activeId) ? activeId : null;
-  const tabStop =
-    active ?? places.find((p) => selected.includes(p.id))?.id ?? places[0]?.id ?? null;
-
-  const focusEntry = (index: number) => {
-    if (places.length === 0) return;
-    const wrapped = ((index % places.length) + places.length) % places.length;
-    const next = places[wrapped];
-    setActiveId(next.id);
-    nodeRefs.current.get(next.id)?.focus();
-  };
-
-  const stepFor = (key: string): number => {
-    if (key === "ArrowRight" || key === "ArrowDown") return 1;
-    if (key === "ArrowLeft" || key === "ArrowUp") return -1;
-    return 0;
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent, place: MapPlace, index: number) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onActivate(place, true);
-      return;
-    }
-    const step = stepFor(event.key);
-    if (step !== 0) {
-      event.preventDefault();
-      focusEntry(index + step);
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      focusEntry(0);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      focusEntry(places.length - 1);
-    }
-  };
-
-  return {
-    focusedId,
-    refocus: (id: string) => nodeRefs.current.get(id)?.focus(),
-    markerProps: (
-      place: MapPlace,
-      index: number
-    ): MarkerInteractionProps | ReadOnlyMarkerProps => {
-      if (!interactive) return READ_ONLY_MARKER;
-      const isSelected = selected.includes(place.id);
-      return {
-        ref: (node: SVGGElement | null) => {
-          if (node) nodeRefs.current.set(place.id, node);
-          else nodeRefs.current.delete(place.id);
-        },
-        role: "button",
-        tabIndex: place.id === tabStop ? 0 : -1,
-        "aria-pressed": isSelected,
-        "aria-haspopup": "dialog",
-        "aria-label": `${place.name}${isSelected ? " (selected)" : ""}`,
-        className: "cursor-pointer",
-        // Here rather than on the `<g>` in the JSX, so that ONE decision — the
-        // `interactive` branch above — removes every way in. A click handler
-        // left behind by a level that had dropped its role would still open the
-        // card on a tap, which is the modality the defect was reported through.
-        onClick: () => onActivate(place, false),
-        onKeyDown: (event: React.KeyboardEvent) => handleKeyDown(event, place, index),
-        onFocus: () => {
-          setActiveId(place.id);
-          setFocusedId(place.id);
-        },
-        onBlur: () => setFocusedId((current) => (current === place.id ? null : current)),
-      };
-    },
-  };
-}
 
 export interface CountryLevelProps {
   /** ISO alpha-2 of the country being planned. */
@@ -992,23 +380,11 @@ export function CountryLevel({
   const tapMinR =
     (renderedWidth === null ? TAP_MIN_R_FALLBACK : tapTargetRadius(renderedWidth)) / k;
 
-  const routePoints = useMemo(
-    () =>
-      routeIds
-        .map((id) => places.find((p) => p.id === id))
-        .filter((p): p is MapPlace => Boolean(p))
-        .map((p) => project(p.lon, p.lat)),
-    [routeIds, places, project]
-  );
+  // Policy and arithmetic: markerLayout.ts.
+  const routePoints = useMemo(() => routePath(routeIds, places, project), [routeIds, places, project]);
 
-  const points = useMemo(
-    () =>
-      places.map((place) => {
-        const [x, y] = project(place.lon, place.lat);
-        return { x, y };
-      }),
-    [places, project]
-  );
+  // Policy and arithmetic: markerLayout.ts.
+  const points = useMemo(() => projectPlaces(places, project), [places, project]);
 
   /**
    * How large each marker's target may grow before it reaches its nearest
@@ -1042,81 +418,14 @@ export function CountryLevel({
    */
   const caps = useMemo(() => nonOverlappingRadii(points, Infinity), [points]);
 
-  /**
-   * Marker positions and their transparent targets (§5.3.2).
-   *
-   * The floor is the marker's own dot: a target INSIDE the visible circle
-   * would make the dot's edge the target's edge, which is the failure the
-   * hit-area-first ordering exists to prevent. Where two dots are closer than
-   * their own radii they already overlapped before this existed.
-   *
-   * Two of the three terms are divided by `k` and one is not, which is the
-   * whole of the clamp-after discipline in one line. The dot is a drawn length
-   * and the tap target is a pixel promise, so both shrink as the map is
-   * magnified; `caps` is a gap between two projected points, which the zoom
-   * does not change. This memo is O(n) and may re-run per zoom; the O(n²) one
-   * above must not.
-   */
-  const marks = useMemo(
-    () =>
-      points.map((point, index) => {
-        const r = radiusFor(places[index]) / k;
-        return { ...point, r, hitR: Math.max(r, Math.min(caps[index], tapMinR)) };
-      }),
-    [points, caps, places, tapMinR, k]
-  );
+  // Policy and arithmetic: markerLayout.ts.
+  const marks = useMemo(() => markerMarks(points, caps, places, tapMinR, k), [points, caps, places, tapMinR, k]);
 
-  /**
-   * Each marker's fill, resolved once per (places, month, climate) rather than
-   * once per render: this level re-renders on every hover — the hover card is
-   * state above it — and a verdict depends on nothing the pointer changes.
-   * Indexed like `marks`, by the place's position in the country, so a zoom
-   * re-uses it untouched.
-   */
-  const fills = useMemo(
-    () => places.map((place) => FIT_COLORS[fitForPlace(place, month, climate)]),
-    [places, month, climate]
-  );
+  // Policy and arithmetic: markerLayout.ts.
+  const fills = useMemo(() => markerFills(places, month, climate), [places, month, climate]);
 
-  /**
-   * The markers a framed map draws, paired with their index into everything
-   * computed above — §6.5, and `cityProvince`'s first ever reader.
-   *
-   * Plan 2 shipped that Map unconsumed. It is the ONLY thing that places a
-   * city in a province: a marker's lon/lat decide where it is drawn, and the
-   * committed assignment decides which unit contains it. Recomputing
-   * containment here would be a second answer to a question
-   * `scripts/build-provinces.mjs` already answered — per frame, against
-   * simplified geometry — and the two would part company at the first boundary
-   * that moved.
-   *
-   * Two misses, and both hide the city rather than showing it:
-   *
-   * - **no assignment at all.** 478 cities across the 246 files were placed by
-   *   neither containment nor `a1c`. A city shown in every province because it
-   *   is known to be in none asserts, 25 times over for Peru, a fact the build
-   *   was careful not to invent.
-   * - **an assignment naming a unit no group offers.** 43 committed values name
-   *   a `sel: 0` unit — Northern Cyprus, Somaliland, Guantánamo — which §7.2
-   *   keeps out of `regionSchemeFor` on purpose. Those cities are real and the
-   *   list below reaches them; no region draws them.
-   *
-   * The pairs carry the ORIGINAL index because `points`, `caps` and `marks`
-   * are computed over the whole country and must stay that way: `caps` is the
-   * O(n²) pass, keyed on the country so a zoom never re-runs its ~560k
-   * distance checks, and re-indexing it per zoom is the same mistake as
-   * folding `k` into it. So the filter lands at the DRAW, and the arithmetic
-   * above it never learns there is one.
-   */
-  const visible = useMemo(() => {
-    const all = places.map((place, index) => ({ place, index }));
-    if (!group) return all;
-    const units = new Set(group.unitIds);
-    return all.filter(({ place }) => {
-      const unit = provinces.cityProvince.get(place.id);
-      return unit !== undefined && units.has(unit);
-    });
-  }, [group, places, provinces]);
+  // Policy and arithmetic: markerLayout.ts.
+  const visible = useMemo(() => visibleEntries(places, group, provinces), [group, places, provinces]);
 
   /**
    * The same set as `visible`, as the roving tabindex wants it.

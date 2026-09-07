@@ -7,7 +7,7 @@ import { hasDetailLevel } from "@/lib/countryDetail";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import type { ProvinceFile } from "@/lib/provinceTopology";
 import type { RegionId } from "@/lib/regionScheme";
-import { TAP_MIN_R_FALLBACK } from "./CountryLevel";
+import { TAP_MIN_R_FALLBACK } from "./markerGeometry";
 import { CountryMap } from "./CountryMap";
 import { CN_FILE, CUSCO_PLACE, PE_ENTRY, PE_FILE, peFileWith } from "./countryFixture";
 import { FIT_COLORS, type MapPlace } from "./mapTypes";

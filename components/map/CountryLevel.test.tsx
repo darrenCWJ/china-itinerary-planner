@@ -16,17 +16,17 @@ import { REGION_MONTHS } from "@/lib/months";
 import { parseProvinceTopology, type ProvinceFile } from "@/lib/provinceTopology";
 import { unitLabel, type RegionId } from "@/lib/regionScheme";
 import FO_PROVINCES from "@/public/provinces/FO.json";
+import { CountryLevel } from "./CountryLevel";
+import { buildCountryView } from "./countryView";
 import {
   ADMIN1_MAX_ZOOM_K,
-  buildCountryView,
-  CountryLevel,
   MAP_MAX_RENDER_W,
   MIN_FRAMED_EXTENT,
   paintedAt,
   TAP_MIN_PX,
   TAP_MIN_R_FALLBACK,
   tapTargetRadius,
-} from "./CountryLevel";
+} from "./markerGeometry";
 import {
   PE_CITY_PROVINCE,
   PE_ENTRY,
