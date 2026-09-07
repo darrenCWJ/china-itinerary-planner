@@ -122,6 +122,12 @@ export function MapExplorer({
    * render — the pattern `app/plan/page.tsx` uses to keep `seasonCountry` in
    * step with `tripCountry` — rather than in an effect, which would paint one
    * frame without the control and then add it.
+   *
+   * It is also what gates `useCountryAssets`: nothing country-scoped is
+   * fetched until this is true. The prefetch of the default country's assets
+   * that the world level used to make — 94.7 KB gzipped over six requests,
+   * measured 2026-09-07 — was written when the map opened on China; on the
+   * globe it was paid by everyone and used by whoever then opened China.
    */
   const [openedCountry, setOpenedCountry] = useState(level === "country");
   if (level === "country" && !openedCountry) setOpenedCountry(true);
@@ -142,7 +148,7 @@ export function MapExplorer({
     climate,
     loadError,
     retry,
-  } = useCountryAssets(countryCode, hasDetail);
+  } = useCountryAssets(countryCode, hasDetail, openedCountry);
 
   // `hover` holds a `MapPlace` derived from the previous country's cities, so
   // it is dropped the moment the country changes — `useCountryAssets` empties
