@@ -1,6 +1,7 @@
 "use client";
 
 import type { PackingGroup } from "@/lib/packing";
+import type { TicketExamples } from "@/lib/tickets";
 import type { Ticket } from "@/lib/tripShared";
 import { PackingSection } from "./PackingSection";
 import { TicketsTab, type TicketDraft } from "./TicketsTab";
@@ -15,12 +16,13 @@ import { TicketsTab, type TicketDraft } from "./TicketsTab";
  * sequence.
  *
  * Purely compositional: props are the union of the two children's, and neither
- * child is modified. Not wired into TripView until Task 12.
+ * child is modified. Mounted by `TripView` on the Kit tab.
  */
 interface Props {
   // Bookings
   tickets: Ticket[];
   hasStartDate: boolean;
+  ticketExamples: TicketExamples;
   onAddTicket(draft: TicketDraft): Promise<string | null>;
   onUpdateTicket(ticketId: string, draft: TicketDraft): Promise<string | null>;
   onDeleteTicket(ticketId: string): Promise<string | null>;
@@ -35,6 +37,7 @@ interface Props {
 export function KitTab({
   tickets,
   hasStartDate,
+  ticketExamples,
   onAddTicket,
   onUpdateTicket,
   onDeleteTicket,
@@ -57,6 +60,7 @@ export function KitTab({
           tickets={tickets}
           isMember={isMember}
           hasStartDate={hasStartDate}
+          examples={ticketExamples}
           onAdd={onAddTicket}
           onUpdate={onUpdateTicket}
           onDelete={onDeleteTicket}

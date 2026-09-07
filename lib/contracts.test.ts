@@ -1122,12 +1122,21 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
      * shows the same names to somebody who is not signed in. A single credit
      * in the file satisfies the scan above while leaving the guest surface
      * bare, so the count is pinned here rather than the presence.
+     *
+     * The count below is of `destinationNames.map(` — the shape both render
+     * sites take — not of the bare identifier. Since 2026-09-07 TripView
+     * also reads the first and last `destinationNames` entries as code, to
+     * derive the Kit tab's placeholder hints (`ticketExamples`,
+     * lib/tickets.ts). Those hints show inside the member page, under the
+     * same credit that covers its other tabs, so they are not a third
+     * surface — but counting bare identifier occurrences would have
+     * mistaken them for one.
      */
     const view = FILES.find((f) => f.path === "components/TripView.tsx");
     expect(view, "components/TripView.tsx is not in the scanned tree").toBeDefined();
     const rendered = view!.code.match(/<GeoNamesCredit\b/g) ?? [];
-    const surfaces = view!.code.match(/destinationNames/g) ?? [];
-    expect(surfaces.length, "TripView no longer renders destinationNames").toBe(2);
+    const surfaces = view!.code.match(/destinationNames\.map\(/g) ?? [];
+    expect(surfaces.length, "TripView no longer renders destinationNames on both surfaces").toBe(2);
     expect(rendered.length, "one credit cannot cover both TripView surfaces").toBe(2);
   });
 
