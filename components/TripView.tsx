@@ -199,6 +199,7 @@ export function TripView({ tripId }: { tripId: string }) {
 
   const { data } = payload;
   const gateways = tripGateways(data);
+  const currency = tripCurrency(data);
   /**
    * The Kit tab's placeholder hints, from the trip's own stops, gateways and
    * currency (spec 2026-09-07 §1). Computed here rather than in the tab because
@@ -211,7 +212,7 @@ export function TripView({ tripId }: { tripId: string }) {
     lastStop: data.destinationNames[data.destinationNames.length - 1] ?? null,
     arrival: gateways.arrival,
     departure: gateways.departure,
-    currency: tripCurrency(data) ?? payload.currencySettings.home,
+    currency: currency ?? payload.currencySettings.home,
   });
   const seasonMeta = SEASONS.find((s) => s.id === data.input.season);
   const checkedBy = new Map(payload.checks.map((c) => [c.key, c.by]));
@@ -334,7 +335,7 @@ export function TripView({ tripId }: { tripId: string }) {
           expenses={payload.expenses}
           settlements={payload.settlements}
           currencySettings={payload.currencySettings}
-          tripCurrency={tripCurrency(data)}
+          tripCurrency={currency}
           members={payload.members.map((m) => m.name)}
           myName={myName}
           isMember={isMember}

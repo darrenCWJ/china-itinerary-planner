@@ -43,6 +43,10 @@ function requested(path: string): boolean {
  */
 
 describe("MapExplorer", () => {
+  const countryScoped = (url: string) =>
+    /^\/(provinces|cities|climate)\//.test(url) || url.startsWith("/api/map/") || url === PROJECTION_PATH;
+  const scopedRequests = () => fetchMock.mock.calls.map(([url]) => String(url)).filter(countryScoped);
+
   test("carries a world-level pick down into that country's level", async () => {
     render(<Harness level="world" />);
 
@@ -68,11 +72,21 @@ describe("MapExplorer", () => {
     render(<Harness />);
 
     await settle();
+    const scopedAfterOpen = scopedRequests().length;
+
     fireEvent.click(screen.getByRole("button", { name: "← All countries" }));
     await settle();
-    fireEvent.click(screen.getByRole("button", { name: "← Back to China" }));
+    // The world level's own topology fetch is not country-scoped and is not
+    // counted; returning to the globe and re-opening the same country
+    // re-runs neither country effect (the latch is one-way and
+    // `countryCode` is unchanged).
+    expect(scopedRequests().length).toBe(scopedAfterOpen);
 
+    fireEvent.click(screen.getByRole("button", { name: "← Back to China" }));
     await settle();
+    // Same countryCode as before: the effect that fetches a country's assets
+    // is keyed on it, so re-opening China does not re-run it.
+    expect(scopedRequests().length).toBe(scopedAfterOpen);
     expect(
       screen.getByRole("group", { name: "Map of China" })
     ).toBeInTheDocument();
@@ -105,10 +119,6 @@ describe("MapExplorer", () => {
     // the enrichment shard it missed adds 3.9) went out with every first paint,
     // for a visitor who may never open China. `openedCountry` — the same latch
     // that hides "← Back to" on a cold start — now gates the hook too.
-    const countryScoped = (url: string) =>
-      /^\/(provinces|cities|climate)\//.test(url) || url.startsWith("/api/map/") || url === PROJECTION_PATH;
-    const scopedRequests = () => fetchMock.mock.calls.map(([url]) => String(url)).filter(countryScoped);
-
     render(<Harness level="world" />);
     await settle();
     expect(scopedRequests()).toEqual([]);
