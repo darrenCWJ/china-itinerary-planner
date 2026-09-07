@@ -87,11 +87,12 @@ describe("PlaceSearch keyboard path", () => {
     // No network in these tests; ranking over the curated set plus the off-map
     // row is enough to exercise every key.
     //
-    // `PlaceSearch` now fetches /cities/<CC>.json on mount, and the stub this
-    // replaced had no `ok` — so `fetchCityShard` would read `undefined`, throw,
-    // and land a `setShard` in a microtask outside `act`: exactly the warning
-    // the block above says this file is otherwise clean of. A 404 is also the
-    // honest answer for a test that wants no network.
+    // `PlaceSearch` fetches /cities/<CC>.json the first time the box is used —
+    // which every test below that types does — and the stub this replaced had
+    // no `ok`, so `fetchCityShard` would read `undefined`, throw, and land a
+    // `setShard` in a microtask outside `act`: exactly the warning the block
+    // above says this file is otherwise clean of. A 404 is also the honest
+    // answer for a test that wants no network.
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) =>
@@ -335,6 +336,36 @@ describe("PlaceSearch country scoping", () => {
     // that genuinely has no catalog cities, with no error anywhere.
     const urls = mock.mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u === "/api/destinations?q=cusc&country=PE")).toBe(true);
+  });
+
+  test("fetches no shard until the box is used, then exactly one", async () => {
+    // Spec 2026-09-07 §4: the world level fetches nothing until a country is
+    // opened. This box is rendered beside the map on the globe step, live and
+    // already scoped to the default country, so its mount-time shard fetch was
+    // the one country-scoped request that survived `useCountryAssets`'s gate —
+    // `/cities/CN.json` before the traveller had picked anything at all.
+    // `e2e/map.spec.ts` pins the same claim against the real bundle.
+    const mock = stubFetch(PE_SHARD, []);
+    render(
+      <PlaceSearch curated={[]} coordsFor={() => null} selected={[]} country="PE" onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+    await pastDebounce();
+
+    const shardUrls = () =>
+      mock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/cities/"));
+    // Mounted, effects settled, and still nothing asked for.
+    expect(shardUrls()).toEqual([]);
+
+    // Focus, not a keystroke: a real user's first move is to click the box, and
+    // the shard has to be in hand by the time the second character lands.
+    fireEvent.focus(screen.getByRole("combobox"));
+    await pastDebounce();
+    expect(shardUrls()).toEqual(["/cities/PE.json"]);
+
+    // And the latch is one-way — typing after it is set asks for nothing more.
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "cusc" } });
+    await pastDebounce();
+    expect(shardUrls()).toEqual(["/cities/PE.json"]);
   });
 
   test("fetches the open country's shard once, not per keystroke", async () => {

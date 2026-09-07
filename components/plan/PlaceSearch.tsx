@@ -174,11 +174,18 @@ export function PlaceSearch({
   const [hits, setHits] = useState<CatalogHit[]>([]);
   const [shard, setShard] = useState<CityShardRow[]>([]);
   const [active, setActive] = useState(0);
+  /**
+   * Whether this box has been used at all — a one-way latch, set by the first
+   * focus or the first character and never cleared. It gates the shard fetch
+   * below; see that effect for why.
+   */
+  const [wanted, setWanted] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /**
-   * The open country's GeoNames cities, fetched once per country.
+   * The open country's GeoNames cities, fetched once per country — and, since
+   * 2026-09-07, not until the box has been used.
    *
    * Keyed on the country rather than the query: a shard holds every city the
    * country has and is small with it — `lib/cityShard.ts` records 21.6 KB
@@ -187,11 +194,28 @@ export function PlaceSearch({
    * lambda, which is why this is a static asset the browser fetches rather
    * than a second API leg.
    *
+   * `wanted` is the second key, and it is here because of where this component
+   * sits: `components/DestinationStep` renders it beside the map, so on the
+   * globe step the box is already live and already scoped to the default
+   * country. Spec 2026-09-07 §4 asks that the world level fetch nothing until
+   * a country is opened, and Task 4 gated `useCountryAssets` behind
+   * MapExplorer's `openedCountry` latch to get there — but the measurement
+   * behind that spec credited `/cities/CN.json` to the map hook alone. This
+   * effect was a second, ungated requester of the same file, and it fired on
+   * mount, so the gate did not hold. `e2e/map.spec.ts` pins the whole claim
+   * against the real bundle. A visitor who spins the globe and never searches
+   * now pays nothing for a picker they did not open.
+   *
+   * The latch is one-way, so nothing skips a clear it used to make: while it
+   * is false the shard has never been fetched and there is nothing stale to
+   * hold, and once it is true every country switch runs the effect as before.
+   *
    * Cleared up front, not just on failure — the same reason MapExplorer's
    * airports effect clears first. Between a country switch and the new shard
    * landing, the previous country's cities are wrong answers, not stale ones.
    */
   useEffect(() => {
+    if (!wanted) return;
     const controller = new AbortController();
     // Functional, not `setShard([])`: a fresh `[]` is a new reference and
     // re-renders even when the shard was already empty. React bails out when
@@ -210,7 +234,7 @@ export function PlaceSearch({
         if (!controller.signal.aborted) clear();
       });
     return () => controller.abort();
-  }, [country]);
+  }, [country, wanted]);
 
   /**
    * The Wikidata hits, cleared on a country switch — the shard's counterpart,
@@ -448,9 +472,17 @@ export function PlaceSearch({
         aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
         autoComplete="off"
         value={query}
+        // Focus is what starts the shard fetch, so the rows are in hand before
+        // the second character lands and the list still fills without a wait.
+        onFocus={() => setWanted(true)}
         onChange={(e) => {
           setQuery(e.target.value);
           setActive(0);
+          // Belt as well as braces: focus is the real user's first move, but a
+          // value can arrive without one — a paste into an unfocused field, an
+          // autofill, or a test driving the input with `fireEvent.change`. An
+          // empty value is excluded because clearing the box is not using it.
+          if (e.target.value.length > 0) setWanted(true);
         }}
         onKeyDown={onKeyDown}
         placeholder="Search a city, or type any place"
