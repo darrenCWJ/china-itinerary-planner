@@ -8,7 +8,7 @@ import type { MapPlace } from "./mapTypes";
  * and the two per-place helpers that size and label a marker. Moved verbatim
  * out of CountryLevel.tsx on 2026-09-07; every docblock below is that file's,
  * and "every stroke, radius and font divides by k" is still pinned by
- * CountryLevel.markers.test.tsx.
+ * CountryLevel.zoom.test.tsx.
  */
 
 /**
@@ -24,9 +24,9 @@ import type { MapPlace } from "./mapTypes";
  * why these are named constants rather than literals scattered through the JSX
  * — a literal is a place a `/ k` can go missing without anyone noticing.
  *
- * `CountryLevel.test.tsx`'s "every stroke, radius and font divides by k" holds
- * the whole set to that ratio by rendering the map twice, so a constant added
- * later without one fails there rather than on someone's screen.
+ * `CountryLevel.zoom.test.tsx`'s "every stroke, radius and font divides by k"
+ * holds the whole set to that ratio by rendering the map twice, so a constant
+ * added later without one fails there rather than on someone's screen.
  */
 export const UNIT_STROKE = 0.7;
 export const OUTLINE_STROKE = 1.2;
@@ -151,7 +151,7 @@ export const TAP_MIN_PX = 44;
  * — 30px at 768, 15px at 390 — so it fails 2.5.8 on every phone, i.e. on
  * precisely the devices a minimum tap target exists for. If a later PR is
  * tempted to simplify this back to a constant, that is the arithmetic it has
- * to answer, and `CountryLevel.test.tsx` asserts it at three widths.
+ * to answer, and `CountryLevel.markers.test.tsx` asserts it at three widths.
  *
  * `renderedWidth` must be positive; `useRenderedWidth` is what guarantees it,
  * by reporting an unmeasurable container as null rather than as 0.

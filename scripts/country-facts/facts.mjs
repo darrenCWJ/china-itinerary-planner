@@ -16,7 +16,8 @@
  * `applyCurated` still reads immediately after the table's former position.
  *
  * The `EmergencyNumber`, `CountryFacts` and `Diagnostics` typedefs below are a
- * byte-identical copy of that file's, for the reason the twin in
+ * byte-identical copy of the ones that file declared before the split — it
+ * keeps only `Row` now — for the reason the twin in
  * scripts/country-facts/parse.mjs gives. `CountryFacts` annotates the records
  * this module builds and cannot be written without `EmergencyNumber`.
  */

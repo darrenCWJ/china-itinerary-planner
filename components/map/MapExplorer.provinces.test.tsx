@@ -33,9 +33,9 @@ installMapExplorerHarness();
  * the fetch that goes and gets it. What these cases pin is the loading half —
  * which URL is asked for, how often, what happens to the one already in flight,
  * and that a country whose file never arrives still reaches every one of its
- * cities. How the result is drawn is `CountryLevel.test.tsx`'s; that the result
- * reaches a renderer at all is pinned here, because nothing else would notice
- * a component holding geometry it never passes on.
+ * cities. How the result is drawn is `CountryLevel.zoom.test.tsx`'s; that the
+ * result reaches a renderer at all is pinned here, because nothing else would
+ * notice a component holding geometry it never passes on.
  */
 describe("the open country's province file", () => {
   test("fetches the opened country's province file, not China's", async () => {
@@ -201,7 +201,7 @@ describe("the open country's province file", () => {
  * control is offered in which of the two machines' states, what it moves, and
  * that China's own chrome came through the generalisation untouched.
  *
- * How the zoom is DRAWN is `CountryLevel.test.tsx`'s; that a control here
+ * How the zoom is DRAWN is `CountryLevel.zoom.test.tsx`'s; that a control here
  * reaches it at all is pinned below, because nothing else would notice a
  * `<select>` wired to state no renderer ever receives.
  */

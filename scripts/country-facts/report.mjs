@@ -14,10 +14,10 @@
  * same two constants the artifact envelope is stamped with.
  *
  * The `EmergencyNumber` and `CountryFacts` typedefs below are a byte-identical
- * copy of the ones that stayed in scripts/ingest-country-facts.mjs, for the
- * reason the twin in scripts/country-facts/parse.mjs gives. `CountryFacts`
- * annotates `buildReport`'s parameter and cannot be written without
- * `EmergencyNumber`.
+ * copy of the ones scripts/ingest-country-facts.mjs declared before the split
+ * — that file keeps only `Row` now — for the reason the twin in
+ * scripts/country-facts/parse.mjs gives. `CountryFacts` annotates
+ * `buildReport`'s parameter and cannot be written without `EmergencyNumber`.
  */
 
 import { RECORD_FIELDS, RENDERED_FIELDS, factCount } from './facts.mjs';

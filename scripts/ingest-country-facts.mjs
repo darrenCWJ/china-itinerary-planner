@@ -136,10 +136,11 @@ import { buildReport } from './country-facts/report.mjs';
  * no arguments, so every parameter defaults to the real implementation.
  *
  * `mkdirSync` sits BELOW the gate, unlike scripts/ingest-cities.mjs where it
- * runs first (a tracked finding recorded at
- * scripts/ingest-cities.test.ts:1339-1341). A rejected run must leave no trace
- * at all, and a directory created before the gate is one — which also makes
- * "nothing was written" checkable by a test rather than merely asserted here.
+ * runs first (a tracked finding recorded in scripts/ingest-cities.test.ts's
+ * `run() aborts before any write primitive fires when assertSane rejects the
+ * feed`). A rejected run must leave no trace at all, and a directory created
+ * before the gate is one — which also makes "nothing was written" checkable by
+ * a test rather than merely asserted here.
  *
  * @param {{ fetchBindings?: (name: string, codes: string[]) => Promise<Row[]>, dataDir?: string }} [options]
  */

@@ -58,7 +58,8 @@ import type { MapPlace } from "@/components/map/mapTypes";
  * is invisible in the DOM: a version that folded `k` in would produce a
  * slightly different radius and no other trace at all. The spy is what makes
  * the ceiling and the call count assertable; it forwards to the real function,
- * so every other test in this file sees the module unchanged.
+ * so every test in the five files that import this harness sees the module
+ * unchanged.
  */
 const { capCall } = vi.hoisted(() => ({ capCall: vi.fn() }));
 // Exported as a specifier rather than as `export const`: vitest hoists this

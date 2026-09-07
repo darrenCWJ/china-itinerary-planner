@@ -2,18 +2,19 @@ import { describe, expect, test } from "vitest";
 import { assertSampleHealth } from "./ingest-climate.mjs";
 
 /**
- * Covers the three pure functions the real climate build (Task 6) will call
- * once per city per raster. The module's entry-point guard means importing it
- * here does not also run `main()` and start a 6.2 GB download — the idiom
- * `scripts/ingest-cities.test.ts` and `scripts/ingest-airports.test.ts`
- * already rely on.
+ * Covers `assertSampleHealth`, the one pure function
+ * scripts/ingest-climate.mjs still exports. The module's entry-point guard
+ * means importing it here does not also run `main()` and start a 6.2 GB
+ * download — the idiom `scripts/ingest-cities.test.ts` and
+ * `scripts/ingest-airports.test.ts` already rely on.
  *
- * Every grid and scaling constant below is transcribed from
- * `data/climate-probe.md`, which is the measured authority: the probe read
- * these off the real rasters' own tags. They are not reconstructed, because
- * reconstructing them is exactly the bug. `1/120` is not the 1 km grid's
- * resolution, `-180`/`+84` are not its edges, and `clt` is a different raster
- * altogether. Where this file and that document disagree, the document wins.
+ * The sampling, raster, gate, payload, report and acquisition tests are in
+ * scripts/climate/*.test.ts, beside the modules they cover, since 2026-09-07
+ * (spec 2026-09-07-unscheduled-items §2.1). The grid and scaling constants
+ * they are written against are transcribed from `data/climate-probe.md`, which
+ * is the measured authority: the probe read these off the real rasters' own
+ * tags. They are not reconstructed, because reconstructing them is exactly the
+ * bug. Those files carry that rule where the constants now are.
  */
 
 describe("assertSampleHealth", () => {

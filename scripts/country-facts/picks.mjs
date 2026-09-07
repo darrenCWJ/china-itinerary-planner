@@ -12,9 +12,10 @@
  * including `FACT_FIELDS`; the rest of that section is
  * scripts/country-facts/facts.mjs and scripts/country-facts/curated.mjs.
  *
- * The `EmergencyNumber` typedef below is a byte-identical copy of the one that
- * stayed in scripts/ingest-country-facts.mjs, for the reason its twin in
- * scripts/country-facts/parse.mjs gives.
+ * The `EmergencyNumber` typedef below is a byte-identical copy of the one
+ * scripts/ingest-country-facts.mjs declared before the split — that file keeps
+ * only `Row` now — for the reason its twin in scripts/country-facts/parse.mjs
+ * gives.
  */
 
 import { collapse, entityId } from './parse.mjs';

@@ -33,7 +33,7 @@ const SAME_CITY_KM = 25;
 /**
  * Shard rows that are a second marker for a city the catalog already answered.
  *
- * The sibling of `dropCatalogDuplicates` in `scripts/ingest-cities.mjs`, not a
+ * The sibling of `dropCatalogDuplicates` in `scripts/cities/build.mjs`, not a
  * reuse of it: that one is a Node build script reading the GeoNames dump's row
  * shape, it cannot be imported into a "use client" bundle, and it runs at a
  * different radius. A re-ingest would not help here anyway — it would leave the

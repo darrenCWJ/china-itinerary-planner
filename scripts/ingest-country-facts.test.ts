@@ -61,8 +61,9 @@ import {
 // ---------------------------------------------------------------------------
 // run() — proving the gate by behaviour, not by source position
 //
-// The design forbids a source-position grep test here, and
-// scripts/ingest-cities.test.ts:1263-1276 records why: a reviewer
+// The design forbids a source-position grep test here, and the preamble to
+// scripts/ingest-cities.test.ts's `run() aborts before any write primitive
+// fires when assertSane rejects the feed` records why: a reviewer
 // mutation-tested that shape and found four changes that leave it green while
 // a corrupt feed still reaches disk — a gate hidden behind a never-set env
 // flag, a write hoisted above the gate, an early-return branch that writes
@@ -78,7 +79,7 @@ import {
 // `not.toHaveBeenCalled()` in the file.
 // ---------------------------------------------------------------------------
 
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";

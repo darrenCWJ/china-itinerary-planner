@@ -195,7 +195,7 @@ async function headContentLength(url, retryDelaysMs = RETRY_DELAYS_MS) {
  * resident for the whole write — and written to a PID-suffixed temp name so
  * an interrupted run leaves no half file at the real path.
  *
- * Exported for `scripts/ingest-climate.test.ts`: every real run so far found
+ * Exported for `scripts/climate/acquire.test.ts`: every real run so far found
  * every raster already cached, so this path has never once executed against a
  * live HEAD/GET. `cacheDir` and `retryDelaysMs` default to the module's own
  * `CACHE_DIR` and `RETRY_DELAYS_MS`, so a caller that passes nothing gets

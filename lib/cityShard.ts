@@ -49,7 +49,7 @@ export function cityEnrichmentPath(country: string): string {
  * lapse-rate correction that read it as an elevation would warm those towns
  * by tens of degrees. Mirrors the ingest's `GEONAMES_NO_DATA_ELEVATION` — a
  * literal here rather than an import, because this module is browser-side and
- * the ingest is not; scripts/ingest-cities.test.ts asserts the two are equal.
+ * the ingest is not; scripts/cities/geonames.test.ts asserts the two are equal.
  */
 export const GEONAMES_NO_DATA_ELEVATION = -9999;
 

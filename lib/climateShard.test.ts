@@ -436,7 +436,7 @@ const ANCHORS: ClimateAnchor[] = fixture.cities.map((c) => ({ id: c.id, name: c.
  * night, in each direction.
  *
  * Exact parity is not being given up; it is being asserted where it can hold.
- * `assertCityParity` in `scripts/ingest-climate.mjs` runs before the first
+ * `assertCityParity` in `scripts/climate/gate.mjs` runs before the first
  * write, so every dispatch restores exact parity and refresh-climate.yml's own
  * verify step always sees it on a tree that job just built. What cannot be
  * asserted here is exact parity on the committed artifact, because `npm test`
@@ -552,10 +552,12 @@ describe.skipIf(!hasAssets)("the committed climate shards", () => {
   });
 
   it("no shard exceeds the gzip budget, and the cap is NOT saturated", () => {
-    // Restated from scripts/ingest-climate.mjs rather than imported — the
-    // same convention lib/provinceTopology.test.ts:348-353 follows, for the
-    // same reason: importing the build script into a lib test would pull in
-    // whatever heavy deps it needs (geotiff, in this case) for one number.
+    // Restated from scripts/climate/gate.mjs — which imports both from
+    // scripts/build-provinces.mjs, where they are declared — rather than
+    // imported here, the same convention lib/provinceTopology.test.ts follows,
+    // for the same reason: importing a build script into a lib test would pull
+    // in whatever heavy deps it needs (topojson and d3-geo, on that path) for
+    // one number.
     //
     // Two budgets, not one. RAW_BUDGET is the pre-gzip tripwire the climate
     // build itself gates on — 700,000 B, not lib/cityShard.test.ts's
