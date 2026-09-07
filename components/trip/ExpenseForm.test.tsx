@@ -76,7 +76,7 @@ describe("the currency picker is the trip's, not a hardcoded pair", () => {
       />
     );
 
-    fireEvent.change(screen.getByPlaceholderText("Hotpot dinner"), {
+    fireEvent.change(screen.getByPlaceholderText("Group dinner"), {
       target: { value: "Ceviche" },
     });
     fireEvent.change(screen.getByPlaceholderText("128.50"), { target: { value: "40" } });

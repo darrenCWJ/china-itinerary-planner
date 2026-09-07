@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { TICKET_KINDS, ticketKindMeta } from "@/lib/meta";
-import { sortTickets } from "@/lib/tickets";
+import { sortTickets, TICKET_TITLE_EXAMPLES, type TicketExamples } from "@/lib/tickets";
 import type { Ticket, TicketKind } from "@/lib/tripShared";
 import { AirportInput } from "./AirportInput";
 
@@ -24,6 +24,14 @@ interface TicketsTabProps {
   tickets: Ticket[];
   isMember: boolean;
   hasStartDate: boolean;
+  /**
+   * The form's placeholder text, derived by `TripView` from the trip's stops,
+   * gateways and currency (`ticketExamples` in lib/tickets.ts). A prop rather
+   * than a computation here because the inputs — the currency especially —
+   * are `TripView`'s to resolve, and this component must not reach the facts
+   * artifact for a hint.
+   */
+  examples: TicketExamples;
   onAdd: (draft: TicketDraft) => Promise<string | null>;
   onUpdate: (ticketId: string, draft: TicketDraft) => Promise<string | null>;
   onDelete: (ticketId: string) => Promise<string | null>;
@@ -33,6 +41,7 @@ export function TicketsTab({
   tickets,
   isMember,
   hasStartDate,
+  examples,
   onAdd,
   onUpdate,
   onDelete,
@@ -79,6 +88,7 @@ export function TicketsTab({
             initial={t}
             saving={pending}
             saveLabel="Save ticket"
+            examples={examples}
             onCancel={() => setEditingId(null)}
             onSave={(draft) => void run(() => onUpdate(t.id, draft))}
           />
@@ -117,6 +127,7 @@ export function TicketsTab({
           initial={null}
           saving={pending}
           saveLabel="Add ticket"
+          examples={examples}
           onCancel={() => setAdding(false)}
           onSave={(draft) => void run(() => onAdd(draft))}
         />
@@ -250,12 +261,14 @@ function TicketForm({
   initial,
   saving,
   saveLabel,
+  examples,
   onSave,
   onCancel,
 }: {
   initial: Ticket | null;
   saving: boolean;
   saveLabel: string;
+  examples: TicketExamples;
   onSave: (draft: TicketDraft) => void;
   onCancel: () => void;
 }) {
@@ -290,7 +303,7 @@ function TicketForm({
             type="text"
             value={fields.title}
             onChange={(e) => set({ title: e.target.value })}
-            placeholder={fields.kind === "hotel" ? "Hotel name" : "e.g. G2 · CA1858 · Disneyland"}
+            placeholder={TICKET_TITLE_EXAMPLES[fields.kind]}
             maxLength={80}
             autoFocus
             className={input}
@@ -324,30 +337,30 @@ function TicketForm({
               label="From"
               value={fields.from}
               onChange={(from) => set({ from })}
-              placeholder="Beijing or PEK"
+              placeholder={examples.flightFrom}
             />
             <AirportInput
               label="To"
               value={fields.to}
               onChange={(to) => set({ to })}
-              placeholder="Shanghai or SHA"
+              placeholder={examples.flightTo}
             />
           </>
         ) : (
           <>
             <label className={label}>
               From
-              <input type="text" value={fields.from} onChange={(e) => set({ from: e.target.value })} placeholder="Beijing" maxLength={60} className={input} />
+              <input type="text" value={fields.from} onChange={(e) => set({ from: e.target.value })} placeholder={examples.from} maxLength={60} className={input} />
             </label>
             <label className={label}>
               To
-              <input type="text" value={fields.to} onChange={(e) => set({ to: e.target.value })} placeholder="Shanghai" maxLength={60} className={input} />
+              <input type="text" value={fields.to} onChange={(e) => set({ to: e.target.value })} placeholder={examples.to} maxLength={60} className={input} />
             </label>
           </>
         )}
         <label className={label}>
           Price
-          <input type="text" value={fields.price} onChange={(e) => set({ price: e.target.value })} placeholder="¥553" maxLength={30} className={input} />
+          <input type="text" value={fields.price} onChange={(e) => set({ price: e.target.value })} placeholder={examples.price} maxLength={30} className={input} />
         </label>
         <label className={`${label} sm:col-span-2`}>
           Notes

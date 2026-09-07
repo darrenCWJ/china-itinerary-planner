@@ -23,6 +23,7 @@ import { forgetMyTrip } from "@/lib/myTrips";
 import { TRIP_NAV, toTripTabId, type TripTabId } from "@/lib/nav";
 import type { PlanOp } from "@/lib/planOps";
 import { getCountry } from "@/lib/countries";
+import { ticketExamples } from "@/lib/tickets";
 import { tripGateways, type TripGateways } from "@/lib/tripGateways";
 import { tripCountry, tripCurrency, type GuestTripPayload } from "@/lib/tripShared";
 import { useTripPayload } from "@/lib/useTripPayload";
@@ -197,6 +198,21 @@ export function TripView({ tripId }: { tripId: string }) {
   }
 
   const { data } = payload;
+  const gateways = tripGateways(data);
+  /**
+   * The Kit tab's placeholder hints, from the trip's own stops, gateways and
+   * currency (spec 2026-09-07 §1). Computed here rather than in the tab because
+   * `tripCurrency` reads the facts artifact, and this component already pays
+   * for it; the tab takes strings. A plain computation, not a memo: this sits
+   * below the early returns, and it is five string operations per render.
+   */
+  const examples = ticketExamples({
+    firstStop: data.destinationNames[0] ?? null,
+    lastStop: data.destinationNames[data.destinationNames.length - 1] ?? null,
+    arrival: gateways.arrival,
+    departure: gateways.departure,
+    currency: tripCurrency(data) ?? payload.currencySettings.home,
+  });
   const seasonMeta = SEASONS.find((s) => s.id === data.input.season);
   const checkedBy = new Map(payload.checks.map((c) => [c.key, c.by]));
   const todayIndex = currentDayIndex(data.startDate, data.plan.days.length);
@@ -295,7 +311,7 @@ export function TripView({ tripId }: { tripId: string }) {
           payload={payload}
           forcedAt={forcedAt}
           mutate={mutate}
-          gateways={tripGateways(data)}
+          gateways={gateways}
           onSaveGateways={isMember ? saveGateways : undefined}
         />
       )}
@@ -335,6 +351,7 @@ export function TripView({ tripId }: { tripId: string }) {
         <KitTab
           tickets={payload.tickets}
           hasStartDate={Boolean(data.startDate)}
+          ticketExamples={examples}
           onAddTicket={addTicket}
           onUpdateTicket={updateTicket}
           onDeleteTicket={deleteTicket}

@@ -136,7 +136,7 @@ export function ExpenseForm({
         <label className="text-xs font-medium text-[var(--ink-2)]">
           What was it?
           <input type="text" value={title} maxLength={80} className={inputCls}
-            onChange={(e) => setTitle(e.target.value)} placeholder="Hotpot dinner" />
+            onChange={(e) => setTitle(e.target.value)} placeholder="Group dinner" />
         </label>
         <label className="text-xs font-medium text-[var(--ink-2)]">
           Date
