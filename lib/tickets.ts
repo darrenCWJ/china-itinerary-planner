@@ -70,10 +70,10 @@ const EXAMPLE_PRICE_MAJOR = 553;
  * inputs; this module must stay a leaf that does not.
  *
  * Each half of a flight hint falls back on its own, so a trip with stops but
- * no gateway still reads "Lima or airport code". The destination half of both
- * `to` and `flightTo` refuses to repeat the origin: a one-city trip's only
- * stop is where you fly TO, and offering it as the "from" of the same flight
- * would be a hint that teaches the wrong thing.
+ * no gateway still reads "Lima or airport code". The destination half of
+ * both `to` and `flightTo` refuses to repeat the origin: on a one-city trip
+ * the only stop is offered once, as the origin, and the destination half
+ * falls back to City, so no hint ever reads Lima → Lima.
  */
 export function ticketExamples(input: TicketExampleInput): TicketExamples {
   const first = input.firstStop;

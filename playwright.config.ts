@@ -83,7 +83,8 @@ export default defineConfig({
       // gateways.spec.ts creates trips through the API with the saved
       // session, so it belongs to the signed-in project too. climate.spec.ts
       // drives the wizard through the world level to Peru with the saved
-      // session, so it belongs here too.
+      // session, so it belongs here too. tickets.spec.ts also creates a trip
+      // through the API under the saved session, so it belongs here as well.
       name: "chromium",
       testMatch: /(map|gateways|climate|tickets)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/user.json" },

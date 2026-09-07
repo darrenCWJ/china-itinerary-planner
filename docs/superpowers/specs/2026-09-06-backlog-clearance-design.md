@@ -1,7 +1,7 @@
 # Backlog clearance — design
 
 **Date:** 2026-09-06
-**Status:** approved by the owner's instruction ("fix all this first before looking at the roadmap"); the decisions below are the ones a reviewer may overrule.
+**Status:** shipped — PR #30, merged 2026-09-06. The decisions below are the ones a reviewer may overrule.
 **Scope:** every item that was still open after Phase 4 merged and was not a roadmap feature: three ops items, six deferred code items, and one stale handover document. Nothing here adds a feature.
 
 ## 0. What was found to be already done

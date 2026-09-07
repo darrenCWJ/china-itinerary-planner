@@ -1,7 +1,7 @@
 # Map + Timeline Explorer — Design
 
 Date: 2026-08-10
-Status: Approved (chat) — map style, placement and AI scope confirmed by user.
+**Status:** shipped 2026-08-10, before the repository had pull requests — since superseded by PRs #17 and #22 (the globe and the worldwide country/province maps)
 
 ## Goal
 

@@ -1,6 +1,7 @@
 # App Shell & Compulsory Login — Design
 
 **Goal:** Make signing in the front door of the app, give every page one consistent shell, and land signed-in users on their trips — while the two link-view surfaces (join-code guest view, `/b/*` briefings) keep working without an account.
+**Status:** shipped — PR #5, merged 2026-08-15
 
 **Confirmed decisions (2026-08-16):**
 
