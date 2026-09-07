@@ -1,14 +1,14 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { describe, expect, test } from "vitest";
+import { RENDERED_FIELDS } from "@/scripts/country-facts/facts.mjs";
 import {
-  COUNTRY_CODES,
   EXPECTED_COUNTRIES,
   MIN_FIELD_COVERAGE,
-  PLUG_LETTER_SET,
   REQUIRED_NAMES,
-  RENDERED_FIELDS,
-} from "@/scripts/ingest-country-facts.mjs";
+} from "@/scripts/country-facts/gate.mjs";
+import { COUNTRY_CODES } from "@/scripts/country-facts/io.mjs";
+import { PLUG_LETTER_SET } from "@/scripts/country-facts/picks.mjs";
 
 /**
  * The COMMITTED artifact, checked as data rather than as code.

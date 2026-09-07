@@ -136,7 +136,7 @@ export type CountryFactsIndex = Readonly<Record<string, CountryFacts>>;
  * Hand-verified overrides, applied per field and winning over the artifact.
  *
  * Empty, and that is the intended steady state rather than an unfinished job.
- * `scripts/ingest-country-facts.mjs` carries its own `CURATED_FACTS` for the
+ * `scripts/country-facts/curated.mjs` carries its own `CURATED_FACTS` for the
  * seven countries whose UPSTREAM shape defeats the withhold rules (NL, FR, PL,
  * ZW, MO for currency, and BE and AZ for the languages the territorial-scope
  * rule withheld — see `017468c`); those are repaired before the artifact is
@@ -266,7 +266,7 @@ const plugLetter = (value: unknown): string | undefined =>
 /**
  * Mains voltage, bounded to a range a socket plausibly carries.
  *
- * The 100–260 band mirrors the allowlist in scripts/ingest-country-facts.mjs,
+ * The 100–260 band mirrors the allowlist in scripts/country-facts/picks.mjs,
  * which is what turns Belize's upstream `550/220` into a withhold rather than
  * into "Belize runs at 550 V". Stated in both places on purpose: the ingest
  * gate protects the artifact, this one protects the render from an artifact
