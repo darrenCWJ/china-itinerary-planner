@@ -67,8 +67,10 @@ function renderStep(extras: Record<string, CatalogHit>) {
 }
 
 beforeEach(() => {
-  // PlaceSearch loads the open country's shard on mount. A country with no
-  // shard is a normal case it already swallows, so this is the quiet answer.
+  // PlaceSearch fetches the open country's shard on the search box's first
+  // focus or keystroke (since 2026-09-07), not on mount. A country with no
+  // shard is a normal case it already swallows, so this is the quiet answer
+  // either way.
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }))

@@ -57,8 +57,9 @@ function renderStep() {
 const level = () => screen.getByTestId("map-level").textContent;
 
 beforeEach(() => {
-  // PlaceSearch loads the open country's shard on mount; a 404 is a case it
-  // already swallows quietly.
+  // PlaceSearch fetches the open country's shard on the search box's first
+  // focus or keystroke (since 2026-09-07), not on mount; a 404 is a case it
+  // already swallows quietly either way.
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }))

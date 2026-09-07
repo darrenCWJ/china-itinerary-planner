@@ -113,8 +113,9 @@ in to exercise accounts and the wall.
 ### Data, and how it refreshes
 
 Every artifact the app reads is committed, so a clone runs without any ingest.
-Four workflows keep them fresh; each commits only when its artifact changed,
-and a commit deploys itself.
+Three workflows keep them fresh — each commits only when its artifact changed,
+and a commit deploys itself; the fourth, CI, runs on every push and pull
+request.
 
 | Workflow | When | Runs | Source (licence) |
 |---|---|---|---|

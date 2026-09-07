@@ -36,20 +36,20 @@ Phases 1–4 of the global-expansion roadmap
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  app/plan/page.tsx — 3-step wizard (client state)             │
+│  app/plan/page.tsx — 3-step wizard (client state)            │
 │                                                              │
 │  Step 1 DetailsStep           Step 2 DestinationStep         │
 │  · month, days, travellers    · globe → country → province   │
 │  · interests                  · curated cards, catalog and   │
 │                                 GeoNames search              │
 │                               · mark "already been"          │
-│              │                        │                       │
-│              └──────────┬─────────────┘                       │
-│                         ▼                                     │
-│  Step 3 PlanStep                                              │
-│  · buildItinerary(input, destinations)                        │
-│  · buildPackingList(input, destinations)                      │
-│  · create a shared trip → /trip/[id]                          │
+│              │                        │                      │
+│              └──────────┬─────────────┘                      │
+│                         ▼                                    │
+│  Step 3 PlanStep                                             │
+│  · buildItinerary(input, destinations)                       │
+│  · buildPackingList(input, destinations)                     │
+│  · create a shared trip → /trip/[id]                         │
 └──────────────────────────────────────────────────────────────┘
    lib/data (16 curated)  ·  data/catalog.json (695 Chinese cities)
    public/cities/<CC>.json (GeoNames, 246 countries)  ·  lib/countryFacts (Wikidata)
