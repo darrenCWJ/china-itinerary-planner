@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { dayDate, sortTickets, ticketOnDate } from "./tickets";
+import { dayDate, sortTickets, ticketOnDate, ticketExamples, TICKET_TITLE_EXAMPLES } from "./tickets";
 import type { Ticket } from "./tripShared";
+import { TICKET_KINDS } from "./meta";
 
 function ticket(partial: Partial<Ticket>): Ticket {
   return {
@@ -76,5 +77,80 @@ describe("sortTickets", () => {
     const input = [ticket({ id: "b", date: "2026-09-15" }), ticket({ id: "a", date: "2026-09-14" })];
     sortTickets(input);
     expect(input[0].id).toBe("b");
+  });
+});
+
+describe("ticketExamples", () => {
+  const PERU = {
+    firstStop: "Lima",
+    lastStop: "Cusco",
+    arrival: "LIM",
+    departure: "CUZ",
+    currency: "PEN",
+  };
+
+  it("uses the first and last stops and both gateways", () => {
+    expect(ticketExamples(PERU)).toEqual({
+      from: "Lima",
+      to: "Cusco",
+      flightFrom: "Lima or LIM",
+      flightTo: "Cusco or CUZ",
+      price: "PEN 553.00",
+    });
+  });
+
+  it("falls back half by half when a gateway is missing", () => {
+    const examples = ticketExamples({ ...PERU, arrival: null, departure: null });
+    expect(examples.flightFrom).toBe("Lima or airport code");
+    expect(examples.flightTo).toBe("Cusco or airport code");
+    // The train and other endpoints never carried a code, so they are unchanged.
+    expect(examples.from).toBe("Lima");
+    expect(examples.to).toBe("Cusco");
+  });
+
+  it("falls back to City when the trip has no stops", () => {
+    const examples = ticketExamples({ ...PERU, firstStop: null, lastStop: null });
+    expect(examples.from).toBe("City");
+    expect(examples.to).toBe("City");
+    expect(examples.flightFrom).toBe("City or LIM");
+    expect(examples.flightTo).toBe("City or CUZ");
+  });
+
+  it("does not offer the only stop as both ends of a one-city trip", () => {
+    const examples = ticketExamples({ ...PERU, lastStop: "Lima" });
+    expect(examples.from).toBe("Lima");
+    expect(examples.to).toBe("City");
+    expect(examples.flightFrom).toBe("Lima or LIM");
+    expect(examples.flightTo).toBe("City or CUZ");
+  });
+
+  it("renders the price through the app's own money formatter", () => {
+    // The same 553 the old placeholder used, in the trip's currency and in the
+    // notation the Money tab uses for it: a symbol where one is known, the
+    // code otherwise, and the currency's own number of decimals.
+    expect(ticketExamples({ ...PERU, currency: "CNY" }).price).toBe("¥553.00");
+    expect(ticketExamples({ ...PERU, currency: "JPY" }).price).toBe("JPY 553");
+    expect(ticketExamples({ ...PERU, currency: "KWD" }).price).toBe("KWD 553.000");
+  });
+
+  it("says Amount when the trip has no currency", () => {
+    expect(ticketExamples({ ...PERU, currency: null }).price).toBe("Amount");
+  });
+});
+
+describe("TICKET_TITLE_EXAMPLES", () => {
+  it("covers every ticket kind", () => {
+    for (const kind of TICKET_KINDS) {
+      expect(TICKET_TITLE_EXAMPLES[kind.id]).toMatch(/\S/);
+    }
+  });
+
+  it("names no carrier, station, venue or city from any one country", () => {
+    // The strings the old placeholders carried. A new example that quotes a
+    // real train, flight or attraction fails here, whichever country it is from.
+    const banned = /G2|CA1858|Disneyland|Beijing|Shanghai|PEK|SHA|¥/;
+    for (const text of Object.values(TICKET_TITLE_EXAMPLES)) {
+      expect(text).not.toMatch(banned);
+    }
   });
 });
