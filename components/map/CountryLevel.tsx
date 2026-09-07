@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { ARRIVABLE_AIRPORT_SIZES, type Airport } from "@/lib/airports";
+import type { Airport } from "@/lib/airports";
 import { getCountry } from "@/lib/countries";
 import type { ProjectionEntry } from "@/lib/countryProjection";
 import { nonOverlappingRadii } from "@/lib/dragLayer";
@@ -9,6 +9,7 @@ import { IDENTITY_TRANSFORM } from "@/lib/mapTransform";
 import { MAIN_AIRPORT_LABEL, mainAirportFor } from "@/lib/mainAirport";
 import type { ProvinceFile } from "@/lib/provinceTopology";
 import { regionSchemeFor, type RegionId } from "@/lib/regionScheme";
+import { AirportLayer } from "./AirportLayer";
 import { CountryPlaceList } from "./CountryPlaceList";
 import { buildCountryView } from "./countryView";
 import {
@@ -21,20 +22,14 @@ import {
 } from "./mapShared";
 import {
   ADMIN1_MAX_ZOOM_K,
-  AIRPORT_MARK,
-  AIRPORT_STROKE,
-  FOCUS_RING,
-  labelFor,
-  MARKER_STROKE,
-  OUTLINE_STROKE,
   paintedAt,
   ROUTE_STROKE,
-  SELECTION_RING,
   TAP_MIN_R_FALLBACK,
   tapTargetRadius,
-  UNIT_STROKE,
 } from "./markerGeometry";
+import { MarkerLayer } from "./MarkerLayer";
 import { markerFills, markerMarks, projectPlaces, routePath, visibleEntries } from "./markerLayout";
+import { UnitsLayer } from "./UnitsLayer";
 import { useMarkerSelection } from "./useMarkerSelection";
 import { useRenderedWidth } from "./useRenderedWidth";
 import { NO_CLIMATE } from "./climateIndex";
@@ -534,33 +529,6 @@ export function CountryLevel({
    */
   const cardClimate = cardPlace === null ? null : placeClimateFor(cardPlace, month, climate);
 
-  /**
-   * §10.1's layer, projected once per country rather than once per frame.
-   *
-   * Empty while the layer is off, so a country whose airports have landed pays
-   * nothing for them until someone asks: this level re-renders on every hover —
-   * `onHoverPlace` reports up to `MapExplorer`, which holds the tooltip — and a
-   * `filter().map()` in the JSX would re-project all 502 of the United States'
-   * on every mouse move. Per country the drawn set is a median of 4 and a
-   * maximum of those 502, across the 233 countries with any at all.
-   *
-   * `project` and never `points`: that array is indexed by place and is what
-   * `caps` and `marks` were computed over. An airport is not one of them, and
-   * §10.1's "never a selectable trip stop" is exactly that the two never merge.
-   */
-  const airportMarks = useMemo(
-    () =>
-      showAirports
-        ? airports
-            .filter((airport) => ARRIVABLE_AIRPORT_SIZES.has(airport.size))
-            .map((airport) => {
-              const [x, y] = project(airport.lon, airport.lat);
-              return { iata: airport.iata, x, y };
-            })
-        : [],
-    [showAirports, airports, project]
-  );
-
   const reportHover = createHoverReporter<MapPlace>(containerRef, onHoverPlace);
 
   return (
@@ -601,97 +569,9 @@ export function CountryLevel({
               transition: `transform ${ZOOM_MS}ms cubic-bezier(0.33, 1, 0.68, 1)`,
             }}
           >
-            <g data-units="">
-              {units.map((unit) => (
-                <path
-                  key={unit.id}
-                  // Only the selectable ones are marked, and it is the same
-                  // `selectable` flag `selectableFeatures` is indexed off, so
-                  // what is marked here and what a group can name are one
-                  // decision: a unit that is not a subdivision must not become
-                  // one by being drawn.
-                  //
-                  // "Marked" and "zoomable" are two things, and §6.6 D10 is
-                  // where they part: a country with ONE subdivision still has
-                  // that subdivision, and still has nowhere to zoom. The mark
-                  // states the first; `offersRegions` decides the second.
-                  data-unit={unit.selectable ? unit.id : undefined}
-                  d={unit.d}
-                  fill="var(--surf-2)"
-                  stroke="var(--paper)"
-                  strokeWidth={UNIT_STROKE / k}
-                >
-                  {offersRegions && unit.selectable && unit.label && <title>{unit.label}</title>}
-                </path>
-              ))}
-            </g>
+            <UnitsLayer units={units} outline={outline} offersRegions={offersRegions} k={k} />
 
-            {/* The national border, over the seams the units drew. */}
-            {outline && (
-              <path
-                data-outline=""
-                d={outline}
-                fill="none"
-                stroke="var(--ink-2)"
-                strokeOpacity={0.55}
-                strokeWidth={OUTLINE_STROKE / k}
-                className="pointer-events-none"
-                aria-hidden
-              />
-            )}
-
-            {/*
-              §10.1's airport layer, and decorative in a stronger sense than a
-              `readOnly` marker is. A read-only marker is a control the surface
-              cannot honour; an airport is not a place at all — so there is no
-              role to drop, no card to open, and no `MapPlace` to hand to
-              `onTogglePlace`, because `Airport` is a separate type that never
-              becomes one.
-
-              `aria-hidden`, because the airport a reader can act on is the one
-              the card names — a dialog they can open, focus and read — and an
-              unlabelled diamond is not a second way to reach it.
-              `pointer-events-none` and beneath the markers for one reason
-              between them: a decoration must never take a tap that belonged to
-              a city's `--tap-min` target, nor sit on top of one.
-
-              §10.1 also asks for the layer "below a zoom threshold", and that
-              cannot be a number here. `k` is not a stable quantity — 3,039 of
-              the 4,525 zoomable groups clamp against `ADMIN1_MAX_ZOOM_K`, and
-              `transformForFeatures` answers `IDENTITY_TRANSFORM` with `k === 1`
-              for a group whose bounds are non-finite, which is a case this
-              level actually sees. The threshold that does exist is the LEVEL:
-              airports are drawn on a country and never on the world map, where
-              4,132 marks would be a grey wash over every continent.
-
-              Inside the country the province zoom does not gate the layer
-              either — it MOVES it, exactly as it moves the cities. §6.5 filters
-              cities to the framed group through `cityProvince`; nothing
-              assigns an airport to a province, so the choice is between drawing
-              them all and letting the frame clip, or drawing none. None would
-              make a toggle pressed before a zoom look broken after it.
-            */}
-            {airportMarks.length > 0 && (
-              <g data-airports="" className="pointer-events-none" aria-hidden>
-                {airportMarks.map(({ iata, x, y }) => (
-                  <rect
-                    key={iata}
-                    data-airport={iata}
-                    x={x - AIRPORT_MARK / k}
-                    y={y - AIRPORT_MARK / k}
-                    width={(2 * AIRPORT_MARK) / k}
-                    height={(2 * AIRPORT_MARK) / k}
-                    // A rotation, which the zoom neither scales nor needs to:
-                    // about the airport's own projected point, so the diamond
-                    // stays centred on it at every `k`.
-                    transform={`rotate(45 ${x} ${y})`}
-                    fill="var(--paper)"
-                    stroke="var(--ink-2)"
-                    strokeWidth={AIRPORT_STROKE / k}
-                  />
-                ))}
-              </g>
-            )}
+            <AirportLayer airports={airports} showAirports={showAirports} project={project} k={k} />
 
             {/*
               Suggested route, in neutral ink for the reason `ChinaLevel` gives:
@@ -725,105 +605,17 @@ export function CountryLevel({
               label and its hover, and drops every attribute that claimed it was
               a control.
             */}
-            <g data-markers="">
-              {/*
-                `visible`, and its two indices are two different things. `index`
-                is the place's position in the country — what `marks` and `caps`
-                were computed over, so a zoom re-uses them untouched — while
-                `order` is its position among the markers actually drawn, which
-                is the frame the roving tabindex's arrow keys step through.
-                Passing the wrong one moves the caret to a city that is not on
-                screen.
-              */}
-              {visible.map(({ place, index }, order) => {
-                const { x, y, r, hitR } = marks[index];
-                const isSelected = selected.includes(place.id);
-                const stopIndex = routeIds.indexOf(place.id);
-                return (
-                  <g
-                    key={place.id}
-                    data-place={place.id}
-                    {...markerProps(place, order)}
-                    onMouseEnter={(e) => reportHover(place, e)}
-                    onMouseMove={(e) => reportHover(place, e)}
-                    onMouseLeave={() => reportHover(null)}
-                  >
-                    {/* Hit area first, so the visible dot is never the target's
-                        edge — the ordering `WorldMap` establishes. */}
-                    <circle data-hit="" cx={x} cy={y} r={hitR} fill="transparent" />
-                    {place.id === focusedId && (
-                      // Dashed, so keyboard focus stays distinguishable from
-                      // selection when they land on the same place — the same
-                      // distinction `worldLevelShared`'s `strokeFor` draws.
-                      <circle
-                        data-focus-ring=""
-                        cx={x}
-                        cy={y}
-                        r={r + FOCUS_RING / k}
-                        fill="none"
-                        stroke="var(--ink-0)"
-                        strokeWidth={1.2 / k}
-                        strokeDasharray={`${3 / k} ${2 / k}`}
-                        className="pointer-events-none"
-                      />
-                    )}
-                    {isSelected && (
-                      <circle
-                        data-selection-ring=""
-                        cx={x}
-                        cy={y}
-                        r={r + SELECTION_RING / k}
-                        fill="none"
-                        stroke="var(--seal)"
-                        strokeWidth={2 / k}
-                        opacity={0.9}
-                      />
-                    )}
-                    <circle
-                      data-dot=""
-                      cx={x}
-                      cy={y}
-                      r={r}
-                      fill={fills[index]}
-                      fillOpacity={place.kind === "curated" ? 0.95 : 0.8}
-                      stroke="var(--paper)"
-                      strokeWidth={MARKER_STROKE / k}
-                    />
-                    {isSelected && stopIndex >= 0 && (
-                      <text
-                        data-stop=""
-                        x={x}
-                        y={y + (r > 5 / k ? 3.2 / k : 2.8 / k)}
-                        textAnchor="middle"
-                        fontSize={Math.max(8 / k, r * 1.1)}
-                        fontWeight={700}
-                        fill="var(--paper)"
-                        className="pointer-events-none"
-                      >
-                        {stopIndex + 1}
-                      </text>
-                    )}
-                    {labelFor(place) && (
-                      <text
-                        data-label=""
-                        x={x}
-                        y={y - r - 3 / k}
-                        textAnchor="middle"
-                        fontSize={11 / k}
-                        fontWeight={600}
-                        fill="var(--ink-0)"
-                        stroke="var(--paper)"
-                        strokeWidth={3 / k}
-                        paintOrder="stroke"
-                        className="pointer-events-none"
-                      >
-                        {place.name}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-            </g>
+            <MarkerLayer
+              visible={visible}
+              marks={marks}
+              fills={fills}
+              selected={selected}
+              routeIds={routeIds}
+              focusedId={focusedId}
+              k={k}
+              markerProps={markerProps}
+              reportHover={reportHover}
+            />
           </g>
         </svg>
 
