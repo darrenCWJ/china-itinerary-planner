@@ -2,29 +2,47 @@
 
 **Live**: <https://china-itinerary-planner.vercel.app> · **Source**: <https://github.com/darrenCWJ/china-itinerary-planner>
 
-Plan a trip to China in three steps — then take everyone along: shared trips
-with join codes, a live-syncing itinerary you can tick off mid-trip, and a
-searchable catalog of **every city in China**, not just the highlights.
+Plan a trip to any country in three steps — pick places on a globe and a
+country map, say when and who is going, get a day-by-day plan — then take
+everyone along: shared trips with accounts, a live-syncing itinerary you can
+tick off mid-trip, tickets, packing, money and a journal. It began as a China
+planner and China is still the deepest country, with 16 curated destinations
+and a catalog of every Chinese city; beside them sits a worldwide catalog of
+58,759 GeoNames cities across 246 countries.
 
 ## Features
 
 ### Planning
-- **16 curated featured destinations** (Beijing, Shanghai, Chengdu, Sanya,
-  Harbin, Zhangjiajie…) with what each is **known for**, seasonal notes,
-  signature foods and interest-tagged activities.
-- **All-China catalog** — search any city in the country (ingested from
-  Wikidata + Wikipedia, with notable attractions mapped to each city) and add
-  it to your trip alongside the curated picks.
-- **"Already been" tracking** — visited places drop out of selection
-  (localStorage) and can be restored any time.
+- **A globe, then a country, then its provinces** — the destinations step
+  opens on an orthographic globe; every one of 246 countries opens to a map
+  drawn from Natural Earth admin-1 units, with a province picker for the 212
+  that have more than one. Search reaches every place the map cannot.
+- **Places to pick** — 16 curated Chinese destinations with what each is
+  **known for**, seasonal notes, signature foods and interest-tagged
+  activities; a Wikidata catalog of 695 Chinese cities with their attractions;
+  and a GeoNames shard for every country — cities ranked for notability rather
+  than size, the top 30 per country carrying a Wikipedia summary.
+- **When to go** — every city is coloured by how good the chosen month is:
+  China from its curated climate tables, everywhere else from CHELSA 1981–2010
+  normals with an elevation correction, under a legend and a note that says
+  what the model does not know.
+- **Airports and gateways** — an airport layer on every country map, a
+  suggested route with real airport-pair estimates, and fly-in/fly-out
+  gateways stamped on every trip.
+- **Country facts as tips** — currency, voltage and plugs, emergency numbers,
+  driving side, calling code and languages from Wikidata; a gap note names
+  what no source supplies rather than guessing.
 - **Smart itinerary generator** — allocates days across cities, fills
-  morning/afternoon/evening slots, respects seasons, boosts must-sees and your
-  interests, inserts arrival/rail-transfer/departure blocks.
+  morning/afternoon/evening slots, respects seasons in both hemispheres,
+  boosts must-sees and your interests, inserts arrival, transfer and departure
+  blocks.
 - **Packing list builder** — season-, interest- and destination-aware.
+- **"Already been" tracking** — visited places drop out of selection and can
+  be restored any time.
 
 ### Travelling together (shared trips)
-- Turn any plan into a **shared trip**: you get a short link and a 6-letter
-  join code; everyone who joins sees the same live itinerary.
+- Turn any plan into a **shared trip**: members sign in, and a 6-letter join
+  code gives anyone a read-only view of the same live itinerary.
 - **Shared ticking** — packing items and activities can be checked off by any
   member, with attribution ("done by Bob"), synced to all members within
   seconds (polling).
@@ -32,79 +50,106 @@ searchable catalog of **every city in China**, not just the highlights.
   keep the page open on your phone during the trip.
 
 ### During the trip
-- **Tracker tab** — countdown before departure; during the trip a live
+- **Plan tab** — the day-by-day plan, editable by any member, with the route
+  map and the gateways strip.
+- **Today tab** — countdown before departure; during the trip a live
   dashboard: day X of Y, now/next by time of day, tick-off synced with the
-  itinerary, spend snapshot and stats (cities reached, rail km); a recap
-  once you're home.
-- **Trip journal** — day-by-day entries from any member, with photo uploads
-  on self-hosted installs (writable disk) and photo links everywhere.
+  itinerary, spend snapshot and stats; a recap once you're home.
+- **Kit tab** — tickets, trains and stays with airport autocomplete for
+  flights, and the packing list.
 - **Money tab** — multi-currency group expenses with equal splits,
   per-currency totals, optional converted totals via manual rates,
   who-owes-whom balances, settle-up suggestions and repayment tracking.
+- **Trip journal** — day-by-day entries from any member, with photo uploads
+  on self-hosted installs (writable disk) and photo links everywhere.
 
 ### API-first
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/trips` | POST | Create a shared trip (returns id + join code) |
-| `/api/trips/:id` | GET | Fetch trip state (member session = full; `?code=` = guest view; else 403) |
-| `/api/trips/:id` | PATCH | Update trip input — plan regenerates server-side |
+| `/api/trips/:id` | GET · PATCH | Trip state (member session = full; `?code=` = guest view; else 403) · update the input, plan regenerates (version-guarded) |
+| `/api/trips/:id/plan` | POST | One member edit to the plan — add, update, remove or move an item, add a day (version-guarded) |
 | `/api/trips/:id/join` | POST · GET | Join/claim with account + code · list claimable names |
 | `/api/trips/:id/checks` | POST | Tick/untick an item `{ key, checked }` (attributed to the signed-in member) |
-| `/api/me/trips` | GET | Signed-in user's trips |
-| `/api/auth/*` | * | Better Auth (signup, login, sessions, admin) |
-| `/api/destinations` | GET | Search the all-China catalog (`?q=`) |
-| `/api/destinations/resolve` | GET | Full plannable data for catalog ids (`?ids=`) |
-| `/api/destinations/refresh` | POST | **Self-update**: re-run the Wikidata/Wikipedia ingestion |
-| `/api/destinations/refresh` | GET | Catalog status (age, counts, refresh running?) |
-| `/api/trips/:id/briefing` | GET | Read the current share-link state (members only) |
-| `/api/trips/:id/briefing` | POST | Create, toggle or revoke the share link (members only) |
+| `/api/trips/:id/tickets` (+`/:ticketId`) | POST · PATCH/DELETE | Tickets and bookings (members only) |
 | `/api/trips/:id/expenses` (+`/:expenseId`) | POST · PATCH/DELETE | Group expenses (members only) |
 | `/api/trips/:id/settlements` (+`/:settlementId`) | POST · DELETE | Repayments (members only) |
 | `/api/trips/:id/journal` (+`/:entryId`) | POST · PATCH/DELETE | Journal (edits author-only) |
-| `/api/trips/:id/currency` | PUT | Home currency + conversion rates |
+| `/api/trips/:id/currency` | PUT | Home currency + conversion rates (version-guarded) |
 | `/api/trips/:id/gateways` | PUT | Arrival and departure airports, IATA or null (members only; never rebuilds the plan) |
+| `/api/trips/:id/briefing` | GET · POST | Read the share-link state · create, toggle or revoke the share link (members only) |
 | `/api/trips/:id/photos` (+`/:photoId`) | POST · GET | Photo upload/serve (writable hosts) |
+| `/api/me/trips` | GET | Signed-in user's trips |
+| `/api/me/prefs` | GET · PUT | The signed-in user's preferences (accent, globe or flat world) |
+| `/api/auth/*` | * | Better Auth (signup, login, sessions, admin) |
+| `/api/destinations` | GET | Search the Wikidata catalog of Chinese cities (`?q=&country=`) |
+| `/api/destinations/resolve` | GET | Full plannable data for catalog and GeoNames ids (`?ids=`) |
+| `/api/destinations/refresh` | POST · GET | **Self-update**: re-run the Wikidata/Wikipedia ingestion (local only) · catalog status (age, counts, refresh running?) |
+| `/api/map/cities` | GET | The Wikidata catalog's cities for one country (`?country=`) |
+| `/api/map/airports` | GET | One country's airports, for the map layer and the route estimator (`?country=`) |
+| `/api/airports/search` | GET | Airport autocomplete for flight tickets and gateways (`?q=`) |
+| `/api/cities/enrich` | GET | Wikipedia enrichment for cities the build did not pre-fetch (signed in) |
+| `/api/rates` | GET | A cached exchange-rate table, for display only (`?base=`, signed in) |
+| `/api/wallet` · `/api/wallet/fetch` · `/api/wallet/put` | POST | This device's trip list, synced by a secret code: create · fetch · version-guarded replace |
 
-All inputs are validated with Zod; trip state lives in SQLite (`data/app.db`).
+All inputs are validated with Zod. Trip state lives in Postgres on Vercel and
+in SQLite locally — see Deploying.
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env.local             # optional; see Environment variables
-node scripts/ingest-destinations.mjs   # build the all-China catalog (once; ~5-10 min)
-npm run dev                            # start the app
-npm test                               # unit tests
+cp .env.example .env.local     # optional; see Environment variables
+npm run dev                    # every data artifact is committed — this is a working app
+npm test                       # unit tests (Vitest: a node project and a jsdom project)
+npm run test:e2e               # Playwright, against a dev server it starts on :3100
+npx next build                 # what CI runs after the tests
 ```
-
-The app works without the catalog too — you just get the 16 curated
-destinations until it's generated.
 
 `.env.local` is optional locally: with no `BETTER_AUTH_SECRET` the app runs in
 no-accounts mode, with the login wall off and everything open. Fill the secret
 in to exercise accounts and the wall.
 
+### Data, and how it refreshes
+
+Every artifact the app reads is committed, so a clone runs without any ingest.
+Four workflows keep them fresh; each commits only when its artifact changed,
+and a commit deploys itself.
+
+| Workflow | When | Runs | Source (licence) |
+|---|---|---|---|
+| Refresh airports | daily, 08:23 UTC | `scripts/ingest-airports.mjs` | OurAirports (public domain) |
+| Refresh cities | daily, 08:53 UTC, three jobs | `ingest-cities.mjs` → `enrich-cities.mjs` → `ingest-country-facts.mjs` | GeoNames cities500 (CC BY 4.0) · Wikidata (CC0) + Wikipedia summaries (CC BY-SA) |
+| Refresh climate | by hand (`workflow_dispatch`) | `scripts/ingest-climate.mjs` | CHELSA V2.1 1981–2010 (CC0), ~10.7 GB of rasters |
+| CI | every push and PR | `npm test`, `next build`, Playwright | — |
+
+The province, projection, globe and world topologies are built from Natural
+Earth (public domain) by `scripts/build-*.mjs` when the geometry changes, and
+the China catalog (`data/catalog.json`) by hand:
+`node scripts/ingest-destinations.mjs` (~5–10 min), commit, redeploy. GeoNames
+data is CC BY 4.0 — the credit renders on every surface that shows a city name,
+and `lib/contracts.test.ts` fails the build if it ever does not.
+
 ## Project layout
 
 ```
-app/                Wizard page, /trip/[id] shared trip page, /api routes
-components/         Wizard steps, PlaceSearch, TripView (live trip UI)
-lib/
-  data/             Curated destination dataset
-  itinerary.ts      Scheduling engine (+ tests)
-  packing.ts        Packing list builder (+ tests)
-  tripShared.ts     Types shared between client, server and API payloads
-  server/
-    db.ts           SQLite connection + schema
-    tripStore.ts    Trip/member/check repository (+ tests)
-    catalog.ts      All-China catalog loading, search, plan conversion (+ tests)
-    planService.ts  Server-side plan snapshot builder
-    schemas.ts      Zod validation for every API input
-scripts/
-  ingest-destinations.mjs   Wikidata/Wikipedia → data/catalog.json
+app/                  /plan wizard, / trips home, /trip/[id], /b/[code] briefing, /login + /signup, /account, /api routes
+components/
+  auth/  briefing/  home/  plan/  shell/  trip/
+  map/                the globe, the country map, the province level, layers, hooks (see components/map/MapExplorer.tsx)
+lib/                  pure planning logic, shared types, clients (+ tests beside each module)
+  data/               the 16 curated destinations
+  server/             airports, catalog, cityIndex (server-only artifacts); auth, session, stores (sqlite + postgres), schemas
+  contracts.test.ts   whole-tree contracts: one nav, one credit per surface, no second fetch of trip data
+scripts/              ingest-*.mjs (data), enrich-cities.mjs, build-*.mjs (geometry), sample-climate-anchors.mjs
+data/                 committed artifacts and their reports (airports, catalog, cities-index, country-facts, climate anchors)
+public/               cities/<CC>.json, provinces/<CC>.json, climate/<CC>.json (246 each), country-projections.json, world-globe.json
+e2e/                  Playwright specs and the saved session (auth.setup.ts)
+test/                 shared test harnesses that must live outside the contract-scanned roots
 docs/
-  RESEARCH.md       Data-source research (APIs, open data, scraping legality)
-  PLAN.md           Architecture and roadmap
+  PLAN.md             Where things stand and what is open
+  RESEARCH.md         Data-source research (APIs, open data, scraping legality), August 2026
+  superpowers/        specs (the design record), plans, handoffs
 ```
 
 ## How "many people can join" works
