@@ -1,0 +1,314 @@
+/**
+ * ingest-climate — constants, `pixelFor`, `decodeSample`, `tupleFor`.
+ *
+ * Moved verbatim out of scripts/ingest-climate.mjs on 2026-09-07 (spec
+ * 2026-09-07-unscheduled-items §2.1) so that file stays under the 800-line
+ * guidance; every docblock below is that file's, and the build it describes
+ * is unchanged. The entry point — `main`, the run guard — is still
+ * scripts/ingest-climate.mjs.
+ */
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+export const MONTHS_PER_YEAR = 12;
+
+/**
+ * The artifact tuple: five blocks of twelve, calendar-indexed, January at
+ * index 0 in every block.
+ *
+ *     [ 0..11] lo      °C           tasmin
+ *     [12..23] hi      °C           tasmax
+ *     [24..35] precip  mm/month     pr
+ *     [36..47] cloud   %            clt
+ *     [48..59] td      °C           derived, see `dewPointC`
+ *
+ * 60 and not the 48 the probe recommended, for three reasons recorded in
+ * `data/climate-probe.md`: §9.4's mugginess term needs a dew point, §13
+ * forbids shipping the raw humidity field it is derived from, and the probe
+ * measured that a fifth block still leaves the worst shard under 40% of the
+ * gzip cap.
+ *
+ * The first four names are also the sample fields, in block order; `hurs`
+ * comes last because it is an input that is never itself written.
+ */
+export const SAMPLE_FIELDS = ['tasmin', 'tasmax', 'pr', 'clt', 'hurs'];
+const BLOCKS = 5;
+export const TUPLE_LENGTH = BLOCKS * MONTHS_PER_YEAR;
+
+/**
+ * The five blocks in tuple order: what each is called, its unit, and the band
+ * outside which `assertRowShape` refuses the row.
+ *
+ * The bands are `lib/climateShard.ts`'s own, restated rather than imported —
+ * a build script cannot import the app's TypeScript, and both ends checking
+ * independently is the point rather than the cost. They are deliberately wide
+ * of anything CHELSA reports (`data/climate-report.md`, "## Measured ranges",
+ * has what it actually contains): the failure they exist for is a decode that
+ * skipped a raster's declared offset, which puts Singapore at 298 °C — well
+ * inside a naive "cold sometimes, hot sometimes" bound and outside this one.
+ */
+export const BLOCK_META = [
+  { label: 'lo', unit: '°C', min: -90, max: 60 },
+  { label: 'hi', unit: '°C', min: -90, max: 60 },
+  { label: 'precip', unit: 'mm/month', min: 0, max: 10_000 },
+  { label: 'cloud', unit: '%', min: 0, max: 100 },
+  { label: 'td', unit: '°C', min: -90, max: 60 },
+];
+
+/**
+ * The August–Roche–Magnus coefficients, in the form Alduchov & Eskridge (1996)
+ * fit: `b` is dimensionless and `c` is in °C. Stated to ±0.4 °C over −40 to
+ * +50 °C, which covers the whole range the catalog spans and is well inside
+ * the resolution of an integer artifact.
+ */
+const MAGNUS_B = 17.625;
+const MAGNUS_C = 243.04;
+
+// ---------------------------------------------------------------------------
+// pixelFor
+// ---------------------------------------------------------------------------
+
+/**
+ * One raster's transform, read from that raster's own tags.
+ *
+ * `resY` is a POSITIVE degrees-per-row, i.e. a magnitude. geotiff's
+ * `getResolution()` reports it negative for a north-up image (y increases
+ * southward while latitude decreases), so whoever builds this object must take
+ * the absolute value before `pixelFor` counts rows downward from `originY`
+ * itself. `pixelFor` THROWS if `resX`/`resY`/`width`/`height` is not finite
+ * and positive, or if `originX`/`originY` is not finite, rather than silently
+ * nulling out every city on the wrong side of an unenforced sign.
+ *
+ * @typedef {object} Grid
+ * @property {number} width   columns
+ * @property {number} height  rows
+ * @property {number} originX west edge of column 0, degrees
+ * @property {number} originY north edge of row 0, degrees
+ * @property {number} resX    degrees per column, positive
+ * @property {number} resY    degrees per row, positive
+ */
+
+/**
+ * The nearest cell to a coordinate, or null when the coordinate is off the
+ * raster. Nearest-cell, never interpolated: CHELSA is a modelled surface and
+ * blending four cells of it would invent a place that is not in the model.
+ *
+ * The `floor` is unadjusted because both rasters are PixelIsArea — see the
+ * module docblock. A half-cell correction would be right for a node-registered
+ * grid and is silently wrong here: it moves every city up to half a cell
+ * north-west, which is nothing at 1 km and a real error near a coast on `clt`.
+ *
+ * The bounds check is what makes "off the raster" an answer distinct from "on
+ * it" rather than an index the caller has no way to recognise as wrong. The
+ * probe found 0 of 58,757 cities outside either grid, so it should never fire
+ * — but +84 is a real edge on the 1 km grid and the catalog grows.
+ *
+ * A malformed `grid` is a different wrong from a coordinate off the raster:
+ * it is the caller's bug, not a gap in the data — the same distinction
+ * `tupleFor` draws when it throws on a wrong-length column instead of
+ * returning null. So this throws instead of nulling when `resX`, `resY`,
+ * `width` or `height` is not finite and positive, or when `originX` or
+ * `originY` is not finite. The concrete case that motivates it: geotiff's
+ * `getResolution()` reports `resY` NEGATIVE for a north-up raster (see the
+ * `Grid` typedef above), and a grid built without correcting that sign would
+ * otherwise return null for every city south of the origin — the whole
+ * catalog — while every downstream shape and budget gate kept passing.
+ *
+ * @param {number} lon
+ * @param {number} lat
+ * @param {Grid} grid
+ * @returns {{ x: number, y: number } | null}
+ * @throws {Error} if `grid` has a non-finite/non-positive resolution or size,
+ *   or a non-finite origin
+ */
+export function pixelFor(lon, lat, grid) {
+  for (const field of ['resX', 'resY', 'width', 'height']) {
+    if (!Number.isFinite(grid[field]) || grid[field] <= 0) {
+      throw new Error(`pixelFor expects grid.${field} to be a finite positive number, got ${grid[field]}`);
+    }
+  }
+  for (const field of ['originX', 'originY']) {
+    if (!Number.isFinite(grid[field])) {
+      throw new Error(`pixelFor expects grid.${field} to be a finite number, got ${grid[field]}`);
+    }
+  }
+
+  const x = Math.floor((lon - grid.originX) / grid.resX);
+  const y = Math.floor((grid.originY - lat) / grid.resY);
+  // An index has to be an index. `Math.floor` of a finite number always is,
+  // so this only rejects NaN and ±Infinity — which the range check below
+  // cannot, because every comparison against NaN is false and a NaN pixel
+  // would sail through it and read `undefined` out of the raster.
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
+  if (x < 0 || x >= grid.width) return null;
+  if (y < 0 || y >= grid.height) return null;
+  return { x, y };
+}
+
+// ---------------------------------------------------------------------------
+// decodeSample
+// ---------------------------------------------------------------------------
+
+/**
+ * One raster's `GDAL_METADATA` scaling plus its `GDAL_NODATA` tag.
+ *
+ * `nodata` is nullable because a file may declare none, and because the value
+ * a file does declare need not be representable in its own samples: `tasmin`,
+ * `tasmax` and `pr` all declare −2147483647 against 16-bit unsigned data, so
+ * for those three the tag is inapplicable and no raw value is a sentinel.
+ *
+ * @typedef {object} Scaling
+ * @property {number} scale
+ * @property {number} offset
+ * @property {number | null} [nodata]
+ */
+
+/**
+ * A raw sample turned into its real-world value, or null when the file says
+ * that cell holds nothing.
+ *
+ * The second argument is a scaling read from the file, not a variable name.
+ * Naming a variable would only be a lookup into constants this module would
+ * then have to carry, and those constants are exactly what the probe found the
+ * spec had wrong — the offset is missing from §9.1 and the sentinel is right
+ * about one file of four. Passing the file's own tags removes the chance to be
+ * wrong about them.
+ *
+ * Absence has to be caught here, before the arithmetic: 65535 under `clt`'s
+ * 0.01 scale is 655.35% cloud, and `Number.isFinite` is perfectly happy with
+ * it. Nothing downstream would notice.
+ *
+ * A missing or unparseable sentinel means "no sentinel", which is the right
+ * default but also a silent one — so the ingest asserts the tag it read rather
+ * than trusting this to have caught anything.
+ *
+ * Deliberately unrounded. `tupleFor` rounds, and the dew point is computed
+ * from these fractions before it does.
+ *
+ * @param {number} raw
+ * @param {Scaling} scaling
+ * @returns {number | null}
+ */
+export function decodeSample(raw, scaling) {
+  if (raw === scaling.nodata) return null;
+  return raw * scaling.scale + scaling.offset;
+}
+
+// ---------------------------------------------------------------------------
+// tupleFor
+// ---------------------------------------------------------------------------
+
+/**
+ * `Math.round`, with −0 folded back to 0.
+ *
+ * −0 is an integer and `JSON.stringify` writes it as "0", so the artifact on
+ * disk is unaffected — but `Object.is` tells it apart from 0 and so does every
+ * strict comparison, which makes an in-memory tuple carrying it not the tuple
+ * it prints as. Any month between −0.5 and 0 °C lands there, which is a great
+ * many towns in a great many Marches.
+ *
+ * @param {number} value
+ * @returns {number}
+ */
+function asInt(value) {
+  const rounded = Math.round(value);
+  return rounded === 0 ? 0 : rounded;
+}
+
+/**
+ * Dew point in °C from air temperature and relative humidity, by the standard
+ * August–Roche–Magnus approximation:
+ *
+ *     γ  = ln(RH / 100) + (b · T) / (c + T)
+ *     Td = (c · γ) / (b − γ)
+ *
+ * `T` is the monthly mean, taken as the midpoint of `lo` and `hi` on the
+ * UNROUNDED decoded temperatures, and `RH` is the monthly mean relative
+ * humidity straight off `hurs`.
+ *
+ * Derived here rather than shipped raw because §9.4's mugginess term wants a
+ * dew point and §13 is explicit that v1 ships the correction, not the raw
+ * field. The humidity BIAS correction (spec fix 2) is NOT applied here on
+ * purpose: it belongs in the fit model at read time, where it can be retuned
+ * without re-running an hour-long, 6.2 GB ingest.
+ *
+ * @param {number} tempC
+ * @param {number} relativeHumidityPct
+ * @returns {number}
+ */
+function dewPointC(tempC, relativeHumidityPct) {
+  const gamma =
+    Math.log(relativeHumidityPct / 100) + (MAGNUS_B * tempC) / (MAGNUS_C + tempC);
+  return (MAGNUS_C * gamma) / (MAGNUS_B - gamma);
+}
+
+/**
+ * Twelve months of decoded, unrounded samples for one city, as `decodeSample`
+ * returns them — nulls and all.
+ *
+ * @typedef {object} CitySamples
+ * @property {(number | null)[]} tasmin  monthly mean daily minimum, °C
+ * @property {(number | null)[]} tasmax  monthly mean daily maximum, °C
+ * @property {(number | null)[]} pr      monthly precipitation, mm
+ * @property {(number | null)[]} clt     monthly mean cloud area fraction, %
+ * @property {(number | null)[]} hurs    monthly mean relative humidity, %
+ */
+
+/**
+ * One city's 60-int artifact tuple, or null when the city cannot be written.
+ *
+ * Layout and field order are in the `SAMPLE_FIELDS` docblock. `lo` is `tasmin`
+ * and `hi` is `tasmax`; the fifth block is derived, not sampled.
+ *
+ * A single unwritable month sinks the whole city, because 60 positional
+ * integers carry no per-month absence marker — there is no way to write "March
+ * has no cloud", and a tuple that quietly substituted something would be
+ * indistinguishable from a measurement. That covers both a `decodeSample` null
+ * and any value that is not finite. The probe found 0 of 58,757 cities on
+ * nodata, so the first should never fire; that is a property of this CHELSA
+ * release, not of the format.
+ *
+ * A column that is not twelve months throws instead, because that is a bug in
+ * the caller rather than a gap in the data and the two must not be conflated:
+ * returning null would drop a city silently, and writing a short tuple would
+ * corrupt every index after it.
+ *
+ * @param {CitySamples} samples
+ * @returns {number[] | null}
+ */
+export function tupleFor(samples) {
+  const columns = SAMPLE_FIELDS.map((field) => {
+    const column = samples[field];
+    if (!Array.isArray(column) || column.length !== MONTHS_PER_YEAR) {
+      const got = Array.isArray(column) ? `${column.length}` : typeof column;
+      throw new Error(`tupleFor expects 12 months of ${field}, got ${got}`);
+    }
+    return column;
+  });
+  // Absence and unusability are the same answer here. A month that is not a
+  // finite number cannot be written any more than a null can: NaN and
+  // ±Infinity round to themselves and `JSON.stringify` writes both as `null`,
+  // which puts a null in the middle of a positional int tuple — the one shape
+  // this layout cannot express, and one nothing downstream would flag.
+  const unusable = (value) => value === null || !Number.isFinite(value);
+  if (columns.some((column) => column.some(unusable))) return null;
+
+  const [lo, hi, precip, cloud, humidity] = columns;
+  const tuple = new Array(TUPLE_LENGTH);
+  for (let m = 0; m < MONTHS_PER_YEAR; m += 1) {
+    // The dew point is derived, so it needs the same check again on the way
+    // out: `hurs` at exactly 0 sends `Math.log` to -Infinity and the whole
+    // expression to NaN, from finite inputs that passed the sweep above.
+    const td = dewPointC((lo[m] + hi[m]) / 2, humidity[m]);
+    if (unusable(td)) return null;
+    tuple[m] = asInt(lo[m]);
+    tuple[MONTHS_PER_YEAR + m] = asInt(hi[m]);
+    tuple[2 * MONTHS_PER_YEAR + m] = asInt(precip[m]);
+    tuple[3 * MONTHS_PER_YEAR + m] = asInt(cloud[m]);
+    tuple[4 * MONTHS_PER_YEAR + m] = asInt(td);
+  }
+  return tuple;
+}
+
