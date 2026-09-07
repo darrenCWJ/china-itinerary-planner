@@ -98,6 +98,32 @@ describe("MapExplorer", () => {
     expect(screen.getByRole("button", { name: "← Back to Japan" })).toBeInTheDocument();
   });
 
+  test("fetches nothing for any country until one is opened", async () => {
+    // Until PR #29 the step opened on China's map, and the hook's fetches were
+    // that map's. It opens on the globe now, and 94.7 KB gzipped of China's
+    // assets over six requests (spec 2026-09-07 §4 measured 90.8 over five;
+    // the enrichment shard it missed adds 3.9) went out with every first paint,
+    // for a visitor who may never open China. `openedCountry` — the same latch
+    // that hides "← Back to" on a cold start — now gates the hook too.
+    const countryScoped = (url: string) =>
+      /^\/(provinces|cities|climate)\//.test(url) || url.startsWith("/api/map/") || url === PROJECTION_PATH;
+    const scopedRequests = () => fetchMock.mock.calls.map(([url]) => String(url)).filter(countryScoped);
+
+    render(<Harness level="world" />);
+    await settle();
+    expect(scopedRequests()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Japan/ }));
+    await settle();
+    const afterPick = scopedRequests();
+    expect(afterPick).toContain("/provinces/JP.json");
+    expect(afterPick).toContain("/api/map/cities?country=JP");
+    expect(afterPick).toContain("/api/map/airports?country=JP");
+    // And the pick fetched the country picked — never the default the pane
+    // happened to be holding.
+    expect(afterPick.some((url) => url.includes("CN"))).toBe(false);
+  });
+
   test("buys no China assets for a country that cannot use them", async () => {
     render(<Harness country="JP" />);
 

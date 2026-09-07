@@ -41,7 +41,24 @@ export interface CountryAssets {
  * currently open rather than an asset, and it stays with the toggle that
  * writes it.
  */
-export function useCountryAssets(countryCode: string, hasDetail: boolean): CountryAssets {
+export function useCountryAssets(
+  countryCode: string,
+  hasDetail: boolean,
+  /**
+   * Whether to fetch at all. `MapExplorer` passes its `openedCountry` latch:
+   * false on the world level until a country has been shown, true from then
+   * on and never back. While false both effects do nothing — no request, no
+   * state change — so a visitor looking at the globe pays for the globe alone.
+   * Measured 2026-09-07 before this existed: the default country's six
+   * requests (provinces 23.1 KB, manifest 6.9, catalog cities 38.7, shard
+   * 12.6, enrichment 3.9, airports 9.5 — 94.7 KB gzipped) went out on every
+   * mount, alongside the globe's own 40 KB topology, for a visitor who may
+   * never open China.
+   * A one-way latch rather than `level !== "world"` so that going back to
+   * the globe and returning re-runs nothing.
+   */
+  enabled: boolean
+): CountryAssets {
   /**
    * The open country's own admin-1 geometry, or null when it has none yet.
    *
@@ -138,8 +155,12 @@ export function useCountryAssets(countryCode: string, hasDetail: boolean): Count
    * Peru's departments left in place across a switch would draw as Germany's
    * states, which is not a stale answer but a wrong one, and one that looks
    * exactly like a working map.
+   *
+   * Neither effect runs at all while `enabled` is false — see the parameter —
+   * so the initial empties are what the world level renders against.
    */
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     setLoadError(false);
     setCities([]);
@@ -240,9 +261,10 @@ export function useCountryAssets(countryCode: string, hasDetail: boolean): Count
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [retryKey, hasDetail, countryCode]);
+  }, [retryKey, hasDetail, countryCode, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     // Cleared up front, not just on failure: without this, a country switch
     // computes the route estimator against the *previous* country's airports
@@ -261,7 +283,7 @@ export function useCountryAssets(countryCode: string, hasDetail: boolean): Count
         if (!controller.signal.aborted) setAirports([]);
       });
     return () => controller.abort();
-  }, [countryCode]);
+  }, [countryCode, enabled]);
 
   return {
     provinces,
