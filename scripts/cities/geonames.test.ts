@@ -1,0 +1,318 @@
+/**
+ * ingest-cities — the ZIP reader and the two GeoNames parsers.
+ *
+ * Moved out of scripts/ingest-cities.test.ts on 2026-09-07 (spec
+ * 2026-09-07-unscheduled-items §2.1) when scripts/ingest-cities.mjs was split
+ * along its section banners. Every describe below is that file's, unchanged;
+ * only the import paths moved with them.
+ */
+
+import { deflateRawSync } from "node:zlib";
+import { describe, expect, test } from "vitest";
+import { GEONAMES_NO_DATA_ELEVATION as READER_NO_DATA_ELEVATION } from "../../lib/cityShard";
+import {
+  GEONAMES_NO_DATA_ELEVATION,
+  parseAdmin1Codes,
+  parseGeoNamesRows,
+  readZipMember,
+} from "./geonames.mjs";
+
+// ---------------------------------------------------------------------------
+// readZipMember
+// ---------------------------------------------------------------------------
+
+/**
+ * A real ZIP built byte by byte, rather than a checked-in binary fixture: the
+ * point of these tests is which *headers* the reader trusts, and a hand-built
+ * archive is the only way to state that in the test. Field offsets are the
+ * PKZIP APPNOTE ones the reader itself uses.
+ */
+function zipWith(entries: { name: string; contents: string; method: 0 | 8 | 12 }[]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const { name, contents, method } of entries) {
+    const nameBuf = Buffer.from(name, "utf8");
+    const body = Buffer.from(contents, "utf8");
+    const payload = method === 8 ? deflateRawSync(body) : body;
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBuf.copy(local, 30);
+    locals.push(local, payload);
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42);
+    nameBuf.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, eocd]);
+}
+
+describe("readZipMember", () => {
+  test("inflates a deflated member", () => {
+    const zip = zipWith([{ name: "cities500.txt", contents: "a\tb\tc\n".repeat(200), method: 8 }]);
+    expect(readZipMember(zip, "cities500.txt").toString("utf8")).toBe("a\tb\tc\n".repeat(200));
+  });
+
+  test("returns a stored member unchanged", () => {
+    const zip = zipWith([{ name: "readme.txt", contents: "no compression", method: 0 }]);
+    expect(readZipMember(zip, "readme.txt").toString("utf8")).toBe("no compression");
+  });
+
+  test("finds the wanted member when the archive holds others", () => {
+    // GeoNames ships a single member today. If it ever adds a readme, picking
+    // the first entry would hand the TSV parser prose and it would abort on a
+    // ragged row rather than saying the archive changed shape.
+    const zip = zipWith([
+      { name: "readme.txt", contents: "ignore me", method: 0 },
+      { name: "cities500.txt", contents: "wanted", method: 8 },
+    ]);
+    expect(readZipMember(zip, "cities500.txt").toString("utf8")).toBe("wanted");
+  });
+
+  test("throws when the member is absent rather than returning empty", () => {
+    const zip = zipWith([{ name: "readme.txt", contents: "x", method: 0 }]);
+    expect(() => readZipMember(zip, "cities500.txt")).toThrow(/is not in the archive/);
+  });
+
+  test("throws when the buffer is not a zip at all", () => {
+    // What an HTML error page served with a 200 looks like to this function.
+    expect(() => readZipMember(Buffer.from("<html>rate limited</html>"), "cities500.txt")).toThrow(
+      /no end-of-central-directory record/
+    );
+  });
+
+  test("throws on a compression method it cannot decode", () => {
+    // Method 12 is bzip2. Silently returning the raw deflate bytes would hand
+    // the TSV parser binary and produce a confusing ragged-row abort instead.
+    const zip = zipWith([{ name: "cities500.txt", contents: "x", method: 12 }]);
+    expect(() => readZipMember(zip, "cities500.txt")).toThrow(/unsupported zip compression method 12/);
+  });
+
+  test("throws when the central directory overstates a stored member's compressedSize", () => {
+    // A lying central directory, not a lying local header: the local header
+    // and the real payload bytes agree with each other (24 bytes, genuinely
+    // present), only the central directory's compressedSize claim is wrong —
+    // exactly what a truncated-in-transit or tampered archive looks like.
+    // `Buffer.subarray` silently CLAMPS an out-of-range end instead of
+    // throwing, so an unvalidated slice would splice the archive's own
+    // central-directory and EOCD bytes onto the genuine 24 bytes and hand the
+    // caller a wrong-but-plausible-looking payload with no error at all.
+    const name = "cities500.txt";
+    const nameBuf = Buffer.from(name, "utf8");
+    const body = Buffer.from("twenty-four byte body!!!", "utf8"); // 24 bytes
+    expect(body.length).toBe(24);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(0, 8); // method 0 (stored)
+    local.writeUInt32LE(body.length, 18); // local header tells the truth
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBuf.copy(local, 30);
+
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(0, 10); // method 0 (stored)
+    central.writeUInt32LE(100_000, 20); // the lie: claims 100,000 bytes
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(0, 42); // local header offset
+    nameBuf.copy(central, 46);
+
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 8);
+    eocd.writeUInt16LE(1, 10);
+    eocd.writeUInt32LE(central.length, 12);
+    eocd.writeUInt32LE(local.length + body.length, 16);
+
+    const zip = Buffer.concat([local, body, central, eocd]);
+    expect(() => readZipMember(zip, name)).toThrow(/corrupt zip/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseGeoNamesRows
+// ---------------------------------------------------------------------------
+
+const COLUMNS = 19;
+
+/** One syntactically valid `cities500.txt` line. Indices are GeoNames' own. */
+function tsvRow(overrides: Record<number, string> = {}): string {
+  const base = Array.from({ length: COLUMNS }, () => "");
+  base[0] = "2657928";
+  base[1] = "Zermatt";
+  base[2] = "Zermatt";
+  base[3] = "Cermat,Zermat,Zermatt,ツェルマット";
+  base[4] = "46.01998";
+  base[5] = "7.74863";
+  base[6] = "P";
+  base[7] = "PPL";
+  base[8] = "CH";
+  base[10] = "VS";
+  base[14] = "6629";
+  // Column 15 (surveyed elevation) is blank for most of the real dump; column 16
+  // (dem, modelled) is populated nearly everywhere. Zermatt sits at 1,608 m.
+  base[16] = "1608";
+  base[17] = "Europe/Zurich";
+  base[18] = "2024-11-04";
+  for (const [index, value] of Object.entries(overrides)) base[Number(index)] = value;
+  return base.join("\t");
+}
+
+describe("parseGeoNamesRows", () => {
+  test("maps a clean line onto the record the rest of the build uses", () => {
+    expect(parseGeoNamesRows(`${tsvRow()}\n`)).toEqual([
+      {
+        id: "G2657928",
+        name: "Zermatt",
+        altNameCount: 4,
+        lat: 46.01998,
+        lon: 7.74863,
+        country: "CH",
+        admin1Code: "VS",
+        population: 6629,
+        elevation: 1608,
+        timezone: "Europe/Zurich",
+      },
+    ]);
+  });
+
+  test("counts an empty alternate-names column as zero, not one", () => {
+    // `''.split(',')` is `['']`, length 1 — which would hand every unnamed
+    // hamlet a free point of notability and shift the whole ranking.
+    expect(parseGeoNamesRows(`${tsvRow({ 3: "" })}\n`)[0].altNameCount).toBe(0);
+  });
+
+  test("aborts on a ragged line rather than reading undefined out of it", () => {
+    // The thrown message is `row has 2 column(s), expected 19 — aborting …`,
+    // so the count follows "expected" and the word "column" precedes it.
+    expect(() => parseGeoNamesRows("only\ttwo\n")).toThrow(/has 2 column\(s\), expected 19/);
+  });
+
+  test("skips a trailing blank line without treating it as ragged", () => {
+    expect(parseGeoNamesRows(`${tsvRow()}\n\n`)).toHaveLength(1);
+  });
+
+  test("drops a row with a blank coordinate instead of planting it at Null Island", () => {
+    // `Number('')` is 0, which `Number.isFinite` accepts — so a wiped-out
+    // coordinate has to be rejected before it ever reaches `Number()`.
+    expect(parseGeoNamesRows(`${tsvRow({ 4: "" })}\n`)).toEqual([]);
+    expect(parseGeoNamesRows(`${tsvRow({ 5: "  " })}\n`)).toEqual([]);
+    expect(parseGeoNamesRows(`${tsvRow({ 4: "not-a-number" })}\n`)).toEqual([]);
+  });
+
+  test("drops a row whose country code is not two uppercase letters", () => {
+    // GeoNames leaves the column blank for a handful of disputed places, and a
+    // blank country would become a shard file named `.json`.
+    expect(parseGeoNamesRows(`${tsvRow({ 8: "" })}\n`)).toEqual([]);
+    expect(parseGeoNamesRows(`${tsvRow({ 8: "CHE" })}\n`)).toEqual([]);
+  });
+
+  test("treats a blank population as zero rather than NaN", () => {
+    // 30,648 of the 235,483 real rows carry an explicit "0"; a blank must land
+    // in the same place, not poison the score with NaN.
+    expect(parseGeoNamesRows(`${tsvRow({ 14: "" })}\n`)[0].population).toBe(0);
+  });
+
+  test("drops a row whose geonameid is not a positive integer", () => {
+    // The id becomes the shard's primary key and the `G` prefix that keeps it
+    // out of Wikidata's namespace; anything else is not an id.
+    expect(parseGeoNamesRows(`${tsvRow({ 0: "" })}\n`)).toEqual([]);
+    expect(parseGeoNamesRows(`${tsvRow({ 0: "Q170247" })}\n`)).toEqual([]);
+  });
+
+  test("tolerates CRLF line endings", () => {
+    expect(parseGeoNamesRows(`${tsvRow()}\r\n`)).toHaveLength(1);
+  });
+
+  test("reads elevation, falling back to dem when the elevation column is blank", () => {
+    // Column 15 (elevation) is blank for most of the dump; column 16 (dem) is
+    // the modelled fallback and is populated nearly everywhere.
+    expect(parseGeoNamesRows(`${tsvRow()}\n`)[0].elevation).toBe(1608);
+  });
+
+  test("prefers the surveyed elevation over dem when both are present", () => {
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "1620", 16: "1608" })}\n`)[0].elevation).toBe(1620);
+  });
+
+  test("carries a null elevation when neither column has a value", () => {
+    // Null, not 0: sea level is a real elevation and 0 would place a Himalayan
+    // town at the coast for the climate bias correction that reads this.
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "" })}\n`)[0].elevation).toBeNull();
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: "high" })}\n`)[0].elevation).toBeNull();
+  });
+
+  test("reads GeoNames' -9999 no-data elevation as null, in either column", () => {
+    // SRTM has no coverage above 60° or over water, and GeoNames writes -9999
+    // there rather than leaving `dem` blank. 300 committed rows carried it
+    // (HK 48, NO 41, FI 17, IS 10, GL 9 ...) as if those towns sat ten
+    // kilometres below sea level — a value a lapse-rate correction would have
+    // read as an elevation. Blank-equivalent, so the fallback still applies.
+    const sentinel = String(GEONAMES_NO_DATA_ELEVATION);
+    expect(parseGeoNamesRows(`${tsvRow({ 15: "", 16: sentinel })}\n`)[0].elevation).toBeNull();
+    expect(parseGeoNamesRows(`${tsvRow({ 15: sentinel, 16: "1608" })}\n`)[0].elevation).toBe(1608);
+  });
+
+  test("the browser-side reader nulls the same marker the ingest does", () => {
+    // lib/cityShard.ts cannot import this script (it is browser-side), so it
+    // carries its own literal. This is what keeps the two from drifting.
+    expect(READER_NO_DATA_ELEVATION).toBe(GEONAMES_NO_DATA_ELEVATION);
+    expect(GEONAMES_NO_DATA_ELEVATION).toBe(-9999);
+  });
+
+  test("keeps the raw admin-1 code beside the row", () => {
+    // Pinned here because the next task joins a city to a polygon on this
+    // code, and the resolved NAME is what the build currently keeps.
+    expect(parseGeoNamesRows(`${tsvRow({ 10: "VS" })}\n`)[0].admin1Code).toBe("VS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseAdmin1Codes
+// ---------------------------------------------------------------------------
+
+describe("parseAdmin1Codes", () => {
+  test("keys the UTF-8 name by CC.CODE", () => {
+    const codes = parseAdmin1Codes(
+      ["CH.VS\tValais\tValais\t2658205", "JP.22\tKyōto\tKyoto\t1857907"].join("\n")
+    );
+    expect(codes.get("CH.VS")).toBe("Valais");
+    // The second column, not the third: the ASCII fold is a search aid, and
+    // `foldPlaceName` already does that job at the point search needs it.
+    expect(codes.get("JP.22")).toBe("Kyōto");
+  });
+
+  test("returns a Map, so a code named like an Object member cannot resolve through the prototype", () => {
+    // Same class of bug as `sizeForType` in ingest-airports.mjs: a plain
+    // object would answer `codes['constructor']` with a function, which is not
+    // nullish, so `?? null` would never catch it and JSON.stringify would
+    // silently drop the key from the committed record.
+    const codes = parseAdmin1Codes("XX.constructor\tReal Name\tReal Name\t1");
+    expect(codes.get("XX.toString")).toBeUndefined();
+    expect(codes.get("XX.constructor")).toBe("Real Name");
+  });
+
+  test("ignores blank and short lines instead of storing undefined", () => {
+    expect(parseAdmin1Codes("\nCH.VS\tValais\tValais\t1\n\ngarbage\n").size).toBe(1);
+  });
+});

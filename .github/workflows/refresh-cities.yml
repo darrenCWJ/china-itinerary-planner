@@ -30,7 +30,7 @@
 # (`MAX_RETRY_AFTER_MS`), which is the belt to this braces: the split stops the
 # budget being spent, the ceiling stops a routine pause being fatal.
 #
-# Commits only when the catalog actually changed. `scripts/ingest-cities.mjs`
+# Commits only when the catalog actually changed. `scripts/cities/io.mjs`
 # preserves the previous `generatedAt` on every artifact whose payload is
 # unchanged — each of the 246 shards via `shardPayload`, and public/cities/
 # index.json, data/cities-index.json and data/cities-enrich-targets.json via

@@ -1,10 +1,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
 import { describe, expect, it, test } from "vitest";
-// The ingest script's entry-point guard means importing it here does not also
-// run `main()` and refetch 13 MB — the idiom scripts/ingest-cities.test.ts
-// already relies on. C7 compares the committed report against a live call.
-import { buildReport } from "../scripts/ingest-cities.mjs";
+// `buildReport` moved to scripts/cities/report.mjs when the ingest script was
+// split (spec 2026-09-07-unscheduled-items §2.1). Importing that module runs no
+// ingest at all: the entry point and the guard that keeps an import from
+// refetching 13 MB stay in scripts/ingest-cities.mjs, which this does not
+// touch. C7 compares the committed report against a live call.
+import { buildReport } from "../scripts/cities/report.mjs";
 import { TRIP_NAV } from "./nav";
 import { fullPayload } from "./tripFixtures";
 
@@ -1151,7 +1153,7 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
      * the next scheduled ingest put it straight back.
      */
     const STALE = "NOT YET RENDERED IN THE UI";
-    for (const path of ["data/cities-report.md", "scripts/ingest-cities.mjs"]) {
+    for (const path of ["data/cities-report.md", "scripts/cities/report.mjs"]) {
       const source = readFileSync(join(process.cwd(), ...path.split("/")), "utf8");
       expect(source, `${path} still claims the GeoNames credit is unrendered`).not.toContain(
         STALE
@@ -1171,7 +1173,7 @@ describe("C7 — every surface that renders GeoNames data credits it", () => {
      * report enumerates instead — and the enumeration is verified against the
      * tree by the test below rather than trusted.
      */
-    for (const path of ["data/cities-report.md", "scripts/ingest-cities.mjs"]) {
+    for (const path of ["data/cities-report.md", "scripts/cities/report.mjs"]) {
       const source = readFileSync(join(process.cwd(), ...path.split("/")), "utf8");
       expect(source, `${path} claims the credit covers "every surface"`).not.toMatch(
         /every surface/i
