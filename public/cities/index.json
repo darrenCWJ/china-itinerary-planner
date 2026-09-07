@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-06T12:21:07.694Z",
+ "generatedAt": "2026-09-07T14:28:44.417Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -90,7 +90,7 @@
   {
    "code": "BD",
    "count": 164,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-07T14:28:44.417Z"
   },
   {
    "code": "BE",
@@ -109,8 +109,8 @@
   },
   {
    "code": "BH",
-   "count": 11,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 12,
+   "generatedAt": "2026-09-07T14:28:44.417Z"
   },
   {
    "code": "BI",
@@ -270,7 +270,7 @@
   {
    "code": "CZ",
    "count": 750,
-   "generatedAt": "2026-09-06T12:21:07.694Z"
+   "generatedAt": "2026-09-07T14:28:44.417Z"
   },
   {
    "code": "DE",
@@ -1110,7 +1110,7 @@
   {
    "code": "TR",
    "count": 750,
-   "generatedAt": "2026-09-05T12:07:31.907Z"
+   "generatedAt": "2026-09-07T14:28:44.417Z"
   },
   {
    "code": "TT",
