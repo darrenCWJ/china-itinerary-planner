@@ -26,7 +26,7 @@
 # rate-limits per client IP, so two runners are two ordinary clients rather than
 # one impolite one. The aggregate added here is ~40 requests over ~90s.
 #
-# `scripts/ingest-country-facts.mjs` ALSO now waits up to 300s when WDQS asks
+# `scripts/country-facts/io.mjs` ALSO now waits up to 300s when WDQS asks
 # (`MAX_RETRY_AFTER_MS`), which is the belt to this braces: the split stops the
 # budget being spent, the ceiling stops a routine pause being fatal.
 #
@@ -37,14 +37,14 @@
 # `stampedPayload` — so a quiet day produces a byte-identical tree. That is
 # what keeps this from committing 246 shards and a 3.7 MB index every night,
 # and it is verified by Task 6 Step 6 rather than assumed here.
-# `scripts/ingest-country-facts.mjs` uses the same `stampedPayload` idiom for
+# `scripts/country-facts/io.mjs` uses the same `stampedPayload` idiom for
 # data/country-facts.json, verified byte-identical across five consecutive
 # live runs on a quiet day — that is what the change test below depends on.
 #
 # A commit here triggers a Vercel deploy, so the artifacts reach production
 # without anyone doing anything. That is also why every ingest step below
 # aborts BEFORE writing when its own sanity check fails: nothing looks at this
-# run. ingest-country-facts.mjs's `assertFactsSane` carries 34 throw sites and
+# run. country-facts/gate.mjs's `assertFactsSane` carries 36 throw sites and
 # sits above `mkdirSync`, same shape as the other two scripts.
 #
 # ...and it is why `commit` runs the test suite ITSELF, in "Verify the
