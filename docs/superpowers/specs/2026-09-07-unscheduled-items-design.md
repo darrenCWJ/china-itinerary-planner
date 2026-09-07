@@ -223,3 +223,12 @@ Per PR: `npx tsc --noEmit`; `npm test` (baseline at PR #30's merge: 140 files, 2
 ## 7. Out of scope
 
 The Wikivoyage extraction and Phase 5 (roadmap; the owner's decisions). Plan 6's by-design non-builds (province tint, a legend on the trip map, coastal-desert overrides, fit on the list chips). The five test files over 800 lines with no source split. Any change to what the map draws, to the tickets API, or to `docs/RESEARCH.md`. The `.font-kai` stack and the `游` mark.
+
+## 8. Corrections from execution (2026-09-07, PR #31)
+
+Found by this design's own verification; the branch is right and the sections above are left as the dated record.
+
+- **§4 was short by one request and one requester.** The prefetch was six requests, 94.7 KB gzipped — `/cities/enrich/CN.json` (3.9 KB) was missing from the table — and `useCountryAssets` was not the only thing fetching: `PlaceSearch`, the search box beside the map, is live on the globe step scoped to the default country and fetched `/cities/CN.json` on mount, which the e2e caught on the real bundle. It now fetches its shard on the box's first focus or first keystroke (a one-way latch of its own), so search behaves as before and a visitor who never searches pays nothing. Gating it on the opened-country latch was rejected: it would need a second latch in `DestinationStep` and would drop China's shard-only rows from globe-step search. The docblocks carry 94.7 KB.
+- **§1's `useMemo`** became a plain computation: it sits below `TripView`'s early returns, where a hook cannot.
+- **§3's census** was short by three specs (backlog-clearance, map-timeline-explorer, app-shell-login); every spec carries a status line now, and this one keeps "approved in chat" until it merges.
+- **The C7 credit contract** pinned `TripView`'s `destinationNames` occurrences at 2; deriving the placeholders added three. It now counts render sites (`destinationNames.map(`), pin unchanged.
