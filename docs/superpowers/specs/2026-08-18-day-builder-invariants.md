@@ -1,7 +1,7 @@
 # Day Builder — invariants and traps
 
 **Date:** 2026-08-18
-**Status:** input to PR2 Tasks 22-25. Produced by a five-lens analysis (reflow
+**Status:** consumed — input to PR #6 Tasks 22–25, merged 2026-08-20. Produced by a five-lens analysis (reflow
 semantics, poll-gate hazard, legacy data, plan-ops surface, shelf/target routing)
 run against the real code, then merged and re-verified.
 

@@ -1,7 +1,7 @@
 # Trip Tracker & Money — Design
 
 **Date:** 2026-08-15
-**Status:** Approved by user (chat), spec under review
+**Status:** shipped — PR #2, merged 2026-08-15
 
 ## Goal
 

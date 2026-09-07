@@ -1,7 +1,7 @@
 # Global expansion — roadmap design
 
 **Date:** 2026-08-23
-**Status:** design, awaiting review
+**Status:** Phases 1–4 shipped — PRs #16, #17, #21, #22, #26, #27, #28, merged 2026-08-22 to 2026-09-05; Phase 5 unspecified by design
 **Scope:** taking the planner from China-only content to every country, adding
 worldwide airports, a globe world level, and flight data.
 

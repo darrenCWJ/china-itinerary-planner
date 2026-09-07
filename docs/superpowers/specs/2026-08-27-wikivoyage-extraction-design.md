@@ -1,6 +1,7 @@
 # Wikivoyage extraction — design
 
 *Branch `feat/worldwide-cities`. Successor to `2026-08-27-country-guidance-design.md` (T20–T32). Tasks numbered 33–44.*
+**Status:** designed, not built — the owner's call; see docs/PLAN.md
 
 The committed country-guidance design measured Wikivoyage and refused it (that document, "What no source supplies" and the paragraph beginning *"Wikivoyage is refused, on measured grounds"*). **The user has overridden that refusal and chosen to try extraction anyway.** This document does not re-litigate the decision. It designs the extraction so that the richer, more China-like guidance the user asked for can ship without breaking the honest-gaps rule.
 

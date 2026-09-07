@@ -1,6 +1,7 @@
 # Worldwide country guidance — design
 
 *Branch `feat/worldwide-cities`. Sits between Task 18 (done) and Task 19 (the Peru acceptance test). Tasks numbered 20–32.*
+**Status:** shipped — PR #21, merged 2026-08-27
 
 ---
 

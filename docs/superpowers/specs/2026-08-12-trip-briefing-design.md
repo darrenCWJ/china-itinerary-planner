@@ -1,7 +1,7 @@
 # Trip Briefing — Shareable Trip Document — Design
 
 **Date:** 2026-08-12
-**Status:** Approved by user (chat), implementing
+**Status:** shipped — PR #1, merged 2026-08-12
 
 ## Goal
 
