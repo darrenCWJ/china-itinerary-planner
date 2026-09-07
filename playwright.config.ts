@@ -85,7 +85,7 @@ export default defineConfig({
       // drives the wizard through the world level to Peru with the saved
       // session, so it belongs here too.
       name: "chromium",
-      testMatch: /(map|gateways|climate)\.spec\.ts/,
+      testMatch: /(map|gateways|climate|tickets)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/user.json" },
       dependencies: ["setup"],
     },
