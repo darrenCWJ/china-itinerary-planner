@@ -1,6 +1,6 @@
 # Worldwide city catalog report
 
-- Generated: 2026-09-10T13:08:21.475Z
+- Generated: 2026-09-11T13:02:03.375Z
 - Source: https://download.geonames.org/export/dump/cities500.zip
 - Licence: GeoNames cities500 (CC BY 4.0) — https://www.geonames.org/ — CC BY 4.0
 - Filter: composite score (alternate names + 2 x log10 population), top 750 per country
