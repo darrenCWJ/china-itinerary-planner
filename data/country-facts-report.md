@@ -1,6 +1,6 @@
 # Country facts report
 
-- Generated: 2026-09-11T13:04:07.703Z
+- Generated: 2026-09-12T12:23:25.395Z
 - Source: https://query.wikidata.org/sparql (Wikidata (CC0))
 - Licence: CC0-1.0
 - Contents: structured scalars only. Never prose, never a sentence.

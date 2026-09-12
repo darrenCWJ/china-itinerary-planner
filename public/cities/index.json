@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-11T13:02:03.375Z",
+ "generatedAt": "2026-09-12T12:23:07.102Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -150,7 +150,7 @@
   {
    "code": "BR",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "BS",
@@ -169,8 +169,8 @@
   },
   {
    "code": "BY",
-   "count": 314,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 315,
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "BZ",
@@ -190,7 +190,7 @@
   {
    "code": "CD",
    "count": 118,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "CF",
@@ -200,7 +200,7 @@
   {
    "code": "CG",
    "count": 60,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "CH",
@@ -235,7 +235,7 @@
   {
    "code": "CO",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "CR",
@@ -270,12 +270,12 @@
   {
    "code": "CZ",
    "count": 750,
-   "generatedAt": "2026-09-11T13:02:03.375Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "DE",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "DJ",
@@ -330,7 +330,7 @@
   {
    "code": "ES",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "ET",
@@ -415,7 +415,7 @@
   {
    "code": "GM",
    "count": 180,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "GN",
@@ -500,7 +500,7 @@
   {
    "code": "IL",
    "count": 724,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "IM",
@@ -525,7 +525,7 @@
   {
    "code": "IR",
    "count": 750,
-   "generatedAt": "2026-09-10T13:08:21.475Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "IS",
@@ -620,7 +620,7 @@
   {
    "code": "LB",
    "count": 52,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "LC",
@@ -770,7 +770,7 @@
   {
    "code": "MX",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "MY",
@@ -940,7 +940,7 @@
   {
    "code": "RU",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "RW",
@@ -1110,7 +1110,7 @@
   {
    "code": "TR",
    "count": 750,
-   "generatedAt": "2026-09-09T13:10:36.751Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "TT",
@@ -1135,7 +1135,7 @@
   {
    "code": "UA",
    "count": 750,
-   "generatedAt": "2026-09-06T12:21:07.694Z"
+   "generatedAt": "2026-09-12T12:23:07.102Z"
   },
   {
    "code": "UG",
