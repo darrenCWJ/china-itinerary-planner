@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-05T11:51:50.962Z",
+ "generatedAt": "2026-09-13T13:20:58.339Z",
  "source": "Public domain (OurAirports, regenerated nightly)",
  "airports": [
   {
@@ -13638,9 +13638,9 @@
    "name": "Phu Bai International Airport",
    "municipality": "Huế",
    "country": "VN",
-   "lat": 16.400628,
-   "lon": 107.703094,
-   "size": "medium"
+   "lat": 16.400581,
+   "lon": 107.704094,
+   "size": "large"
   },
   {
    "iata": "HUN",
