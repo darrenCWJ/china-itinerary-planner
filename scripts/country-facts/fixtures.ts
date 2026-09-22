@@ -103,16 +103,9 @@ export const CURATED_UPSTREAM: Record<
       ["AWG", "Aruban florin"],
       ["XCG", "Caribbean guilder"],
     ],
-    // The two-item split: Q55 gained P297 = "NL" alongside Q29999 on
-    // 2026-08-28, so `wdt:P297` matches both and these three fields each get
-    // two answers. Recorded here so the row-fires test below exercises the
-    // real withhold rather than the absence of a fixture.
-    name: ["Kingdom of the Netherlands", "Netherlands"],
-    emergency: [
-      ["112", ""],
-      ["911", ""],
-    ],
-    coordinate: ["52.366666666667", "52.316666666"],
+    // No `name`/`emergency`/`coordinate` split any more: Q55's promoted P297
+    // was undone as vandalism on 2026-09-22, and the three NL rows it forced
+    // were deleted with it — see `CURATED_FACTS.NL`.
   },
   FR: {
     currency: [

@@ -105,60 +105,47 @@ describe("CURATED_FACTS", () => {
     expect(built.diagnostics.curatedStale).toEqual([]);
   });
 
-  test("a second item gaining the ISO code withholds three NL fields, and the curated rows rescue all three", () => {
-    // THE SHAPE THAT TOOK THE NIGHTLY JOB DOWN, and the reason these rows are
-    // not editorial. At 2026-08-28T09:46:29Z, Q55 "Netherlands" GAINED
-    // `P297 = "NL"` alongside Q29999 "Kingdom of the Netherlands", both at
-    // NormalRank. Every query in the ingest anchors on `?c wdt:P297 ?country`,
-    // so `wdt:` now matches BOTH items and each SINGLE-VALUED picker sees two
-    // answers and withholds — which is correct, and must stay correct: the
-    // first three assertions below pin the withhold itself, so a "fix" that
-    // made a picker coin-flip would go red here rather than ship a guess.
+  test("the NL split was undone upstream: name, emergency and lat come from Wikidata again, and only the currency rows fire", () => {
+    // THE SHAPE THAT TOOK THE NIGHTLY JOB DOWN, and how it ended. At
+    // 2026-08-28T09:46:29Z Q55 "Netherlands"'s `P297 = "NL"` was promoted from
+    // deprecated to normal rank beside Q29999, `wdt:P297` matched both items,
+    // and three curated rows restored the name, emergency number and latitude
+    // the single-valued pickers withheld. At 2026-09-22T00:49:30Z the edit was
+    // undone as vandalism, those rows went STALE on that night's run — the
+    // gate's `no longer fire` refusal, exactly as written — and were deleted.
     //
-    // The rows are the measured upstream shape, NL only. 911 is the Caribbean
-    // constituents'; 112 is the European country's. The two P625 points are
-    // Q29999's and Q55's.
+    // The measured shape after the revert, NL only: one name, one number,
+    // one point, and still the four currencies.
     const built = buildFacts({
       codes: [{ code: "NL" }],
-      name: [
-        { country: "NL", value: "Kingdom of the Netherlands" },
-        { country: "NL", value: "Netherlands" },
-      ],
+      name: [{ country: "NL", value: "Kingdom of the Netherlands" }],
       currency: [
         { country: "NL", code: "EUR", name: "euro" },
         { country: "NL", code: "USD", name: "United States dollar" },
         { country: "NL", code: "AWG", name: "Aruban florin" },
         { country: "NL", code: "XCG", name: "Caribbean guilder" },
       ],
-      emergency: [
-        { country: "NL", number: "112", role: "" },
-        { country: "NL", number: "911", role: "" },
-      ],
-      coordinate: [
-        { country: "NL", lat: "52.366666666667" },
-        { country: "NL", lat: "52.316666666" },
-      ],
+      emergency: [{ country: "NL", number: "112", role: "" }],
+      coordinate: [{ country: "NL", lat: "52.366666666667" }],
       drivingSide: [{ country: "NL", value: "right-hand traffic" }],
     });
-    expect(built.countries.NL.name).toBeUndefined();
-    expect(built.countries.NL.emergency).toBeUndefined();
-    expect(built.countries.NL.lat).toBeUndefined();
-    // Two FACTS lost (name is not a fact), which is what crosses
-    // COUNTRY_FIELD_LOSS_GRACE = 1 and aborts the run against a 9-fact NL.
-    expect(factCount(built.countries.NL)).toBe(1);
-
-    applyCurated(built);
+    // The same three values the deleted rows carried, now from upstream — so
+    // deleting them moved nothing in the artifact.
     expect(built.countries.NL.name).toBe("Kingdom of the Netherlands");
     expect(built.countries.NL.emergency).toEqual([{ number: "112", role: null }]);
     expect(built.countries.NL.lat).toBe(52.366666666667);
+    expect(built.countries.NL.currencyCode).toBeUndefined();
+
+    applyCurated(built);
     expect(built.diagnostics.curatedStale).toEqual([]);
-    for (const field of ["name", "emergency", "lat", "currencyCode", "currencyName"]) {
-      expect(built.diagnostics.curatedFired).toContain(`NL.${field}`);
-    }
-    // drivingSide plus the four rescued facts. Not nine, because this fixture
-    // supplies only the properties the two-item split actually moved — the
-    // real run adds plugs, voltage, languages and callingCode, which both
-    // items agree on and which were never withheld.
+    expect(built.diagnostics.curatedFired.filter((row) => row.startsWith("NL."))).toEqual([
+      "NL.currencyCode",
+      "NL.currencyName",
+    ]);
+    expect(built.countries.NL.currencyCode).toBe("EUR");
+    // drivingSide, emergency, lat and the two currency facts: the same five
+    // the split's rescue reached, with three of them now from upstream. The
+    // name is identity, not a fact, so `factCount` never counted it.
     expect(factCount(built.countries.NL)).toBe(5);
   });
 
