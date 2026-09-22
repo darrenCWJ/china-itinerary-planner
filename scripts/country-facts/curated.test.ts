@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { CURATED_FACTS } from "./curated.mjs";
+import { CURATED_FACTS, REFUSED_LANGUAGE_ITEMS } from "./curated.mjs";
 import { applyCurated, buildFacts, factCount } from "./facts.mjs";
 import { CURATED_UPSTREAM, entity } from "./fixtures";
 
@@ -163,6 +163,85 @@ describe("CURATED_FACTS", () => {
     const built = buildFacts({ codes: [{ code: "ZW" }, { code: "AA" }], currency: [{ country: "AA", code: "AAA", name: "test" }] });
     applyCurated(built);
     expect(Object.keys(built.countries)).toEqual([...Object.keys(built.countries)].sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REFUSED_LANGUAGE_ITEMS
+// ---------------------------------------------------------------------------
+
+/** One country's P37 rows in the query's own columns, unscoped. */
+const p37 = (code: string, ...statements: [string, string][]) =>
+  statements.map(([item, value]) => ({ country: code, item: entity(item), value, scoped: "false" }));
+
+describe("REFUSED_LANGUAGE_ITEMS", () => {
+  test("the shipped refusal is exactly Mauritania's French", () => {
+    expect(REFUSED_LANGUAGE_ITEMS).toEqual({ MR: ["Q150"] });
+  });
+
+  test("every shipped refusal fires against the measured upstream statement it refuses", () => {
+    // CURATED_FACTS' rule, mirrored: a refusal is only honest while upstream
+    // still states the thing refused.
+    for (const [code, items] of Object.entries(REFUSED_LANGUAGE_ITEMS)) {
+      const upstream = CURATED_UPSTREAM[code];
+      expect(upstream?.languages, `no measured P37 shape recorded for ${code}`).toBeDefined();
+      const rows = upstream.languages!.map(([item, value, scoped]) => ({
+        country: code,
+        item: entity(item),
+        value,
+        scoped,
+      }));
+      for (const item of items) {
+        expect(rows.some((row) => row.item === entity(item)), `${code} has no ${item} upstream`).toBe(true);
+      }
+      const built = buildFacts({ codes: [{ code }], languages: rows });
+      expect(built.diagnostics.refusedStale).toEqual([]);
+      expect(built.diagnostics.refusedEmptied).toEqual([]);
+      for (const item of items) expect(built.diagnostics.refusedFired).toContain(`${code}.${item}`);
+    }
+  });
+
+  test("Mauritania publishes Arabic alone: its constitution's one official language", () => {
+    const built = buildFacts({
+      codes: [{ code: "MR" }],
+      languages: p37("MR", ["Q150", "French"], ["Q13955", "Arabic"]),
+    });
+    expect(built.countries.MR.officialLanguages).toEqual(["Arabic"]);
+    expect(built.diagnostics.refusedFired).toEqual(["MR.Q150"]);
+  });
+
+  test("a refusal reaches only its own country: France keeps French", () => {
+    // Why this is per country and not a `DROPPED_LANGUAGE_ITEMS` id: Q150 is
+    // on 39 countries' P37, measured 2026-09-23. Dropped by id, every one of
+    // the other 38 would lose French to fix one.
+    const built = buildFacts({
+      codes: [{ code: "FR" }, { code: "MR" }],
+      languages: [...p37("FR", ["Q150", "French"]), ...p37("MR", ["Q150", "French"], ["Q13955", "Arabic"])],
+    });
+    expect(built.countries.FR.officialLanguages).toEqual(["French"]);
+    expect(built.countries.MR.officialLanguages).toEqual(["Arabic"]);
+  });
+
+  test("a refusal whose statement upstream has dropped is reported STALE, not skipped silently", () => {
+    const built = buildFacts({ codes: [{ code: "MR" }], languages: p37("MR", ["Q13955", "Arabic"]) });
+    expect(built.diagnostics.refusedStale).toEqual(["MR.Q150"]);
+    expect(built.diagnostics.refusedFired).toEqual([]);
+    expect(built.countries.MR.officialLanguages).toEqual(["Arabic"]);
+  });
+
+  test("no P37 rows at all is no verdict, so a demoted night cannot read a refusal as stale", () => {
+    // The asymmetry with CURATED_FACTS: an absent FIELD fires a curated row,
+    // but an absent STATEMENT would stale a refusal, and a demoted property is
+    // exactly an empty answer that `run` then carries forward.
+    const built = buildFacts({ codes: [{ code: "MR" }], languages: [] });
+    expect(built.diagnostics.refusedStale).toEqual([]);
+    expect(built.diagnostics.refusedFired).toEqual([]);
+  });
+
+  test("a refusal that would leave its country no language at all is reported, not applied silently", () => {
+    const built = buildFacts({ codes: [{ code: "MR" }], languages: p37("MR", ["Q150", "French"]) });
+    expect(built.diagnostics.refusedEmptied).toEqual(["MR"]);
+    expect(built.countries.MR?.officialLanguages).toBeUndefined();
   });
 });
 

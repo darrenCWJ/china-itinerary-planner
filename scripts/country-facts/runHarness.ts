@@ -31,7 +31,7 @@ import { EXPECTED_COUNTRIES, REQUIRED_NAMES } from "./gate.mjs";
 
 export type Feed = Record<string, Row[] | "throw">;
 
-const NAMED_CODES = ["AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW"];
+const NAMED_CODES = ["AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "MR", "NL", "PE", "PL", "SH", "ZW"];
 export const FILLERS = FILLER_POOL.slice(0, EXPECTED_COUNTRIES - NAMED_CODES.length);
 
 export interface CountrySpec {

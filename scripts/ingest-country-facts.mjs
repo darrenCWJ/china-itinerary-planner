@@ -247,6 +247,9 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
   if (built.diagnostics.curatedFired.length > 0) {
     console.log(`  curated overrides fired: ${built.diagnostics.curatedFired.join(', ')}`);
   }
+  if (built.diagnostics.refusedFired.length > 0) {
+    console.log(`  refused statements fired: ${built.diagnostics.refusedFired.join(', ')}`);
+  }
   console.log(`Wrote ${reportPath}`);
 }
 

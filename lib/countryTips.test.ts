@@ -670,6 +670,17 @@ describe("the boundary and the committed artifact agree", () => {
     expect(getCountryFacts("GN").currencyCode).toBe("GNF");
   });
 
+  test("Mauritania keeps Arabic alone: the refused French never reaches the artifact", () => {
+    // Upstream has said "Arabic and French" since 2026-09-13; the constitution
+    // says Arabic, singular, and REFUSED_LANGUAGE_ITEMS holds that line in the
+    // ingest. Let French through and the tip below becomes a false sentence
+    // AND the packing line vanishes, because a two-language country gets no
+    // single translation pack.
+    expect(raw.countries.MR.officialLanguages).toEqual(["Arabic"]);
+    expect(languageTip(getCountryFacts("MR"))).toBe("Arabic is the official language.");
+    expect(translationPackItem(getCountryFacts("MR"))).toBe("Offline Arabic translation pack");
+  });
+
   test("no committed record carries a value the language rule would refuse", () => {
     // The rule is belt and braces now, so this is what says it is not needed
     // rather than not working: a sweep over every language value in the file.
@@ -685,7 +696,9 @@ describe("the boundary and the committed artifact agree", () => {
     // the field. It was 450 across 243 before the ingest's territorial-scope
     // rule withheld six countries' languages and dropped Norway's two written
     // forms and the Philippines' code-switching register, and 422 before BE
-    // and AZ got theirs back from a hand-verified CURATED_FACTS row.
+    // and AZ got theirs back from a hand-verified CURATED_FACTS row. Upstream
+    // made it 427 on 2026-09-13 by giving Mauritania French; that statement
+    // is refused, so the count held — see the test above.
     expect(scanned).toBe(426);
     expect(meta).toEqual([]);
     // And the rule still refuses one arriving by another route — a hand-edited

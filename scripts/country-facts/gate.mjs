@@ -561,6 +561,22 @@ export function assertFactsSane(built, previous) {
     );
   }
 
+  if ((diagnostics.refusedStale?.length ?? 0) > 0) {
+    throw new Error(
+      `REFUSED_LANGUAGE_ITEMS rows ${diagnostics.refusedStale.join(', ')} no longer fire — upstream ` +
+      `no longer states those languages, so the hand-verified refusal is stale. Verify the upstream ` +
+      `answer and delete the row; leaving it would be cruft nothing ever re-checks`
+    );
+  }
+
+  if ((diagnostics.refusedEmptied?.length ?? 0) > 0) {
+    throw new Error(
+      `REFUSED_LANGUAGE_ITEMS would leave ${diagnostics.refusedEmptied.join(', ')} with no official ` +
+      `language at all — each refusal was verified against a list it trims, not one it empties, so ` +
+      `upstream has changed underneath it; re-verify rather than quietly costing the language tip`
+    );
+  }
+
   // --- The CN cross-check --------------------------------------------------
   const cn = countries.CN ?? {};
   for (const field of ['currencyCode', 'voltageV', 'drivingSide', 'callingCode']) {
