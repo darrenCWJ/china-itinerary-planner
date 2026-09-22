@@ -223,9 +223,10 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
     now
   );
   writeFileAtomic(factsPath, JSON.stringify(payload));
-  // `scopedLanguages` is null, not `[]`, when P37 was demoted: the diagnostic
-  // is empty on such a night because nothing was measured, and the report must
-  // not read that as "nothing was scoped". See `languageGap` in `buildReport`.
+  // `scopedLanguages` and `refusedLanguages` are null, not `[]`, when P37 was
+  // demoted: each diagnostic is empty on such a night because nothing was
+  // measured, and the report must not read that as "nothing was scoped" or
+  // "nothing was refused". See `languageGap` and `refusalNote` in `buildReport`.
   const languagesDemoted = demoted.some((property) => property.fields.includes('officialLanguages'));
   writeFileAtomic(
     reportPath,
@@ -233,6 +234,7 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
       countries: built.countries,
       generatedAt: payload.generatedAt,
       scopedLanguages: languagesDemoted ? null : built.diagnostics.scopedLanguages,
+      refusedLanguages: languagesDemoted ? null : built.diagnostics.refusedFired,
     })
   );
 

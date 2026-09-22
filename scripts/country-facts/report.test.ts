@@ -102,5 +102,40 @@ describe("buildReport", () => {
     });
     expect(report).not.toMatch(/Official languages for/);
   });
+
+  test("names every refused statement, derived from the run, so the artifact says where it departs from upstream", () => {
+    // A refusal makes the artifact publish LESS than upstream states. Without
+    // this bullet, its only reader is a log line in a job nobody watches.
+    const report = buildReport({
+      countries: { MR: { officialLanguages: ["Arabic"] } },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: [],
+      refusedLanguages: ["MR.Q150"],
+    });
+    expect(report).toContain("**1 official-language statement upstream makes, refused by hand.**");
+    expect(report).toMatch(/^\s{2}MR\.Q150$/m);
+    expect(report).toContain("REFUSED_LANGUAGE_ITEMS");
+  });
+
+  test("a demoted P37 query says the refusals were not judged, rather than that none fired", () => {
+    const report = buildReport({
+      countries: { MR: { officialLanguages: ["Arabic"] } },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: null,
+      refusedLanguages: null,
+    });
+    expect(report).toContain("**Refused official-language statements: not judged this run.**");
+    expect(report).not.toMatch(/refused by hand/);
+  });
+
+  test("says nothing about refusals when none fired", () => {
+    const report = buildReport({
+      countries: { PE: { officialLanguages: ["Spanish"] } },
+      generatedAt: "2026-08-27T00:00:00.000Z",
+      scopedLanguages: [],
+      refusedLanguages: [],
+    });
+    expect(report).not.toMatch(/Refused official-language statements|refused by hand/);
+  });
 });
 

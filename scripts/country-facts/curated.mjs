@@ -173,6 +173,17 @@ export const CURATED_FACTS = {
  * with NO P37 rows gets no verdict either way — that is what a demoted
  * property looks like, and reading it as "upstream dropped the statement"
  * would turn every P37 outage into a refused write.
+ *
+ * Staleness only sees the statement GOING. If it is instead strengthened — a
+ * real source added, or the country genuinely making the language official —
+ * the row keeps firing and nothing here re-examines it. That is the ZW and AZ
+ * rows' class: a recorded human judgement, reopened by a human.
+ *
+ * Why refuse one statement rather than withhold the field, which is this
+ * ingest's default answer to a doubtful value: withholding trades a TRUE
+ * language, and the packing line it feeds, for silence to avoid one false
+ * one. AZ set the precedent — publish the subset the constitution grounds,
+ * with the provenance beside it.
  */
 export const REFUSED_LANGUAGE_ITEMS = {
   /**
