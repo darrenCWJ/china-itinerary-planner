@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-13T13:28:33.915Z",
+ "generatedAt": "2026-09-22T23:21:10.637Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -74,8 +74,8 @@
   },
   {
    "code": "AZ",
-   "count": 245,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 246,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "BA",
@@ -150,7 +150,7 @@
   {
    "code": "BR",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "BS",
@@ -229,8 +229,8 @@
   },
   {
    "code": "CN",
-   "count": 412,
-   "generatedAt": "2026-09-10T13:08:21.475Z"
+   "count": 404,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "CO",
@@ -260,7 +260,7 @@
   {
    "code": "CX",
    "count": 1,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "CY",
@@ -270,7 +270,7 @@
   {
    "code": "CZ",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "DE",
@@ -284,8 +284,8 @@
   },
   {
    "code": "DK",
-   "count": 507,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 508,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "DM",
@@ -330,7 +330,7 @@
   {
    "code": "ES",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "ET",
@@ -340,7 +340,7 @@
   {
    "code": "FI",
    "count": 750,
-   "generatedAt": "2026-09-04T12:57:22.021Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "FJ",
@@ -360,12 +360,12 @@
   {
    "code": "FO",
    "count": 35,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "FR",
    "count": 750,
-   "generatedAt": "2026-09-09T13:10:36.751Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "GA",
@@ -375,7 +375,7 @@
   {
    "code": "GB",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "GD",
@@ -460,7 +460,7 @@
   {
    "code": "GY",
    "count": 23,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "HK",
@@ -470,7 +470,7 @@
   {
    "code": "HN",
    "count": 544,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "HR",
@@ -485,7 +485,7 @@
   {
    "code": "HU",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "ID",
@@ -500,7 +500,7 @@
   {
    "code": "IL",
    "count": 724,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "IM",
@@ -510,7 +510,7 @@
   {
    "code": "IN",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "IO",
@@ -525,7 +525,7 @@
   {
    "code": "IR",
    "count": 750,
-   "generatedAt": "2026-09-13T13:28:33.915Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "IS",
@@ -535,7 +535,7 @@
   {
    "code": "IT",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "JE",
@@ -555,7 +555,7 @@
   {
    "code": "JP",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "KE",
@@ -680,12 +680,12 @@
   {
    "code": "MD",
    "count": 101,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "ME",
    "count": 66,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "MF",
@@ -714,8 +714,8 @@
   },
   {
    "code": "MM",
-   "count": 576,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "count": 579,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "MN",
@@ -749,8 +749,8 @@
   },
   {
    "code": "MT",
-   "count": 70,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "count": 71,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "MU",
@@ -770,7 +770,7 @@
   {
    "code": "MX",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "MY",
@@ -810,12 +810,12 @@
   {
    "code": "NI",
    "count": 168,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "NL",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "NO",
@@ -844,8 +844,8 @@
   },
   {
    "code": "OM",
-   "count": 39,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 42,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "PA",
@@ -855,7 +855,7 @@
   {
    "code": "PE",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "PF",
@@ -870,12 +870,12 @@
   {
    "code": "PH",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "PK",
-   "count": 572,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 575,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "PL",
@@ -930,7 +930,7 @@
   {
    "code": "RO",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "RS",
@@ -965,7 +965,7 @@
   {
    "code": "SD",
    "count": 112,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "SE",
@@ -995,7 +995,7 @@
   {
    "code": "SK",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "SL",
@@ -1075,7 +1075,7 @@
   {
    "code": "TH",
    "count": 750,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "TJ",
@@ -1094,8 +1094,8 @@
   },
   {
    "code": "TM",
-   "count": 126,
-   "generatedAt": "2026-09-08T13:05:26.752Z"
+   "count": 145,
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "TN",
@@ -1110,7 +1110,7 @@
   {
    "code": "TR",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "TT",
@@ -1135,7 +1135,7 @@
   {
    "code": "UA",
    "count": 750,
-   "generatedAt": "2026-09-12T12:23:07.102Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "UG",
@@ -1145,7 +1145,7 @@
   {
    "code": "US",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "UY",
@@ -1220,7 +1220,7 @@
   {
    "code": "ZA",
    "count": 750,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-22T23:21:10.637Z"
   },
   {
    "code": "ZM",
