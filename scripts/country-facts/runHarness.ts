@@ -192,10 +192,12 @@ export function healthyFeed(): Feed {
         (feed.languages as Row[]).push({ country: code, item: entity(item), value, scoped });
       }
     }
-    // NL's two-item split, by the same rule and for the same reason: the
-    // filler gives one clean answer per field, which would resolve and leave
-    // the curated rows STALE. Replacing them with the measured pair is what
-    // reproduces the withhold these rows exist to rescue.
+    // A single-valued field's withhold, by the same rule and for the same
+    // reason: the filler gives one clean answer per field, which would resolve
+    // and leave a curated row STALE. Replacing it with the measured pair is
+    // what reproduces the withhold the row exists to rescue. NL's two-item
+    // split was the shape this was written for, until it was reverted
+    // upstream on 2026-09-22; no row needs it today.
     if (spec.name) {
       dropRows(feed, "name", [code]);
       for (const value of spec.name) (feed.name as Row[]).push({ country: code, value });

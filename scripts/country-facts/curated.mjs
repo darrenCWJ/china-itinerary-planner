@@ -35,40 +35,26 @@
  */
 export const CURATED_FACTS = {
   /**
-   * Two upstream shapes, and the second one arrived a day after the first was
-   * written.
+   * P297 sits on Q29999 "Kingdom of the Netherlands", so P38 yields
+   * EUR/USD/AWG/XCG.
    *
-   * `currencyCode`/`currencyName`: P297 sits on Q29999 "Kingdom of the
-   * Netherlands", so P38 yields EUR/USD/AWG/XCG.
-   *
-   * `name`/`emergency`/`lat`: at **2026-08-28T09:46:29Z** Q55 "Netherlands"
-   * GAINED `P297 = "NL"` alongside Q29999, both at NormalRank. Every query in
-   * this file anchors on `?c wdt:P297 ?country`, so `wdt:` now matches BOTH
-   * items and each single-valued picker sees two answers and withholds — two
-   * labels, two roleless emergency numbers, two P625 points. Measured the same
-   * day with the shipping pipeline, NL only and BE as an unaffected control:
-   * `factCount` 9 -> 7, over `COUNTRY_FIELD_LOSS_GRACE`, which aborted the
-   * whole nightly refresh — the city catalog with it, since they share one
-   * job. And it could not self-heal: a failed run writes nothing, so
-   * `previous` keeps NL at 9 forever and every later run loses the same two.
-   *
-   * These are RESTORATIONS, not editorial calls: each value is the one the
-   * committed artifact already carried and `lib/countries.ts` is reconciled
-   * against, so this row returns the record to what shipped rather than
-   * changing what a traveller reads. 112 is the number to dial in the European
-   * Netherlands, which is the country this app plans trips to; the 911 upstream
-   * now also offers belongs to the Caribbean constituents.
-   *
-   * If Wikidata resolves the split, these three go STALE and the run goes red
-   * asking for them back out — the same anti-rot pairing the ZW row relies on.
+   * This row also carried `name`, `emergency` and `lat` from aec9295
+   * (2026-08-28) to 2026-09-23, and they went out exactly the way they were
+   * written to. At 2026-08-28T09:46:29Z
+   * (rev 2537351572) Q55 "Netherlands"'s own `P297 = "NL"` statement was
+   * promoted from deprecated to normal rank, so `?c wdt:P297 ?country`
+   * matched BOTH items, every single-valued picker saw two answers and
+   * withheld, and NL fell 9 -> 7 facts, over `COUNTRY_FIELD_LOSS_GRACE`. The
+   * three were RESTORATIONS of the values the artifact already carried.
+   * At 2026-09-22T00:49:30Z (rev 2548244569) that edit was undone as
+   * vandalism: Q55's statement is deprecated again, qualified `P8327 intended
+   * subject of deprecated statement: Q29999`. Upstream once more supplies the
+   * same three values the rows held, so they went STALE on that night's run,
+   * `assertFactsSane` refused the write as designed, and they were deleted.
+   * NL's record does not move. If the promotion comes back, the grace check
+   * aborts the run again and these three rows are the fix again.
    */
-  NL: {
-    currencyCode: 'EUR',
-    currencyName: 'euro',
-    name: 'Kingdom of the Netherlands',
-    emergency: [{ number: '112', role: null }],
-    lat: 52.366666666667,
-  },
+  NL: { currencyCode: 'EUR', currencyName: 'euro' },
   /**
    * P38 yields EUR/XPF (the CFP franc of the Pacific collectivities), and
    * P2884 yields 400/230 — 400 V being industrial three-phase supply.
