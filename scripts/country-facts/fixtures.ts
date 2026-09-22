@@ -79,7 +79,8 @@ export const plugRows = (...labels: string[]): Row[] =>
 export const entity = (id: string): string => `http://www.wikidata.org/entity/${id}`;
 
 /**
- * The measured upstream shape that causes each curated row's withhold.
+ * The measured upstream shape that causes each curated row's withhold — and,
+ * for MR, the statement `REFUSED_LANGUAGE_ITEMS` refuses.
  *
  * `languages` rows are `[item, label, scoped]`, the three columns the P37
  * query selects, so the fixture drives the SAME `pickLanguages` path a real
@@ -165,6 +166,18 @@ export const CURATED_UPSTREAM: Record<
       ["Q55698568", "Azerbaijani Sign Language", "false"],
     ],
   },
+  // Mauritania's real P37 answer, measured 2026-09-23 by the shipping query:
+  // two unscoped rows. Nothing is withheld, so this is not a curated row's
+  // shape but the one `REFUSED_LANGUAGE_ITEMS` refuses — French (Q150),
+  // added 2026-09-13 with no source but an import from Azerbaijani
+  // Wikipedia. Recorded here so the refusal fires in `healthyFeed` too:
+  // without the statement it refuses, every run() test would read it STALE.
+  MR: {
+    languages: [
+      ["Q150", "French", "false"],
+      ["Q13955", "Arabic", "false"],
+    ],
+  },
 };
 
 export const FILLER_POOL = (() => {
@@ -175,7 +188,7 @@ export const FILLER_POOL = (() => {
   // beside the curated loop's second one made `pickCallingCode` withhold — a
   // shape that matched nothing measured upstream.
   const named = new Set([
-    "AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "NL", "PE", "PL", "SH", "ZW", "QZ",
+    "AZ", "BA", "BE", "BZ", "CH", "CN", "CZ", "FR", "JP", "MO", "MR", "NL", "PE", "PL", "SH", "ZW", "QZ",
   ]);
   const codes: string[] = [];
   for (const a of alphabet) for (const b of alphabet) if (!named.has(a + b)) codes.push(a + b);

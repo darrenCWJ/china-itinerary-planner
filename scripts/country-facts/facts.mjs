@@ -22,8 +22,8 @@
  * this module builds and cannot be written without `EmergencyNumber`.
  */
 
-import { CURATED_FACTS } from './curated.mjs';
-import { collapse, groupByCountry } from './parse.mjs';
+import { CURATED_FACTS, REFUSED_LANGUAGE_ITEMS } from './curated.mjs';
+import { collapse, entityId, groupByCountry } from './parse.mjs';
 import {
   pickCallingCode,
   pickCurrency,
@@ -64,13 +64,16 @@ import {
  * finished record cannot show — a plug field withheld because the only value
  * upstream carried was a Wikipedia article, a language field withheld because
  * every statement upstream had was scoped to one territory, or a hand-verified
- * override that upstream has since made redundant.
+ * override or refusal that upstream has since made redundant.
  * @typedef {{
  *   soleDroppedArticlePlugs: string[],
  *   soleDroppedLanguages: string[],
  *   scopedLanguages: string[],
  *   curatedFired: string[],
  *   curatedStale: string[],
+ *   refusedFired: string[],
+ *   refusedStale: string[],
+ *   refusedEmptied: string[],
  *   withheld: Record<string, string[]>,
  * }} Diagnostics
  */
@@ -246,6 +249,9 @@ export function buildFacts(byProperty) {
     scopedLanguages: [],
     curatedFired: [],
     curatedStale: [],
+    refusedFired: [],
+    refusedStale: [],
+    refusedEmptied: [],
     withheld: { name: [], currency: [], plugs: [], voltage: [], emergency: [] },
   };
 
@@ -284,7 +290,9 @@ export function buildFacts(byProperty) {
     if (emergency !== null) record.emergency = emergency;
     else if (emergencyRows.length > 0) diagnostics.withheld.emergency.push(code);
 
-    const languages = pickLanguages(grouped.languages.get(code) ?? []);
+    const languages = pickLanguages(
+      refuseLanguageItems(code, grouped.languages.get(code) ?? [], diagnostics)
+    );
     if (languages.names) record.officialLanguages = languages.names;
     if (languages.soleDropped) diagnostics.soleDroppedLanguages.push(code);
     if (languages.territoriallyScoped) diagnostics.scopedLanguages.push(code);
@@ -329,6 +337,33 @@ export function applyCurated(built, curated = CURATED_FACTS) {
   for (const code of Object.keys(built.countries).sort()) sorted[code] = built.countries[code];
   built.countries = sorted;
   return built;
+}
+
+/**
+ * Remove the P37 statements `REFUSED_LANGUAGE_ITEMS` names for one country
+ * before `pickLanguages` sees them, and notice when a refusal has gone stale.
+ *
+ * `applyCurated`'s mirror, but called from inside `buildFacts` rather than
+ * after it, because what a refusal names is a statement's Q-id and
+ * `pickLanguages` reduces the rows to labels. Judged, like `applyCurated`,
+ * against the upstream answer alone.
+ *
+ * No rows is no verdict — the one place the mirror is not exact. An ABSENT
+ * field is what fires a curated row, but an ABSENT statement is what stales a
+ * refusal, and a demoted property hands `buildFacts` exactly that: an empty
+ * answer that `run` then carries forward. Only rows that arrived can say the
+ * refused statement is gone.
+ */
+export function refuseLanguageItems(code, rows, diagnostics, refused = REFUSED_LANGUAGE_ITEMS) {
+  const items = refused[code] ?? [];
+  if (items.length === 0 || rows.length === 0) return rows;
+  for (const item of items) {
+    const present = rows.some((row) => entityId(row.item) === item);
+    (present ? diagnostics.refusedFired : diagnostics.refusedStale).push(`${code}.${item}`);
+  }
+  const kept = rows.filter((row) => !items.includes(entityId(row.item)));
+  if (kept.length === 0) diagnostics.refusedEmptied.push(code);
+  return kept;
 }
 
 /**

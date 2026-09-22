@@ -136,6 +136,9 @@ function sampleBuilt(): {
       scopedLanguages: [],
       curatedFired: [],
       curatedStale: [],
+      refusedFired: [],
+      refusedStale: [],
+      refusedEmptied: [],
       withheld: {},
     },
   };
@@ -397,6 +400,18 @@ describe("assertFactsSane", () => {
     const built = sampleBuilt();
     built.diagnostics.curatedStale = ["NL.currencyCode"];
     expect(() => assertFactsSane(built, null)).toThrow(/no longer fire/);
+  });
+
+  test("rejects a stale refusal rather than letting it rot", () => {
+    const built = sampleBuilt();
+    built.diagnostics.refusedStale = ["MR.Q150"];
+    expect(() => assertFactsSane(built, null)).toThrow(/REFUSED_LANGUAGE_ITEMS rows MR.Q150 no longer fire/);
+  });
+
+  test("rejects a refusal that left its country no official language at all", () => {
+    const built = sampleBuilt();
+    built.diagnostics.refusedEmptied = ["MR"];
+    expect(() => assertFactsSane(built, null)).toThrow(/would leave MR with no official language/);
   });
 
   test.each([

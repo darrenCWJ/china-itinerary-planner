@@ -253,6 +253,29 @@ describe("run() — the positive control", () => {
     expect(writtenPayload().countries[FILLERS[0]].officialLanguages).toEqual(["French"]);
   });
 
+  test("Mauritania's refused French never reaches the artifact, and another country's does", async () => {
+    // The same item, Q150, on an ordinary country: the refusal is keyed by
+    // country as well as by id, so only Mauritania's statement is refused.
+    const feed = healthyFeed();
+    dropRows(feed, "languages", [FILLERS[0]]);
+    (feed.languages as Row[]).push({ country: FILLERS[0], item: entity("Q150"), value: "French" });
+    await run({ fetchBindings: loaderFor(feed), dataDir: freshDataDir() });
+    const { countries } = writtenPayload();
+    expect(countries.MR.officialLanguages).toEqual(["Arabic"]);
+    expect(countries[FILLERS[0]].officialLanguages).toEqual(["French"]);
+  });
+
+  test("a demoted P37 night carries Mauritania forward instead of reading its refusal as stale", async () => {
+    // No rows is no verdict. Were an empty answer read as "upstream dropped
+    // the statement", every P37 outage would become a refused write.
+    const dataDir = freshDataDir();
+    await seedPrevious(dataDir, healthyPayload);
+    const feed = healthyFeed();
+    feed.languages = "throw";
+    await run({ fetchBindings: loaderFor(feed), dataDir });
+    expect(writtenPayload().countries.MR.officialLanguages).toEqual(["Arabic"]);
+  });
+
   test("every country is written with the name the sentences will call it", async () => {
     await run({ fetchBindings: loaderFor(healthyFeed()), dataDir: freshDataDir() });
     const { countries } = writtenPayload();
@@ -416,6 +439,17 @@ describe("run() aborts before any write primitive fires", () => {
     dropRows(feed, "currency", ["NL"]);
     (feed.currency as Row[]).push({ country: "NL", code: "EUR", name: "euro" });
     await expectNoWrite(feed, /NL.currencyCode, NL.currencyName no longer fire/);
+  });
+
+  test("a feed where a refused statement has gone stale", async () => {
+    // Upstream deprecating Mauritania's French is the GOOD change, and it
+    // still stops the run: the refusal would otherwise sit in the file with
+    // nothing left to refuse and nobody ever re-checking it.
+    const feed = healthyFeed();
+    feed.languages = (feed.languages as Row[]).filter(
+      (row) => !(row.country === "MR" && row.item === entity("Q150"))
+    );
+    await expectNoWrite(feed, /REFUSED_LANGUAGE_ITEMS rows MR.Q150 no longer fire/);
   });
 
   test("a feed whose China record stopped reproducing the hand-written answer", async () => {

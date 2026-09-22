@@ -1,6 +1,7 @@
 /**
  * ingest-country-facts — `CURATED_FACTS`, the hand-verified overrides for
- * fields the withhold rules refuse.
+ * fields the withhold rules refuse, and `REFUSED_LANGUAGE_ITEMS`, the
+ * hand-verified refusals of statements they would publish.
  *
  * Moved verbatim out of scripts/ingest-country-facts.mjs on 2026-09-07 (spec
  * 2026-09-07-unscheduled-items §2.1) so that file stays under the 800-line
@@ -153,5 +154,46 @@ export const CURATED_FACTS = {
    * about offline translation packs.
    */
   AZ: { officialLanguages: ['Azerbaijani'] },
+};
+
+/**
+ * Hand-verified refusals: P37 statements, by country and by Q-id, that the
+ * rules would publish and a human has checked are false.
+ *
+ * `CURATED_FACTS` cannot do this. It fills a field the rules WITHHELD, and
+ * `pickLanguages` withholds nothing when upstream adds a wrong language —
+ * the list is multi-valued, so the extra value simply joins it. Nor can
+ * `DROPPED_LANGUAGE_ITEMS`: that drops an id from every country, and the id
+ * here is French.
+ *
+ * The same anti-rot pairing as `CURATED_FACTS`, mirrored. `buildFacts` records
+ * each refusal that fires; a refusal whose statement upstream no longer
+ * carries is STALE and `assertFactsSane` refuses the write, and so does one
+ * that would leave its country with no official language at all. A country
+ * with NO P37 rows gets no verdict either way — that is what a demoted
+ * property looks like, and reading it as "upstream dropped the statement"
+ * would turn every P37 outage into a refused write.
+ */
+export const REFUSED_LANGUAGE_ITEMS = {
+  /**
+   * French (Q150). At 2026-09-13T23:58:08Z (rev 2545299860) a single edit
+   * added it to Q1025 at normal rank, unqualified, its only reference
+   * `P143 imported from Wikimedia project: Azerbaijani Wikipedia`. Article 6
+   * of Mauritania's constitution (1991, rev. 2012): "The national languages
+   * are: Arabic, Poular, Soninke, and Wolof. The official language is
+   * Arabic." French, official before 1991, is not named. Measured 2026-09-23
+   * by the shipping query: MR's P37 is exactly Arabic (Q13955) and French.
+   *
+   * It reddened the nightly refresh every day from 2026-09-14 to 09-21 (on
+   * 09-22 the stale NL rows above stopped the run first): the ingest took
+   * the new value, and the exact 426-language pin in lib/countryTips.test.ts
+   * failed the verify step, which withheld the city catalog with it. Taken
+   * as given, the record would also have told travellers "Arabic and French
+   * are official languages" and lost Mauritania's packing line, which only
+   * fires for a single language. This returns MR to the Arabic it shipped.
+   * The day upstream deprecates the statement, this row goes stale and the
+   * run asks for it back out.
+   */
+  MR: ['Q150'],
 };
 
