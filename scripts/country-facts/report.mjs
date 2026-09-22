@@ -66,13 +66,17 @@ import { SOURCE_LICENSE, SOURCE_NAME, SPARQL_ENDPOINT } from './io.mjs';
  * answer, same output — see `languageGap` below for why the alternative was a
  * literal that drifted, and for what `null` means.
  *
+ * `refusedLanguages` is the second such input, `diagnostics.refusedFired`, and
+ * `null` means the same thing — see `refusalNote` below.
+ *
  * @param {{
  *   countries: Record<string, CountryFacts>,
  *   generatedAt: string,
  *   scopedLanguages?: string[] | null,
+ *   refusedLanguages?: string[] | null,
  * }} input
  */
-export function buildReport({ countries, generatedAt, scopedLanguages = null }) {
+export function buildReport({ countries, generatedAt, scopedLanguages = null, refusedLanguages = null }) {
   const records = Object.entries(countries);
   const coverage = RECORD_FIELDS.map((field) => {
     const covered = records.filter(([, record]) => record[field] !== undefined).length;
@@ -161,6 +165,33 @@ export function buildReport({ countries, generatedAt, scopedLanguages = null }) 
       ]),
   ];
 
+  /**
+   * The one place the artifact publishes LESS than upstream states, derived
+   * from `diagnostics.refusedFired` for `languageGap`'s reason: without it, a
+   * refusal's only reader is a log line in a job nobody watches, and anyone
+   * diffing the artifact against Wikidata would find Mauritania missing French
+   * with nothing committed to say why.
+   *
+   * `null` is the demoted-P37 night again: rows were carried forward and no
+   * refusal was judged, which is not the same as none firing. An empty list —
+   * judged, nothing refused — says nothing, like `languageGap` does.
+   */
+  const refused = refusedLanguages ?? [];
+  const refusalNote = refusedLanguages === null
+    ? [
+      '- **Refused official-language statements: not judged this run.** The P37 query was',
+      '  demoted and last run\'s languages were carried forward, so no row of',
+      '  `REFUSED_LANGUAGE_ITEMS` was checked against upstream.',
+    ]
+    : refused.length === 0 ? [] : [
+      `- **${refused.length} official-language statement${refused.length === 1 ? '' : 's'} upstream makes, refused by hand.**`,
+      '  Each was checked against a primary source and found false, and is refused by Q-id',
+      '  for that one country, so the rest of its list still publishes. The provenance of',
+      '  each is recorded beside it in `REFUSED_LANGUAGE_ITEMS`. Derived from this run, as',
+      '  country.Q-id:',
+      `  ${[...refused].sort().join(', ')}`,
+    ];
+
   return [
     '# Country facts report',
     '',
@@ -237,6 +268,7 @@ export function buildReport({ countries, generatedAt, scopedLanguages = null }) 
     '  No structured source. Visa rules also depend on the traveller\'s passport, which',
     '  the app does not know.',
     ...languageGap,
+    ...refusalNote,
     '- **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole',
     '  distinct P2853 value set across these countries is fourteen items, thirteen',
     '  standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single',

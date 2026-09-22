@@ -121,6 +121,12 @@ Recorded so it is not re-litigated. Each of these was measured, not assumed.
   - **3 because upstream states no official language at all** —
     no truthy P37 statement, or none this ingest can publish.
     GP, MQ, UY
+- **1 official-language statement upstream makes, refused by hand.**
+  Each was checked against a primary source and found false, and is refused by Q-id
+  for that one country, so the rest of its list still publishes. The provenance of
+  each is recorded beside it in `REFUSED_LANGUAGE_ITEMS`. Derived from this run, as
+  country.Q-id:
+  MR.Q150
 - **Plug letters for the fifteen BS 546 countries.** Measured 2026-08-27: the whole
   distinct P2853 value set across these countries is fourteen items, thirteen
   standards plus one Wikipedia article. One of the thirteen, `BS 546`, is a single

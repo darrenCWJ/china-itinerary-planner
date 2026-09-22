@@ -137,6 +137,14 @@ function writtenPayload(): {
   return JSON.parse(String(call![1]));
 }
 
+function writtenReport(): string {
+  const call = vi
+    .mocked(writeFileSync)
+    .mock.calls.find(([path]) => String(path).includes("country-facts-report.md.tmp"));
+  expect(call, "the report was never written").toBeDefined();
+  return String(call![1]);
+}
+
 async function expectNoWrite(
   feed: Feed,
   pattern: RegExp,
@@ -263,6 +271,8 @@ describe("run() — the positive control", () => {
     const { countries } = writtenPayload();
     expect(countries.MR.officialLanguages).toEqual(["Arabic"]);
     expect(countries[FILLERS[0]].officialLanguages).toEqual(["French"]);
+    // And the committed report says so: the call site, not just buildReport.
+    expect(writtenReport()).toMatch(/^\s{2}MR\.Q150$/m);
   });
 
   test("a demoted P37 night carries Mauritania forward instead of reading its refusal as stale", async () => {
@@ -274,6 +284,7 @@ describe("run() — the positive control", () => {
     feed.languages = "throw";
     await run({ fetchBindings: loaderFor(feed), dataDir });
     expect(writtenPayload().countries.MR.officialLanguages).toEqual(["Arabic"]);
+    expect(writtenReport()).toContain("Refused official-language statements: not judged this run");
   });
 
   test("every country is written with the name the sentences will call it", async () => {
