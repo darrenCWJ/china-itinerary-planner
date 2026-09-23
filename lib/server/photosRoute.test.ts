@@ -19,7 +19,7 @@ vi.mock("@/lib/server/store", () => ({
 
 const { POST } = await import("@/app/api/trips/[id]/photos/route");
 const { requireMember } = await import("@/lib/server/authz");
-const { readPhoto } = await import("@/lib/server/photoStore");
+const { PHOTO_CONTENT_TYPES, readPhoto } = await import("@/lib/server/photoStore");
 const { NextRequest } = await import("next/server");
 
 const TRIP = "trip-1";
@@ -99,10 +99,11 @@ describe("POST /api/trips/:id/photos", () => {
   });
 
   test("a declared type that names an Object.prototype key is refused with a 400", async () => {
-    // Both pass the PHOTO_CONTENT_TYPES lookup via the prototype chain, so
-    // only the byte check stands between them and savePhoto (which answered
-    // them with a 500 before the check existed).
+    // A plain PHOTO_CONTENT_TYPES[file.type] lookup finds a value for both,
+    // through the prototype chain. Before the byte check, the route passed
+    // them on to savePhoto and answered with a 500.
     for (const type of ["constructor", "__proto__"]) {
+      expect(PHOTO_CONTENT_TYPES[type], type).toBeTruthy();
       const res = await POST(upload(JPEG, type), params);
       expect(res.status, type).toBe(400);
       expect(await res.json(), type).toEqual({ error: "Only JPEG, PNG or WebP photos" });
