@@ -162,9 +162,9 @@ describe("lib/mainAirport.ts", () => {
     // of it is a `next build` error rather than data/airports.json shipped to
     // every visitor. This module takes the array as a parameter instead,
     // exactly as lib/airports.ts does, and that is the whole reason it is
-    // client-safe. This test catches the same mistake earlier, in vitest,
-    // before a build — where the package is aliased to an empty module
-    // (vitest.server-only.ts) and the guard cannot fire.
+    // client-safe. This test catches the same mistake earlier, in vitest —
+    // where `server-only` is aliased to an empty module (vitest.server-only.ts)
+    // and the guard cannot fire — before any build runs.
     //
     // Transitive, not a grep of one file: nothing imports the JSON but
     // lib/server/airports.ts, and every module that reaches THAT one inherits
