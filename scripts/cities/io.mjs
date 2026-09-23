@@ -10,7 +10,9 @@
  *
  * The one line that is not verbatim is `ROOT_DIR`: this file sits one
  * directory deeper than the one it came out of, so the walk up from
- * `import.meta.url` takes one more `'..'`.
+ * `import.meta.url` takes one more `'..'`. `USER_AGENT` has changed since, to
+ * the contact form scripts/user-agent.test.ts holds every outbound request to
+ * (2026-09-23).
  */
 
 import {
@@ -55,7 +57,7 @@ const ADMIN1_URL = 'https://download.geonames.org/export/dump/admin1CodesASCII.t
  */
 export const SOURCE_LICENSE = 'GeoNames cities500 (CC BY 4.0)';
 export const SOURCE_ATTRIBUTION = 'https://www.geonames.org/ — CC BY 4.0';
-const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+const USER_AGENT = 'china-itinerary-planner/ingest-cities (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 /** 13.5 MB over a CI network. Airports' 120s is not enough headroom for it. */
 const FETCH_TIMEOUT_MS = 300_000;
