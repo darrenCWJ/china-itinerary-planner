@@ -1279,3 +1279,8 @@ Executed subagent-driven, with one implementer and one reviewer per task, then a
   - The acceptance's usage notes now say to set it inline for one command, because an exported variable stays armed for a second change to the same country (6195fc3).
   - The review's triage of nine logged Minor findings was "leave" for all of them.
 - **Attribution.** Implementer commits carry the implementing model's own `Co-Authored-By` line (Haiku 4.5 or Sonnet 5), per each subagent's attribution rule, rather than this plan's hard-coded one.
+- **Fable's final pass** returned MERGE WITH FIXES, and its first finding was one every earlier review had accepted without running it.
+  - **The inline command.** The documented `CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node …` is POSIX-only; PowerShell 5.1 (this machine's default shell) and cmd.exe reject it. The usage notes now give the Git Bash form and a PowerShell `try { $env:… } finally { Remove-Item Env:… }` form that cannot outlive its command (211cc5d). Fable also proposed replacing the variable with a `--accept-language-changes` flag, which would remove the hazard on every shell; that changes the approved design, so it is left to the owner.
+  - **The fix wave's own floor wording** had the two checks' order backwards: the coverage floor runs first, so a loss of seven or more lists is refused by the floor, accepted or not. Corrected in the same commit.
+  - **Parse-before-read was not pinned**, because `readJson` on a missing file does not throw. The malformed-acceptance test now seeds an unreadable previous artifact and requires the parse error to win (ea9d076, seen failing on the JSON error when the parse line was moved below `readJson`).
+  - **Stale pointers** were corrected in the 426 comment and the spec.
