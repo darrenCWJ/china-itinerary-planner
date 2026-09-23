@@ -699,6 +699,14 @@ describe("the boundary and the committed artifact agree", () => {
     // and AZ got theirs back from a hand-verified CURATED_FACTS row. Upstream
     // made it 427 on 2026-09-13 by giving Mauritania French; that statement
     // is refused, so the count held — see the test above.
+    //
+    // This total is NOT the change detector, and must not be read as one: a
+    // relabel or a same-count swap never moves it — Iraq's "Kurdish" became
+    // "Kurdish language" on 2026-09-08 and shipped straight past it. Every
+    // change to one country's list is stopped before any write by the
+    // ingest's own gate (scripts/country-facts/languages.mjs). This pin stays
+    // exact as the sweep's arming check, and as a count check on the commits
+    // that gate never sees — human PRs included.
     expect(scanned).toBe(426);
     expect(meta).toEqual([]);
     // And the rule still refuses one arriving by another route — a hand-edited

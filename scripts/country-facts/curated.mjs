@@ -160,6 +160,13 @@ export const CURATED_FACTS = {
  * Hand-verified refusals: P37 statements, by country and by Q-id, that the
  * rules would publish and a human has checked are false.
  *
+ * A statement like this no longer waits for a total to be noticed. Since
+ * 2026-09-24 `assertFactsSane` stops any run in which a country's published
+ * list changes, naming the language (scripts/country-facts/languages.mjs), so
+ * the night upstream adds one is the night a human hears about it. This table
+ * is one of the three answers to that message, with `CURATED_FACTS` and an
+ * accepted change.
+ *
  * `CURATED_FACTS` cannot do this. It fills a field the rules WITHHELD, and
  * `pickLanguages` withholds nothing when upstream adds a wrong language —
  * the list is multi-valued, so the extra value simply joins it. Nor can

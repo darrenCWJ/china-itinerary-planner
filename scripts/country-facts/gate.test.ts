@@ -500,9 +500,12 @@ describe("assertFactsSane", () => {
   });
 
   test("tolerates one field of churn in one country", () => {
+    // `plugs`, not `officialLanguages`: a language list moving is never churn —
+    // see "a published language list never changes without a human" below —
+    // while one other field in one country still is.
     const previous = { countries: structuredClone(sampleBuilt().countries) };
     const built = sampleBuilt();
-    delete built.countries[ANY].officialLanguages;
+    delete built.countries[ANY].plugs;
     expect(() => assertFactsSane(built, previous)).not.toThrow();
   });
 
@@ -516,6 +519,117 @@ describe("assertFactsSane", () => {
       "officialLanguages",
       "callingCode",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assertFactsSane — a published language list never changes without a human
+//
+// A total over every country cannot see a relabel or a same-count swap, so the
+// gate compares each country's list. The helpers are pinned one by one in
+// scripts/country-facts/languages.test.ts; these pin the three branches the
+// gate adds and the order they report in.
+// ---------------------------------------------------------------------------
+
+/** A second ordinary country, for the swap a total cannot see. */
+const OTHER = FILLER_POOL[1];
+
+/** A healthy previous artifact and a build identical to it, for one mutation each. */
+function unchangedPair() {
+  return { previous: { countries: structuredClone(sampleBuilt().countries) }, built: sampleBuilt() };
+}
+
+describe("assertFactsSane — a published language list never changes without a human", () => {
+  test("an unchanged build passes, so every rejection below is the language check", () => {
+    const { previous, built } = unchangedPair();
+    expect(() => assertFactsSane(built, previous)).not.toThrow();
+  });
+
+  test("rejects an added language, naming the country and the language — Mauritania's shape", () => {
+    const { previous, built } = unchangedPair();
+    built.countries[ANY].officialLanguages = ["English", "French"];
+    expect(() => assertFactsSane(built, previous)).toThrow(
+      `1 country changed its published official languages since the committed artifact: ${ANY}: +"French"`
+    );
+  });
+
+  test("rejects a same-count swap between two countries — the change a total cannot see", () => {
+    const { previous, built } = unchangedPair();
+    previous.countries[ANY].officialLanguages = ["English", "French"];
+    built.countries[OTHER].officialLanguages = ["English", "French"];
+    const total = (countries: Record<string, Record<string, unknown>>) =>
+      Object.values(countries).reduce(
+        (sum, record) => sum + ((record.officialLanguages as string[] | undefined)?.length ?? 0),
+        0
+      );
+    // Armed: lib/countryTips.test.ts's 426-style total passes this build untouched.
+    expect(total(built.countries)).toBe(total(previous.countries));
+    expect(() => assertFactsSane(built, previous)).toThrow(
+      `2 countries changed their published official languages since the committed artifact: ` +
+        `${ANY}: -"French"; ${OTHER}: +"French"`
+    );
+  });
+
+  test("rejects a relabel — Iraq's shape, one name out and one in", () => {
+    const { previous, built } = unchangedPair();
+    built.countries[ANY].officialLanguages = ["English language"];
+    expect(() => assertFactsSane(built, previous)).toThrow(`${ANY}: -"English" +"English language"`);
+  });
+
+  test("rejects a withdrawn field, and names territorial scope when that is why", () => {
+    const { previous, built } = unchangedPair();
+    delete built.countries[ANY].officialLanguages;
+    expect(() => assertFactsSane(built, previous)).toThrow(
+      `${ANY}: -"English" (field withdrawn: no publishable statement came back)`
+    );
+    built.diagnostics.scopedLanguages = [ANY];
+    expect(() => assertFactsSane(built, previous)).toThrow(
+      `${ANY}: -"English" (field withdrawn: every statement is now territorially scoped)`
+    );
+  });
+
+  test("rejects a field appearing where the committed artifact had none", () => {
+    const { previous, built } = unchangedPair();
+    delete previous.countries[ANY].officialLanguages;
+    expect(() => assertFactsSane(built, previous)).toThrow(`${ANY}: +"English" (field new)`);
+  });
+
+  test("lets an accepted change through while still rejecting one nobody accepted", () => {
+    const { previous, built } = unchangedPair();
+    built.countries[ANY].officialLanguages = ["English", "French"];
+    built.countries[OTHER].officialLanguages = ["English", "German"];
+    const partly = () => assertFactsSane(built, previous, { acceptLanguageChanges: [ANY] });
+    expect(partly).toThrow(
+      `1 country changed its published official languages since the committed artifact: ${OTHER}: +"German"`
+    );
+    // The suggestion keeps the country already accepted, so copying it works.
+    expect(partly).toThrow(`CIP_ACCEPT_LANGUAGE_CHANGES=${ANY},${OTHER} and committing`);
+    expect(() => assertFactsSane(built, previous, { acceptLanguageChanges: [ANY, OTHER] })).not.toThrow();
+  });
+
+  test("rejects an acceptance naming a country whose languages did not change", () => {
+    const { previous, built } = unchangedPair();
+    expect(() => assertFactsSane(built, previous, { acceptLanguageChanges: [ANY] })).toThrow(
+      `CIP_ACCEPT_LANGUAGE_CHANGES names ${ANY}, whose published official languages did not change this run`
+    );
+  });
+
+  test("reports an unaccepted change before an unused acceptance", () => {
+    const { previous, built } = unchangedPair();
+    built.countries[OTHER].officialLanguages = ["English", "German"];
+    expect(() => assertFactsSane(built, previous, { acceptLanguageChanges: [ANY] })).toThrow(
+      /^1 country changed its published official languages/
+    );
+  });
+
+  test("rejects an acceptance where there is nothing to accept against", () => {
+    const noBaseline = new RegExp(
+      `CIP_ACCEPT_LANGUAGE_CHANGES names ${ANY} but there is no previous artifact to compare against`
+    );
+    expect(() => assertFactsSane(sampleBuilt(), null, { acceptLanguageChanges: [ANY] })).toThrow(noBaseline);
+    expect(() => assertFactsSane(sampleBuilt(), { countries: {} }, { acceptLanguageChanges: [ANY] })).toThrow(
+      noBaseline
+    );
   });
 });
 

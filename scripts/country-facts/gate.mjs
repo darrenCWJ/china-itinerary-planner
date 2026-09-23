@@ -31,6 +31,11 @@ import {
   MIN_VOLTAGE_V,
   PLUG_LETTER_SET,
 } from './picks.mjs';
+import {
+  ACCEPT_LANGUAGE_CHANGES_ENV,
+  describeLanguageChanges,
+  languageChanges,
+} from './languages.mjs';
 
 // ---------------------------------------------------------------------------
 // The build gate
@@ -340,8 +345,17 @@ function recordStrings(record) {
  * withheld only because upstream's sole value was a Wikipedia article, and a
  * hand-verified override upstream has since made redundant — and a finished
  * record cannot show either.
+ *
+ * `options.acceptLanguageChanges` is the parsed `CIP_ACCEPT_LANGUAGE_CHANGES`
+ * (scripts/country-facts/languages.mjs): the countries whose language change
+ * a human reviewed. It is empty on every nightly run, which never sets the
+ * variable.
+ *
+ * @param {*} built
+ * @param {*} previous
+ * @param {{ acceptLanguageChanges?: string[] }} [options]
  */
-export function assertFactsSane(built, previous) {
+export function assertFactsSane(built, previous, { acceptLanguageChanges = [] } = {}) {
   const countries = built?.countries ?? {};
   const diagnostics = built?.diagnostics ?? {};
   const codes = Object.keys(countries);
@@ -631,10 +645,23 @@ export function assertFactsSane(built, previous) {
     }
   }
 
+  // An acceptance is a reviewed difference from the published lists, and with
+  // no baseline there are none: one set here names nothing a human could have
+  // seen. Checked before the return below, because every drift check after it
+  // is inert on this run. An empty baseline is a first run by another name —
+  // the shrink band below skips it the same way — so it is refused alike.
+  const previousCountries = previous?.countries ?? {};
+  if (acceptLanguageChanges.length > 0 && Object.keys(previousCountries).length === 0) {
+    throw new Error(
+      `${ACCEPT_LANGUAGE_CHANGES_ENV} names ${acceptLanguageChanges.join(', ')} but there is no ` +
+      `previous artifact to compare against — there is nothing to accept a change against, and ` +
+      `every drift check is inert on a first run`
+    );
+  }
+
   if (!previous) return;
 
   // --- Drift, against the previous artifact --------------------------------
-  const previousCountries = previous.countries ?? {};
 
   const emptied = Object.keys(previousCountries)
     .filter((code) => factCount(previousCountries[code]) > 0 && factCount(countries[code] ?? {}) === 0)
@@ -681,6 +708,40 @@ export function assertFactsSane(built, previous) {
       `${collapsed.length} country/countries lost more than ${COUNTRY_FIELD_LOSS_GRACE} field(s) ` +
       `(${collapsed.slice(0, 10).join(', ')}) — a record holds at most ${FACT_FIELDS.length} ` +
       `fields, so a global ratio cannot see one country being hollowed out`
+    );
+  }
+
+  // --- Official languages, per country -------------------------------------
+  // Every change to a published list stops the run and names itself. See
+  // scripts/country-facts/languages.mjs for why a total could not, and
+  // docs/superpowers/specs/2026-09-24-language-change-gate-design.md for the
+  // two years of upstream history this was measured against: 45 changes on 43
+  // nights, 18 of which no total can see.
+  //
+  // Last, so a broader failure above reports first. Against `built` as it will
+  // be written — curated rows, refusals and carry-forward already applied — so
+  // a demoted P37 night, whose every list was carried forward, compares equal
+  // by construction, and an upstream revert heals the next run on its own,
+  // because a rejected run writes nothing. An empty baseline is skipped for
+  // the reason given above the drift section.
+  if (Object.keys(previousCountries).length === 0) return;
+  const changes = languageChanges(previousCountries, countries);
+  const accepted = new Set(acceptLanguageChanges);
+  const unaccepted = changes.filter((change) => !accepted.has(change.code));
+  if (unaccepted.length > 0) {
+    throw new Error(
+      describeLanguageChanges(unaccepted, {
+        scoped: diagnostics.scopedLanguages ?? [],
+        accept: changes.map((change) => change.code),
+      })
+    );
+  }
+  const unused = acceptLanguageChanges.filter((code) => !changes.some((change) => change.code === code));
+  if (unused.length > 0) {
+    throw new Error(
+      `${ACCEPT_LANGUAGE_CHANGES_ENV} names ${unused.join(', ')}, whose published official ` +
+      `languages did not change this run — an acceptance names exactly what a human reviewed, so ` +
+      `a stale or mistyped one must not stay armed for tomorrow's change`
     );
   }
 }
