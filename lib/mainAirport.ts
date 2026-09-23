@@ -7,10 +7,12 @@ import type { LatLon } from "./geo";
  *
  * Takes the airport array as a parameter, exactly as lib/airports.ts does, and
  * for the same reason: this is read by a client component. `lib/server/airports.ts`
- * carries NO `server-only` guard — importing it from the browser side compiles
- * clean and silently ships data/airports.json, 876,823 B, to every visitor.
- * `MapExplorer` already fetches the open country's rows from
- * `/api/map/airports?country=XX`, so the array is always someone else's to
+ * carries a `server-only` guard, so importing it from the browser side is a
+ * `next build` error rather than data/airports.json silently shipped to every
+ * visitor — and mainAirport.test.ts's "does not import the artifact", which
+ * walks this file's transitive imports, catches the same mistake earlier, in
+ * vitest, before a build. `MapExplorer` already fetches the open country's rows
+ * from `/api/map/airports?country=XX`, so the array is always someone else's to
  * supply.
  */
 

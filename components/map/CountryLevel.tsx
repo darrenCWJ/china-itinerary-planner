@@ -153,9 +153,9 @@ export interface CountryLevelProps {
   /**
    * The open country's airports, for §10.2's "Main airport" line on the card.
    *
-   * The ARRAY, and never the artifact. `lib/server/airports.ts` carries no
-   * `server-only` guard, so importing it from this file would compile clean and
-   * silently ship `data/airports.json` — 876,823 B — to every visitor.
+   * The ARRAY, and never the artifact. `lib/server/airports.ts` carries a
+   * `server-only` guard, so importing it from this file is a `next build`
+   * error rather than `data/airports.json` silently shipped to every visitor.
    * `MapExplorer` already fetches the open country's rows from
    * `/api/map/airports?country=XX` for the route estimator, and this is that
    * same array reaching a second reader rather than a second fetch.
