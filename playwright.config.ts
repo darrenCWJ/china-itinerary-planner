@@ -53,16 +53,25 @@ const E2E_SECRET = "e2e-fixture-k3Nv8xQ2mR7pL0wZaB6tY4hJ";
  * under `.claude/worktrees/`, so `npx playwright test` there found no tests.
  *
  * Collection only walks `testDir`, so while that is `./e2e` a nested checkout
- * is out of reach regardless; this keeps it out if `testDir` ever widens. A
- * RegExp rather than a glob built from the path, which would read a `[` or `{`
- * in it as syntax. On Windows Playwright also tests RegExps against a
+ * is out of reach regardless; this keeps it out if `testDir` ever widens, as
+ * long as Playwright is started from the checkout's real path. Node resolves
+ * `__dirname` through junctions and symlinks, while Playwright keeps the path
+ * it was given, so re-check `--list` from the path you use if you widen it.
+ *
+ * A RegExp rather than a glob built from the path, which would read a `[` or
+ * `{` in it as syntax. On Windows Playwright also tests RegExps against a
  * `/`-separated copy of the path, hence `/` here, and `i` because paths there
- * ignore case. `__dirname` exists because the repo is CommonJS.
+ * ignore case. `__dirname` exists because the repo is CommonJS. Escaped by
+ * hand because `RegExp.escape` needs Node 24 and nothing else here does.
  */
 const nestedCheckouts = new RegExp(
-  `^${RegExp.escape(__dirname.split(sep).join("/"))}/\\.claude/`,
+  `^${escapeRegExp(__dirname.split(sep).join("/"))}/\\.claude/`,
   "i",
 );
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 export default defineConfig({
   testDir: "./e2e",
