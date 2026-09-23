@@ -99,7 +99,9 @@ Unchanged, and already in `scripts/country-facts/curated.mjs`: `REFUSED_LANGUAGE
 
 ### 2.6 The 426 pin and the other exact pins
 
-Kept exactly, per the brief's "keep its semantics or explain replacing it". Its comment gains the new division of labour: per-country detection is the gate's, before any write; the pin remains the sweep's arming check ("an artifact that failed to parse would leave both empty and green") and an independent net-count check in the verify step, which also runs on human PRs the gate never sees. The pins on 239 countries with languages (`lib/countryTips.test.ts:200`, `:432`, `lib/countryFacts.test.ts:91`, `lib/countryProfile.test.ts:637`) and `MEASURED_FIELD_COVERAGE.officialLanguages` are untouched; an accepted change that moves one of them updates it in the same PR.
+Kept exactly, per the brief's "keep its semantics or explain replacing it". Its comment gains the new division of labour: per-country detection is the gate's, before any write; the pin remains the sweep's arming check ("an artifact that failed to parse would leave both empty and green") and an independent net-count check in the verify step, which also runs on human PRs the gate never sees. The pins on 239 countries with languages (`lib/countryTips.test.ts:200`, `:432`, `lib/countryFacts.test.ts:91`, `lib/countryProfile.test.ts:637`) and `MEASURED_FIELD_COVERAGE.officialLanguages` are untouched; an accepted change that moves one of them updates it in the same PR. An accepted withdrawal or new field also moves the `officialLanguages` headroom pins in `scripts/country-facts/gate.test.ts` (`officialLanguages: 6` in the headroom table and `expect(headroom).toBe(6)`) and the "239 - 233 = 6" arithmetic in `gate.mjs`'s floor docblock — found by the final review; four of the 27 measured one-way changes (PW, UY, US, EH) were that shape.
+
+The floor's meaning changes with this check, and the docblock says so: on every run with a previous artifact, the per-country check stops the first country that loses its list, so the `officialLanguages` floor now bounds only a run with no baseline and a human's accepted change.
 
 ### 2.7 Where the code goes
 

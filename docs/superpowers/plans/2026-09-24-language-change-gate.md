@@ -1259,3 +1259,23 @@ The PR body carries:
 - the ~13.5 decisions a year this design costs;
 - the five mutation results and the byte-identical proof;
 - a pointer to the §6.1 baseline follow-up, to be filed as its own task once the PR exists.
+
+---
+
+## Execution record (2026-09-24)
+
+Executed subagent-driven, with one implementer and one reviewer per task, then an Opus whole-branch review. What the review loop changed against the text above is recorded here, so the plan does not keep telling a future reader to do what did not happen.
+
+- **Task 1.** The plan's test file could not detect the module's four `.sort()` calls: every fixture was already alphabetical, and no change had two names. The task review caught it, and three tests were added (4d8ac73), each seen failing when its sort is removed.
+- **Task 2.** Its review flagged `lib/countryTips.test.ts` at 908 lines against "Files stay under 800 lines". The file was 900 before this plan and is one of the five test files the owner chose on 2026-09-07 to leave over; Global Constraints now names them (eb9f092).
+- **Rebase.** Between Tasks 3 and 4 the branch was rebased onto `origin/main` 3f9cf53 (PR #34, compliant User-Agents; no file overlap). Task 4's live proof therefore ran on the repo's own User-Agent, with no `ua.mjs` preload.
+- **Task 4, Step 3 (Mutation 2).** "a swap between two countries is two changes…" does NOT fail under a per-country length comparison, because each country's length changes in that swap. The mutation is killed by the relabel tests, as the plan also lists.
+- **Task 4, Step 4 (Mutation 3).** The instruction inserts `if (after === undefined) continue;` BEFORE `const after` is declared, so it throws a temporal-dead-zone ReferenceError and 27 tests fail by crashing. Re-run correctly, after the declaration, it is killed by exactly the five withdrawn-field tests.
+- **Task 4, Step 7.** The live proof came out byte-identical. The P37 query answered live; only `currency` was demoted, by a Wikidata 502, and carried forward.
+- **Whole-branch review.** Opus returned "with fixes" and one wave closed them:
+  - `run()`'s accepted-change log now passes `{ scoped }`, as spec §2.7 required and this plan's Task 3 code omitted (c43ae78, with a test seen red on the wrong reason first).
+  - The floor docblock, the scoped comment and one test comment stopped claiming the nightly job lets six silent losses through. The per-country check stops the first on any run with a baseline.
+  - A stale test pointer was corrected.
+  - The acceptance's usage notes now say to set it inline for one command, because an exported variable stays armed for a second change to the same country (6195fc3).
+  - The review's triage of nine logged Minor findings was "leave" for all of them.
+- **Attribution.** Implementer commits carry the implementing model's own `Co-Authored-By` line (Haiku 4.5 or Sonnet 5), per each subagent's attribution rule, rather than this plan's hard-coded one.
