@@ -107,7 +107,8 @@ Kept exactly, per the brief's "keep its semantics or explain replacing it". Its 
   - `ACCEPT_LANGUAGE_CHANGES_ENV`
   - `parseAcceptedLanguageChanges(raw)` → `string[]`, throwing on anything malformed
   - `languageChanges(previousCountries, countries)` → `{ code, removed, added, withdrawn, appeared }[]`, sorted by code
-  - `describeLanguageChanges(changes, { scoped })` → the §2.3 message body
+  - `summariseLanguageChanges(changes, { scoped })` → the grouped entries, shared by the gate's message and `run()`'s log line
+  - `describeLanguageChanges(changes, { scoped, accept })` → the §2.3 message body. `accept` is every country that changed this run: when a human has accepted some changes and the run finds another, re-running with only the countries reported would un-accept the first, so the suggestion names them all.
 - **`gate.mjs`.** `assertFactsSane(built, previous, { acceptLanguageChanges = [] } = {})` — existing callers unchanged — gains three throw sites: unaccepted changes, an acceptance naming an unchanged country, an acceptance on a first run. The throws stay in this file because `refresh-cities.yml` names it as where `assertFactsSane`'s throw sites are; that header's count, 38, is updated.
 - **`scripts/ingest-country-facts.mjs`.** `run({ fetchBindings, dataDir, acceptLanguageChanges = '' })` parses first, before `readJson`; passes the list to the gate; logs accepted changes. The entry guard and its docblock ("calls `run()` with no arguments") change to pass the variable.
 - **Size.** `gate.mjs` stays near 730 lines and `gate.test.ts` near 770, both under the 800-line guidance.
