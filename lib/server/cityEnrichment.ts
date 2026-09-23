@@ -1,3 +1,4 @@
+import "server-only";
 import { isGeoNamesId } from "../geoNamesId";
 
 /**
@@ -29,6 +30,16 @@ import { isGeoNamesId } from "../geoNamesId";
  * Additive by design. Every failure path here resolves to whatever it has
  * rather than rejecting, because a city with no enrichment renders exactly as
  * a thin catalog city does today.
+ *
+ * Server-only, and enforced: `server-only` above makes a client import a
+ * `next build` error rather than a Wikidata query sent from the browser,
+ * where `USER_AGENT` below would not reliably reach the wire. The Fetch
+ * Standard no longer forbids the header, but Chromium still drops a
+ * script-set User-Agent without an error (crbug.com/571722), so the contact
+ * information Wikimedia's policy requires would vanish with every test still
+ * green: the test that pins it reads the arguments a stubbed `fetch`
+ * receives, and the drop happens below that. Vitest aliases the package to
+ * an empty module (vitest.server-only.ts).
  */
 
 export interface CityEnrichmentRecord {
