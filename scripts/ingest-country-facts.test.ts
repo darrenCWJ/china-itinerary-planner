@@ -491,6 +491,18 @@ describe("run() — a published language list never changes without a human", ()
     expect(child.stderr).toMatch(/CIP_ACCEPT_LANGUAGE_CHANGES must be two-letter uppercase country codes/);
     expect(child.stderr).toContain("Nothing was written");
   });
+
+  test("an accepted scoped withdrawal logs the reason the gate gave", async () => {
+    const dataDir = freshDataDir();
+    await seedPrevious(dataDir, healthyPayload);
+    const feed = dropRows(healthyFeed(), "languages", [FILLERS[0]]);
+    (feed.languages as Row[]).push({ country: FILLERS[0], item: entity("Q33569"), value: "Hawaiian", scoped: "true" });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await run({ fetchBindings: loaderFor(feed), dataDir, acceptLanguageChanges: FILLERS[0] });
+      expect(log.mock.calls.flat().join("\n")).toContain(`${FILLERS[0]}: -"English" (field withdrawn: every statement is now territorially scoped)`);
+    } finally { log.mockRestore(); }
+  });
 });
 
 describe("run() aborts before any write primitive fires", () => {
