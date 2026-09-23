@@ -455,11 +455,16 @@ describe("run() — a published language list never changes without a human", ()
   test("a malformed acceptance aborts before a single request, leaving no trace", async () => {
     const fetchBindings = vi.fn(loaderFor(healthyFeed()));
     const dataDir = freshDataDir();
+    // Seeded UNREADABLE on purpose: proves the acceptance is validated before
+    // `readJson` runs, not merely before there was something to read.
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(pathJoin(dataDir, "country-facts.json"), "{not json", "utf8");
     await expect(run({ fetchBindings, dataDir, acceptLanguageChanges: "aa" })).rejects.toThrow(
       /CIP_ACCEPT_LANGUAGE_CHANGES must be two-letter uppercase country codes/
     );
     expect(fetchBindings).not.toHaveBeenCalled();
-    expect(existsSync(dataDir)).toBe(false);
+    expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
+    expect(vi.mocked(renameSync)).not.toHaveBeenCalled();
   });
 
   test("run() ignores the variable exported in its own process — only the entry guard reads it", async () => {
