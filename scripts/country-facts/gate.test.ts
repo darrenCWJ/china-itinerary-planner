@@ -743,7 +743,7 @@ describe.skipIf(!hasArtifact)("data/country-facts.json", () => {
       return () => assertFactsSane({ countries, diagnostics: {} }, null);
     };
 
-    // Exactly on the floor — 233 of 246 — and the nightly job ships it.
+    // Exactly on the floor — 233 of 246 — and with no baseline to compare against, the floor alone lets it through.
     expect(stripLanguages(headroom)).not.toThrow();
     // One further, 232, and it stops.
     expect(stripLanguages(headroom + 1)).toThrow(

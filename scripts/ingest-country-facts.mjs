@@ -70,6 +70,12 @@
  *
  *   CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node scripts/ingest-country-facts.mjs
  *
+ * Set it inline on that one command, the way the example above does, and
+ * never export it from a shell: the acceptance only checks that a listed
+ * country changed this run, not that the change matches what was reviewed,
+ * so an exported value stays armed and would wave a second, different
+ * change to the same country through in a later run unreviewed.
+ *
  * Everything this file used to hold below `run()`'s section banner was moved
  * verbatim into scripts/country-facts/ on 2026-09-07 (spec
  * 2026-09-07-unscheduled-items §2.1) so this file stays under the 800-line

@@ -156,8 +156,8 @@ export const REQUIRED_NAMES = {
  * gone stale against the file they described — one of them promising a safety
  * margin the gate does not actually deliver. Hence it is code now. Headroom
  * for any row is `MEASURED_FIELD_COVERAGE[f] - MIN_FIELD_COVERAGE[f]`, and
- * `ingest-country-facts.test.ts` asserts the uniform rule, both deviations,
- * and the exact count at which the gate flips.
+ * `gate.test.ts` asserts the uniform rule, both deviations, and the exact
+ * count at which the gate flips.
  *
  * Three rows moved against Task 24's provisional guesses and each is a
  * finding rather than a rounding:
@@ -193,21 +193,29 @@ export const REQUIRED_NAMES = {
  * lowering a gate to admit the fix that tripped it is how a gate becomes
  * decoration.
  *
- * THE MARGIN THAT LEAVES, STATED CORRECTLY, because the previous version of
- * this sentence was wrong in the UNSAFE direction: 239 - 233 = 6, and the gate
- * is `covered < floor`. So SIX countries can lose their languages and the
- * nightly job still PASSES — it lands exactly ON the floor, not under it — and
- * the SEVENTH is the one that stops it. The old comment promised six would
- * stop it, a margin one country wider than the code delivers. Six is tighter
- * than the eight uniform rows and looser than `name`'s two.
+ * THE MARGIN THAT LEAVES, STATED CORRECTLY: 239 - 233 = 6, and the gate is
+ * `covered < floor`, so six countries missing the field lands exactly ON the
+ * floor and the SEVENTH is what the floor itself stops. That arithmetic is
+ * still true of the floor — it is no longer true of the nightly job. Since
+ * this branch, `// --- Official languages, per country` below compares every
+ * country's list against the previous artifact and stops the run on the
+ * FIRST one that loses it, on every run that has a previous artifact — which
+ * is every nightly run. So this floor no longer bounds what a night can lose
+ * unnoticed: it bounds a run with nothing to compare against (a first run, or
+ * an empty previous artifact), and it still bounds a human's accepted change
+ * once the per-country check has let it through. Six is tighter than the
+ * eight uniform rows and looser than `name`'s two, as a statement about the
+ * floor alone.
  *
- * Six silent losses is more than I would choose. The floor is deliberately
- * left alone anyway: RAISING it is a judgement about how much of the world may
- * quietly go quiet overnight, it belongs to a human with the nightly job's
- * history in front of them, and a floor that is wrong but fails loudly beats a
- * floor nobody chose. What is fixed here is that the margin is now stated
- * correctly and asserted in a test, so whoever touches it next is choosing
- * rather than inheriting a false one.
+ * A floor that only binds a baseline-less run or an accepted change is still
+ * a real choice, not a formality: RAISING it is a judgement about how thin a
+ * first run's own coverage may be, and about how far a batch of reviewed
+ * losses may still be let to push officialLanguages down. It belongs to a
+ * human with the nightly job's history in front of them, and a floor that is
+ * wrong but fails loudly beats a floor nobody chose. What is fixed here is
+ * that the margin is now stated correctly for the runs it actually governs,
+ * and asserted in a test, so whoever touches it next is choosing rather than
+ * inheriting a false one.
  *
  * `name` is the ONE row that does not take ten countries of headroom, and the
  * deviation is deliberate rather than an oversight. Measured 246 of 246 -
@@ -564,8 +572,11 @@ export function assertFactsSane(built, previous, { acceptLanguageChanges = [] } 
   // country is the rule working exactly as designed — it is what stops the
   // United States being told Carolinian is one of its official languages. The
   // set is measured, named in the report and pinned by name in
-  // lib/countryFacts.test.ts, and the `officialLanguages` floor in
-  // `MIN_FIELD_COVERAGE` is what bounds it growing without anybody noticing.
+  // lib/countryFacts.test.ts, and it is the per-country language check below
+  // (`// --- Official languages, per country`) that stops the run and names
+  // the country the night any list is newly withheld this way — the
+  // `officialLanguages` floor in `MIN_FIELD_COVERAGE` only bounds a run with
+  // no previous artifact to compare against.
 
   if ((diagnostics.curatedStale?.length ?? 0) > 0) {
     throw new Error(
