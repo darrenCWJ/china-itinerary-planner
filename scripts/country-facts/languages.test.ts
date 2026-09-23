@@ -87,6 +87,22 @@ describe("languageChanges", () => {
       languageChanges(lists({ BE: ["German", "Dutch", "French"] }), lists({ BE: ["Dutch", "French", "German"] }))
     ).toEqual([]);
   });
+
+  test("country codes in the result are sorted even when both sides have them out of order", () => {
+    const result = languageChanges(lists({ MR: ["Arabic"] }), lists({ IQ: ["Arabic"] }));
+    expect(result.map((r) => r.code)).toEqual(["IQ", "MR"]);
+  });
+
+  test("removed and added names within a single change are sorted alphabetically", () => {
+    const result = languageChanges(
+      lists({ ZA: ["Zulu", "Xhosa", "English"] }),
+      lists({ ZA: ["English", "Venda", "Afrikaans"] })
+    );
+    expect(result).toHaveLength(1);
+    const change = result[0];
+    expect(change.removed).toEqual(["Xhosa", "Zulu"]);
+    expect(change.added).toEqual(["Afrikaans", "Venda"]);
+  });
 });
 
 describe("summariseLanguageChanges", () => {
@@ -114,6 +130,15 @@ describe("summariseLanguageChanges", () => {
   test("marks a field that is new", () => {
     const changes = languageChanges(lists({ EH: undefined }), lists({ EH: ["Arabic"] }));
     expect(summariseLanguageChanges(changes)).toBe('EH: +"Arabic" (field new)');
+  });
+
+  test("groups entries are sorted by country code even when passed in reverse order with different signatures", () => {
+    const changes = [
+      { code: "MR", removed: [], added: ["French"], withdrawn: false, appeared: false },
+      { code: "IQ", removed: ["Kurdish"], added: ["Kurdish language"], withdrawn: false, appeared: false }
+    ];
+    const result = summariseLanguageChanges(changes);
+    expect(result).toBe('IQ: -"Kurdish" +"Kurdish language"; MR: +"French"');
   });
 });
 
