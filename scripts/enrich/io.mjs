@@ -17,8 +17,10 @@
  * plan-then-gate-then-write ordering without touching Wikidata or
  * `public/cities/`.
  *
- * One line has changed since the move: `USER_AGENT`, with a docblock of its
- * own saying why (2026-09-23).
+ * Changed since the move, on 2026-09-23: `USER_AGENT`, with a docblock of its
+ * own saying why, and `fetchWithRetry`, which now attaches it to every request
+ * itself rather than trusting each caller to pass it; the last paragraph of
+ * its docblock is new too.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,12 +61,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * into "Wikidata knows nothing about these 150 cities", because that reading
  * feeds straight into a destructive merge. It is also not worth retrying: a
  * moved endpoint will still be moved in ten seconds.
+ *
+ * The User-Agent is attached here and never by a caller, so no request this
+ * file makes can go out without it.
  */
 async function fetchWithRetry(url, { headers, timeoutMs, label, notFoundIsEmpty = true }) {
   let lastError = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
+      const res = await fetch(url, {
+        headers: { ...headers, 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'follow',
+      });
       if (res.status === 404) {
         if (notFoundIsEmpty) return null;
         const moved = new Error(
@@ -99,7 +108,7 @@ async function fetchWithRetry(url, { headers, timeoutMs, label, notFoundIsEmpty 
 export async function fetchSparqlBindings(query, label) {
   const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(query)}&format=json`;
   const json = await fetchWithRetry(url, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/sparql-results+json' },
+    headers: { Accept: 'application/sparql-results+json' },
     timeoutMs: SPARQL_TIMEOUT_MS,
     label: `SPARQL ${label}`,
     notFoundIsEmpty: false,
@@ -125,7 +134,7 @@ export async function fetchExtracts(titles) {
     });
     try {
       const json = await fetchWithRetry(`${ENWIKI_ACTION_API}?${params.toString()}`, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        headers: { Accept: 'application/json' },
         timeoutMs: REST_TIMEOUT_MS,
         label: `extracts ${index + 1}/${batches.length}`,
       });

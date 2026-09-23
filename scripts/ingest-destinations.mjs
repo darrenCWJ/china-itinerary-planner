@@ -107,7 +107,12 @@ async function fetchWithRetry(url, { headers, timeoutMs, label }) {
   let lastError = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
+      // The User-Agent goes on here, not at the call sites, so no request can leave it off.
+      const res = await fetch(url, {
+        headers: { ...headers, 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'follow',
+      });
       if (res.status === 404) return null; // caller treats as "no data"
       if (!res.ok) {
         const error = new Error(`HTTP ${res.status} for ${label}: ${(await res.text()).slice(0, 200)}`);
@@ -133,7 +138,7 @@ async function fetchWithRetry(url, { headers, timeoutMs, label }) {
 async function sparql(query, label) {
   const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(query)}&format=json`;
   const json = await fetchWithRetry(url, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/sparql-results+json' },
+    headers: { Accept: 'application/sparql-results+json' },
     timeoutMs: SPARQL_TIMEOUT_MS,
     label: `SPARQL ${label}`,
   });
@@ -424,7 +429,7 @@ async function fetchWikipediaSummaries(cities) {
     });
     try {
       const json = await fetchWithRetry(`${ENWIKI_ACTION_API}?${params.toString()}`, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        headers: { Accept: 'application/json' },
         timeoutMs: REST_TIMEOUT_MS,
         label: `extracts batch ${index + 1}/${batches.length}`,
       });
