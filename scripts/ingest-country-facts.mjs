@@ -70,10 +70,15 @@
  *
  *   CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node scripts/ingest-country-facts.mjs
  *
- * Set it inline on that one command, the way the example above does, and
- * never export it from a shell: the acceptance only checks that a listed
- * country changed this run, not that the change matches what was reviewed,
- * so an exported value stays armed and would wave a second, different
+ * That inline form is bash / Git Bash syntax. In PowerShell, set and clear
+ * the variable around the one command instead, so it cannot outlive it:
+ *
+ *   try { $env:CIP_ACCEPT_LANGUAGE_CHANGES = 'IQ,MR'; node scripts/ingest-country-facts.mjs } finally { Remove-Item Env:CIP_ACCEPT_LANGUAGE_CHANGES }
+ *
+ * Whichever shell you use, never set it in a way that outlives the command —
+ * a bare `$env:...=` or an `export` in bash: the acceptance only checks that
+ * a listed country changed this run, not that the change matches what was
+ * reviewed, so a value that stays armed would wave a second, different
  * change to the same country through in a later run unreviewed.
  *
  * Everything this file used to hold below `run()`'s section banner was moved
