@@ -26,10 +26,13 @@ import { describe, expect, it } from "vitest";
  *
  * The form is scripts/build-provinces.mjs's, the first compliant one here: a
  * per-script product token, then the public repo's URL. Never anyone's email
- * address — the repo is public, and so is every header sent from it. Hosts
- * that are not Wikimedia's (GeoNames, OurAirports, jsDelivr, CHELSA, GitHub)
- * get the same form, so there is one shape to copy and no file left to copy
- * the old one from.
+ * address — the repo is public, and so is every header sent from it. The
+ * User-Agents sent to hosts that are not Wikimedia's (GeoNames, OurAirports,
+ * jsDelivr, CHELSA, GitHub) take the same form, so there is one shape to copy
+ * and no file left to copy the old one from. Two server-side fetches send none
+ * at all — lib/server/catalog.ts's to GitHub, and lib/rates.ts's
+ * `fetchJsonWithTimeout` — and nothing here requires one of them, since
+ * neither is a Wikimedia caller.
  *
  * Blunt in lib/contracts.test.ts's sense: it reads source as text. That file's
  * harness is not reused because it does not scan `.mjs`, which is every script
@@ -119,7 +122,7 @@ const MAKES_REQUESTS = /\bfetch\w*\s*\(/;
  */
 function fetchCallArguments(text: string): string[] {
   const out: string[] = [];
-  for (const match of text.matchAll(/\bfetch\(/g)) {
+  for (const match of text.matchAll(/\bfetch\s*\(/g)) {
     const open = match.index + match[0].length - 1;
     let depth = 0;
     for (let i = open; i < text.length; i++) {
@@ -132,6 +135,9 @@ function fetchCallArguments(text: string): string[] {
   }
   return out;
 }
+
+/** Whether a call's arguments name the constant itself, not merely something that starts with its name. */
+const namesUserAgent = (args: string) => /\bUSER_AGENT\b/.test(args);
 
 const FILES = collect();
 const WIKIMEDIA_CALLERS = FILES.filter((file) => WIKIMEDIA_HOST.test(file.text) && MAKES_REQUESTS.test(file.text));
@@ -191,7 +197,7 @@ describe("every outbound User-Agent carries contact information", () => {
       const calls = fetchCallArguments(file.text);
       if (calls.length === 0) return [`${file.path}: no fetch( of its own to attach one to`];
       return calls
-        .filter((args) => !args.includes("USER_AGENT"))
+        .filter((args) => !namesUserAgent(args))
         .map((args) => `${file.path}: fetch(${args.replace(/\s+/g, " ").slice(0, 80)}…)`);
     });
     expect(offenders).toEqual([]);
@@ -235,5 +241,12 @@ describe("every outbound User-Agent carries contact information", () => {
     expect(
       fetchCallArguments("await fetch(url, { headers, signal: AbortSignal.timeout(ms) }); after(1);")
     ).toEqual(["url, { headers, signal: AbortSignal.timeout(ms) }"]);
+    // A space before the parenthesis is still a call, and must still be read:
+    // MAKES_REQUESTS already counts it, so a call it counted but this skipped
+    // would pass beside any compliant one.
+    expect(fetchCallArguments("await fetch (url, { headers });")).toEqual(["url, { headers }"]);
+    // The constant itself, not anything that merely starts with its name.
+    expect(namesUserAgent("url, { headers: { 'User-Agent': USER_AGENT } }")).toBe(true);
+    expect(namesUserAgent("url, { headers: { 'User-Agent': USER_AGENT_OLD } }")).toBe(false);
   });
 });

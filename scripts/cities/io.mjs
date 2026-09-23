@@ -11,8 +11,8 @@
  * The one line that is not verbatim is `ROOT_DIR`: this file sits one
  * directory deeper than the one it came out of, so the walk up from
  * `import.meta.url` takes one more `'..'`. `USER_AGENT` has changed since, to
- * the contact form scripts/user-agent.test.ts holds every outbound request to
- * (2026-09-23).
+ * the contact form scripts/user-agent.test.ts holds every declared User-Agent
+ * to (2026-09-23).
  */
 
 import {
