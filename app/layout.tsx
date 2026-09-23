@@ -1,26 +1,87 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { AppShell } from "@/components/shell/AppShell";
 import { ShellTripProvider } from "@/components/shell/ShellTripContext";
 import { TripAccentProvider } from "@/components/shell/TripAccentProvider";
+import "./fonts/fonts.css";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
+/*
+ * The three families, vendored under app/fonts/ rather than fetched from
+ * Google at build time (vercel/next.js#99114; app/fonts/fonts.css has the
+ * story and the provenance).
+ *
+ * Each call owns only its family's LATIN files, the ones next/font preloads, as
+ * `subsets: ["latin"]` used to. The other subsets are in fonts.css under the
+ * family's real name, and `fallback` chains to them, then to the metric-matched
+ * Arial defined there. So `adjustFontFallback` is off: next/font's own fallback
+ * would land between the two and catch ł before the latin-ext face was asked.
+ *
+ * The descriptors copy Google's CSS for these faces: one face per weight, each
+ * pointing at the same file for the two variable families, font-stretch: 100%
+ * on those two, and the latin unicode-range. next/font needs literal options,
+ * so the range is written out three times. Turbopack names each family after
+ * its const.
+ */
+const bricolageLatin = localFont({
+  src: [
+    { path: "./fonts/bricolage-grotesque/bricolage-grotesque-latin.woff2", weight: "600" },
+    { path: "./fonts/bricolage-grotesque/bricolage-grotesque-latin.woff2", weight: "700" },
+    { path: "./fonts/bricolage-grotesque/bricolage-grotesque-latin.woff2", weight: "800" },
+  ],
+  style: "normal",
+  display: "swap",
   variable: "--font-brico",
+  adjustFontFallback: false,
+  fallback: ["'Bricolage Grotesque'", "'Bricolage Grotesque Fallback'"],
+  declarations: [
+    { prop: "font-stretch", value: "100%" },
+    {
+      prop: "unicode-range",
+      value:
+        "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+    },
+  ],
 });
 
-const body = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const plexSansLatin = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-sans/ibm-plex-sans-latin.woff2", weight: "400" },
+    { path: "./fonts/ibm-plex-sans/ibm-plex-sans-latin.woff2", weight: "500" },
+    { path: "./fonts/ibm-plex-sans/ibm-plex-sans-latin.woff2", weight: "600" },
+  ],
+  style: "normal",
+  display: "swap",
   variable: "--font-plex",
+  adjustFontFallback: false,
+  fallback: ["'IBM Plex Sans'", "'IBM Plex Sans Fallback'"],
+  declarations: [
+    { prop: "font-stretch", value: "100%" },
+    {
+      prop: "unicode-range",
+      value:
+        "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+    },
+  ],
 });
 
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["500", "600"],
+const plexMonoLatin = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono/ibm-plex-mono-500-latin.woff2", weight: "500" },
+    { path: "./fonts/ibm-plex-mono/ibm-plex-mono-600-latin.woff2", weight: "600" },
+  ],
+  style: "normal",
+  display: "swap",
   variable: "--font-plexmono",
+  adjustFontFallback: false,
+  fallback: ["'IBM Plex Mono'", "'IBM Plex Mono Fallback'"],
+  declarations: [
+    {
+      prop: "unicode-range",
+      value:
+        "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+    },
+  ],
 });
 
 export const metadata: Metadata = {
@@ -56,7 +117,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       data-theme="light"
       suppressHydrationWarning
-      className={`${display.variable} ${body.variable} ${mono.variable}`}
+      className={`${bricolageLatin.variable} ${plexSansLatin.variable} ${plexMonoLatin.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: FIRST_PAINT }} />
