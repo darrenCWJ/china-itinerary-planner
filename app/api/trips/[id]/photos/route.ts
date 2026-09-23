@@ -6,6 +6,7 @@ import {
   PHOTOS_UNSUPPORTED,
   photoUploadsSupported,
   savePhoto,
+  sniffPhotoType,
 } from "@/lib/server/photoStore";
 import { DB_UNAVAILABLE, storeMode } from "@/lib/server/store";
 
@@ -45,6 +46,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
+  // file.type is only what the client declared. savePhoto also refuses bytes
+  // that are not that type; checking here makes the refusal a 400, not a 500.
+  if (sniffPhotoType(bytes) !== file.type) {
+    return NextResponse.json({ error: "Only JPEG, PNG or WebP photos" }, { status: 400 });
+  }
   const ref = savePhoto(id, bytes, file.type);
   if (!ref) {
     return NextResponse.json({ error: "Could not store the photo" }, { status: 500 });

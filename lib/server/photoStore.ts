@@ -20,6 +20,27 @@ const EXT_CONTENT_TYPES: Record<string, string> = {
   webp: "image/webp",
 };
 
+/** The leading bytes of each accepted type; `null` matches any byte. */
+const PHOTO_SIGNATURES: Record<string, ReadonlyArray<number | null>> = {
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  // "RIFF", the 4-byte chunk size, "WEBP".
+  "image/webp": [0x52, 0x49, 0x46, 0x46, null, null, null, null, 0x57, 0x45, 0x42, 0x50],
+};
+
+/**
+ * The accepted type the bytes start with, or null. An upload's declared type
+ * is only the client's word, so savePhoto stores nothing this disagrees with.
+ */
+export function sniffPhotoType(bytes: Uint8Array): string | null {
+  for (const [type, signature] of Object.entries(PHOTO_SIGNATURES)) {
+    if (bytes.length >= signature.length && signature.every((b, i) => b === null || bytes[i] === b)) {
+      return type;
+    }
+  }
+  return null;
+}
+
 const TRIP_ID_RE = /^[a-z0-9-]{4,60}$/i;
 
 /** Overridable for tests via CIP_UPLOADS_DIR. */
@@ -58,10 +79,14 @@ function photoPath(tripId: string, ref: string): string | null {
   return path.join(uploadsRoot(), tripId, ref);
 }
 
-/** Returns the stored ref ("<uuid>.<ext>") or null when unsupported/invalid. */
+/**
+ * Returns the stored ref ("<uuid>.<ext>") or null when unsupported/invalid,
+ * including bytes that do not start with the declared type's signature.
+ */
 export function savePhoto(tripId: string, bytes: Buffer, contentType: string): string | null {
   const ext = PHOTO_CONTENT_TYPES[contentType];
-  if (!ext || !photoUploadsSupported() || bytes.length > MAX_PHOTO_BYTES) return null;
+  if (!ext || sniffPhotoType(bytes) !== contentType) return null;
+  if (!photoUploadsSupported() || bytes.length > MAX_PHOTO_BYTES) return null;
   const ref = `${newId().toLowerCase()}.${ext}`;
   const target = photoPath(tripId, ref);
   if (!target) return null;

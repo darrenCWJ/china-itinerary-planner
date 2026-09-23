@@ -15,7 +15,19 @@ import {
   savePhoto,
 } from "./photoStore";
 
+/** SOI, then an APP0 marker: how a JPEG begins. */
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+/** The PNG signature, then the IHDR chunk's length and type. */
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+/** "RIFF", the chunk size (any value), "WEBP", then a VP8 chunk tag. */
+const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x24, 0, 0, 0]), Buffer.from("WEBPVP8 ")]);
+/** An ISO-BMFF ftyp box with major brand "avif". */
+const AVIF = Buffer.concat([
+  Buffer.from([0, 0, 0, 0x1c]),
+  Buffer.from("ftypavif"),
+  Buffer.from([0, 0, 0, 0]),
+  Buffer.from("avifmif1miaf"),
+]);
 
 describe("photoStore", () => {
   beforeAll(() => resetPhotoProbeForTests());
@@ -37,6 +49,31 @@ describe("photoStore", () => {
   test("unknown content types are rejected", () => {
     expect(savePhoto("abc123def0", JPEG, "image/gif")).toBeNull();
     expect(savePhoto("abc123def0", JPEG, "text/html")).toBeNull();
+  });
+
+  test("PNG and WebP bytes are stored under their own extensions", () => {
+    expect(savePhoto("abc123def0", PNG, "image/png")).toMatch(/^[a-z0-9-]+\.png$/);
+    expect(savePhoto("abc123def0", WEBP, "image/webp")).toMatch(/^[a-z0-9-]+\.webp$/);
+  });
+
+  test("bytes that are not the declared type are refused", () => {
+    // The declared type is the client's word. AVIF must not be stored as
+    // .jpg and served back as image/jpeg...
+    expect(savePhoto("abc123def0", AVIF, "image/jpeg")).toBeNull();
+    // ...and no accepted type may pass as another.
+    expect(savePhoto("abc123def0", PNG, "image/jpeg")).toBeNull();
+    expect(savePhoto("abc123def0", JPEG, "image/webp")).toBeNull();
+    expect(savePhoto("abc123def0", WEBP, "image/png")).toBeNull();
+    // A RIFF container is only WebP when it says "WEBP" at byte 8.
+    const wave = Buffer.concat([WEBP.subarray(0, 8), Buffer.from("WAVEfmt ")]);
+    expect(savePhoto("abc123def0", wave, "image/webp")).toBeNull();
+  });
+
+  test("a file cut off before the end of its type's signature is refused", () => {
+    expect(savePhoto("abc123def0", JPEG.subarray(0, 2), "image/jpeg")).toBeNull();
+    expect(savePhoto("abc123def0", PNG.subarray(0, 7), "image/png")).toBeNull();
+    expect(savePhoto("abc123def0", WEBP.subarray(0, 11), "image/webp")).toBeNull();
+    expect(savePhoto("abc123def0", Buffer.alloc(0), "image/jpeg")).toBeNull();
   });
 
   test("hostile refs and trip ids never resolve", () => {
