@@ -398,9 +398,9 @@ describe("run() — a published language list never changes without a human", ()
   });
 
   test("a demoted P37 night — the fetch throws — writes, carrying every list forward", async () => {
-    // Were carry-forward skipped, the build would answer ["English"] against a
-    // previous ["English", "Welsh"] and stop a run whose only fault was an
-    // outage.
+    // Were carry-forward skipped, the build would have no language lists at
+    // all except the curated BE and AZ rows, and the run would stop on the
+    // coverage floor ("only 2 countries carry officialLanguages"), not a change.
     const dataDir = freshDataDir();
     const previous = welshPrevious();
     await seedPrevious(dataDir, previous);

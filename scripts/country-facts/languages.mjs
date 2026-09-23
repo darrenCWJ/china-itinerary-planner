@@ -28,6 +28,11 @@
  * The one variable that lets a reviewed change through. Read by the entry
  * guard in scripts/ingest-country-facts.mjs and nowhere else, and never set
  * by .github/workflows/refresh-cities.yml: the nightly job accepts nothing.
+ * Set it inline on the one command being run and never export it: the
+ * acceptance is per COUNTRY, not per change — it checks only that a listed
+ * country changed this run, not that the change matches what was reviewed —
+ * so an exported value stays armed and would silently wave a second,
+ * different change to the same country through in a later run.
  */
 export const ACCEPT_LANGUAGE_CHANGES_ENV = 'CIP_ACCEPT_LANGUAGE_CHANGES';
 
