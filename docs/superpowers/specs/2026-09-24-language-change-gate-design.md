@@ -85,7 +85,13 @@ It is the only output a rejected run leaves — the report is not written — so
 CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node scripts/ingest-country-facts.mjs
 ```
 
-then commit the regenerated artifact and report, plus any exact pin the change moves (§2.6), in a PR — the shape every fix PR on this ingest already has.
+in bash or Git Bash. PowerShell and cmd.exe cannot parse that inline form (found by the final review), so in PowerShell the variable is set and cleared around the one command, so that it cannot outlive it:
+
+```
+try { $env:CIP_ACCEPT_LANGUAGE_CHANGES = 'IQ,MR'; node scripts/ingest-country-facts.mjs } finally { Remove-Item Env:CIP_ACCEPT_LANGUAGE_CHANGES }
+```
+
+Then commit the regenerated artifact and report, plus any exact pin the change moves (§2.6), in a PR — the shape every fix PR on this ingest already has. The variable must never outlive its command: the acceptance names countries, not changes, so a variable left set would silently accept a later, different change to the same country.
 
 - Named `CIP_…` after the repo's one existing ingest variable, `CIP_CHELSA_CACHE` (`scripts/climate/acquire.mjs:46`).
 - **Validated before anything else happens**, including reading the previous artifact: comma-separated two-letter uppercase codes, whitespace around the codes tolerated, nothing else — no empty entries, no duplicates, no lowercase. An unset or blank variable means no acceptance. Codes are never uppercased for you; the house refuses to normalise codes (`buildFacts`).
@@ -101,7 +107,7 @@ Unchanged, and already in `scripts/country-facts/curated.mjs`: `REFUSED_LANGUAGE
 
 Kept exactly, per the brief's "keep its semantics or explain replacing it". Its comment gains the new division of labour: per-country detection is the gate's, before any write; the pin remains the sweep's arming check ("an artifact that failed to parse would leave both empty and green") and an independent net-count check in the verify step, which also runs on human PRs the gate never sees. The pins on 239 countries with languages (`lib/countryTips.test.ts:200`, `:432`, `lib/countryFacts.test.ts:91`, `lib/countryProfile.test.ts:637`) and `MEASURED_FIELD_COVERAGE.officialLanguages` are untouched; an accepted change that moves one of them updates it in the same PR. An accepted withdrawal or new field also moves the `officialLanguages` headroom pins in `scripts/country-facts/gate.test.ts` (`officialLanguages: 6` in the headroom table and `expect(headroom).toBe(6)`) and the "239 - 233 = 6" arithmetic in `gate.mjs`'s floor docblock — found by the final review; four of the 27 measured one-way changes (PW, UY, US, EH) were that shape.
 
-The floor's meaning changes with this check, and the docblock says so: on every run with a previous artifact, the per-country check stops the first country that loses its list, so the `officialLanguages` floor now bounds only a run with no baseline and a human's accepted change.
+The floor's meaning changes with this check, and the docblock says so. The floor runs FIRST, before the drift section: a run that loses seven or more lists is refused by the floor, accepted or not, and the per-country check never runs. A loss of one to six is stopped and named by the per-country check on any run with a previous artifact, which is every nightly run. So the floor no longer bounds what a night can lose unnoticed; on its own it governs only a run with no baseline.
 
 ### 2.7 Where the code goes
 
@@ -113,7 +119,7 @@ The floor's meaning changes with this check, and the docblock says so: on every 
   - `describeLanguageChanges(changes, { scoped, accept })` → the §2.3 message body. `accept` is every country that changed this run: when a human has accepted some changes and the run finds another, re-running with only the countries reported would un-accept the first, so the suggestion names them all.
 - **`gate.mjs`.** `assertFactsSane(built, previous, { acceptLanguageChanges = [] } = {})` — existing callers unchanged — gains three throw sites: unaccepted changes, an acceptance naming an unchanged country, an acceptance on a first run. The throws stay in this file because `refresh-cities.yml` names it as where `assertFactsSane`'s throw sites are; that header's count, 38, is updated.
 - **`scripts/ingest-country-facts.mjs`.** `run({ fetchBindings, dataDir, acceptLanguageChanges = '' })` parses first, before `readJson`; passes the list to the gate; logs accepted changes. The entry guard and its docblock ("calls `run()` with no arguments") change to pass the variable.
-- **Size.** `gate.mjs` stays near 730 lines and `gate.test.ts` near 770, both under the 800-line guidance.
+- **Size.** As built, `gate.mjs` is 763 lines, `gate.test.ts` 790 and `scripts/ingest-country-facts.test.ts` 796 — all under the 800-line guidance, the two test files with almost no headroom left: the next test added to either needs a split first.
 
 ## 3. Rejected alternatives
 
@@ -162,7 +168,7 @@ Every test is written before the code it pins and seen failing first.
 
   The existing "tolerates one field of churn in one country" deletes `officialLanguages`, and that is now a change by design; it moves to `plugs`, with a comment pointing here.
 - **`scripts/ingest-country-facts.test.ts`** — `run()`, by behaviour:
-  - the two-country swap aborts before any write primitive fires and leaves no directory
+  - the two-country swap aborts before any write primitive fires
   - a relabel does the same
   - both demotion paths write with every list equal to the previous artifact's
   - an accepted change is written, for that country only
