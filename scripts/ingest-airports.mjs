@@ -47,7 +47,7 @@ const REPORT_PATH = join(DATA_DIR, 'airports-report.md');
 
 const SOURCE_URL = 'https://davidmegginson.github.io/ourairports-data/airports.csv';
 const SOURCE_LICENSE = 'Public domain (OurAirports, regenerated nightly)';
-const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+const USER_AGENT = 'china-itinerary-planner/ingest-airports (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 const FETCH_TIMEOUT_MS = 120_000;
 const RETRY_DELAYS_MS = [2_000, 8_000];

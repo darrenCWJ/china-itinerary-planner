@@ -48,6 +48,7 @@ const WORLD_PATH = join(ROOT_DIR, 'public', 'world-countries.json');
 /** Pinned to the major, exactly as the 50m build pins its own source. */
 const SOURCE_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 const SOURCE_LICENSE = 'Public domain (Natural Earth 1:110m, via world-atlas@2)';
+const USER_AGENT = 'china-itinerary-planner/build-globe-topology (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 const FETCH_TIMEOUT_MS = 60_000;
 const RETRY_DELAYS_MS = [2_000, 8_000];
@@ -59,7 +60,7 @@ async function fetchSource() {
     try {
       const response = await fetch(SOURCE_URL, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { 'user-agent': 'ChinaItineraryPlanner/1.0 (personal project)' },
+        headers: { 'user-agent': USER_AGENT },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();

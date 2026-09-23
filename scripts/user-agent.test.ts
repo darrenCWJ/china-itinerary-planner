@@ -3,8 +3,8 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Every request the tree sends to Wikimedia says who is calling and how to
- * reach them.
+ * Every outbound User-Agent in the tree says who is calling and how to reach
+ * them.
  *
  * Wikimedia's User-Agent policy (https://meta.wikimedia.org/wiki/User-Agent_policy)
  * asks every client for contact information — a URL or an email address — and
@@ -23,7 +23,10 @@ import { describe, expect, it } from "vitest";
  *
  * The form is scripts/build-provinces.mjs's, the first compliant one here: a
  * per-script product token, then the public repo's URL. Never anyone's email
- * address — the repo is public, and so is every header sent from it.
+ * address — the repo is public, and so is every header sent from it. Hosts
+ * that are not Wikimedia's (GeoNames, OurAirports, jsDelivr, CHELSA, GitHub)
+ * get the same form, so there is one shape to copy and no file left to copy
+ * the old one from.
  *
  * Blunt in lib/contracts.test.ts's sense: it reads source as text. That file's
  * harness is not reused because it does not scan `.mjs`, which is every script
@@ -62,10 +65,11 @@ function collect(): SourceFile[] {
 }
 
 /**
- * The two shapes a User-Agent is written in here: a `USER_AGENT` constant,
- * possibly wrapped onto the next line, and an inline `'user-agent'` header
- * literal. `'User-Agent': USER_AGENT` is a reference, not a declaration, and
- * does not match, because its value is not quoted.
+ * The two shapes a User-Agent has been written in here: a `USER_AGENT`
+ * constant, possibly wrapped onto the next line, and — in the two topology
+ * scripts until 2026-09-23 — an inline `'user-agent'` header literal.
+ * `'User-Agent': USER_AGENT` is a reference, not a declaration, and does not
+ * match, because its value is not quoted.
  */
 const DECLARATION_SHAPES = [
   /\bUSER_AGENT\s*=\s*(['"`])([^'"`\n]*)\1/g,
@@ -97,10 +101,15 @@ const CALLS_FETCH = /\bfetch\(/;
 const FILES = collect();
 const WIKIMEDIA_CALLERS = FILES.filter((file) => WIKIMEDIA_HOST.test(file.text) && CALLS_FETCH.test(file.text));
 
-describe("every User-Agent sent to Wikimedia carries contact information", () => {
-  it("is armed — it finds the Wikimedia callers", () => {
+describe("every outbound User-Agent carries contact information", () => {
+  it("is armed — it finds the Wikimedia callers, and a real declaration of each constant shape", () => {
     // A path bug that walked nothing would make every check below vacuously
-    // true. The five are the tree's Wikimedia callers as of 2026-09-23.
+    // true. The five are the tree's Wikimedia callers as of 2026-09-23. The
+    // last two prove both constant shapes are read out of a real file, not
+    // only out of the synthetic strings further down: one line, and wrapped
+    // onto the next. The inline `'user-agent'` literal the two topology
+    // scripts used until then has no real example left, so the synthetic test
+    // is what keeps that shape covered.
     expect(WIKIMEDIA_CALLERS.map((file) => file.path)).toEqual(
       expect.arrayContaining([
         "lib/server/cityEnrichment.ts",
@@ -110,6 +119,18 @@ describe("every User-Agent sent to Wikimedia carries contact information", () =>
         "scripts/ingest-destinations.mjs",
       ])
     );
+    expect(FILES.filter((file) => declarationsIn(file.text).length > 0).map((file) => file.path)).toEqual(
+      expect.arrayContaining(["scripts/build-provinces.mjs", "scripts/climate/acquire.mjs"])
+    );
+  });
+
+  it("every declared User-Agent is in the contact form, whatever host it is sent to", () => {
+    const offenders = FILES.flatMap((file) =>
+      declarationsIn(file.text)
+        .filter((value) => !CONTACT_FORM.test(value))
+        .map((value) => `${file.path}: ${value}`)
+    );
+    expect(offenders).toEqual([]);
   });
 
   it("every module that fetches from a Wikimedia host declares one in the contact form", () => {
@@ -123,10 +144,19 @@ describe("every User-Agent sent to Wikimedia carries contact information", () =>
     expect(offenders).toEqual([]);
   });
 
+  it("the retired User-Agent is gone from the code, in whatever syntax", () => {
+    // docs/ keeps it on purpose — a plan is a record of what it prescribed —
+    // and a plan is exactly where a new script would copy it from. The checks
+    // above only see the declaration shapes; this sees any spelling, comments
+    // included, which is why no source file quotes it even to explain it.
+    const stale = FILES.filter((file) => file.text.includes("ChinaItineraryPlanner/")).map((file) => file.path);
+    expect(stale).toEqual([]);
+  });
+
   it("still recognises a non-compliant User-Agent when it sees one", () => {
     // Without this, a broken extraction pattern would find no declarations,
-    // report no offenders, and pass. Each shape the tree writes is read back
-    // here, and the form refuses what it exists to refuse.
+    // report no offenders, and pass. Every shape a User-Agent has been written
+    // in is read back here, and the form refuses what it exists to refuse.
     const retired = "ChinaItineraryPlanner/1.0 (personal project)";
     expect(declarationsIn(`const USER_AGENT = '${retired}';`)).toEqual([retired]);
     expect(declarationsIn(`const USER_AGENT =\n  "${retired}";`)).toEqual([retired]);
