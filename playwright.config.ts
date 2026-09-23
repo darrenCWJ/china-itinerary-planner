@@ -92,9 +92,11 @@ export default defineConfig({
     },
     {
       // The wall's own spec runs signed OUT, so it takes no storage state and
-      // no dependency on the setup above.
+      // no dependency on the setup above. fonts.spec.ts joins it: the fonts
+      // belong to the root layout, so /login shows them without a session,
+      // and fetching the preloads signed out is part of what it checks.
       name: "signed-out",
-      testMatch: /wall\.spec\.ts/,
+      testMatch: /(wall|fonts)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
