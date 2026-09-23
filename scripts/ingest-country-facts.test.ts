@@ -79,6 +79,7 @@ import {
 // `not.toHaveBeenCalled()` in the file.
 // ---------------------------------------------------------------------------
 
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -148,11 +149,14 @@ function writtenReport(): string {
 async function expectNoWrite(
   feed: Feed,
   pattern: RegExp,
-  previous?: unknown
+  previous?: unknown,
+  acceptLanguageChanges?: string
 ): Promise<void> {
   const dataDir = freshDataDir();
   if (previous !== undefined) await seedPrevious(dataDir, previous);
-  await expect(run({ fetchBindings: loaderFor(feed), dataDir })).rejects.toThrow(pattern);
+  await expect(run({ fetchBindings: loaderFor(feed), dataDir, acceptLanguageChanges })).rejects.toThrow(
+    pattern
+  );
   expect(vi.mocked(writeFileSync), "writeFileSync fired on a rejected run").not.toHaveBeenCalled();
   expect(vi.mocked(renameSync), "renameSync fired on a rejected run").not.toHaveBeenCalled();
 }
@@ -335,6 +339,157 @@ describe("run() — the positive control", () => {
     feed.emergency = "throw";
     await run({ fetchBindings: loaderFor(feed), dataDir });
     expect(writtenPayload().countries.CN.emergency).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// run() — a published language list never changes without a human
+//
+// The gate's language branches driven end to end. scripts/country-facts/
+// gate.test.ts pins each message; these pin that the check sits in the path a
+// nightly job takes, that a rejected run leaves nothing on disk, that a
+// demoted P37 night is never mistaken for change, and that the acceptance is
+// read where the documentation says and nowhere else.
+// ---------------------------------------------------------------------------
+
+/** One more language for one country, the way the P37 query returns it. */
+function addLanguage(feed: Feed, code: string, label: string): Feed {
+  (feed.languages as Row[]).push({ country: code, item: languageItem(label), value: label });
+  return feed;
+}
+
+/** The healthy artifact, except that the first filler already speaks Welsh. */
+function welshPrevious(): typeof healthyPayload {
+  const previous = structuredClone(healthyPayload);
+  previous.countries[FILLERS[0]].officialLanguages = ["English", "Welsh"];
+  return previous;
+}
+
+describe("run() — a published language list never changes without a human", () => {
+  test("one country gaining a language while another loses one aborts before any write", async () => {
+    // The swap a total cannot see: one value in, one value out.
+    const feed = addLanguage(healthyFeed(), FILLERS[0], "French");
+    feed.languages = (feed.languages as Row[]).filter(
+      (row) => !(row.country === "PE" && row.value === "Aymara")
+    );
+    await expectNoWrite(
+      feed,
+      new RegExp(`^2 countries changed their[^]*: ${FILLERS[0]}: \\+"French"; PE: -"Aymara" — `),
+      healthyPayload
+    );
+  });
+
+  test("a relabel reaching every country that uses the language reads as one entry, and aborts", async () => {
+    // Iraq's shape at full size: one label edit on one item, every country
+    // that publishes it changed in the same night.
+    const feed = healthyFeed();
+    for (const row of feed.languages as Row[]) if (row.value === "English") row.value = "English language";
+    const english = Object.keys(healthyPayload.countries).filter((code) =>
+      (healthyPayload.countries[code].officialLanguages as string[] | undefined)?.includes("English")
+    );
+    await expectNoWrite(
+      feed,
+      new RegExp(
+        `^${english.length} countries changed their published official languages since the committed ` +
+          `artifact: ${english.join(", ")}: -"English" \\+"English language" — `
+      ),
+      healthyPayload
+    );
+  });
+
+  test("a demoted P37 night — the fetch throws — writes, carrying every list forward", async () => {
+    // Were carry-forward skipped, the build would answer ["English"] against a
+    // previous ["English", "Welsh"] and stop a run whose only fault was an
+    // outage.
+    const dataDir = freshDataDir();
+    const previous = welshPrevious();
+    await seedPrevious(dataDir, previous);
+    const feed = healthyFeed();
+    feed.languages = "throw";
+    await run({ fetchBindings: loaderFor(feed), dataDir });
+    const { countries } = writtenPayload();
+    for (const [code, record] of Object.entries(previous.countries)) {
+      expect(countries[code]?.officialLanguages, code).toEqual(record.officialLanguages);
+    }
+  });
+
+  test("a demoted P37 night — an implausibly small answer — writes the same way", async () => {
+    const dataDir = freshDataDir();
+    await seedPrevious(dataDir, welshPrevious());
+    const feed = healthyFeed();
+    feed.languages = [];
+    await run({ fetchBindings: loaderFor(feed), dataDir });
+    expect(writtenPayload().countries[FILLERS[0]].officialLanguages).toEqual(["English", "Welsh"]);
+  });
+
+  test("an accepted change is written, for that country alone, and the log names it", async () => {
+    const dataDir = freshDataDir();
+    await seedPrevious(dataDir, healthyPayload);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await run({
+        fetchBindings: loaderFor(addLanguage(healthyFeed(), FILLERS[0], "Welsh")),
+        dataDir,
+        acceptLanguageChanges: FILLERS[0],
+      });
+      expect(log.mock.calls.flat().join("\n")).toContain(
+        `accepted official-language changes: ${FILLERS[0]}: +"Welsh"`
+      );
+    } finally {
+      log.mockRestore();
+    }
+    const { countries } = writtenPayload();
+    expect(countries[FILLERS[0]].officialLanguages).toEqual(["English", "Welsh"]);
+    expect(countries[FILLERS[1]].officialLanguages).toEqual(["English"]);
+  });
+
+  test("an acceptance naming a country whose languages did not change aborts before any write", async () => {
+    await expectNoWrite(
+      healthyFeed(),
+      new RegExp(`CIP_ACCEPT_LANGUAGE_CHANGES names ${FILLERS[0]}, whose published official languages did not change`),
+      healthyPayload,
+      FILLERS[0]
+    );
+  });
+
+  test("a malformed acceptance aborts before a single request, leaving no trace", async () => {
+    const fetchBindings = vi.fn(loaderFor(healthyFeed()));
+    const dataDir = freshDataDir();
+    await expect(run({ fetchBindings, dataDir, acceptLanguageChanges: "aa" })).rejects.toThrow(
+      /CIP_ACCEPT_LANGUAGE_CHANGES must be two-letter uppercase country codes/
+    );
+    expect(fetchBindings).not.toHaveBeenCalled();
+    expect(existsSync(dataDir)).toBe(false);
+  });
+
+  test("run() ignores the variable exported in its own process — only the entry guard reads it", async () => {
+    vi.stubEnv("CIP_ACCEPT_LANGUAGE_CHANGES", FILLERS[0]);
+    try {
+      await expectNoWrite(
+        addLanguage(healthyFeed(), FILLERS[0], "Welsh"),
+        /^1 country changed its published official languages/,
+        healthyPayload
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("the documented command reaches run(): a malformed variable stops the script before any request", () => {
+    // The real entry guard, in a child whose fetch is disabled before the
+    // script loads — so even a regression that parsed the variable late could
+    // reach neither Wikidata nor data/: it would fail on the country-code
+    // query instead, with a different message, and this test would go red.
+    const noNetwork =
+      'data:text/javascript,globalThis.fetch=async()=>{throw new Error("network disabled in this test")}';
+    const child = spawnSync(
+      process.execPath,
+      ["--import", noNetwork, pathJoin("scripts", "ingest-country-facts.mjs")],
+      { encoding: "utf8", env: { ...process.env, CIP_ACCEPT_LANGUAGE_CHANGES: "aa" } }
+    );
+    expect(child.status).toBe(1);
+    expect(child.stderr).toMatch(/CIP_ACCEPT_LANGUAGE_CHANGES must be two-letter uppercase country codes/);
+    expect(child.stderr).toContain("Nothing was written");
   });
 });
 
