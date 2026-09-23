@@ -1264,7 +1264,7 @@ The PR body carries:
 
 ## Execution record (2026-09-24)
 
-Executed subagent-driven, with one implementer and one reviewer per task, then an Opus whole-branch review. What the review loop changed against the text above is recorded here, so the plan does not keep telling a future reader to do what did not happen.
+Executed subagent-driven, with one implementer and one reviewer per task, then an Opus whole-branch review. What the review loop changed against the text above is recorded here, so the plan does not keep telling a future reader to do what did not happen. The short SHAs below are the feature branch's. This repo rebase-merges, so on `main` the same commits carry new SHAs; find them by subject.
 
 - **Task 1.** The plan's test file could not detect the module's four `.sort()` calls: every fixture was already alphabetical, and no change had two names. The task review caught it, and three tests were added (4d8ac73), each seen failing when its sort is removed.
 - **Task 2.** Its review flagged `lib/countryTips.test.ts` at 908 lines against "Files stay under 800 lines". The file was 900 before this plan and is one of the five test files the owner chose on 2026-09-07 to leave over; Global Constraints now names them (eb9f092).
