@@ -21,7 +21,7 @@
 - **Scripts stay dependency-free.** `scripts/ingest-country-facts.mjs` and `scripts/country-facts/*.mjs` import only `node:fs`, `node:path`, `node:url` and each other — no `lib/`, no npm packages.
 - **No data change.** `data/country-facts.json` and `data/country-facts-report.md` stay byte-identical to `main`'s.
 - **The 426 pin** in `lib/countryTips.test.ts` stays exact; only its comment changes.
-- **Files stay under 800 lines**, test files included.
+- **Files stay under 800 lines**, test files included. The exception is the five test files the owner chose on 2026-09-07 to leave over the line: `lib/contracts.test.ts`, `lib/countryFacts.test.ts`, `lib/countryTips.test.ts` (900 lines before this plan; Task 2 adds its 426 comment there), `components/map/GlobeLevel.test.tsx` and `lib/climateShard.test.ts`.
 - **Style.** `.mjs` files: single quotes, 2-space indent, semicolons, docblocks that say WHY. `.ts` tests: double quotes, the house's per-branch test naming.
 - **Line endings.** The working copy is CRLF (core.autocrlf). Edit files with the Edit/Write tools; do not patch them with heredoc-fed node scripts (backslashes get mangled).
 - **No network in any test.** The one test that spawns the real script disables `fetch` in the child first.
