@@ -275,7 +275,8 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
   }
   if (accepted.length > 0) {
     const changes = languageChanges(previous?.countries ?? {}, built.countries);
-    console.log(`  accepted official-language changes: ${summariseLanguageChanges(changes)}`);
+    const summary = summariseLanguageChanges(changes, { scoped: built.diagnostics.scopedLanguages });
+    console.log(`  accepted official-language changes: ${summary}`);
   }
   console.log(`Wrote ${reportPath}`);
 }
