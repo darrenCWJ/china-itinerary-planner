@@ -76,6 +76,12 @@ describe("photoStore", () => {
     expect(savePhoto("abc123def0", Buffer.alloc(0), "image/jpeg")).toBeNull();
   });
 
+  test("a file exactly as long as its type's signature is stored: only leading bytes are checked", () => {
+    expect(savePhoto("abc123def0", JPEG.subarray(0, 3), "image/jpeg")).toMatch(/\.jpg$/);
+    expect(savePhoto("abc123def0", PNG.subarray(0, 8), "image/png")).toMatch(/\.png$/);
+    expect(savePhoto("abc123def0", WEBP.subarray(0, 12), "image/webp")).toMatch(/\.webp$/);
+  });
+
   test("hostile refs and trip ids never resolve", () => {
     for (const ref of ["../../../etc/passwd", "a/b.jpg", "x.exe", "..\\..\\x.jpg"]) {
       expect(readPhoto("abc123def0", ref)).toBeNull();
