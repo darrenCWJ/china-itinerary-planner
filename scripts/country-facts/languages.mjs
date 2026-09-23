@@ -28,11 +28,17 @@
  * The one variable that lets a reviewed change through. Read by the entry
  * guard in scripts/ingest-country-facts.mjs and nowhere else, and never set
  * by .github/workflows/refresh-cities.yml: the nightly job accepts nothing.
- * Set it inline on the one command being run and never export it: the
- * acceptance is per COUNTRY, not per change — it checks only that a listed
- * country changed this run, not that the change matches what was reviewed —
- * so an exported value stays armed and would silently wave a second,
+ * Set it inline on the one command being run and never let it outlive that
+ * command: the acceptance is per COUNTRY, not per change — it checks only
+ * that a listed country changed this run, not that the change matches what
+ * was reviewed — so a value that stays armed would silently wave a second,
  * different change to the same country through in a later run.
+ *
+ * Inline as `CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node ...` is bash / Git Bash
+ * syntax. In PowerShell, set and clear it around the one command instead of
+ * exporting it:
+ *
+ *   try { $env:CIP_ACCEPT_LANGUAGE_CHANGES = 'IQ,MR'; node scripts/ingest-country-facts.mjs } finally { Remove-Item Env:CIP_ACCEPT_LANGUAGE_CHANGES }
  */
 export const ACCEPT_LANGUAGE_CHANGES_ENV = 'CIP_ACCEPT_LANGUAGE_CHANGES';
 

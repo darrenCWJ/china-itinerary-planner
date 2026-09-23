@@ -202,10 +202,12 @@ export const REQUIRED_NAMES = {
  * FIRST one that loses it, on every run that has a previous artifact — which
  * is every nightly run. So this floor no longer bounds what a night can lose
  * unnoticed: it bounds a run with nothing to compare against (a first run, or
- * an empty previous artifact), and it still bounds a human's accepted change
- * once the per-country check has let it through. Six is tighter than the
- * eight uniform rows and looser than `name`'s two, as a statement about the
- * floor alone.
+ * an empty previous artifact), and — because it sits earlier in this function
+ * than the per-country check, before `if (!previous) return;` even — it also
+ * bounds a human's accepted change: seven or more withdrawn lists are refused
+ * here, before the per-country check has even consulted the acceptance. Six
+ * is tighter than the eight uniform rows and looser than `name`'s two, as a
+ * statement about the floor alone.
  *
  * A floor that only binds a baseline-less run or an accepted change is still
  * a real choice, not a formality: RAISING it is a judgement about how thin a
@@ -575,8 +577,10 @@ export function assertFactsSane(built, previous, { acceptLanguageChanges = [] } 
   // lib/countryFacts.test.ts, and it is the per-country language check below
   // (`// --- Official languages, per country`) that stops the run and names
   // the country the night any list is newly withheld this way — the
-  // `officialLanguages` floor in `MIN_FIELD_COVERAGE` only bounds a run with
-  // no previous artifact to compare against.
+  // `officialLanguages` floor in `MIN_FIELD_COVERAGE` bounds a run with no
+  // previous artifact to compare against, and, because it runs earlier in
+  // this function, also refuses a loss of seven or more lists on any run
+  // before this per-country check is ever reached.
 
   if ((diagnostics.curatedStale?.length ?? 0) > 0) {
     throw new Error(

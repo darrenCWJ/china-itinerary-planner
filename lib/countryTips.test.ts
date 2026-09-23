@@ -703,8 +703,9 @@ describe("the boundary and the committed artifact agree", () => {
     // This total is NOT the change detector, and must not be read as one: a
     // relabel or a same-count swap never moves it — Iraq's "Kurdish" became
     // "Kurdish language" on 2026-09-08 and shipped straight past it. Every
-    // change to one country's list is stopped before any write by the
-    // ingest's own gate (scripts/country-facts/languages.mjs). This pin stays
+    // change to one country's list is stopped before any write by
+    // `assertFactsSane` in scripts/country-facts/gate.mjs, using the
+    // comparison in scripts/country-facts/languages.mjs. This pin stays
     // exact as the sweep's arming check, and as a count check on the commits
     // that gate never sees — human PRs included.
     expect(scanned).toBe(426);
