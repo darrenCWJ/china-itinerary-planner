@@ -65,6 +65,11 @@
  *
  * Usage: node scripts/ingest-country-facts.mjs
  *
+ * To write a language change a human has reviewed — the nightly job never
+ * does; see scripts/country-facts/languages.mjs:
+ *
+ *   CIP_ACCEPT_LANGUAGE_CHANGES=IQ,MR node scripts/ingest-country-facts.mjs
+ *
  * Everything this file used to hold below `run()`'s section banner was moved
  * verbatim into scripts/country-facts/ on 2026-09-07 (spec
  * 2026-09-07-unscheduled-items §2.1) so this file stays under the 800-line
@@ -112,6 +117,12 @@ import {
   writeFileAtomic,
 } from './country-facts/io.mjs';
 import { buildReport } from './country-facts/report.mjs';
+import {
+  ACCEPT_LANGUAGE_CHANGES_ENV,
+  languageChanges,
+  parseAcceptedLanguageChanges,
+  summariseLanguageChanges,
+} from './country-facts/languages.mjs';
 
 /**
  * One SPARQL result row, already decoded from CSV: column name -> cell text.
@@ -132,8 +143,17 @@ import { buildReport } from './country-facts/report.mjs';
  * Wikidata or `data/`. That is the only way to pin a gate's CALL SITE:
  * scripts/enrich-cities.mjs's `assertEnrichmentSane` had its body fully tested
  * while deleting the one line that invoked it left the suite green and
- * produced a complete wipe at exit 0. The entry guard below calls `run()` with
- * no arguments, so every parameter defaults to the real implementation.
+ * produced a complete wipe at exit 0. The entry guard below passes only
+ * `acceptLanguageChanges`, read from the environment there and nowhere else;
+ * every other parameter defaults to the real implementation.
+ *
+ * `acceptLanguageChanges` is the raw `CIP_ACCEPT_LANGUAGE_CHANGES` value
+ * (scripts/country-facts/languages.mjs): the countries whose language change
+ * a human reviewed. It is parsed before anything else happens — a typo in it
+ * is a typo in a command a human is running, and it must stop the run before
+ * the previous artifact is read or a single request is made. It defaults to
+ * NONE rather than to `process.env`, so a variable exported in a developer's
+ * shell can never leak into the `run()` tests.
  *
  * `mkdirSync` sits BELOW the gate, unlike scripts/ingest-cities.mjs where it
  * runs first (a tracked finding recorded in scripts/ingest-cities.test.ts's
@@ -142,9 +162,10 @@ import { buildReport } from './country-facts/report.mjs';
  * before the gate is one — which also makes "nothing was written" checkable by
  * a test rather than merely asserted here.
  *
- * @param {{ fetchBindings?: (name: string, codes: string[]) => Promise<Row[]>, dataDir?: string }} [options]
+ * @param {{ fetchBindings?: (name: string, codes: string[]) => Promise<Row[]>, dataDir?: string, acceptLanguageChanges?: string }} [options]
  */
-export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DIR } = {}) {
+export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DIR, acceptLanguageChanges = '' } = {}) {
+  const accepted = parseAcceptedLanguageChanges(acceptLanguageChanges);
   const factsPath = join(dataDir, FACTS_FILE);
   const reportPath = join(dataDir, REPORT_FILE);
 
@@ -210,7 +231,7 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
   applyCurated(built);
   for (const property of demoted) carryForwardFields(built, previous, property.fields);
 
-  assertFactsSane(built, previous);
+  assertFactsSane(built, previous, { acceptLanguageChanges: accepted });
 
   // Below the gate. Nothing about a rejected run may reach the filesystem,
   // including an empty directory.
@@ -252,6 +273,10 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
   if (built.diagnostics.refusedFired.length > 0) {
     console.log(`  refused statements fired: ${built.diagnostics.refusedFired.join(', ')}`);
   }
+  if (accepted.length > 0) {
+    const changes = languageChanges(previous?.countries ?? {}, built.countries);
+    console.log(`  accepted official-language changes: ${summariseLanguageChanges(changes)}`);
+  }
   console.log(`Wrote ${reportPath}`);
 }
 
@@ -269,9 +294,13 @@ export async function run({ fetchBindings = fetchPropertyRows, dataDir = DATA_DI
  * would silently do nothing. `process.argv[1]` is checked for existence first
  * because it is undefined under `node --eval`, where `pathToFileURL(undefined)`
  * throws.
+ *
+ * It passes one thing: `CIP_ACCEPT_LANGUAGE_CHANGES`, read here and nowhere
+ * else, so the documented acceptance command reaches `run()` while a variable
+ * exported in a shell can never reach a test's.
  */
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  run().catch((error) => {
+  run({ acceptLanguageChanges: process.env[ACCEPT_LANGUAGE_CHANGES_ENV] }).catch((error) => {
     console.error(`\nCountry facts ingestion failed: ${error.message}`);
     console.error('Nothing was written — the previous artifact is untouched.');
     process.exit(1);
