@@ -16,6 +16,9 @@
  * `targetsPath` and `enrichDir` in, which is what lets a test drive the real
  * plan-then-gate-then-write ordering without touching Wikidata or
  * `public/cities/`.
+ *
+ * One line has changed since the move: `USER_AGENT`, with a docblock of its
+ * own saying why (2026-09-23).
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,7 +28,13 @@ import { chunk } from './plan.mjs';
 
 const SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
 const ENWIKI_ACTION_API = 'https://en.wikipedia.org/w/api.php';
-const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+/**
+ * Says who is calling and how to reach them, as Wikimedia's User-Agent policy
+ * requires of both hosts above. The contactless one sent until 2026-09-23 drew
+ * HTTP 403 from Wikidata that day — scripts/user-agent.test.ts has the finding
+ * and pins this form across the tree.
+ */
+const USER_AGENT = 'china-itinerary-planner/enrich-cities (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 const SPARQL_TIMEOUT_MS = 90_000;
 const REST_TIMEOUT_MS = 30_000;

@@ -36,7 +36,8 @@ const OUTPUT_PATH = join(DATA_DIR, 'country-images.json');
 
 const SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
 const COMMONS_ACTION_API = 'https://commons.wikimedia.org/w/api.php';
-const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+/** Contact information, as Wikimedia's User-Agent policy requires of both hosts above — scripts/user-agent.test.ts. */
+const USER_AGENT = 'china-itinerary-planner/ingest-country-images (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 const SPARQL_TIMEOUT_MS = 90_000;
 const REST_TIMEOUT_MS = 30_000;

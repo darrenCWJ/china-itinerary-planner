@@ -5,7 +5,9 @@
  * Moved out of scripts/ingest-country-facts.test.ts on 2026-09-07 (spec
  * 2026-09-07-unscheduled-items §2.1) when scripts/ingest-country-facts.mjs was
  * split along its section banners. Every describe below is that file's,
- * unchanged; only the import paths moved with them.
+ * unchanged; only the import paths moved with them. One test has been added
+ * since: `fetchWithRetry`'s User-Agent pin (2026-09-23), which
+ * scripts/user-agent.test.ts explains.
  *
  * No network call is made anywhere in this file: `fetchWithRetry`'s describe
  * stubs the global `fetch`, which is why the `vi`/`afterEach` aliases the
@@ -73,6 +75,21 @@ describe("fetchWithRetry", () => {
     await expect(fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" }))
       .resolves.toBe("code\nPE\n");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("identifies itself with a contact URL, because Wikimedia's User-Agent policy requires one", async () => {
+    // Every request this ingest makes goes through here, the fatal P297
+    // `codes` query included, so this header is the whole run's: the bare
+    // `ChinaItineraryPlanner/1.0 (personal project)` it used to send drew
+    // HTTP 403 from query.wikidata.org on 2026-09-23 — scripts/user-agent.test.ts
+    // has the rest. Read back through `Headers` because header names are
+    // case-insensitive on the wire; the key's spelling is not what is pinned.
+    const fetchSpy = viTop.fn().mockResolvedValue(respond(200, "code\nPE\n"));
+    viTop.stubGlobal("fetch", fetchSpy);
+    await fetchWithRetry("https://example.invalid/sparql", { body: "query=x", accept: "text/csv" });
+    expect(new Headers(fetchSpy.mock.calls[0][1].headers).get("user-agent")).toBe(
+      "china-itinerary-planner/ingest-country-facts (+https://github.com/darrenCWJ/china-itinerary-planner)"
+    );
   });
 
   test("gives up immediately when Retry-After asks for longer than the ceiling", async () => {

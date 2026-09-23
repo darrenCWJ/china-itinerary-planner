@@ -103,6 +103,21 @@ describe("enrichCities", () => {
     await expect(enrichCities(["G3941584"])).resolves.toEqual({ G3941584: CUSCO_RECORD });
   });
 
+  test("identifies itself with a contact URL, because Wikimedia's User-Agent policy requires one", async () => {
+    // This runs in production and fails silently by design, so a policy block
+    // here would surface as nothing but thinner city cards. The token is not
+    // the build script's `enrich-cities`: the two are different workloads from
+    // different networks, and a name is all Wikimedia has to tell them apart.
+    // scripts/user-agent.test.ts has the 2026-09-23 finding behind this.
+    const mock = stubSparql(CUSCO_ROWS);
+    await enrichCities(["G3941584"]);
+    const init = mock.mock.calls[0]?.[1] as RequestInit | undefined;
+    // Through `Headers`, because header names are case-insensitive on the wire.
+    expect(new Headers(init?.headers).get("user-agent")).toBe(
+      "china-itinerary-planner/city-enrichment (+https://github.com/darrenCWJ/china-itinerary-planner)"
+    );
+  });
+
   test("asks upstream once per id, however many times it is requested", async () => {
     // "cached by id" (spec §4). Without it, re-opening the wizard on the same
     // trip refetches every city in it.

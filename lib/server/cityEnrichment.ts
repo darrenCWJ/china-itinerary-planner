@@ -37,7 +37,14 @@ export interface CityEnrichmentRecord {
 }
 
 const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
-const USER_AGENT = "ChinaItineraryPlanner/1.0 (personal project)";
+/**
+ * Contact information, as Wikimedia's User-Agent policy requires — see
+ * scripts/user-agent.test.ts. Its own token, not the build script's
+ * `enrich-cities`: this is a different workload, sent from the deployment's
+ * network rather than a runner's, and a name is all Wikimedia has to tell the
+ * two apart.
+ */
+const USER_AGENT = "china-itinerary-planner/city-enrichment (+https://github.com/darrenCWJ/china-itinerary-planner)";
 const TIMEOUT_MS = 15_000;
 /**
  * A user is waiting on this, so it is one round trip and no retries.

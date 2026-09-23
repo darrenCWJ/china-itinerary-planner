@@ -15,7 +15,8 @@
  *
  * The one line here that is not verbatim is `ROOT_DIR`: this file sits one
  * directory deeper than the one it came out of, so the walk up from
- * `import.meta.url` takes one more `'..'`.
+ * `import.meta.url` takes one more `'..'`. `USER_AGENT` has changed since,
+ * with a docblock of its own saying why (2026-09-23).
  *
  * The `Row` typedef below is a byte-identical copy of the one that stayed in
  * scripts/ingest-country-facts.mjs, for the reason its twin in
@@ -66,7 +67,14 @@ export const SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
  */
 export const SOURCE_LICENSE = 'CC0-1.0';
 export const SOURCE_NAME = 'Wikidata (CC0)';
-const USER_AGENT = 'ChinaItineraryPlanner/1.0 (personal project)';
+/**
+ * Says who is calling and how to reach them, as Wikimedia's User-Agent policy
+ * requires. The contactless one sent until 2026-09-23 drew HTTP 403 from
+ * query.wikidata.org that day, and a refused `codes` query ends the run —
+ * scripts/user-agent.test.ts has the finding and pins this form across the
+ * tree.
+ */
+const USER_AGENT = 'china-itinerary-planner/ingest-country-facts (+https://github.com/darrenCWJ/china-itinerary-planner)';
 
 /**
  * The country universe this ingest asks about: every code the app ships a city
