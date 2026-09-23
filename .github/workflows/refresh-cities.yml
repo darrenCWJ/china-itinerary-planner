@@ -44,7 +44,7 @@
 # A commit here triggers a Vercel deploy, so the artifacts reach production
 # without anyone doing anything. That is also why every ingest step below
 # aborts BEFORE writing when its own sanity check fails: nothing looks at this
-# run. country-facts/gate.mjs's `assertFactsSane` carries 38 throw sites and
+# run. country-facts/gate.mjs's `assertFactsSane` carries 41 throw sites and
 # sits above `mkdirSync`, same shape as the other two scripts.
 #
 # ...and it is why `commit` runs the test suite ITSELF, in "Verify the
