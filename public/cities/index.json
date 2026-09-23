@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-22T23:21:10.637Z",
+ "generatedAt": "2026-09-23T13:52:43.332Z",
  "source": "GeoNames cities500 (CC BY 4.0)",
  "countries": [
   {
@@ -270,7 +270,7 @@
   {
    "code": "CZ",
    "count": 750,
-   "generatedAt": "2026-09-22T23:21:10.637Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "DE",
@@ -280,12 +280,12 @@
   {
    "code": "DJ",
    "count": 32,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "DK",
    "count": 508,
-   "generatedAt": "2026-09-22T23:21:10.637Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "DM",
@@ -495,7 +495,7 @@
   {
    "code": "IE",
    "count": 566,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "IL",
@@ -609,8 +609,8 @@
   },
   {
    "code": "KZ",
-   "count": 352,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "count": 353,
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "LA",
@@ -670,7 +670,7 @@
   {
    "code": "MA",
    "count": 480,
-   "generatedAt": "2026-08-29T15:36:54.681Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "MC",
@@ -755,7 +755,7 @@
   {
    "code": "MU",
    "count": 116,
-   "generatedAt": "2026-09-03T09:27:18.747Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "MV",
@@ -815,7 +815,7 @@
   {
    "code": "NL",
    "count": 750,
-   "generatedAt": "2026-09-22T23:21:10.637Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "NO",
@@ -874,8 +874,8 @@
   },
   {
    "code": "PK",
-   "count": 575,
-   "generatedAt": "2026-09-22T23:21:10.637Z"
+   "count": 576,
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "PL",
@@ -930,7 +930,7 @@
   {
    "code": "RO",
    "count": 750,
-   "generatedAt": "2026-09-22T23:21:10.637Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "RS",
@@ -1185,7 +1185,7 @@
   {
    "code": "VN",
    "count": 750,
-   "generatedAt": "2026-09-11T13:02:03.375Z"
+   "generatedAt": "2026-09-23T13:52:43.332Z"
   },
   {
    "code": "VU",
