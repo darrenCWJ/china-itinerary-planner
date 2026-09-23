@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -44,11 +44,29 @@ mkdirSync(dbDir, { recursive: true });
  */
 const E2E_SECRET = "e2e-fixture-k3Nv8xQ2mR7pL0wZaB6tY4hJ";
 
+/**
+ * The checkouts nested inside this one, under `.claude/worktrees/<name>/`.
+ *
+ * Anchored at this file's own directory because Playwright matches
+ * `testIgnore` against each file's ABSOLUTE path. The unanchored `.claude`
+ * glob this replaces also matched every spec of a checkout that itself lives
+ * under `.claude/worktrees/`, so `npx playwright test` there found no tests.
+ *
+ * Collection only walks `testDir`, so while that is `./e2e` a nested checkout
+ * is out of reach regardless; this keeps it out if `testDir` ever widens. A
+ * RegExp rather than a glob built from the path, which would read a `[` or `{`
+ * in it as syntax. On Windows Playwright also tests RegExps against a
+ * `/`-separated copy of the path, hence `/` here, and `i` because paths there
+ * ignore case. `__dirname` exists because the repo is CommonJS.
+ */
+const nestedCheckouts = new RegExp(
+  `^${RegExp.escape(__dirname.split(sep).join("/"))}/\\.claude/`,
+  "i",
+);
+
 export default defineConfig({
   testDir: "./e2e",
-  // `.claude/worktrees/` holds a second full checkout of this repo. Without
-  // this, a spec glob would collect every spec twice once one lands there.
-  testIgnore: ["**/.claude/**", "**/node_modules/**"],
+  testIgnore: [nestedCheckouts, "**/node_modules/**"],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
