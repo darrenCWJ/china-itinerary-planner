@@ -1,10 +1,88 @@
 # Travel super app: architecture and product design
 
-**Status:** Design APPROVED by the owner on 2026-09-24 (option A, the layers, the Claude-file layout, the move to Singapore). This spec is awaiting the owner's review before planning starts. Fable reviewed it on 2026-09-25: no critical findings; 7 important and 11 minor findings, which were checked against the evidence and applied. Two of its minor points were withdrawn with citations.
+**Status:** Design APPROVED by the owner on 2026-09-24 (option A, the layers, the Claude-file layout, the move to Singapore). This spec is awaiting the owner's review before planning starts. Fable reviewed it on 2026-09-25: no critical findings; 7 important and 11 minor findings, which were checked against the evidence and applied. Two of its minor points were withdrawn with citations. **Revised on 2026-09-25 (§0)** for a native mobile app plus a website, invite-only first, and costs pushed to a final release-readiness phase.
 **Supersedes:** the "trip planner" framing of every earlier spec. Earlier specs remain the record of how today's code works.
 **Companion:** [`2026-09-24-travel-super-app-catalogue.md`](2026-09-24-travel-super-app-catalogue.md), which lists all 419 functions (today's, kept, changed or dropped, plus new ones) and the 181-entry decision register. Both are generated from the same data as the private pages *Travel Super App Blueprint* and *Travel Super App Catalogue*.
 
 ---
+
+## 0. Revision 2026-09-25: a native mobile app and a website
+
+**This section takes precedence.** Where it conflicts with a later section, this one wins; those sections are updated to match where it matters most.
+
+**Owner decisions (2026-09-25):**
+- **Two client types.** A fully native mobile app (React Native / Expo, iOS + Android, store-distributed), and a website that is both the signed-in app with desktop layouts and a public site (landing page, shared places and guides that search engines can find, share links).
+- **Same features in both.** Only the layout adapts: phones put on-trip apps first, desktops put planning apps first.
+- **Invite-only first, open later.** Sign-up needs `ACCESS_CODE` or a group invite during the beta.
+- **Costs are pushed to the end.** Get it running and bug-free before anything is deployed to the website or the stores.
+- **The repo moves** to a short path outside OneDrive at the start of phase 0.
+
+**Monorepo (reverses option C's earlier rejection).** pnpm 10.34.5 workspaces with a `catalog:`. Vercel supports pnpm up to 10 only, and dependency build scripts are allow-listed with `allowBuilds`.
+```
+<repo>/  package.json (pnpm@10.34.5) · pnpm-workspace.yaml · biome.json
+├─ apps/web/      Next 16: src/app/{(public), (unlisted), (signed-in)/app/<name>, admin, api, .well-known}, proxy.ts, vercel.json, CLAUDE.md
+├─ apps/mobile/   Expo Router: src/app/{+native-intent, (auth), (signed-in)/<name>}, app.config.js, eas.json, CLAUDE.md
+├─ platform/      one package: registry sync db identity groups access places safety notify links files shell ui
+├─ reference/     one package: countries cities climate catalogue maps
+├─ features/      one package: _template/ _registry/ (generated) <name>/{CLAUDE.md manifest.ts core client server db web mobile tests e2e docs}
+└─ db/migrations/ · tools/{registry-gen, boundaries}/
+```
+
+**Feature zones.** The two apps share logic but never screens: no react-native-web.
+
+| Zone | May import | Never |
+|---|---|---|
+| `manifest.ts` | registry types | anything else |
+| `core/` (domain, commands, zod) | core, `platform/*/core`, `reference/*/core` | React, Next, Expo, React Native, DOM/Node globals, drizzle |
+| `client/` (headless hooks, optimistic apply) | core, `platform/*/client`, react | react-dom, react-native, next, expo, server, db |
+| `server/` | core, own db, `platform/*/server` | client, web, mobile, React |
+| `web/` | core, client, `platform/*/web`, `next/*` | react-native, expo, mobile, server, db |
+| `mobile/` | core, client, `platform/*/mobile`, `expo-*` | react-dom, next, web, server, db |
+
+Features never import each other; the platform never imports features; each app imports only its own zone and the registry. Enforcement: pnpm isolation, `exports` maps, a TypeScript config per zone, Biome `noRestrictedImports` set to **error**, and the Vitest scan as the deciding check. The scan uses oxc-parser + oxc-resolver plus its own walk for `require()` / `require.context`, which oxc leaves out.
+
+**Registry.** A code generator writes typed imports into gitignored files (`features/_registry/`, `platform/_registry/`), because Metro can't run `import.meta.glob`. The apps are the composition roots, so this replaces §2's glob mechanism. Routes stay one-line re-exports in both apps, and the `new-mini-app` skill creates them.
+
+**Mobile stack.**
+- Expo SDK 58 once it's stable (expected mid-to-late October 2026); otherwise SDK 57 with React 19.2.3, upgraded within phase 0. Expo Router and development builds.
+- `expo-sqlite`: `outbox.db` with `synchronous=FULL`, plus a disposable `replica-<userId>.db` holding one generic `row` table, so a new feature needs no migration on the phone. Writes go through `withExclusiveTransactionAsync`.
+- `@better-auth/expo`, which needs better-auth ≥ 1.7.6 on the server with the `expo()` plugin. The session lives in SecureStore `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`.
+- MapLibre React Native 11.4. It can't build offline packs from `pmtiles://`, so a Z/X/Y tile Worker serves both clients. Patch MLRN #1624 (an iOS crash) and always pass the style as a URL.
+- `expo-notifications` for pushes via a `notification_outbox`, and `expo-image-picker` with presigned R2 uploads (`blob.reserve@1` / `blob.finalize@1`).
+- Expo doesn't support TypeScript 7: the mobile app uses `app.config.js` and excludes `typescript` from `expo install --check`.
+
+**Sync.** The protocol is unchanged. `platform/sync/core` is plain TypeScript behind storage, transport and platform ports, with Dexie on the web and SQLite on the phone.
+- Sending happens 300 ms after each command, on resume, on reconnect and every 30 s. Sending is never gated on `isInternetReachable`, which reads false in mainland China.
+- `/api/sync/*` requires an `x-sync-client` header instead of an Origin check. One pull may cover several spaces.
+
+**Website.**
+- `/` is the landing page. Public place and guide pages read only through `platform/places/public` as a read-only `web_public` role, guarded by a canary test. A place is indexed only when it has a tip, a photo or at least 3 ratings. Contributors appear by public name, and dates show the month only.
+- The signed-in launcher lives at `/app`. `proxy.ts` runs only on `/app` and `/admin`.
+- `cacheComponents` is on.
+- Universal links and app links are served from `.well-known`, and Expo's `+native-intent` maps web URLs to app screens. Narrow windows get the phone order and a "Get the app" banner.
+- **Web offline scope is reduced.** The outbox and replica stay; the service worker, install flow, `storage.persist()` and web trip packs are dropped. Offline map packs are native-only, declared as a per-client exception in the manifest (`order: {phone, desktop}` plus exceptions).
+
+**Store rules become platform functions.** They're required before any store submission:
+- **Account deletion in the app.** `account.delete@1` runs online only and asks the user to sign in again first. It anonymises member rows, deletes contribution content and its R2 files, keeps CC0 place facts but unlinks them, deletes sessions, signals and the personal group, and transfers group ownership. On the web there's `/account/delete`, plus `POST /api/account/deletion-request` for people who can't sign in.
+- **A pre-publish content filter** inside `place.contribute@1`, `place.share@1` and `contribution.add@1`, plus a check in the app. Photos from new accounts are held for review. Apple 1.2 requires filtering before posting, so this **amends the owner's publish-then-report choice to filter, then publish, then report**.
+- **Reports** (`platform/safety`): `content.report@1` can also target users and group items, carries reasons, and works signed out through `POST /api/report`.
+- **Blocking:** `user.block@1` / `user.unblock@1`, stored in the user space. Blocked authors are hidden when rendering, and notifications skip them.
+- **Consent:** `terms.accept@1` and `consent.set@1`.
+- **Pages:** `/support`, `/legal/privacy` (naming the processors) and `/legal/terms`, each with an in-app equivalent.
+- **Sign-up** is native in the app, because Apple rejects linking out to register.
+- **Also:** a demo account for reviewers; photos only through the system picker; coarse location only; over-the-air updates for fixes only (new mini-apps ship through the stores); an age rating of 13+; the mainland China App Store is excluded, since it needs an ICP filing.
+
+**Windows workflow.**
+- Android: `expo run:android` on the emulator, with Hypervisor Platform, JDK 17 and Android Studio installed; `android.cmakeVersion` ≥ 3.31.6; Windows long paths enabled.
+- Tests: Vitest for shared code, jest-expo for the app, Maestro on the Android emulator.
+- iPhone builds (EAS cloud, or `eas build --local` on a free GitHub macOS runner, since the repo is public) start only in the release-readiness phase, because every iPhone build needs the $99/year Apple account.
+- CI: one always-running workflow, gated with `dorny/paths-filter` and `if:`. EAS never runs on pull requests.
+
+**Cost timing: $0 a month during development.**
+- Neon Free (0.5 GB) during development.
+- OpenFreeMap's public tiles online for web and phone during development.
+- Android emulator and free builds; Vercel Hobby, with production showing the "being rebuilt" page and all testing on preview links.
+- The paid items (Apple $99/yr, Google $25, a domain at about $10/yr, the R2 map file at about $1.80/mo, Cloudflare Workers at $5/mo, Neon Launch at $3–6/mo, and Vercel Pro at $20/mo only if the launch is public or commercial) all move to the release-readiness phase (§12, phase 6).
 
 ## 1. What we are building
 
@@ -30,6 +108,8 @@ The trip planner becomes a **global travel super app**. A launcher home page ope
 The 26 smaller questions raised by the catalogue are in §15. Each takes its recommended answer unless the owner overrides it.
 
 ## 2. Architecture: one app, four layers
+
+> **Revised in §0:** there are now two apps (`apps/web`, `apps/mobile`) in a pnpm monorepo. Features gain `core`, `client`, `server`, `db`, `web` and `mobile` parts, and the registry is generated rather than globbed. The layer rules below still hold.
 
 We chose option A: one Next.js app with our own offline sync layer. The alternatives were B (the PowerSync engine, about $68/month, one blocking upload queue shared by every app) and C (npm-workspace packages: heavy tooling, no gain for integrity).
 
@@ -114,12 +194,12 @@ The design follows Replicache's published push/pull protocol as a **specificatio
 
 **Projections into a trip space.** A trip pull also returns a read-only projection of every `member` row and every group-private `place` row that a live row in that trip space refers to (id, name, location, `left_at`). Trip-only guests can therefore render "You owe Mei" or a stop at the group's private place without syncing the group space. The projection is defined by the trip's rows, not by the viewer, so the no-per-viewer-filtering rule still holds.
 
-**PWA and hard constraints:**
+**PWA and hard constraints** (for the web client only; §0 drops the service worker and install flow, so the bullets on those are superseded):
 - Offline screens are static page shells (context lives in the page, not in `/trip/[id]` segments) of client components that read the replica. The shell never reads the session on the server.
 - `/b/<code>` share pages stay online-only and are never cached by the service worker.
 - A hand-written service worker is built with esbuild to a fixed `/sw.js`, served `no-cache`. It never calls `skipWaiting` by default, applies updates only after the outbox drains, and has a kill switch. Serwist's Turbopack route is not used (open install-hang issue).
 - `proxy.ts` exempts `/sw.js`, the web manifest (fetched without cookies), icons and the offline page.
-- On iOS, durable offline edits need the Home Screen install: Safari tabs can be wiped after 7 days of Safari use without a visit. A Safari tab may still edit offline, with a persistent install warning. The app calls `navigator.storage.persist()`.
+- *(Superseded by §0: phones use the native app, and the web drops the service worker, install flow and `persist()`.)* On iOS, a Safari tab can be wiped after 7 days of Safari use without a visit, which is one reason the phone experience is native.
 - Better Auth sessions last 90 days, with a device list. The outbox is keyed by user and survives a 401. Sign-out never wipes unsent commands.
 - **Mainland China:** `vercel.app` has been blocked since 2021-05-14 (GreatFire), and a custom domain is not guaranteed to work. Travellers install the app and download the trip's data and map pack before they go.
 
@@ -191,6 +271,8 @@ Full function lists, marked first release or later, are in the companion catalog
 
 ## 10. Claude and agent files
 
+> **Revised in §0:** each app (`apps/web`, `apps/mobile`) gets its own `CLAUDE.md`. Each feature's `CLAUDE.md` covers all its parts (core, client, server, db, web, mobile) and the parity rule, and `new-mini-app` adds routes to both apps.
+
 ```
 CLAUDE.md                        tracked: @AGENTS.md + a 10-line repo map
 AGENTS.md                        Next.js-managed block only (next dev rewrites it)
@@ -214,6 +296,15 @@ docs/platform/                   platform specs and plans
 
 ## 11. Guardrails (each fails CI)
 
+> **Added in §0:**
+> - the zone boundary scan (oxc, with a `require()` walk);
+> - a **parity test**: every `name@version` command is reachable from both apps' screens, or is declared an exception;
+> - a web route-placement test;
+> - the public-data canary;
+> - a mobile job: `expo install --check` with `typescript` excluded, jest-expo and `expo export`.
+>
+> The diff scope also allows `apps/mobile/src/app/**/<name>/**`.
+
 - **Boundary test:** feature → feature imports, and platform → feature imports that bypass the registry.
 - **Schema reference test:** no FK from one feature's table into another's.
 - **Pull conformance** (real Postgres): no app's pull returns rows to someone outside the space.
@@ -229,6 +320,7 @@ docs/platform/                   platform specs and plans
 
 Each sub-project gets its own spec, then a plan, then small PRs. Nothing moves on until its gate passes.
 
+0. **Monorepo conversion.** Move the repo to a short path outside OneDrive, copying the Claude memory directory to the new path's key. Switch to pnpm and `git mv` today's app into `apps/web`. Add the registry generator, the boundary scan, CI jobs and an Expo skeleton in `apps/mobile`. Upgrade better-auth to ≥ 1.7.6 for `@better-auth/expo`. **Gate:** all checks green, a Vercel preview builds, and a development build runs on the Android emulator. iPhone builds wait for phase 6.
 1. **Platform foundations.**
    - Retire the old data layer **first**: the SQLite backend, `store.ts` / `tripStore.ts` / `pgStore.ts`, and the DDL run at cold start. Otherwise `ensureSchema` would create its own auth tables in the new database. Trip pages show "being rebuilt" until their app lands.
    - Replace the old repo name in the 23 files that still carry it, including every User-Agent contact URL pinned by `scripts/user-agent.test.ts`.
@@ -238,22 +330,29 @@ Each sub-project gets its own spec, then a plan, then small PRs. Nothing moves o
    - **Every write is a command handler `(tx, cmd, ctx) => result` from day one**, registered through the same glob as features. Phase 1 exposes the handlers through a thin, online-only `/api/sync/push` with no outbox, idempotency or pull. Phase 2 adds those without touching the handlers. Nothing is written as a one-off API route or Server Action.
    - The registry, every guardrail that doesn't depend on sync, the re-rooted scans, the Playwright file-name conventions, the wall exemptions, the Claude file layout, and `features/_template`. The CI migrate job also migrates each PR's Neon preview branch.
    - **Gate:** an empty app scaffolded from the template passes every guard built so far, and the nightly encrypted backup runs with one tested restore. Pull conformance and the command snapshot join phase 2's gate.
-2. **Offline sync and install:** the outbox, push and pull across all four space kinds, optimistic updates, Needs attention, the service worker, Home Screen install, and 90-day sessions. **Gate:** offline end-to-end tests, plus randomised replay tests against real Postgres showing the phone and server agree.
-3. **Shell and launcher:** the switcher, the Now strip, the app grid, the permission editor, the passport-stamp identity, and the name. **Gate:** a placeholder app appears, respects its switches and shows a Now card offline.
-4. **Move today's features**, one PR each, deleting old code in the same PR:
+2. **Offline sync on both clients:** the outbox, push and pull across all four space kinds, with the Dexie (web) and SQLite (phone) storage adapters, optimistic updates, Needs attention and 90-day sessions. The web has no service worker (§0). **Gate:** offline end-to-end tests on the web and on the Android emulator (Maestro), plus randomised replay tests against real Postgres showing the clients and server agree.
+3. **Shell and launcher on both clients:** the switcher, the Now strip, the app grid (phone and desktop orders), the permission editor, the passport-stamp identity, the name, native sign-up, the landing page at `/`, and the store-required platform functions from §0 (account deletion, block, report, pre-publish filter, terms and consent, support and legal pages). **Gate:** a placeholder app appears in both clients, respects its switches and shows a Now card offline.
+4. **Move today's features**, one PR each, shipping the web and mobile parts together (the parity test gates it) and deleting old code in the same PR:
    1. `reference/` (the largest move, about 16,000 lines: the coupling map counts 9,158 in map code plus 6,801 in reference data; China is rebuilt from Natural Earth).
    2. `platform/places` (tables, `resolve()`, the pin picker, the street map and trip packs, the Wikidata attractions ingest). The Overture trial runs here.
    3. Then Explore, Planner, Money, Tickets, Packing, Journal, Briefing and Today, in that order.
 
    **Gate:** each PR stays within diff scope with its tests green.
 5. **New apps:** Polls, then Dates, built only from the template. **Gate:** no platform edit is needed.
+6. **Release readiness.** Nothing is deployed to the public website or the stores before this phase ends.
+   - **Pay for:** Apple (9/yr), Google Play (5), a domain on Cloudflare DNS, the R2 map file and tile Worker (/mo, enabling offline map packs on the phone), and Neon Launch. Add Vercel Pro only if the launch is public or commercial.
+   - **iPhone:** development builds, fixes for iOS-specific issues (MLRN #1624, SecureStore, SQLite), then TestFlight.
+   - **Android:** Play closed testing with at least 12 testers for 14 days; register the package and signing key for Android developer verification.
+   - **Stores:** a compliance pass (privacy labels, Data safety, age rating 13+, the demo account).
+   - **Quality:** a full bug hunt across web, Android and iPhone, the browser glance, and a Fable final review.
+   - **Gate:** zero known defects of Important or higher, all suites green on every client, and the owner's go-ahead. Then the public website launches and the apps are submitted, invite-only first.
 
 ## 13. Hosting, operations and cost
 
 - Vercel (`sin1`), Neon Launch (Singapore) and Cloudflare R2 (photos, catalogue files, the map file, backups).
 - A nightly `pg_dump`, encrypted with age, goes to R2 under a separate account and doubles as the liveness alarm. A monthly restore test runs in CI. Dumps are never Actions artifacts, because the repo is public.
 - Account hygiene: 2FA, a password manager, a second admin, and provider email going to an inbox someone reads.
-- **Estimated cost per month:** database $3–6, map file about $1.80; the other R2 uses fit the free tier; plus a domain at about $10 a year.
+- **Cost timing (§0):** $0 a month during development: Neon Free, OpenFreeMap public tiles, the Android emulator and free builds, Vercel Hobby. From release readiness: database $3–6/mo, map file about $1.80/mo, Cloudflare Workers $5/mo, domain about $10/yr, Apple $99/yr, Google $25 once, and Vercel Pro $20/mo only if public or commercial.
 
 ## 14. Risks
 
@@ -271,7 +370,7 @@ The owner may override any of these. Until then, the default applies.
 
 | # | Call | Default |
 |---|---|---|
-| 1 | A domain for the map and app | **Needs the owner:** buy one (about $10/yr) and move its DNS to Cloudflare |
+| 1 | A domain for the map and app | Buy one (about $10/yr) with Cloudflare DNS in phase 6, release readiness |
 | 2 | Contributor licence | Facts CC0; tips and photos CC BY 4.0; record the accepted version |
 | 3 | Auto-hide threshold | After reports from 2 different groups |
 | 4 | Overture Places | Trial first, China included; if weak, Wikidata + community only |
@@ -292,7 +391,7 @@ The owner may override any of these. Until then, the default applies.
 | 19 | Guests in Polls and Dates | Not in the first release |
 | 20 | Dates granularity | Whole days; if-need-be ranks below yes |
 | 21 | Late offline votes | Server time decides; late votes go to Needs attention |
-| 22 | iPhone Safari tab | Offline edits allowed, with a persistent install warning |
+| 22 | iPhone Safari tab | Retired on 2026-09-25: phones use the native app, and narrow web windows show a "Get the app" banner |
 | 23 | Session length | 90 days, with a device list |
 | 24 | Preview deployments | Their own Neon branch |
 | 25 | Nightly data refresh tests | Reference + platform only |
