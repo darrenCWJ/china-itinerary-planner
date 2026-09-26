@@ -1,12 +1,12 @@
 # Worldwide city catalog report
 
-- Generated: 2026-09-25T14:11:38.753Z
+- Generated: 2026-09-26T13:23:51.410Z
 - Source: https://download.geonames.org/export/dump/cities500.zip
 - Licence: GeoNames cities500 (CC BY 4.0) — https://www.geonames.org/ — CC BY 4.0
 - Filter: composite score (alternate names + 2 x log10 population), top 750 per country
 - Deduplicated against data/catalog.json within 5 km on a folded name match
 
-**58790 cities across 246 countries.**
+**58791 cities across 246 countries.**
 
 Largest shard: AR at 112.5 KB raw.
 
